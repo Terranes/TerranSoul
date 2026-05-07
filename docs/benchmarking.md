@@ -36,8 +36,9 @@ across runs.
 
 ## 2. Million-memory benchmark (Chunk 38.5)
 
-The harness exercises the **HNSW vector stage** used by hybrid search
-plus the **`enforce_capacity` eviction path** used by the long-tier GC.
+The harness exercises the **HNSW vector stage** used by hybrid search,
+the **`enforce_capacity` eviction path** used by the long-tier GC, and
+the Phase 41 SQLite CRUD path used by million-knowledge write/read tests.
 
 ### 2.1 What it measures
 
@@ -47,6 +48,8 @@ plus the **`enforce_capacity` eviction path** used by the long-tier GC.
 | HNSW build | total seconds + vectors/sec to populate the index | reported, no hard gate |
 | Capacity pruning | seconds to enforce `cap * 1.05 -> cap * 0.95`, dropped count, kept protected/important | <= 30 s at 1M (full tier) |
 | Linear backend | explicitly skipped at 1M (out of design) | reported as `not_run_for_smoke` / skip reason |
+| CRUD write/read | `MemoryStore::add_many` bulk insert plus `get_all` full read | write <= 60 s and read <= 5 s at 1M |
+| CRUD update/mixed/delete | `update_content_many`, bounded mixed 80/10/10 workload, and delete behavior | reported; timeout guarded by `TS_BENCH_TIMEOUT_SECS` |
 
 Vectors are deterministic (seeded `Xoshiro256PlusPlus`,
 `VECTOR_SEED = 0x38_05_0000_0000_0001`,
@@ -73,6 +76,19 @@ cargo bench --bench million_memory --features bench-million `
 Set-Location ..
 ```
 
+```powershell
+# CRUD-only tier — skips HNSW/capacity so SQLite write/read iteration is fast
+Set-Location src-tauri
+$env:TS_BENCH_CRUD_ONLY = "1"
+$env:TS_BENCH_TIMEOUT_SECS = "300"
+$env:TS_BENCH_SCALES = "1000000"
+cargo bench --bench million_memory --target-dir ../target-copilot-bench
+Remove-Item Env:TS_BENCH_CRUD_ONLY
+Remove-Item Env:TS_BENCH_TIMEOUT_SECS
+Remove-Item Env:TS_BENCH_SCALES
+Set-Location ..
+```
+
 The full tier requires the `bench-million` feature (which pulls in
 `native-ann` / `usearch`). On Windows, the bench refuses to allocate
 1M vectors unless ~90% of available RAM can hold the estimated HNSW
@@ -89,6 +105,8 @@ footprint — set `TS_BENCH_FORCE_LARGE=1` to override.
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `TS_BENCH_SCALES` | Comma-separated list of integer scales to run (e.g. `1000,10000,100000`). | `10000` (smoke) or `1000000` (with `--features bench-million`) |
+| `TS_BENCH_CRUD_ONLY` | Set to `1` to skip HNSW and capacity sections and run only the SQLite CRUD report. | unset |
+| `TS_BENCH_TIMEOUT_SECS` | Per-CRUD-run wall-clock guard. The bench records timeout status instead of appearing stuck. | `300` |
 | `TS_BENCH_FORCE_LARGE` | Set to `1` to bypass the available-RAM gate at 1M+. | unset |
 | `TS_BENCH_OUTPUT_DIR` | Override the report output base. JSON is written to `<dir>/bench-results/million_memory.json`. | `src-tauri/target/` |
 
@@ -151,6 +169,27 @@ Every run overwrites `src-tauri/target/bench-results/million_memory.json`
       "protected_after": 10, "important_after": 10,
       "failure": null
     }
+  ],
+  "crud": [
+    {
+      "scale": 1000000,
+      "status": "completed_delete_skipped_at_million",
+      "batch_size": 10000,
+      "write_seconds": 7.27,
+      "write_rows_per_second": 137521,
+      "write_target_seconds": 60.0,
+      "read_all_seconds": 2.13,
+      "read_all_rows_per_second": 469036,
+      "read_target_seconds": 5.0,
+      "update_seconds": 2.58,
+      "update_rows_per_second": 387042,
+      "mixed_op_count": 10000,
+      "mixed_seconds": 160.03,
+      "mixed_ops_per_second": 62.49,
+      "delete_seconds": null,
+      "delete_rows_per_second": null,
+      "failure": null
+    }
   ]
 }
 ```
@@ -162,26 +201,42 @@ Status strings to look for:
   `TS_BENCH_FORCE_LARGE=1` to override on a beefier machine.
 - `"not_run_for_smoke"` — linear backend is intentionally skipped at
   large scales because it is O(n) and out of design.
+- `"completed_delete_skipped_at_million"` — 1M CRUD write/read/update/mixed
+  completed and benchmark delete was skipped because secondary-index
+  maintenance dominates wall-clock and is not part of the write/read SLO.
+- `"timeout_*"` — CRUD timeout guard fired; see `failure` for the phase and
+  partial throughput.
 - `"failed"` — see `failure` for the error message.
 
-### 2.5 Latest measured smoke (reference baseline)
+### 2.5 Latest measured baselines
 
 Windows 11 Pro · 12th Gen Intel(R) Core(TM) i9-12900K · 24 logical CPUs · 63.7 GiB RAM
-(2026-05-06, 10k vectors, 1,000 queries, top-10):
+(2026-05-07, 10k vectors, 1,000 queries, top-10):
 
 | Metric | Value | Threshold |
 | --- | --- | --- |
-| HNSW p50 | 0.55 ms | <= 30 ms |
-| HNSW p95 | 0.73 ms | <= 60 ms |
-| HNSW p99 | 0.89 ms | <= 100 ms |
-| HNSW max | 1.11 ms | informational |
-| Build | 11.28 s · 886 vectors/s | informational |
-| Capacity 10,500 -> 9,500 | 0.25 s | <= 30 s |
+| HNSW p50 | 0.57 ms | <= 30 ms |
+| HNSW p95 | 0.74 ms | <= 60 ms |
+| HNSW p99 | 0.86 ms | <= 100 ms |
+| HNSW max | 1.03 ms | informational |
+| Build | ~11 s · ~880 vectors/s | informational |
+| Capacity 10,500 -> 9,500 | 0.26 s | <= 30 s |
 
-These are smoke-tier numbers; the **HNSW p99 <= 100 ms hard gate**
-applies to the **full 1M tier**, which must be re-run on a development
-machine with enough RAM whenever code touching `AnnIndex`,
-`enforce_capacity`, or the embedding shape changes.
+CRUD-only 1M reference run (`TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1 TS_BENCH_TIMEOUT_SECS=300`, 2026-05-07):
+
+| Metric | Value | Threshold |
+| --- | --- | --- |
+| Bulk write | 7.27 s · 137,521 rows/s | <= 60 s |
+| Full read | 2.13 s · 469,036 rows/s | <= 5 s |
+| Bulk update | 2.58 s · 387,042 rows/s | informational |
+| Mixed CRUD | 10,000 ops in 160.03 s · 62 ops/s | informational |
+| Bulk delete | skipped at 1M benchmark scale | informational |
+
+The HNSW numbers above are smoke-tier numbers; the **HNSW p99 <= 100 ms
+hard gate** applies to the **full 1M tier**, which must be re-run on a
+development machine with enough RAM whenever code touching `AnnIndex`,
+`enforce_capacity`, or the embedding shape changes. The CRUD write/read
+thresholds are directly asserted by the 1M CRUD-only run.
 
 ---
 

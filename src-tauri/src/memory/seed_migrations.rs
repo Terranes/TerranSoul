@@ -144,6 +144,56 @@ pub fn compiled_migrations() -> Vec<Migration> {
                 "../../../mcp-data/shared/migrations/003_health_response_descriptions.sql"
             ),
         ),
+        (
+            "004_million_knowledge_crud_audit",
+            include_str!(
+                "../../../mcp-data/shared/migrations/004_million_knowledge_crud_audit.sql"
+            ),
+        ),
+        (
+            "005_db_strategy_audit",
+            include_str!("../../../mcp-data/shared/migrations/005_db_strategy_audit.sql"),
+        ),
+        (
+            "006_phase_41_result",
+            include_str!("../../../mcp-data/shared/migrations/006_phase_41_result.sql"),
+        ),
+        (
+            "007_phase_41_2_3_result",
+            include_str!(
+                "../../../mcp-data/shared/migrations/007_phase_41_2_3_result.sql"
+            ),
+        ),
+        (
+            "008_phase_41_audit_refresh",
+            include_str!(
+                "../../../mcp-data/shared/migrations/008_phase_41_audit_refresh.sql"
+            ),
+        ),
+        (
+            "009_benchmark_doc_refresh",
+            include_str!(
+                "../../../mcp-data/shared/migrations/009_benchmark_doc_refresh.sql"
+            ),
+        ),
+        (
+            "010_phase_41_plan_status_refresh",
+            include_str!(
+                "../../../mcp-data/shared/migrations/010_phase_41_plan_status_refresh.sql"
+            ),
+        ),
+        (
+            "011_phase_41_5_cursor_reads",
+            include_str!(
+                "../../../mcp-data/shared/migrations/011_phase_41_5_cursor_reads.sql"
+            ),
+        ),
+        (
+            "012_phase_41_6_reembed_on_update",
+            include_str!(
+                "../../../mcp-data/shared/migrations/012_phase_41_6_reembed_on_update.sql"
+            ),
+        ),
     ];
     entries
         .iter()

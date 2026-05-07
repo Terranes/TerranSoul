@@ -216,7 +216,7 @@ pub async fn start_server(
     lan_enabled: bool,
     lan_public_read_only: bool,
 ) -> Result<McpServerHandle, String> {
-    start_server_with_activity(state, port, token, lan_enabled, lan_public_read_only, None).await
+    start_server_full(state, port, token, lan_enabled, lan_public_read_only, None, 0).await
 }
 
 /// Start the MCP HTTP server and optionally emit live activity events to
@@ -228,6 +228,25 @@ pub async fn start_server_with_activity(
     lan_enabled: bool,
     lan_public_read_only: bool,
     app: Option<tauri::AppHandle>,
+) -> Result<McpServerHandle, String> {
+    start_server_full(state, port, token, lan_enabled, lan_public_read_only, app, 0).await
+}
+
+/// Start the MCP HTTP server with optional idle timeout.
+///
+/// `idle_timeout_secs`: when > 0, the server shuts itself down after
+/// this many seconds without any MCP tool activity. Set to 0 (or use
+/// the simpler `start_server` / `start_server_with_activity`) to
+/// disable. Default for headless `npm run mcp` is 300 (5 min);
+/// disabled for app MCP.
+pub async fn start_server_full(
+    state: AppState,
+    port: u16,
+    token: String,
+    lan_enabled: bool,
+    lan_public_read_only: bool,
+    app: Option<tauri::AppHandle>,
+    idle_timeout_secs: u64,
 ) -> Result<McpServerHandle, String> {
     let ingest_sink: Arc<dyn IngestSink> = match app.as_ref() {
         Some(app_handle) => Arc::new(AppHandleIngestSink {
@@ -304,6 +323,42 @@ pub async fn start_server_with_activity(
     };
     let app = router::build(router_state);
 
+    // Idle timeout watchdog: when idle_timeout_secs > 0, a background
+    // task polls the activity snapshot and triggers shutdown when no MCP
+    // tool activity has occurred for the configured duration.
+    let idle_shutdown_tx = if idle_timeout_secs > 0 {
+        let idle_tx = shutdown_tx.clone();
+        let idle_activity = activity.clone();
+        let timeout = std::time::Duration::from_secs(idle_timeout_secs);
+        let poll_interval = std::time::Duration::from_secs(
+            (idle_timeout_secs / 4).clamp(5, 60),
+        );
+        Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(poll_interval).await;
+                let snap = idle_activity.snapshot();
+                let last_ms = snap.updated_at_ms;
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(last_ms));
+                if elapsed >= timeout {
+                    eprintln!(
+                        "[mcp] idle timeout ({idle_timeout_secs}s) reached — shutting down"
+                    );
+                    idle_activity.failed(format!(
+                        "MCP server shutting down after {idle_timeout_secs}s idle timeout."
+                    ));
+                    let _ = idle_tx.send(true);
+                    break;
+                }
+            }
+        }))
+    } else {
+        None
+    };
+
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, app);
         tokio::select! {
@@ -318,8 +373,12 @@ pub async fn start_server_with_activity(
                     shutdown_rx.changed().await.ok();
                 }
             } => {
-                // Graceful shutdown requested.
+                // Graceful shutdown requested (manual or idle timeout).
             }
+        }
+        // Cancel idle watchdog if it's still running.
+        if let Some(handle) = idle_shutdown_tx {
+            handle.abort();
         }
     });
 

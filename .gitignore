@@ -43,3 +43,5 @@ test-output.txt
 .scratch/
 /tmp-agent/
 /target-copilot-bench
+/crates/hive-relay/target
+/mcp-data/wiki

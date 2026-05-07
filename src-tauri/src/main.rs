@@ -46,5 +46,20 @@ fn main() {
         }
     }
 
+    // CLI flag: `terransoul --resume <name>` tells the headless MCP to
+    // resume a named session from the session registry instead of
+    // creating a new one.
+    {
+        let args: Vec<String> = std::env::args().collect();
+        if let Some(pos) = args.iter().position(|a| a == "--resume") {
+            if let Some(name) = args.get(pos + 1) {
+                // SAFETY: set before any other thread spawns.
+                unsafe {
+                    std::env::set_var("TERRANSOUL_MCP_RESUME", name);
+                }
+            }
+        }
+    }
+
     terransoul_lib::run()
 }

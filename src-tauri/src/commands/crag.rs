@@ -296,6 +296,8 @@ async fn try_web_fallback(query: &str, state: &AppState) -> Result<CragResult, S
             last_exported: None,
             updated_at: None,
             origin_device: None,
+            hlc_counter: None,
+            confidence: 1.0,
         })
         .collect();
 
@@ -380,6 +382,8 @@ mod tests {
             last_exported: None,
             updated_at: None,
             origin_device: None,
+            hlc_counter: None,
+            confidence: 1.0,
         };
         let mems = vec![make_mem("good"), make_mem("bad"), make_mem("meh")];
         let verdicts = vec![

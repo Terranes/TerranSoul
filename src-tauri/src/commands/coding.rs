@@ -1834,3 +1834,204 @@ mod tests {
         assert_eq!(rows[0].status, "completed");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Negative-memory backfill from coding-standards (Chunk 43.7)
+// ---------------------------------------------------------------------------
+
+/// Result of extracting negative-memory rules from a rules file.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExtractNegativesResult {
+    pub created: usize,
+    pub skipped: usize,
+    pub rules: Vec<String>,
+}
+
+/// Extract "never / don't / avoid" anti-pattern lines from
+/// `rules/coding-standards.md` and ingest them as negative memories with
+/// substring trigger patterns.
+///
+/// Idempotent — rules that already exist as negative memories (by exact
+/// content match) are skipped.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_extract_negatives(
+    state: State<'_, AppState>,
+) -> Result<ExtractNegativesResult, String> {
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let path = repo.join("rules/coding-standards.md");
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| format!("read coding-standards.md: {e}"))?;
+
+    let negatives = extract_negative_lines(&text);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    let rule_texts: Vec<String> = negatives.iter().map(|(r, _)| r.clone()).collect();
+
+    for (rule, triggers) in &negatives {
+        // Check if already exists by exact content match.
+        let exists: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM memories WHERE content = ?1 AND valid_to IS NULL)",
+                rusqlite::params![rule],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists {
+            skipped += 1;
+            continue;
+        }
+
+        let entry = store
+            .add(crate::memory::store::NewMemory {
+                content: rule.clone(),
+                tags: "negative,coding-standard,auto-extracted".to_string(),
+                importance: 4,
+                memory_type: crate::memory::store::MemoryType::Fact,
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())?;
+
+        // Set cognitive_kind to negative.
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET cognitive_kind = 'negative' WHERE id = ?1",
+                rusqlite::params![entry.id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Add trigger patterns.
+        for trigger in triggers {
+            crate::memory::negative::add_trigger(&store, entry.id, trigger, "substring")
+                .map_err(|e| e.to_string())?;
+        }
+
+        created += 1;
+    }
+
+    Ok(ExtractNegativesResult {
+        created,
+        skipped,
+        rules: rule_texts,
+    })
+}
+
+/// Parse coding-standards.md for lines containing "never", "don't",
+/// "do not", "avoid", "must not" indicators. Returns (rule_text, triggers).
+pub fn extract_negative_lines(text: &str) -> Vec<(String, Vec<String>)> {
+    let negative_indicators = [
+        "never ", "don't ", "do not ", "avoid ", "must not ", "must never ",
+        "- no ", "forbidden", "anti-pattern",
+    ];
+
+    let mut results = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim().trim_start_matches("- ").trim_start_matches("* ");
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('|') {
+            continue;
+        }
+        let lower = trimmed.to_lowercase();
+        let is_negative = negative_indicators.iter().any(|ind| lower.contains(ind));
+        if !is_negative {
+            continue;
+        }
+        // Extract meaningful keywords for triggers (words > 5 chars).
+        let triggers: Vec<String> = trimmed
+            .split_whitespace()
+            .filter(|w| {
+                let clean = w.trim_matches(|c: char| !c.is_alphanumeric());
+                clean.len() > 5
+                    && !matches!(
+                        clean.to_lowercase().as_str(),
+                        "never" | "don't" | "avoid" | "should" | "instead" | "always" | "before"
+                    )
+            })
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .take(3)
+            .collect();
+
+        if !triggers.is_empty() {
+            results.push((trimmed.to_string(), triggers));
+        }
+    }
+    results
+}
+
+#[cfg(test)]
+mod extract_negatives_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_never_lines() {
+        let text = "# Standards\n\n- Never use `.unwrap()` in library code\n- Use `thiserror` for errors\n- Don't hardcode hex colors\n";
+        let results = extract_negative_lines(text);
+        assert!(results.len() >= 2);
+        assert!(results.iter().any(|(r, _)| r.contains("unwrap")));
+    }
+
+    #[test]
+    fn skips_headers_and_empty() {
+        let text = "# Never skip tests\n\n\n";
+        let results = extract_negative_lines(text);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn extracts_triggers() {
+        let text = "- Never use placeholder implementations in production code\n";
+        let results = extract_negative_lines(text);
+        assert!(!results.is_empty());
+        let (_, triggers) = &results[0];
+        assert!(!triggers.is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-harness session import (Chunk 43.12)
+// ---------------------------------------------------------------------------
+
+use crate::coding::session_import::{self, DetectedHarness, Harness, ImportResult};
+
+/// Detect which AI coding harnesses have importable sessions.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_detect_harnesses() -> Result<Vec<DetectedHarness>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    Ok(session_import::detect_harnesses(&home))
+}
+
+/// Import sessions from a detected harness directory.
+///
+/// Parses all JSON/JSONL files, redacts secrets, and returns the
+/// structured turns for each session. The caller is responsible for
+/// feeding these through `brain_memory::extract_facts` if desired.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_import_sessions(
+    harness: String,
+) -> Result<Vec<ImportResult>, String> {
+    let h = parse_harness(&harness)?;
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let dir = home.join(h.relative_dir());
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let files = session_import::list_session_files(&dir);
+    let results: Vec<ImportResult> = files
+        .iter()
+        .map(|f| session_import::parse_transcript(h, f))
+        .collect();
+    Ok(results)
+}
+
+fn parse_harness(s: &str) -> Result<Harness, String> {
+    match s {
+        "claude" => Ok(Harness::Claude),
+        "codex" => Ok(Harness::Codex),
+        "opencode" => Ok(Harness::OpenCode),
+        "cursor" => Ok(Harness::Cursor),
+        "copilot_cli" => Ok(Harness::CopilotCli),
+        _ => Err(format!("unknown harness: {s}")),
+    }
+}

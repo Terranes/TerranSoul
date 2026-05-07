@@ -182,6 +182,17 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
                 "required": ["content"]
             }
         }),
+        json!({
+            "name": "brain_review_gaps",
+            "description": "List recent memory gaps — queries where retrieval found no good match. Returns gaps with context snippet and timestamp.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "limit": { "type": "integer", "description": "Max gaps to return (1-100, default 20)" },
+                    "dismiss": { "type": "integer", "description": "Gap ID to dismiss (deletes the gap). If set, other params are ignored." }
+                }
+            }
+        }),
     ];
 
     if caps.code_read {
@@ -232,7 +243,7 @@ pub async fn dispatch(
             let id = args["id"]
                 .as_i64()
                 .ok_or_else(|| "missing required param: id".to_string())?;
-            gw.get_entry(caps, id)
+            gw.get_entry_detail(caps, id)
                 .await
                 .map(|e| serde_json::to_string(&e).unwrap_or_default())
                 .map_err(|e| e.to_string())
@@ -333,6 +344,24 @@ pub async fn dispatch(
         | "brain_wiki_revisit"
         | "brain_wiki_digest_text" => dispatch_brain_wiki_tool(caps, tool_name, args, app_state),
 
+        "brain_review_gaps" => {
+            let app = app_state.ok_or("brain_review_gaps requires app state")?;
+            let store = app.memory_store.lock().map_err(|e| e.to_string())?;
+
+            // Dismiss mode.
+            if let Some(gap_id) = args["dismiss"].as_i64() {
+                let removed = crate::memory::gap_detection::dismiss_gap(&store, gap_id)
+                    .map_err(|e| e.to_string())?;
+                return serde_json::to_string(&serde_json::json!({ "dismissed": removed }))
+                    .map_err(|e| e.to_string());
+            }
+
+            let limit = clamp_limit(args, 20, 100);
+            let gaps = crate::memory::gap_detection::list_recent_gaps(&store, limit)
+                .map_err(|e| e.to_string())?;
+            serde_json::to_string(&gaps).map_err(|e| e.to_string())
+        }
+
         // ─── Code-intelligence tools (native symbol index) ────────────
         "code_query"
         | "code_context"
@@ -344,6 +373,7 @@ pub async fn dispatch(
         | "code_add_repo_to_group"
         | "code_group_status"
         | "code_extract_contracts"
+        | "code_extract_negatives"
         | "code_list_group_contracts"
         | "code_cross_repo_query" => dispatch_code_tool(caps, tool_name, args, app_state).await,
 
@@ -572,6 +602,14 @@ fn code_tool_definitions() -> Vec<Value> {
             }
         }),
         json!({
+            "name": "code_extract_negatives",
+            "description": "Extract anti-pattern rules from rules/coding-standards.md and ingest them as negative memories with substring trigger patterns. Idempotent — existing rules are skipped.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {}
+            }
+        }),
+        json!({
             "name": "code_list_group_contracts",
             "description": "List all extracted contracts for the repos in a group.",
             "inputSchema": {
@@ -668,6 +706,62 @@ async fn dispatch_code_tool(
             };
             let result = crate::coding::repo_groups::extract_contracts(&data_dir, repo_id)
                 .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
+        }
+        "code_extract_negatives" => {
+            let app = app_state.ok_or("code_extract_negatives requires app state")?;
+            let repo_root = crate::coding::repo::guess_repo_root(&app.data_dir);
+            let path = repo_root.join("rules/coding-standards.md");
+            let text = std::fs::read_to_string(&path)
+                .map_err(|e| format!("read coding-standards.md: {e}"))?;
+            let negatives = crate::commands::coding::extract_negative_lines(&text);
+            let store = app.memory_store.lock().map_err(|e| e.to_string())?;
+
+            let mut created = 0usize;
+            let mut skipped = 0usize;
+            let rule_texts: Vec<String> = negatives.iter().map(|(r, _)| r.clone()).collect();
+
+            for (rule, triggers) in &negatives {
+                let exists: bool = store
+                    .conn
+                    .query_row(
+                        "SELECT EXISTS(SELECT 1 FROM memories WHERE content = ?1 AND valid_to IS NULL)",
+                        rusqlite::params![rule],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                if exists {
+                    skipped += 1;
+                    continue;
+                }
+                let entry = store
+                    .add(crate::memory::store::NewMemory {
+                        content: rule.clone(),
+                        tags: "negative,coding-standard,auto-extracted".to_string(),
+                        importance: 4,
+                        memory_type: crate::memory::store::MemoryType::Fact,
+                        ..Default::default()
+                    })
+                    .map_err(|e| e.to_string())?;
+                store
+                    .conn
+                    .execute(
+                        "UPDATE memories SET cognitive_kind = 'negative' WHERE id = ?1",
+                        rusqlite::params![entry.id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                for trigger in triggers {
+                    crate::memory::negative::add_trigger(&store, entry.id, trigger, "substring")
+                        .map_err(|e| e.to_string())?;
+                }
+                created += 1;
+            }
+
+            let result = serde_json::json!({
+                "created": created,
+                "skipped": skipped,
+                "rules": rule_texts,
+            });
             return serde_json::to_string(&result).map_err(|e| e.to_string());
         }
         "code_list_group_contracts" => {
@@ -1646,14 +1740,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 9);
+        assert_eq!(defs.len(), 15);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 21);
+        assert_eq!(defs.len(), 28);
     }
 
     #[test]
@@ -1683,6 +1777,12 @@ mod tests {
             "brain_ingest_url",
             "brain_health",
             "brain_failover_status",
+            "brain_wiki_audit",
+            "brain_wiki_spotlight",
+            "brain_wiki_serendipity",
+            "brain_wiki_revisit",
+            "brain_wiki_digest_text",
+            "brain_review_gaps",
         ];
         assert_eq!(names, expected);
     }
@@ -1691,7 +1791,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[9..]
+        let code_names: Vec<&str> = defs[15..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();
@@ -1706,6 +1806,7 @@ mod tests {
             "code_add_repo_to_group",
             "code_group_status",
             "code_extract_contracts",
+            "code_extract_negatives",
             "code_list_group_contracts",
             "code_cross_repo_query",
         ];

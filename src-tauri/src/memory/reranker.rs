@@ -247,6 +247,8 @@ mod tests {
             last_exported: None,
             updated_at: None,
             origin_device: None,
+            hlc_counter: None,
+            confidence: 1.0,
         }
     }
 

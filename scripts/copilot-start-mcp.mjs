@@ -7,6 +7,16 @@ const repoRoot = process.cwd()
 const port = Number.parseInt(process.env.TERRANSOUL_MCP_PORT ?? '7423', 10)
 const waitSeconds = Number.parseInt(process.argv.find((arg) => /^\d+$/.test(arg)) ?? '240', 10)
 const smoke = process.argv.includes('--smoke')
+
+// --resume <name> : pass a memorable session name to the MCP binary so
+// it resumes prior context instead of starting a fresh session.
+const resumeIdx = process.argv.indexOf('--resume')
+const resumeName = resumeIdx >= 0 ? process.argv[resumeIdx + 1] ?? null : null
+
+// --idle-timeout <secs> : override the default 300s idle timeout.
+// 0 disables idle timeout entirely.
+const idleIdx = process.argv.indexOf('--idle-timeout')
+const idleTimeout = idleIdx >= 0 ? process.argv[idleIdx + 1] ?? '300' : '300'
 const maxLogBytes = 1024 * 1024
 const logPath = process.env.TERRANSOUL_MCP_LOG ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.log')
 const pidPath = process.env.TERRANSOUL_MCP_PID ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.pid')
@@ -178,10 +188,19 @@ if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
   }
 }
 
-const child = spawn(mcpBinary, ['--mcp-tray'], {
+const childArgs = ['--mcp-tray']
+if (resumeName) childArgs.push('--resume', resumeName)
+
+const childEnv = {
+  ...process.env,
+  TERRANSOUL_MCP_PORT: String(port),
+  TERRANSOUL_MCP_IDLE_TIMEOUT: idleTimeout,
+}
+
+const child = spawn(mcpBinary, childArgs, {
   cwd: repoRoot,
   detached: true,
-  env: { ...process.env, TERRANSOUL_MCP_PORT: String(port) },
+  env: childEnv,
   stdio: ['ignore', log, log],
 })
 child.unref()

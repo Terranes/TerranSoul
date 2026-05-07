@@ -180,12 +180,22 @@ async fn retrieve_prompt_memories(
         scores.push(agent.rerank_score(query, &candidate.content).await);
     }
 
-    crate::memory::reranker::rerank_candidates_with_threshold(
+    let reranked = crate::memory::reranker::rerank_candidates_with_threshold(
         candidates,
         &scores,
         limit,
         rerank_threshold,
-    )
+    );
+
+    // Record reinforcement for entries that survived reranking (43.4).
+    if let Ok(store) = app_state.memory_store.lock() {
+        let session_id = format!("chat_{}", crate::memory::store::now_ms());
+        for (idx, entry) in reranked.iter().enumerate() {
+            let _ = store.record_reinforcement(entry.id, &session_id, idx as i64);
+        }
+    }
+
+    reranked
 }
 
 /// Retrieve relevant judgment rules for the current message and format

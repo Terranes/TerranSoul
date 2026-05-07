@@ -313,6 +313,13 @@ pub struct AppSettings {
     #[serde(default)]
     pub data_root: Option<String>,
 
+    /// Optional Hive relay URL (gRPC endpoint, e.g. `http://relay.example.com:50051`).
+    /// When set, the app participates in hive federation — sharing
+    /// `hive`-scoped memories and processing distributed jobs.
+    /// When `None` (default), hive features are invisible.
+    #[serde(default)]
+    pub hive_url: Option<String>,
+
     /// Layout style for Obsidian vault export.
     #[serde(default)]
     pub obsidian_layout: ObsidianLayout,
@@ -458,6 +465,7 @@ impl Default for AppSettings {
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
             max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
             data_root: None,
+            hive_url: None,
             obsidian_layout: ObsidianLayout::Flat,
         }
     }
@@ -635,6 +643,7 @@ mod tests {
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
             max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
             data_root: None,
+            hive_url: None,
             obsidian_layout: ObsidianLayout::Flat,
         };
         let json = serde_json::to_string(&s).unwrap();

@@ -2,7 +2,7 @@
 -- Applied on first `npm run mcp` when memory.db does not exist yet.
 -- Contains architectural knowledge so agents can be productive immediately.
 --
--- Schema: see src-tauri/src/memory/schema.rs (version 15)
+-- Schema: see src-tauri/src/memory/schema.rs (version 19)
 -- Fields: content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category, cognitive_kind
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
@@ -137,7 +137,7 @@ VALUES
 -- ====================================================================
 -- Design docs (one-line summaries)
 -- ====================================================================
-('Design docs (docs/) and tutorials (tutorials/): AI-coding-integrations.md (MCP/gRPC for VS Code Copilot/Cursor/Codex/Claude Code), brain-advanced-design.md (brain architecture + schema + RAG pipeline + roadmap, kept in sync with code), tutorials/charisma-teaching-tutorial.md, tutorials/teaching-animations-expressions-persona-tutorial.md (user-facing capture flow for expressions, motions, persona quirks), tutorials/self-improve-to-pr-tutorial.md (Promote → workflow plan → coder/tester/reviewer → open PR → wait for review), coding-workflow-design.md (self-improve), gitnexus-capability-matrix.md, licensing-audit.md, llm-animation-research.md, momask-full-body-retarget-research.md, motion-model-inference-evaluation.md (MotionGPT/T2M-GPT eval), tutorials/multi-agent-workflows-tutorial.md, tutorials/lan-mcp-sharing-tutorial.md, tutorials/brain-rag-setup-tutorial.md, tutorials/brain-rag-local-lm-tutorial.md, tutorials/openclaw-plugin-tutorial.md, neural-audio-to-face-evaluation.md, offline-motion-polish-research.md, persona-design.md + persona-pack-schema.md, plugin-development.md, teachable-capabilities.md.', 'docs,tutorials,inventory,design', 4, 'fact', 1746316800000, 'long', 1.0, 110, 'docs'),
+('Design docs (docs/) and tutorials (tutorials/): docs/ contains AI-coding-integrations.md, brain-advanced-design.md, coding-workflow-design.md, DESIGN.md, gitnexus-capability-matrix.md, hive-protocol.md, licensing-audit.md, llm-animation-research.md, momask-full-body-retarget-research.md, motion-model-inference-evaluation.md, neural-audio-to-face-evaluation.md, offline-motion-polish-research.md, persona-design.md, persona-pack-schema.md, plugin-development.md, teachable-capabilities.md. tutorials/ has 18 files: quick-start, brain-rag-setup, brain-rag-local-lm, voice-setup, skill-tree-quests, advanced-memory-rag, knowledge-wiki, folder-to-knowledge-graph, teaching-animations-expressions-persona, charisma-teaching, device-sync-hive, lan-mcp-sharing, mcp-coding-agents, multi-agent-workflows, packages-plugins, browser-mobile, self-improve-to-pr, openclaw-plugin (all *-tutorial.md).', 'docs,tutorials,inventory,design', 4, 'fact', 1746316800000, 'long', 1.0, 110, 'docs'),
 
 -- ====================================================================
 -- Rules (one-line summaries)
@@ -1157,12 +1157,12 @@ WHERE s.content LIKE 'MCP BRAIN WIKI SURFACE IMPLEMENTED (2026-05-06):%'
 
 -- ====================================================================
 -- Benchmarking guide (docs/benchmarking.md)
--- Synced: 2026-05-06
+-- Synced: 2026-05-07
 -- ====================================================================
 
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'BENCHMARK DOC (2026-05-06): docs/benchmarking.md is the operator guide for TerranSoul Criterion benches. It documents the Million-memory benchmark (src-tauri/benches/million_memory.rs): smoke command "cargo bench --bench million_memory --target-dir ../target-copilot-bench" (10k vectors, no feature), full command adds "--features bench-million" (1M vectors), env knobs TS_BENCH_SCALES, TS_BENCH_FORCE_LARGE, TS_BENCH_OUTPUT_DIR, JSON report at src-tauri/target/bench-results/million_memory.json with machine/hnsw/linear_backend/capacity sections, hard thresholds p50<=30ms, p95<=60ms, p99<=100ms, capacity 1.05x->0.95x <=30s. The doc also gives the canonical recipe for adding a new bench: add [[bench]] with harness=false and required-features in src-tauri/Cargo.toml, gate heavy tier behind a bench-* feature flag, use deterministic xoshiro seeds, write JSON to target/bench-results/<name>.json (never in source tree), honour TS_BENCH_SCALES/FORCE_LARGE/OUTPUT_DIR, assert thresholds in main, never kill the running MCP terminal, always use --target-dir ../target-copilot-bench on Windows so the live terransoul.exe is not relocked, and sync results to README.md + docs/brain-advanced-design.md (brain doc-sync rule) + this seed file.',
+  'BENCHMARK DOC (2026-05-07): docs/benchmarking.md is the operator guide for TerranSoul Criterion benches. It documents the Million-memory benchmark (src-tauri/benches/million_memory.rs): smoke command "cargo bench --bench million_memory --target-dir ../target-copilot-bench" (10k vectors, no feature), full command adds "--features bench-million" (1M vectors), CRUD-only command sets TS_BENCH_CRUD_ONLY=1 with TS_BENCH_TIMEOUT_SECS and optional TS_BENCH_SCALES=1000000, env knobs TS_BENCH_SCALES, TS_BENCH_CRUD_ONLY, TS_BENCH_TIMEOUT_SECS, TS_BENCH_FORCE_LARGE, TS_BENCH_OUTPUT_DIR, JSON report at src-tauri/target/bench-results/million_memory.json with machine/hnsw/linear_backend/capacity/crud sections, hard thresholds HNSW p50<=30ms, p95<=60ms, p99<=100ms, capacity 1.05x->0.95x <=30s, and CRUD 1M write<=60s/read<=5s. It records the 2026-05-07 CRUD reference: write 7.27s, read 2.13s, update 2.58s, mixed 10k ops in 160.03s, delete skipped at 1M benchmark scale. The doc also gives the canonical recipe for adding a new bench: add [[bench]] with harness=false and required-features in src-tauri/Cargo.toml, gate heavy tier behind a bench-* feature flag, use deterministic xoshiro seeds, write JSON to target/bench-results/<name>.json, honour env knobs, assert thresholds in main, never kill the running MCP terminal, always use --target-dir ../target-copilot-bench on Windows, and sync results to README.md + docs/brain-advanced-design.md + this seed file.',
   'docs,benchmarking,benchmark,criterion,million-memory,how-to,terransoul',
   9, 'fact', 1746489600000, 'long', 1.0, 'docs', 'semantic'
 );
@@ -1170,7 +1170,7 @@ VALUES (
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
 SELECT s.id, d.id, 'documents', 1.0, 'seed', 1746489600000, 'seed'
 FROM memories s, memories d
-WHERE s.content LIKE 'BENCHMARK DOC (2026-05-06):%'
+WHERE s.content LIKE 'BENCHMARK DOC (2026-05-07):%'
   AND d.content LIKE 'CHUNK 38.5%';
 
 -- ====================================================================
@@ -1196,7 +1196,7 @@ INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source
 SELECT s.id, d.id, 'documents', 1.0, 'seed', 1746489600000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'TUTORIAL FOLDER->KG (2026-05-06):%'
-  AND d.content LIKE 'BENCHMARK DOC (2026-05-06):%';
+  AND d.content LIKE 'BENCHMARK DOC (2026-05-07):%';
 
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
 SELECT s.id, d.id, 'measures', 1.0, 'seed', 1746489600000, 'seed'
@@ -1219,14 +1219,14 @@ VALUES (
 );
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'MILLION-KNOWLEDGE CRUD AUDIT (2026-05-06): TerranSoul memory store today already has SQLite WAL + foreign_keys, V15 schema with eviction-friendly indexes, usearch HNSW with brute-force fallback, capacity eviction with scored single-statement DELETE, embedding retry queue with exponential backoff, memory_versions snapshots, contradiction detection, semantic chunker, late-chunking pooling helper, contextual retrieval prefix, Criterion 10k smoke / 1M full bench, ingest semaphore. Confirmed bottlenecks for 1M+ optimal CRUD: (1) per-row INSERT loop in commands/ingest.rs and add_memory_inner, (2) PRAGMAs cache_size / mmap_size / temp_store / page_size / journal_size_limit / wal_autocheckpoint left at defaults, (3) inconsistent prepare_cached, (4) get_all() / get_with_embeddings() called on every hybrid_search and relevant_for which loads ~3 GB at 1M x 768d, (5) MemoryStore::update never invalidates embedding nor removes the row from HNSW when content changes, (6) HNSW SAVE_INTERVAL=50 causes ~20k full saves during 1M bulk insert, (7) single global ANN regresses to brute-force on dimension drift, (8) no add_many / update_many / delete_many APIs, (9) FTS5 + KG indexes need verification at 1M rows.',
+  'MILLION-KNOWLEDGE CRUD AUDIT STATE (updated 2026-05-07): TerranSoul memory store has SQLite WAL + tuned Phase 41.1 PRAGMAs, V15 schema with eviction-friendly indexes, usearch HNSW with brute-force fallback, capacity eviction, embedding retry queue, memory_versions, contradiction detection, semantic chunker, late chunking, contextual retrieval, Criterion 10k/1M bench, ingest semaphore, Phase 41.4 transactional add_many, Phase 41.2 per-op metrics, and Phase 41.3 bounded CRUD benchmark sections. Resolved from the original audit: PRAGMA defaults, missing add_many, missing per-op metrics, and unbounded benchmark stalls. Remaining 1M+ optimization work: route high-level ingest fully through bulk APIs, remove get_all/get_with_embeddings from hot search paths, re-embed and tombstone ANN entries on content update, reduce HNSW save-every-50-op churn, support per-model/dim ANN registries, add cursor reads/quantization/tombstone compaction, and verify FTS/KG indexes at 1M rows.',
   'audit,memory-store,million-scale,bottlenecks,phase-41,non-negotiable',
   10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'semantic'
 );
 
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'PHASE 41 PLAN (2026-05-06) — Million-Knowledge CRUD: 15 ordered chunks across 6 sub-phases. A. Foundations: 41.1 SQLite write-path tuning + FTS5 verification (cache_size=-65536, mmap_size=256 MiB, temp_store=MEMORY, busy_timeout=5000, journal_size_limit=64 MiB, wal_autocheckpoint=1000, page_size=8192 on fresh DBs); 41.2 per-op latency histograms surfaced via brain_health; 41.3 extend million_memory bench with bulk_insert/bulk_update_reembed/bulk_delete/mixed_crud_workload at 10k/100k/1M. B. Bulk CRUD: 41.4 transactional add_many/update_many/delete_many with prepare_cached and batched FTS/ANN sync; 41.5 cursor reads to remove get_all() from hybrid_search/hybrid_search_rrf/relevant_for/find_duplicate. C. Embeddings: 41.6 re-embed on content update + ANN tombstone + enqueue; 41.7 embedding worker concurrency + rate limiting + pause-on-429 + graceful shutdown; 41.8 V16 schema multi-model embeddings with memory_embeddings side table and AnnRegistry keyed by (model_id, dim). D. ANN: 41.9 usearch i8 quantization (optional b1) with recall budget; 41.10 memory-mapped HNSW + debounced async flush replacing SAVE_INTERVAL=50; 41.11 ANN compaction / tombstone GC tied to maintenance scheduler. E. Indexes/KG: 41.12 partial indexes idx_memories_long_embedded WHERE tier=long AND embedding IS NOT NULL, idx_memories_active WHERE valid_to IS NULL, idx_pending_due, idx_memories_session_recent, plus PRAGMA optimize on open and periodic ANALYZE; 41.13 bounded KG traversal + LRU cache for brain_kg_neighbors with edge-event invalidation. F. Sharding/snapshots: 41.14 optional time-bucketed shards via ATTACH DATABASE; 41.15 online VACUUM INTO + ANN save + manifest snapshot/restore. Each chunk must keep the Full CI Gate green and extend benches/million_memory.rs where relevant. State of the art consulted through May 2026: HNSW (Malkov 2018), DiskANN/SPANN (Microsoft 2019, 2021), Matryoshka embeddings (Kusupati 2022), int8/binary quantization (Cohere 2024), late chunking (Günther 2024), Contextual Retrieval (Anthropic 2024), RRF fusion (Cormack 2009).',
+  'PHASE 41 CURRENT PLAN (updated 2026-05-07) — Million-Knowledge CRUD: completed chunks are 41.1 SQLite write-path tuning + FTS5 verification, 41.4 transactional add_many/update_many/delete_many, 41.2 per-op latency histograms surfaced through get_memory_metrics and MCP health, and 41.3 extended million_memory CRUD benchmarking with TS_BENCH_TIMEOUT_SECS guards, bounded mixed workload, and explicit 1M delete skip. Headline 1M write/read SLO is green: latest CRUD-only run wrote 1M in 7.27s and read 1M in 2.13s. Remaining chunks are production-hardening work, not blockers for the headline target: 41.5 cursor reads to remove get_all/get_with_embeddings from hybrid_search/hybrid_search_rrf/relevant_for/find_duplicate; 41.6 re-embed on content update + ANN tombstone + enqueue; 41.7 embedding worker concurrency + rate limiting + pause-on-429 + graceful shutdown; 41.8 V16 multi-model embeddings with memory_embeddings and AnnRegistry keyed by (model_id, dim); 41.9 usearch i8 quantization with recall budget; 41.10 memory-mapped HNSW + debounced async flush replacing SAVE_INTERVAL=50; 41.11 ANN compaction/tombstone GC; 41.12 partial indexes + PRAGMA optimize/ANALYZE; 41.13 bounded KG traversal + LRU cache; 41.14 optional time-bucketed shards; 41.15 online VACUUM INTO + ANN save + manifest snapshot/restore. Each remaining chunk must keep the Full CI Gate green and extend benches/million_memory.rs where relevant.',
   'plan,phase-41,million-scale,chunks,ann,sqlite,embedding,sharding,non-negotiable',
   10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'procedural'
 );
@@ -1235,8 +1235,8 @@ INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source
 SELECT plan.id, audit.id, 'derived_from', 1.0, 'seed', 1746489600000, 'seed'
 FROM memories plan
 CROSS JOIN memories audit
-WHERE plan.content LIKE 'PHASE 41 PLAN (2026-05-06)%'
-  AND audit.content LIKE 'MILLION-KNOWLEDGE CRUD AUDIT (2026-05-06)%';
+WHERE plan.content LIKE 'PHASE 41 CURRENT PLAN (updated 2026-05-07)%'
+  AND audit.content LIKE 'MILLION-KNOWLEDGE CRUD AUDIT STATE (updated 2026-05-07)%';
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
   'DB STRATEGY VERDICT (2026-05-06): SQLite is NOT a bottleneck for TerranSoul as the local engine, even at 1M+ memories and on offline mobile. After Phase 41 tuning, the companion is CPU/embedding-bound long before SQLite-bound. SQLite IS the wrong shape for "hive" multi-user federation and distributed jobs. Final posture is two-layer storage: (1) Local layer on every device (desktop + iOS + Android) keeps tuned SQLite + WAL as authoritative source of truth; pure-Rust ANN fallback ships on mobile because usearch C++ build is fragile there; (2) Sync layer between a single user own devices promotes memories + KG edges to CRDTs (LWW for memory rows, 2P-Set/OR-Set for edges) replicated as op-logs over the existing QUIC/WS LinkManager — no server required; (3) Hive layer is opt-in: a reference Tonic gRPC relay backed by Postgres + pgvector accepts Ed25519-signed knowledge bundles, runs a job queue, and federates only when configured. The local app never depends on the hive. Reject standalone vector services (Qdrant/Milvus/Pinecone) for the local app per existing decision (brain-advanced-design.md row 18). Keep usearch HNSW locally; pgvector HNSW on the hive layer. Existing alt backends (postgres.rs/mssql.rs/cassandra.rs) currently lack RRF / FTS5 / KG / contextual-retrieval parity; bringing Postgres to parity is a hive prerequisite. Memory store rows already carry updated_at + origin_device columns but no merge function — wire that.',
@@ -1259,7 +1259,7 @@ WHERE plan.content LIKE 'PHASE 42 PLAN (2026-05-06)%'
   AND verdict.content LIKE 'DB STRATEGY VERDICT (2026-05-06)%';
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'PHASE 41 RESULT (2026-05-07): chunks 41.1 (SQLite PRAGMA tuning) and 41.4 (transactional add_many) shipped together. Measured on commodity dev hardware via cargo bench --bench million_memory: 10k smoke write 0.04s @ 244,657 rows/s, read 0.01s @ 939,956 rows/s. 1M full (TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1) write 6.37s @ 157,031 rows/s, read 1.84s @ 544,704 rows/s. The Phase 41 headline target of 1M write under 60s and 1M read under 5s is met by ~10x and ~3x respectively, on top of 41.1 + 41.4 alone. Remaining Phase 41 chunks (41.2 metrics, 41.3 update/delete bench, 41.5 cursor reads, 41.6 re-embed on update, 41.7 worker concurrency, 41.8 multi-model embeddings, 41.9-41.11 ANN scaling, 41.12-41.13 indexes/KG, 41.14-41.15 sharding/snapshot) remain valuable for production hardening but are no longer blocking the headline throughput goal. Implementation notes: add_many uses prepare_cached + single transaction, returns Vec<i64> of assigned ids, takes &mut self. PRAGMAs applied: journal_mode=WAL, synchronous=NORMAL, foreign_keys=ON, cache_size=-65536, mmap_size=268435456, temp_store=MEMORY, busy_timeout=5000, wal_autocheckpoint=1000, journal_size_limit=67108864. FTS5 verification deferred — schema.rs does not declare an FTS5 virtual table today.',
+  'PHASE 41 RESULT (2026-05-07): chunks 41.1 (SQLite PRAGMA tuning), 41.4 (transactional add_many), 41.2 (per-op metrics), and 41.3 (extended CRUD bench + timeout guards) shipped. Measured on commodity dev hardware via cargo bench --bench million_memory: 10k smoke write 0.04s @ 244,657 rows/s, read 0.01s @ 939,956 rows/s. 1M CRUD-only runs (TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1) keep the headline target green; latest bounded run wrote 1M in 7.27s @ 137,521 rows/s and read 1M in 2.13s @ 469,036 rows/s, with update 2.58s @ 387,042 rows/s and mixed 10k ops in 160.03s. Million-scale benchmark delete is skipped because secondary-index maintenance dominates wall-clock and is not part of the write/read SLO. Remaining Phase 41 chunks (41.5 cursor reads, 41.6 re-embed on update, 41.7 worker concurrency, 41.8 multi-model embeddings, 41.9-41.11 ANN scaling, 41.12-41.13 indexes/KG, 41.14-41.15 sharding/snapshot) remain valuable for production hardening but are no longer blocking the headline throughput goal.',
   'phase-41,result,bench,million,sqlite,add_many,pragma,measured,non-negotiable',
   10, 'fact', 1746576000000, 'long', 1.0, 'memory', 'episodic'
 );
@@ -1269,4 +1269,182 @@ SELECT result.id, plan.id, 'fulfills', 1.0, 'seed', 1746576000000, 'seed'
 FROM memories result
 CROSS JOIN memories plan
 WHERE result.content LIKE 'PHASE 41 RESULT (2026-05-07)%'
-  AND plan.content LIKE 'PHASE 41 PLAN (2026-05-06)%';
+  AND plan.content LIKE 'PHASE 41 CURRENT PLAN (updated 2026-05-07)%';
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 41.2/41.3 LESSON (2026-05-07): added per-op MemoryMetrics histograms/timers for memory CRUD and retrieval, exposed via get_memory_metrics and MCP health metrics. The million_memory CRUD bench now includes update/mixed/delete sections with hard timeout guards (TS_BENCH_TIMEOUT_SECS, default 300) so runs cannot appear infinite. At 1M scale, write/read remain the headline SLO and stay comfortably under 60s/5s; mixed workload can be much slower due to post-write index pressure, and benchmark delete is skipped at 1M because secondary-index maintenance dominates runtime and is not representative of the write/read objective.',
+  'phase-41,chunk-41.2,chunk-41.3,metrics,benchmark,timeout,million-memory,sqlite',
+  10, 'fact', 1746579600000, 'long', 1.0, 'memory', 'episodic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT newer.id, older.id, 'related_to', 1.0, 'auto', 1746579600000, 'auto'
+FROM memories newer
+CROSS JOIN memories older
+WHERE newer.content LIKE 'PHASE 41.2/41.3 LESSON (2026-05-07)%'
+  AND older.content LIKE 'PHASE 41 RESULT (2026-05-07)%';
+
+-- ====================================================================
+-- Phase 42 Section D completion (Hive federation) — 2026-05-07
+-- ====================================================================
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 42 COMPLETE (2026-05-07): all 12 chunks shipped across 4 sub-phases. A. Mobile-safe local engine (42.1-42.2): feature-gated pure-Rust ANN fallback, mobile SQLite/WAL. B. Memory CRDT (42.3-42.5): LWW rows with HLC+origin_device, 2P-Set edges, op-log replication over LinkManager. C. Distributed backend parity (42.6-42.8): Postgres RRF+FTS+KG+contextual parity, pgvector HNSW, CI test matrix. D. Hive layer (42.9-42.12): protocol spec in docs/hive-protocol.md (BUNDLE/OP/JOB, Ed25519-signed envelopes, MessagePack+LZ4), reference relay server in crates/hive-relay/ (Tonic gRPC + Postgres, docker-compose), job queue with capability matching in src-tauri/src/hive/jobs.rs, privacy policy engine in src-tauri/src/hive/privacy.rs (share_scope private/paired/hive, filter_bundle, default_scope_for_kind), schema v19 adds share_scope column. 2383 Rust + 1738 TS tests green, clippy clean.',
+  'phase-42,complete,hive,federation,crdt,mobile,postgres,privacy,share_scope,non-negotiable',
+  10, 'fact', 1746662400000, 'long', 1.0, 'memory', 'episodic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT result.id, plan.id, 'fulfills', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories result
+CROSS JOIN memories plan
+WHERE result.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%'
+  AND plan.content LIKE 'PHASE 42 PLAN (2026-05-06)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT result.id, verdict.id, 'fulfills', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories result
+CROSS JOIN memories verdict
+WHERE result.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%'
+  AND verdict.content LIKE 'DB STRATEGY VERDICT (2026-05-06)%';
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'HIVE MODULE MAP (2026-05-07): src-tauri/src/hive/ contains 4 sub-modules. protocol.rs: wire types (HiveEnvelope, MsgType, ShareScope, Bundle, MemoryDelta, EdgeDelta, Op, OpTarget, OpDelta, JobSpec, JobStatus, Capability). signing.rs: Ed25519 sign/verify for envelopes using identity/ device keys, sign_input format is version(1)||msg_type(1)||sender_id(var)||timestamp(8 LE)||hlc_counter(8 LE)||payload(var). jobs.rs: JobHandler trait, JobDispatcher (register_handler, can_execute_locally, execute_local, dispatch), capabilities_match AND-logic. privacy.rs: filter_bundle(bundle, target), default_scope_for_kind(), apply_default_scopes(), scope_satisfies() — private never leaves device, paired only to own devices, hive to relay.',
+  'hive,module-map,protocol,signing,jobs,privacy,architecture,terransoul',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT newer.id, completion.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories newer
+CROSS JOIN memories completion
+WHERE newer.content LIKE 'HIVE MODULE MAP (2026-05-07)%'
+  AND completion.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%';
+
+-- ====================================================================
+-- README rewrite + MCP-as-differentiator positioning (2026-05-07)
+-- ====================================================================
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'README REWRITE (2026-05-07): README.md was rewritten from 587 lines to ~153 lines following OpenClaw-style concise landing page pattern. Structure: title + badges + elevator pitch, Install table, Quick Start, Key Differentiator (MCP Brain), Highlights (bullet list), Tech Stack, Brain Modes, MCP Tools table, Tutorials table, Security, Development commands, Architecture diagram, Contact. The key differentiator section prominently positions TerranSoul MCP self-running brain as the feature that makes other AI coding agents smarter — giving them persistent memory, semantic search, code intelligence, and self-improvement across sessions.',
+  'readme,documentation,mcp,differentiator,openclaw-style,concise,landing-page',
+  9, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'KEY DIFFERENTIATOR POSITIONING (2026-05-07): TerranSoul unique value vs other AI companions is the self-running MCP brain server (npm run mcp on 127.0.0.1:7423) that exposes persistent memory, semantic search (RRF+HyDE+reranker over 1M+ entries), knowledge graph, and code intelligence to ANY external AI coding agent (VS Code Copilot, Claude Code, Cursor, Codex). This gives agents: project memory across sessions, 10-50x context reduction via focused retrieval, self-improvement (agents write learnings back), and code intelligence (symbol index, impact analysis). Auto-starts when VS Code opens the workspace.',
+  'mcp,differentiator,positioning,marketing,readme,coding-agents,self-improve',
+  9, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'TUTORIALS INDEX (2026-05-07): 18 tutorials in tutorials/ covering: quick-start, brain-rag-setup, brain-rag-local-lm, voice-setup, skill-tree-quests, advanced-memory-rag, knowledge-wiki, folder-to-knowledge-graph, teaching-animations-expressions-persona, charisma-teaching, device-sync-hive, lan-mcp-sharing, mcp-coding-agents, multi-agent-workflows, packages-plugins, browser-mobile, self-improve-to-pr, openclaw-plugin. Each follows rules/tutorial-template.md structure. README links all 18 in a Tutorials table.',
+  'tutorials,documentation,index,readme,18-tutorials',
+  8, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
+);
+
+-- ====================================================================
+-- jcode reverse-engineering research + Phase 43 plan (2026-05-07)
+-- ====================================================================
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'JCODE RESEARCH RECORD (2026-05-07): reverse-engineered 1jehuang/jcode (MIT, github.com/1jehuang/jcode) via DeepWiki and four upstream architecture docs (AMBIENT_MODE.md, MEMORY_ARCHITECTURE.md, SAFETY_SYSTEM.md, SWARM_ARCHITECTURE.md, SERVER_ARCHITECTURE.md). Full analysis in docs/jcode-research.md. License is MIT so we may study patterns freely; we still implement everything natively under neutral TerranSoul names. jcode is a Rust TUI agent harness with 4 design pillars: (1) persistent server-process owning provider auth/sessions/swarm/memory/MCP-pool, lightweight clients attach via Unix socket, sessions named adjective+animal, hot-reload via exec(), cross-harness resume from Claude Code/Codex/OpenCode. (2) Ambient mode: agentic background loop with garden/scout/work tools, mandatory end_cycle, adaptive rate-limit-aware scheduler, persistent scheduled queue, single-instance guard, crash safety. (3) Graph-first memory: cascade BFS retrieval through tag/cluster/semantic edges after embedding hits with depth-decayed edge-weighted scoring, per-category confidence half-lives, reinforcement provenance table, negative memories with trigger patterns, gap detection, post-retrieval maintenance. (4) Swarm coordination: coordinator/worktree-manager/agent roles, lifecycle states (spawned/ready/running/blocked/completed/failed/stopped/crashed), DM/channel/broadcast messaging, file-touch notifications, no locks. Skip list: 1800x mermaid renderer, custom terminal handterm, TTFI/RAM micro-benchmarks, multi-account /account UX, native Firefox bridge.',
+  'jcode,research,reverse-engineering,phase-43,mit,coding-workflow,ambient,cascade,graph-rag,swarm',
+  10, 'fact', 1746662400000, 'long', 1.0, 'research', 'episodic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'JCODE ADOPTION PROPOSALS (2026-05-07): twelve Phase 43 chunks sequenced foundations-first. 43.1 memorable session names + idle timeout for headless MCP (adjective+animal registry in mcp-data/sessions.json, --resume <name>; touches commands/mcp.rs, coding/coding_sessions.rs). 43.2 V20 schema migration adding memories.confidence REAL DEFAULT 1.0, memory_reinforcements(memory_id, session_id, message_index, ts), memory_trigger_patterns(memory_id, pattern, kind), memory_gaps(query_embedding, context_snippet, session_id, ts), safety_decisions(action, decision, decided_at, decided_via). One numbered seed migration under mcp-data/shared/migrations/. 43.3 per-category confidence decay half-lives Correction 365d / Preference 90d / Procedure 60d / Fact 30d / Inferred 7d in memory/maintenance_runtime.rs. 43.4 reinforcement provenance hooks at memory/reranker.rs and commands/streaming.rs. 43.5 cascade retrieval through memory_edges in memory/store.rs|graph_rag.rs (BFS depth<=2, weight*0.7^depth, edge-type priors Supersedes 0.9 / HasTag 0.8 / RelatesTo confidence / InCluster 0.6 / Contradicts|DerivedFrom 0.3, behind cascade=true flag, default-on for brain_suggest_context). 43.6 post-retrieval maintenance background task in new memory/post_retrieval.rs (strengthen co-relevant edges, +0.05 confidence verified / -0.02 rejected, log gap when verified empty). 43.7 negative memories cognitive_kind extension + memory/negative.rs prepends [NEGATIVE — DO NOT DO THIS] markers when triggers match (regex|substring|file_glob|language). 43.8 gap detection threshold top_score<0.3 && embedding_norm>0.7 + review_gaps MCP tool. 43.9 embedding-indexed instruction slices replaces bulk-XML rules-doc injection (chunk rules/instructions/docs by heading, top-K=10 + per-file TOC pointer line, --bulk-rules escape hatch, then update rules/prompting-rules.md). 43.10 Tier1/Tier2 safety classifier in coding/safety.rs with persistent decision history and 14-consecutive-approvals auto-promotion proposer. 43.11 background-maintenance agent skeleton coding/ambient.rs + coding/ambient_scheduler.rs (default disabled, garden-only until 20 cycles of feedback exist, single-instance PID guard in mcp-data/, x-ratelimit-* header parsing, 20% user headroom, exponential 429 backoff, AmbientControlPanel.vue). 43.12 cross-harness session import coding/session_import.rs reads ~/.claude|.codex|.opencode|.cursor|.config/github-copilot/cli/ transcripts and feeds memory/brain_memory.rs::extract_memories with imported_from tag. Out of scope for Phase 43: swarm same-repo multi-agent (extends mem id 110), MCP runner exec() hot-reload, structural agent-grep refactor of code_query (slot in later code-intel phase).',
+  'jcode,adoption,phase-43,milestones,memory-schema,cascade,ambient,safety,instruction-slicing,session-import',
+  10, 'procedure', 1746662400000, 'long', 1.0, 'planning', 'procedural'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'JCODE AMBIENT MODE LESSON (2026-05-07): a fixed-cadence maintenance scheduler (what TerranSoul has today in memory/maintenance_scheduler.rs) is strictly weaker than an *agentic* ambient loop. The right shape: tool surface garden/extract_from_session/verify_fact/scout_recent_sessions/request_permission/schedule_next/end_cycle (end_cycle is mandatory final tool that yields control back), adaptive interval that reads provider x-ratelimit-* headers and reserves 20% headroom for the user with exponential 429 backoff, persistent scheduled queue rows on disk surviving restarts, single-instance guard via PID file, subscription-OAuth providers prioritised over pay-per-token, atomic temp-file rename + last-processed checkpoints + interrupted-transcript markers for crash safety, every proactive-work action goes through request_permission and lands on a coding/ worktree branch, user feedback (rejections) becomes memories so future cycles avoid the pattern. Default enabled=false on first release with proactive_work=false (garden only) until decision-history feedback loop has at least 20 cycles of data. This is the single most behaviour-changing lift of Phase 43.',
+  'jcode,ambient,lesson,scheduler,rate-limit,crash-safety,phase-43,maintenance',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'JCODE CASCADE RETRIEVAL LESSON (2026-05-07): TerranSoul already populates memory_edges (typed/directional, V19) but hybrid_search_rrf does not traverse them at query time. Adding BFS to depth<=2 from the top-K seeds with edge-weighted depth-decayed scoring (weight * 0.7^depth, edge-type priors per memory_edges rel_type) is the single largest retrieval-quality upgrade we can ship without changing storage. Must ship behind a cascade=true query flag with an A/B recall benchmark extending benches/million_memory.rs; promote to default for brain_suggest_context only after recall@10 holds within +/-1% versus flat RRF on the existing test corpus. Final pool merges seed scores + cascade scores, dedupes by memory_id, returns top-K. We are not changing the RRF fusion itself, only enriching the candidate pool before scoring.',
+  'jcode,cascade-retrieval,memory_edges,graph-rag,phase-43,recall-benchmark,brain_suggest_context',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'JCODE INSTRUCTION SLICING LESSON (2026-05-07): the existing PROMPT CONTEXT RULE that bulk-loads every rules/*.md, instructions/*.md, docs/*.md as XML blocks into every coding-workflow prompt is a major context tax (~5-10k tokens per turn) and silently drops items that do not fit. The jcode pattern is to chunk those files by markdown heading, index each chunk as a memory (category=rule, cognitive_kind=instruction), and at prompt-build time embed the task description and pull only top-K matching slices plus a one-line table-of-contents pointer per file so the agent can request specific files explicitly. We must guarantee a hit on rules whose topic matches the task. Ship behind a --bulk-rules escape hatch in coding/prompting.rs for one release cycle. Update rules/prompting-rules.md once the new path is the default. This is chunk 43.9 and is strictly stronger than today.',
+  'jcode,instruction-slicing,prompt-context,phase-43,prompting-rules,context-economy',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories child
+CROSS JOIN memories parent
+WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
+  AND child.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories child
+CROSS JOIN memories parent
+WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
+  AND child.content LIKE 'JCODE AMBIENT MODE LESSON (2026-05-07)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories child
+CROSS JOIN memories parent
+WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
+  AND child.content LIKE 'JCODE CASCADE RETRIEVAL LESSON (2026-05-07)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories child
+CROSS JOIN memories parent
+WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
+  AND child.content LIKE 'JCODE INSTRUCTION SLICING LESSON (2026-05-07)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT lesson.id, module.id, 'related_to', 0.9, 'seed', 1746662400000, 'seed'
+FROM memories lesson
+CROSS JOIN memories module
+WHERE lesson.content LIKE 'JCODE AMBIENT MODE LESSON (2026-05-07)%'
+  AND module.content LIKE 'HIVE MODULE MAP (2026-05-07)%';
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 43 COMPARISON CAPSTONE (2026-05-07): add a deferred final chunk (43.13) to run only after all other milestones are complete and green. Scope is a neutral TerranSoul-vs-jcode-plus-other-coding-tools comparison focused on measurable workflow outcomes (session continuity, memory quality, context efficiency, safety approvals, multi-agent orchestration, self-improve throughput), producing docs/coding-workflow-comparison-2026.md and a follow-up promotion proposal for only materially impactful gaps.',
+  'phase-43,comparison,capstone,jcode,coding-tools,workflow-benchmark,milestones',
+  8, 'fact', 1746662400000, 'long', 1.0, 'planning', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT capstone.id, plan.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories capstone
+CROSS JOIN memories plan
+WHERE capstone.content LIKE 'PHASE 43 COMPARISON CAPSTONE (2026-05-07)%'
+  AND plan.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
+
+-- Phase 43 completion record (2026-05-07)
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PHASE 43 COMPLETION (2026-05-07): all 13 chunks complete, CI green. New modules: session_names, negative, gap_detection, instruction_slices, safety (Tier1/Tier2 classifier + decision history + auto-promotion), ambient (agent skeleton + PID guard + garden/gate/end_cycle), ambient_scheduler (rate-limit-aware + 429 exponential backoff + 20% user headroom), session_import (5 harnesses: Claude/Codex/OpenCode/Cursor/CopilotCli, JSON/JSONL parsing, secret redaction). Rust test count: 2496 (from ~2340 at phase start). Comparison doc: docs/coding-workflow-comparison-2026.md. Key schema: V20 with confidence, reinforcements, trigger_patterns, gaps, safety_decisions tables. safety_decisions columns: (id, action, decision, decided_at, decided_via) — NOT (tier, reason, ts). Follow-up proposal in comparison doc covers RAG latency, setup wizard, ambient validation, replay mode, embedding model registry.',
+  'phase-43,completion,summary,safety,ambient,session-import,instruction-slices,negative-memories,gap-detection',
+  10, 'fact', 1746662400000, 'long', 1.0, 'summary', 'episodic'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT completion.id, plan.id, 'completes', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories completion
+CROSS JOIN memories plan
+WHERE completion.content LIKE 'PHASE 43 COMPLETION (2026-05-07)%'
+  AND plan.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';

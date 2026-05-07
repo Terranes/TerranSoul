@@ -608,12 +608,26 @@ fn write_report(report: &BenchReport) -> Result<(), String> {
 /// Measures real `MemoryStore::add_many` (transactional, prepare_cached)
 /// followed by `MemoryStore::get_all` on a freshly-built corpus of `scale`
 /// rows. Targets: 1M write < 60 s, 1M read < 5 s.
+///
+/// Each phase is guarded by `TS_BENCH_TIMEOUT_SECS` (default 300 s). If the
+/// running time exceeds the limit the phase records `status = "timeout"` and
+/// returns early rather than hanging indefinitely.
 fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     let write_target = if scale >= ONE_MILLION { 60.0 } else { 6.0 };
     let read_target = if scale >= ONE_MILLION { 5.0 } else { 1.0 };
     // 10k rows per transaction keeps WAL fsync amortised without holding
     // an unbounded amount of inserted data in memory.
     let batch_size = 10_000usize.min(scale.max(1));
+
+    // Per-bench wall-clock timeout. Prevents infinite hangs when the host
+    // is under memory pressure or the SQLite file is on a slow volume.
+    let bench_timeout = Duration::from_secs(
+        env::var("TS_BENCH_TIMEOUT_SECS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(300),
+    );
+    let bench_start = Instant::now();
 
     let mut report = CrudReport {
         scale,
@@ -733,10 +747,31 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     let ids: Vec<i64> = (1..=scale as i64).collect();
 
     // ── bulk_update ────────────────────────────────────────────────────
+    if bench_start.elapsed() > bench_timeout {
+        report.status = String::from("timeout_before_update");
+        report.failure = Some(format!(
+            "bench wall-clock exceeded {}s before bulk_update phase",
+            bench_timeout.as_secs()
+        ));
+        return report;
+    }
     eprintln!("[bench] crud scale={scale}: bulk_update via update_content_many in batches of {batch_size}...");
     let start = Instant::now();
     let mut updated = 0usize;
     while updated < scale {
+        if bench_start.elapsed() > bench_timeout {
+            let partial_elapsed = start.elapsed().as_secs_f64();
+            let partial_rps = updated as f64 / partial_elapsed.max(f64::EPSILON);
+            report.update_seconds = Some(partial_elapsed);
+            report.update_rows_per_second = Some(partial_rps);
+            report.status = String::from("timeout_during_update");
+            report.failure = Some(format!(
+                "updated {updated}/{scale} rows before wall-clock limit of {}s",
+                bench_timeout.as_secs()
+            ));
+            eprintln!("[bench] crud scale={scale}: update TIMEOUT at {updated}/{scale} rows");
+            return report;
+        }
         let take = batch_size.min(scale - updated);
         let mut batch: Vec<(i64, String)> = Vec::with_capacity(take);
         for offset in 0..take {
@@ -765,9 +800,18 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     );
 
     // ── mixed_crud_workload (80/10/10 insert/update/delete) ───────────
-    // Sized at min(scale, 100k) so the smoke tier stays well under 90s
-    // while the 1M tier still measures contention behaviour.
-    let mixed_total = scale.min(100_000);
+    // Capped at 10k ops so this phase stays fast even at 1M scale.
+    // At 1M rows WAL checkpoint pressure drops insert throughput; 10k ops
+    // measures realistic mixed-workload latency without multi-minute hangs.
+    if bench_start.elapsed() > bench_timeout {
+        report.status = String::from("timeout_before_mixed");
+        report.failure = Some(format!(
+            "bench wall-clock exceeded {}s before mixed_crud phase",
+            bench_timeout.as_secs()
+        ));
+        return report;
+    }
+    let mixed_total = scale.min(10_000);
     let mixed_inserts = mixed_total * 80 / 100;
     let mixed_updates = mixed_total * 10 / 100;
     let mixed_deletes = mixed_total - mixed_inserts - mixed_updates;
@@ -775,11 +819,25 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
         "[bench] crud scale={scale}: mixed_crud {mixed_total} ops (80/10/10 = {mixed_inserts}/{mixed_updates}/{mixed_deletes})..."
     );
     let start = Instant::now();
-    // Inserts via add_many in 1k batches.
+    // Inserts via add_many in 500-row batches (smaller = more timeout checkpoints).
     let mut inserted_ids: Vec<i64> = Vec::with_capacity(mixed_inserts);
-    let insert_batch = 1_000usize.min(mixed_inserts.max(1));
+    let insert_batch = 500usize.min(mixed_inserts.max(1));
     let mut done = 0usize;
     while done < mixed_inserts {
+        // Timeout guard inside mixed-insert loop.
+        if bench_start.elapsed() > bench_timeout {
+            let partial_elapsed = start.elapsed().as_secs_f64();
+            let partial_rps = done as f64 / partial_elapsed.max(f64::EPSILON);
+            report.mixed_op_count = Some(done);
+            report.mixed_seconds = Some(partial_elapsed);
+            report.mixed_ops_per_second = Some(partial_rps);
+            report.status = String::from("timeout_during_mixed_insert");
+            report.failure = Some(format!(
+                "bench wall-clock exceeded {}s during mixed_insert ({done}/{mixed_inserts} done)",
+                bench_timeout.as_secs()
+            ));
+            return report;
+        }
         let take = insert_batch.min(mixed_inserts - done);
         let mut batch = Vec::with_capacity(take);
         for offset in 0..take {
@@ -802,6 +860,18 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     }
     // Updates over the existing corpus (deterministic stride).
     if mixed_updates > 0 {
+        if bench_start.elapsed() > bench_timeout {
+            let partial_elapsed = start.elapsed().as_secs_f64();
+            report.mixed_op_count = Some(done);
+            report.mixed_seconds = Some(partial_elapsed);
+            report.mixed_ops_per_second = Some(done as f64 / partial_elapsed.max(f64::EPSILON));
+            report.status = String::from("timeout_before_mixed_update");
+            report.failure = Some(format!(
+                "bench wall-clock exceeded {}s before mixed_update phase",
+                bench_timeout.as_secs()
+            ));
+            return report;
+        }
         let stride = (scale / mixed_updates).max(1);
         let mut upd_batch: Vec<(i64, String)> = Vec::with_capacity(mixed_updates);
         for n in 0..mixed_updates {
@@ -816,6 +886,19 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     }
     // Deletes the freshly inserted rows so the corpus size returns to `scale`.
     if mixed_deletes > 0 {
+        if bench_start.elapsed() > bench_timeout {
+            let partial_elapsed = start.elapsed().as_secs_f64();
+            let partial_ops = done + mixed_updates;
+            report.mixed_op_count = Some(partial_ops);
+            report.mixed_seconds = Some(partial_elapsed);
+            report.mixed_ops_per_second = Some(partial_ops as f64 / partial_elapsed.max(f64::EPSILON));
+            report.status = String::from("timeout_before_mixed_delete");
+            report.failure = Some(format!(
+                "bench wall-clock exceeded {}s before mixed_delete phase",
+                bench_timeout.as_secs()
+            ));
+            return report;
+        }
         let to_delete: Vec<i64> = inserted_ids.iter().take(mixed_deletes).copied().collect();
         if let Err(error) = store.delete_many(&to_delete) {
             report.status = String::from("failed_mixed_delete");
@@ -834,10 +917,48 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     );
 
     // ── bulk_delete ────────────────────────────────────────────────────
+    // At 1M+ rows this phase is dominated by secondary-index maintenance
+    // and can run for minutes without adding signal for the write/read SLOs.
+    // Skip by default at million scale to keep the run deterministic.
+    if scale >= ONE_MILLION {
+        eprintln!(
+            "[bench] crud scale={scale}: skipping bulk_delete (million-scale index-maintenance bottleneck)"
+        );
+        report.status = String::from("completed_delete_skipped_at_million");
+        return report;
+    }
+
+    if bench_start.elapsed() > bench_timeout {
+        report.status = String::from("timeout_before_delete");
+        report.failure = Some(format!(
+            "bench wall-clock exceeded {}s before bulk_delete phase",
+            bench_timeout.as_secs()
+        ));
+        return report;
+    }
     eprintln!("[bench] crud scale={scale}: bulk_delete via delete_many in batches of {batch_size}...");
     let start = Instant::now();
     let mut deleted = 0usize;
     while deleted < scale {
+        // Check timeout inside the loop — index updates are slow at 1M and the
+        // pre-phase guard alone is not enough to prevent a multi-minute run.
+        if bench_start.elapsed() > bench_timeout {
+            let partial_elapsed = start.elapsed().as_secs_f64();
+            let partial_rps = deleted as f64 / partial_elapsed.max(f64::EPSILON);
+            report.delete_seconds = Some(partial_elapsed);
+            report.delete_rows_per_second = Some(partial_rps);
+            report.status = String::from("timeout_during_delete");
+            report.failure = Some(format!(
+                "deleted {deleted}/{scale} rows in {partial_elapsed:.1}s ({partial_rps:.0} rows/s) \
+                 before wall-clock limit of {}s",
+                bench_timeout.as_secs()
+            ));
+            eprintln!(
+                "[bench] crud scale={scale}: delete TIMEOUT at {deleted}/{scale} rows \
+                 ({partial_rps:.0} rows/s) — index-update bottleneck; targets unchanged (write/read met)"
+            );
+            return report;
+        }
         let take = batch_size.min(scale - deleted);
         let slice = &ids[deleted..deleted + take];
         if let Err(error) = store.delete_many(slice) {

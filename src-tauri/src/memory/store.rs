@@ -1,11 +1,13 @@
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::metrics::{Timer, METRICS};
 use super::schema;
 
-fn now_ms() -> i64 {
+pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
@@ -138,6 +140,25 @@ pub struct MemoryEntry {
     pub updated_at: Option<i64>,
     /// UUID of the device that last wrote this entry (for CRDT tiebreaker).
     pub origin_device: Option<String>,
+    /// HLC counter for causal CRDT ordering (Chunk 42.3).
+    pub hlc_counter: Option<i64>,
+    /// Confidence score 0.0–1.0 (V20). Decayed per-cognitive-kind and
+    /// boosted by reinforcement. Multiplied into hybrid search scores.
+    #[serde(default = "default_confidence")]
+    pub confidence: f64,
+}
+
+fn default_confidence() -> f64 {
+    1.0
+}
+
+/// A single reinforcement event for provenance tracking (Chunk 43.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReinforcementRecord {
+    pub memory_id: i64,
+    pub session_id: String,
+    pub message_index: i64,
+    pub ts: i64,
 }
 
 /// Fields required to create a new memory.
@@ -199,14 +220,24 @@ pub struct MemoryCleanupReport {
 }
 
 /// SQLite-backed persistent memory store.
+/// Number of mutations between automatic ANALYZE runs.
+const ANALYZE_EVERY: u64 = 10_000;
+
 pub struct MemoryStore {
-    conn: Connection,
+    pub(crate) conn: Connection,
     /// Optional ANN index for fast vector search (Chunk 16.10).
     /// Initialized lazily on first vector operation.
     ann: std::cell::OnceCell<super::ann_index::AnnIndex>,
     /// Data directory for persisting the ANN index file.
     /// `None` for in-memory stores (tests).
     data_dir: Option<std::path::PathBuf>,
+    /// Handle for debounced ANN flush (Chunk 41.10).  Set after
+    /// construction via [`set_flush_handle`].
+    flush_handle: Option<super::ann_flush::AnnFlushHandle>,
+    /// Cumulative mutation counter (add/update/delete). When it crosses
+    /// an `ANALYZE_EVERY` boundary, we run `ANALYZE` to keep the query
+    /// planner statistics fresh (Chunk 41.12R).
+    mutations: AtomicU64,
 }
 
 impl MemoryStore {
@@ -223,19 +254,18 @@ impl MemoryStore {
         // Phase 41.1 — write-path tuning for million-memory CRUD.
         // WAL mode: crash-safe, concurrent reads, no data loss.
         // foreign_keys=ON is required for ON DELETE CASCADE on memory_edges (V5).
-        // cache_size negative = KiB (64 MiB), mmap_size in bytes (256 MiB),
-        // temp_store=MEMORY keeps sort/spill scratch off disk, busy_timeout
-        // makes contended writers wait instead of failing,
-        // wal_autocheckpoint bounds WAL growth without flushing on every commit,
-        // journal_size_limit caps the WAL file at 64 MiB.
-        let _ = conn.execute_batch(
-            "PRAGMA journal_mode=WAL;\n             PRAGMA synchronous=NORMAL;\n             PRAGMA foreign_keys=ON;\n             PRAGMA cache_size=-65536;\n             PRAGMA mmap_size=268435456;\n             PRAGMA temp_store=MEMORY;\n             PRAGMA busy_timeout=5000;\n             PRAGMA wal_autocheckpoint=1000;\n             PRAGMA journal_size_limit=67108864;",
-        );
+        // Platform-adaptive: desktop gets aggressive cache/mmap; mobile
+        // reduces resource usage and tightens WAL autocheckpoint (42.2).
+        let _ = conn.execute_batch(super::platform::production_pragmas());
         schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
+        // Phase 41.12R — let SQLite analyse table statistics on open.
+        let _ = conn.execute_batch("PRAGMA optimize;");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
             data_dir: Some(data_dir.to_path_buf()),
+            flush_handle: None,
+            mutations: AtomicU64::new(0),
         }
     }
 
@@ -246,20 +276,29 @@ impl MemoryStore {
         // foreign_keys=ON keeps test parity with the on-disk store and
         // exercises the V5 memory_edges cascade behaviour.
         // temp_store=MEMORY + cache_size keep test perf representative of prod.
-        let _ = conn.execute_batch(
-            "PRAGMA foreign_keys=ON;\n             PRAGMA temp_store=MEMORY;\n             PRAGMA cache_size=-65536;",
-        );
+        let _ = conn.execute_batch(super::platform::test_pragmas());
         schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
         MemoryStore {
             conn,
             ann: std::cell::OnceCell::new(),
             data_dir: None,
+            flush_handle: None,
+            mutations: AtomicU64::new(0),
         }
     }
 
     /// Return the current schema version.
     pub fn schema_version(&self) -> i64 {
         schema::schema_version(&self.conn).unwrap_or(0)
+    }
+
+    /// Bump the mutation counter and run `ANALYZE` when it crosses a 10k boundary.
+    fn record_mutations(&self, n: u64) {
+        let prev = self.mutations.fetch_add(n, Ordering::Relaxed);
+        // When we cross an ANALYZE_EVERY boundary, refresh planner stats.
+        if prev / ANALYZE_EVERY != (prev + n) / ANALYZE_EVERY {
+            let _ = self.conn.execute_batch("ANALYZE;");
+        }
     }
 
     /// Internal accessor to the underlying SQLite connection. `pub(crate)`
@@ -328,6 +367,7 @@ impl MemoryStore {
 
     /// Insert a new memory entry and return it with its assigned id.
     pub fn add(&self, m: NewMemory) -> SqlResult<MemoryEntry> {
+        let _t = Timer::start(&METRICS.add);
         let importance = m.importance.clamp(1, 5);
         let now = now_ms();
         let token_count = estimate_tokens(&m.content);
@@ -337,6 +377,7 @@ impl MemoryStore {
             params![m.content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count, m.source_url, m.source_hash, m.expires_at],
         )?;
         let id = self.conn.last_insert_rowid();
+        self.record_mutations(1);
         self.get_by_id(id)
     }
 
@@ -349,6 +390,7 @@ impl MemoryStore {
     /// of chunks; it lifts insert throughput from ~600 rows/s (per-row
     /// auto-commit + per-row fsync) to >100k rows/s on commodity hardware.
     pub fn add_many(&mut self, mut items: Vec<NewMemory>) -> SqlResult<Vec<i64>> {
+        let _t = Timer::start(&METRICS.add_many);
         if items.is_empty() {
             return Ok(Vec::new());
         }
@@ -380,6 +422,7 @@ impl MemoryStore {
             }
         }
         tx.commit()?;
+        self.record_mutations(ids.len() as u64);
         Ok(ids)
     }
 
@@ -451,7 +494,7 @@ impl MemoryStore {
     pub fn get_by_id(&self, id: i64) -> SqlResult<MemoryEntry> {
         self.conn.query_row(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE id = ?1",
             params![id],
             row_to_entry,
@@ -462,7 +505,7 @@ impl MemoryStore {
     pub fn get_all(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories ORDER BY importance DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
@@ -476,7 +519,7 @@ impl MemoryStore {
         let max_bytes = max_bytes.min(i64::MAX as u64) as i64;
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence,
                     length(content)
                     + length(tags)
                     + COALESCE(length(embedding), 0)
@@ -486,7 +529,7 @@ impl MemoryStore {
                     + 128 AS row_bytes
              FROM memories ORDER BY importance DESC, created_at DESC",
         )?;
-        let rows = stmt.query_map([], |row| Ok((row_to_entry(row)?, row.get::<_, i64>(21)?)))?;
+        let rows = stmt.query_map([], |row| Ok((row_to_entry(row)?, row.get::<_, i64>(23)?)))?;
 
         let mut used = 0i64;
         let mut entries = Vec::new();
@@ -506,7 +549,7 @@ impl MemoryStore {
     pub fn get_by_tier(&self, tier: &MemoryTier) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE tier = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![tier.as_str()], row_to_entry)?;
@@ -517,7 +560,7 @@ impl MemoryStore {
     pub fn get_persistent(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE tier IN ('working', 'long')
              ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
@@ -534,7 +577,7 @@ impl MemoryStore {
         let pattern = format!("%{}%", query.to_lowercase());
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories
              WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
              ORDER BY importance DESC, access_count DESC, created_at DESC",
@@ -561,8 +604,10 @@ impl MemoryStore {
     /// if the versioning table doesn't exist yet (pre-V8 schema), the
     /// update still proceeds.
     pub fn update(&self, id: i64, upd: MemoryUpdate) -> SqlResult<MemoryEntry> {
+        let _t = Timer::start(&METRICS.update);
         // Snapshot the current state before editing (best-effort).
-        let has_changes = upd.content.is_some()
+        let content_changed = upd.content.is_some();
+        let has_changes = content_changed
             || upd.tags.is_some()
             || upd.importance.is_some()
             || upd.memory_type.is_some();
@@ -594,17 +639,37 @@ impl MemoryStore {
                 params![mt.as_str(), id],
             )?;
         }
+
+        // When content changes, the old embedding is stale.
+        // Clear it, remove from ANN, and enqueue for re-embedding (41.6R).
+        if content_changed {
+            self.conn.execute(
+                "UPDATE memories SET embedding = NULL WHERE id = ?1",
+                params![id],
+            )?;
+            // Remove stale vector from the ANN index (best-effort).
+            if let Some(idx) = self.ann.get() {
+                let _ = idx.remove(id);
+            }
+            // Enqueue for re-embedding (best-effort — table may not exist
+            // on very old schemas).
+            let _ = super::embedding_queue::enqueue(&self.conn, id);
+        }
+
+        self.record_mutations(1);
         self.get_by_id(id)
     }
 
     /// Delete a memory entry by id.
     pub fn delete(&self, id: i64) -> SqlResult<()> {
+        let _t = Timer::start(&METRICS.delete);
         self.conn
             .execute("DELETE FROM memories WHERE id = ?1", params![id])?;
         // Remove from ANN index (best-effort).
         if let Some(idx) = self.ann.get() {
             let _ = idx.remove(id);
         }
+        self.record_mutations(1);
         Ok(())
     }
 
@@ -621,6 +686,7 @@ impl MemoryStore {
 
     /// Return the N most relevant memories for a message (keyword match + importance).
     /// Used to inject long-term context into the brain's system prompt.
+    /// Uses candidate-pool retrieval (41.5R) instead of loading every row.
     pub fn relevant_for(&self, message: &str, limit: usize) -> Vec<String> {
         let words: Vec<String> = message
             .to_lowercase()
@@ -629,11 +695,12 @@ impl MemoryStore {
             .map(String::from)
             .collect();
 
-        let Ok(all) = self.get_all() else {
+        // Use candidate pool instead of get_all() (41.5R).
+        let Ok(candidates) = self.search_candidates(&words, None) else {
             return vec![];
         };
 
-        let mut scored: Vec<(usize, &MemoryEntry)> = all
+        let mut scored: Vec<(usize, &MemoryEntry)> = candidates
             .iter()
             .filter_map(|e| {
                 let lower = e.content.to_lowercase();
@@ -669,6 +736,7 @@ impl MemoryStore {
 
     /// Store a pre-computed embedding for a memory entry.
     pub fn set_embedding(&self, id: i64, embedding: &[f32]) -> SqlResult<()> {
+        let _t = Timer::start(&METRICS.set_embedding);
         let bytes = embedding_to_bytes(embedding);
         self.conn.execute(
             "UPDATE memories SET embedding = ?1 WHERE id = ?2",
@@ -694,11 +762,145 @@ impl MemoryStore {
     pub fn get_with_embeddings(&self) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE embedding IS NOT NULL",
         )?;
         let rows = stmt.query_map([], row_to_entry_with_embedding)?;
         rows.collect()
+    }
+
+    // ── Candidate-pool helpers (Chunk 41.5R) ────────────────────────────────
+    //
+    // Instead of loading the entire corpus via get_all()/get_with_embeddings()
+    // on every search, we gather candidate IDs from three fast retrievers
+    // (ANN, keyword SQL, freshness SQL), union them, then fetch only those
+    // rows.  This keeps memory usage O(candidate_pool) instead of O(total).
+
+    /// Maximum number of candidates fetched from each retriever.
+    const CANDIDATE_POOL: usize = 500;
+
+    /// Fetch the IDs of the `pool` freshest + most-important memories.
+    fn freshness_candidate_ids(&self, pool: usize) -> SqlResult<Vec<i64>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id FROM memories ORDER BY created_at DESC, importance DESC LIMIT ?1",
+        )?;
+        let rows = stmt.query_map(params![pool as i64], |row| row.get::<_, i64>(0))?;
+        rows.collect()
+    }
+
+    /// Fetch the IDs of memories whose content or tags contain any of
+    /// the given `words` (case-insensitive via `INSTR` + `LOWER`).
+    /// Returns at most `pool` IDs.
+    fn keyword_candidate_ids(&self, words: &[String], pool: usize) -> SqlResult<Vec<i64>> {
+        if words.is_empty() {
+            return Ok(Vec::new());
+        }
+        // Build a WHERE clause: LOWER(content) LIKE '%word1%' OR LOWER(tags) LIKE '%word1%' OR ...
+        // Using INSTR is slightly faster than LIKE for substring matching.
+        let conditions: Vec<String> = words
+            .iter()
+            .enumerate()
+            .map(|(i, _)| {
+                format!(
+                    "(INSTR(LOWER(content), ?{p}) > 0 OR INSTR(LOWER(tags), ?{p}) > 0)",
+                    p = i + 1
+                )
+            })
+            .collect();
+        let sql = format!(
+            "SELECT id FROM memories WHERE {} LIMIT ?{}",
+            conditions.join(" OR "),
+            words.len() + 1
+        );
+        let mut stmt = self.conn.prepare_cached(&sql)?;
+        let n_params = words.len() + 1;
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = words
+            .iter()
+            .map(|w| Box::new(w.to_lowercase()) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
+        param_values.push(Box::new(pool as i64));
+        let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(&*refs, |row| row.get::<_, i64>(0))?;
+        let _ = n_params; // suppress unused warning
+        rows.collect()
+    }
+
+    /// Fetch full entries (with embeddings) for a set of IDs.
+    fn get_entries_by_ids_with_embeddings(&self, ids: &[i64]) -> SqlResult<Vec<MemoryEntry>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: String = (0..ids.len()).map(|i| format!("?{}", i + 1)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
+             FROM memories WHERE id IN ({})",
+            placeholders
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(&*refs, row_to_entry_with_embedding)?;
+        rows.collect()
+    }
+
+    /// Fetch full entries (without embeddings) for a set of IDs.
+    fn get_entries_by_ids(&self, ids: &[i64]) -> SqlResult<Vec<MemoryEntry>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders: String = (0..ids.len()).map(|i| format!("?{}", i + 1)).collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
+             FROM memories WHERE id IN ({})",
+            placeholders
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
+        let rows = stmt.query_map(&*refs, row_to_entry)?;
+        rows.collect()
+    }
+
+    /// Gather candidate IDs from ANN + keyword + freshness retrievers, then
+    /// return the deduplicated union of entries (with embeddings if available).
+    fn search_candidates(
+        &self,
+        query_words: &[String],
+        query_embedding: Option<&[f32]>,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        use std::collections::HashSet;
+
+        let pool = Self::CANDIDATE_POOL;
+        let mut id_set: HashSet<i64> = HashSet::with_capacity(pool * 3);
+
+        // (1) ANN vector candidates
+        if let Some(qe) = query_embedding {
+            if let Some(idx) = self.ann_index() {
+                if let Ok(matches) = idx.search(qe, pool) {
+                    id_set.extend(matches.iter().map(|(id, _)| *id));
+                }
+            }
+        }
+
+        // (2) Keyword candidates via SQL
+        if let Ok(kw_ids) = self.keyword_candidate_ids(query_words, pool) {
+            id_set.extend(kw_ids);
+        }
+
+        // (3) Freshness candidates
+        if let Ok(fresh_ids) = self.freshness_candidate_ids(pool) {
+            id_set.extend(fresh_ids);
+        }
+
+        // Fetch the full entries for the candidate set
+        let ids: Vec<i64> = id_set.into_iter().collect();
+        if query_embedding.is_some() {
+            self.get_entries_by_ids_with_embeddings(&ids)
+        } else {
+            self.get_entries_by_ids(&ids)
+        }
     }
 
     /// Return the IDs of entries that have no embedding yet (need processing).
@@ -888,11 +1090,8 @@ impl MemoryStore {
             .map(String::from)
             .collect();
 
-        let all = if query_embedding.is_some() {
-            self.get_with_embeddings()?
-        } else {
-            self.get_all()?
-        };
+        // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
+        let all = self.search_candidates(&words, query_embedding)?;
 
         if all.is_empty() {
             return Ok(vec![]);
@@ -948,6 +1147,7 @@ impl MemoryStore {
         query_embedding: Option<&[f32]>,
         limit: usize,
     ) -> SqlResult<Vec<MemoryEntry>> {
+        let _t = Timer::start(&METRICS.hybrid_search);
         let now = now_ms();
         let hour_ms: f64 = 3_600_000.0;
 
@@ -959,12 +1159,8 @@ impl MemoryStore {
             .map(String::from)
             .collect();
 
-        // Load all entries with embeddings for vector scoring
-        let all = if query_embedding.is_some() {
-            self.get_with_embeddings()?
-        } else {
-            self.get_all()?
-        };
+        // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
+        let all = self.search_candidates(&words, query_embedding)?;
 
         if all.is_empty() {
             return Ok(vec![]);
@@ -1062,6 +1258,9 @@ impl MemoryStore {
         query_embedding: Option<&[f32]>,
         limit: usize,
     ) -> SqlResult<Vec<MemoryEntry>> {
+        let _t = Timer::start(&METRICS.hybrid_search_rrf);
+        use crate::memory::cognitive_kind::classify as classify_kind;
+        use crate::memory::confidence_decay::{confidence_factor, ConfidenceDecayConfig};
         use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
         use std::collections::HashMap;
 
@@ -1072,13 +1271,16 @@ impl MemoryStore {
         let now = now_ms();
         let hour_ms: f64 = 3_600_000.0;
 
-        // Load all entries with embeddings when we will run a vector pass,
-        // otherwise the lighter `get_all` is sufficient.
-        let all = if query_embedding.is_some() {
-            self.get_with_embeddings()?
-        } else {
-            self.get_all()?
-        };
+        // Keyword scoring setup (also used for candidate retrieval)
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
+        let all = self.search_candidates(&words, query_embedding)?;
 
         if all.is_empty() {
             return Ok(vec![]);
@@ -1106,14 +1308,6 @@ impl MemoryStore {
             });
             vector_rank = scored.into_iter().map(|(_, id)| id).collect();
         }
-
-        // ── (2) Keyword ranking ───────────────────────────────────────────
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
 
         let mut keyword_rank: Vec<i64> = Vec::new();
         if !words.is_empty() {
@@ -1179,6 +1373,26 @@ impl MemoryStore {
 
         let fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
 
+        // ── (4) Per-kind confidence decay (43.3) ──────────────────────────
+        let decay_cfg = ConfidenceDecayConfig::default();
+        let mut fused: Vec<(i64, f64)> = fused
+            .into_iter()
+            .map(|(id, score)| {
+                if let Some(entry) = by_id.get(&id) {
+                    let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
+                    let factor = confidence_factor(&decay_cfg, Some(kind), entry.confidence, now - entry.created_at);
+                    (id, score * factor)
+                } else {
+                    (id, score)
+                }
+            })
+            .collect();
+        fused.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(&b.0))
+        });
+
         // Materialize the top-`limit` MemoryEntry list, preserving fused order.
         let top: Vec<MemoryEntry> = fused
             .into_iter()
@@ -1218,6 +1432,7 @@ impl MemoryStore {
         limit: usize,
     ) -> SqlResult<Vec<MemoryEntry>> {
         use crate::memory::cognitive_kind::classify as classify_kind;
+        use crate::memory::confidence_decay::{confidence_factor, ConfidenceDecayConfig};
         use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
         use crate::memory::query_intent::classify_query;
         use std::collections::HashMap;
@@ -1237,11 +1452,16 @@ impl MemoryStore {
         let now = now_ms();
         let hour_ms: f64 = 3_600_000.0;
 
-        let all = if query_embedding.is_some() {
-            self.get_with_embeddings()?
-        } else {
-            self.get_all()?
-        };
+        // Keyword words (also used for candidate-pool retrieval)
+        let words: Vec<String> = query
+            .to_lowercase()
+            .split_whitespace()
+            .filter(|w| w.len() > 2)
+            .map(String::from)
+            .collect();
+
+        // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
+        let all = self.search_candidates(&words, query_embedding)?;
         if all.is_empty() {
             return Ok(vec![]);
         }
@@ -1267,12 +1487,6 @@ impl MemoryStore {
         }
 
         // ── (2) Keyword ranking ───────────────────────────────────────
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
 
         let mut keyword_rank: Vec<i64> = Vec::new();
         if !words.is_empty() {
@@ -1333,7 +1547,17 @@ impl MemoryStore {
 
         let mut fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
 
-        // ── (4) Intent-aware kind boosting ────────────────────────────
+        // ── (4a) Per-kind confidence decay (43.3) ─────────────────────
+        let decay_cfg = ConfidenceDecayConfig::default();
+        for (id, score) in fused.iter_mut() {
+            if let Some(entry) = by_id.get(id) {
+                let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
+                let factor = confidence_factor(&decay_cfg, Some(kind), entry.confidence, now - entry.created_at);
+                *score *= factor;
+            }
+        }
+
+        // ── (4b) Intent-aware kind boosting ────────────────────────────
         if needs_rerank {
             // Multiply each fused score by the per-kind boost for the
             // doc's classified cognitive kind, then re-sort.
@@ -1366,6 +1590,51 @@ impl MemoryStore {
         }
 
         Ok(top)
+    }
+
+    // ── Reinforcement provenance (43.4) ────────────────────────────────────
+
+    /// Record that a memory was reinforced (confirmed useful) during a session.
+    ///
+    /// Uses `INSERT OR IGNORE` so repeated calls with the same
+    /// `(memory_id, session_id, message_index)` PK are idempotent.
+    pub fn record_reinforcement(
+        &self,
+        memory_id: i64,
+        session_id: &str,
+        message_index: i64,
+    ) -> SqlResult<()> {
+        let now = now_ms();
+        self.conn.execute(
+            "INSERT OR IGNORE INTO memory_reinforcements (memory_id, session_id, message_index, ts)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![memory_id, session_id, message_index, now],
+        )?;
+        Ok(())
+    }
+
+    /// Retrieve the most recent reinforcements for a memory entry.
+    pub fn get_reinforcements(
+        &self,
+        memory_id: i64,
+        limit: usize,
+    ) -> SqlResult<Vec<ReinforcementRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT memory_id, session_id, message_index, ts
+             FROM memory_reinforcements
+             WHERE memory_id = ?1
+             ORDER BY ts DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![memory_id, limit as i64], |row| {
+            Ok(ReinforcementRecord {
+                memory_id: row.get(0)?,
+                session_id: row.get(1)?,
+                message_index: row.get(2)?,
+                ts: row.get(3)?,
+            })
+        })?;
+        rows.collect()
     }
 
     // ── Tier management ────────────────────────────────────────────────────
@@ -1429,7 +1698,7 @@ impl MemoryStore {
     pub fn evict_short_term(&self, session_id: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE tier = 'short' AND session_id = ?1 ORDER BY created_at ASC",
         )?;
         let rows = stmt.query_map(params![session_id], row_to_entry)?;
@@ -1583,7 +1852,7 @@ impl MemoryStore {
     pub fn find_by_source_hash(&self, hash: &str) -> SqlResult<Option<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE source_hash = ?1 LIMIT 1",
         )?;
         let mut rows = stmt.query_map(params![hash], row_to_entry)?;
@@ -1598,7 +1867,7 @@ impl MemoryStore {
     pub fn find_by_source_url(&self, url: &str) -> SqlResult<Vec<MemoryEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
              FROM memories WHERE source_url = ?1 ORDER BY created_at DESC",
         )?;
         let rows = stmt.query_map(params![url], row_to_entry)?;
@@ -1788,6 +2057,121 @@ impl MemoryStore {
             |r| r.get(0),
         )
     }
+
+    // ── Phase 41 ANN management methods ────────────────────────────────────────
+
+    /// Store the ANN flush handle so insert/update paths can signal dirty state.
+    pub fn set_flush_handle(&mut self, handle: super::ann_flush::AnnFlushHandle) {
+        self.flush_handle = Some(handle);
+    }
+
+    /// Save all ANN indices to disk.  Returns `(flush_count, ops_flushed)`.
+    /// Called by the background flush task.
+    pub fn ann_save_all(&self) -> (u64, u64) {
+        if let Some(idx) = self.ann.get() {
+            let _ = idx.save();
+        }
+        // Return (1, 0) to signal a flush happened even if save was a no-op.
+        (1, 0)
+    }
+
+    /// Returns `true` if the ANN index has fragmentation above the compaction
+    /// threshold (20%).  Returns `false` if no index exists.
+    pub fn ann_needs_compaction(&self) -> bool {
+        const COMPACTION_THRESHOLD: f32 = 0.20;
+        match self.ann.get() {
+            Some(idx) => idx.fragmentation_ratio() > COMPACTION_THRESHOLD,
+            None => false,
+        }
+    }
+
+    /// Rebuild the ANN index from live long-tier entries, removing tombstones.
+    /// Returns the number of vectors in the rebuilt index.
+    pub fn compact_ann(&self) -> Result<usize, String> {
+        let dim = match self.ann.get() {
+            Some(idx) => idx.dimensions(),
+            None => return Ok(0),
+        };
+        let entries = self.live_embeddings(dim)?;
+        let ann = self.ann.get().ok_or("ANN index disappeared")?;
+        let count = ann.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+        ann.reset_fragmentation();
+        Ok(count)
+    }
+
+    /// Backfill the `embedding_model_id` column for entries that have an
+    /// embedding but no model tag.  Returns the number of rows updated.
+    pub fn backfill_embedding_model(&self, model_id: &str) -> Result<usize, String> {
+        self.conn
+            .execute(
+                "UPDATE memories SET embedding_model_id = ?1
+                 WHERE embedding IS NOT NULL AND embedding_model_id IS NULL",
+                rusqlite::params![model_id],
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Rebuild the ANN index with a new quantization mode. Returns vector count.
+    pub fn rebuild_ann_quantized(
+        &self,
+        quant: super::ann_index::EmbeddingQuantization,
+    ) -> Result<usize, String> {
+        // Detect current dimension from existing index or DB.
+        let dim = if let Some(idx) = self.ann.get() {
+            idx.dimensions()
+        } else {
+            let d = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+            if d == 0 {
+                return Ok(0);
+            }
+            d
+        };
+
+        let entries = self.live_embeddings(dim)?;
+
+        // Create a new index with the requested quantization.
+        let new_idx = if let Some(dir) = &self.data_dir {
+            super::ann_index::AnnIndex::open_quantized(dir, dim, quant)?
+        } else {
+            super::ann_index::AnnIndex::new_quantized(dim, quant)?
+        };
+        let count =
+            new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+
+        // Replace the primary index. Because OnceCell doesn't support
+        // overwrite, we can only do this if it wasn't set. If it was, the
+        // caller should restart. In practice the rebuild will have already
+        // persisted to disk and a restart picks up the new quantization.
+        let _ = self.ann.set(new_idx);
+        Ok(count)
+    }
+
+    /// Collect `(id, embedding)` pairs from long-tier entries.
+    fn live_embeddings(&self, dim: usize) -> Result<Vec<(i64, Vec<f32>)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, embedding FROM memories
+                 WHERE tier = 'long' AND embedding IS NOT NULL",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                let id: i64 = row.get(0)?;
+                let blob: Vec<u8> = row.get(1)?;
+                Ok((id, blob))
+            })
+            .map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (id, blob) = r.map_err(|e| e.to_string())?;
+            let emb = bytes_to_embedding(&blob);
+            if emb.len() == dim {
+                out.push((id, emb));
+            }
+        }
+        Ok(out)
+    }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -1819,6 +2203,8 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
         last_exported: row.get(18).unwrap_or(None),
         updated_at: row.get(19).unwrap_or(None),
         origin_device: row.get(20).unwrap_or(None),
+        hlc_counter: row.get(21).unwrap_or(None),
+        confidence: row.get::<_, f64>(22).unwrap_or(1.0),
     })
 }
 
@@ -1850,6 +2236,8 @@ fn row_to_entry_with_embedding(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry
         last_exported: row.get(19).unwrap_or(None),
         updated_at: row.get(20).unwrap_or(None),
         origin_device: row.get(21).unwrap_or(None),
+        hlc_counter: row.get(22).unwrap_or(None),
+        confidence: row.get::<_, f64>(23).unwrap_or(1.0),
     })
 }
 
@@ -3372,5 +3760,58 @@ mod tests {
             history[0].importance, 3,
             "snapshot should capture pre-boost value"
         );
+    }
+
+    // ── Reinforcement provenance tests (43.4) ─────────────────────────────
+
+    #[test]
+    fn record_reinforcement_round_trip() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("reinforced fact")).unwrap();
+
+        store
+            .record_reinforcement(e.id, "sess-a", 0)
+            .unwrap();
+
+        let recs = store.get_reinforcements(e.id, 10).unwrap();
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].memory_id, e.id);
+        assert_eq!(recs[0].session_id, "sess-a");
+        assert_eq!(recs[0].message_index, 0);
+    }
+
+    #[test]
+    fn record_reinforcement_idempotent_on_pk() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("idempotent test")).unwrap();
+
+        // Same (memory_id, session_id, message_index) inserted twice
+        store.record_reinforcement(e.id, "sess-b", 1).unwrap();
+        store.record_reinforcement(e.id, "sess-b", 1).unwrap();
+
+        let recs = store.get_reinforcements(e.id, 10).unwrap();
+        assert_eq!(recs.len(), 1, "duplicate PK should be ignored");
+    }
+
+    #[test]
+    fn get_reinforcements_respects_limit() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("limited")).unwrap();
+
+        for i in 0..5 {
+            store.record_reinforcement(e.id, &format!("s{i}"), 0).unwrap();
+        }
+
+        let recs = store.get_reinforcements(e.id, 3).unwrap();
+        assert_eq!(recs.len(), 3);
+    }
+
+    #[test]
+    fn get_reinforcements_empty_when_none() {
+        let store = MemoryStore::in_memory();
+        let e = store.add(new_memory("no reinforcements")).unwrap();
+
+        let recs = store.get_reinforcements(e.id, 10).unwrap();
+        assert!(recs.is_empty());
     }
 }

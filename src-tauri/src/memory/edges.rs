@@ -170,7 +170,7 @@ fn default_confidence() -> f64 {
 }
 
 /// Direction of edge traversal.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeDirection {
     /// Outgoing edges (where memory is the src).
@@ -299,6 +299,16 @@ impl MemoryStore {
             "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to, edge_source
              FROM memory_edges WHERE src_id = ?1 AND dst_id = ?2 AND rel_type = ?3",
             params![src, dst, rel],
+            row_to_edge,
+        )
+    }
+
+    /// Retrieve a single edge by primary key.
+    pub fn get_edge_by_id(&self, id: i64) -> SqlResult<MemoryEdge> {
+        self.conn().query_row(
+            "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at, valid_from, valid_to, edge_source
+             FROM memory_edges WHERE id = ?1",
+            params![id],
             row_to_edge,
         )
     }

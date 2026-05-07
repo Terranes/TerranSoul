@@ -79,6 +79,8 @@ export interface AppSettings {
   web_search_enabled?: boolean;
   /** Per-workspace data root override — when set, runtime data (DB, HNSW, etc.) is stored here instead of the default platform path. */
   data_root?: string;
+  /** Optional Hive relay URL (gRPC endpoint). When set, the app participates in hive federation. */
+  hive_url?: string;
   /** Obsidian export folder layout: 'flat' (default) or 'para' (PARA method subfolders). */
   obsidian_layout?: 'flat' | 'para';
 }

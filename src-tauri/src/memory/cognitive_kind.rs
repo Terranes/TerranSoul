@@ -48,6 +48,8 @@ pub enum CognitiveKind {
     Procedural,
     /// Persisted rules, heuristics, and value judgments the LLM should follow.
     Judgment,
+    /// Anti-pattern or explicit "do not do this" knowledge.
+    Negative,
 }
 
 impl CognitiveKind {
@@ -58,6 +60,7 @@ impl CognitiveKind {
             CognitiveKind::Semantic => "semantic",
             CognitiveKind::Procedural => "procedural",
             CognitiveKind::Judgment => "judgment",
+            CognitiveKind::Negative => "negative",
         }
     }
 }
@@ -140,6 +143,7 @@ fn classify_from_tags(tags: &str) -> Option<CognitiveKind> {
             "semantic" => return Some(CognitiveKind::Semantic),
             "procedural" => return Some(CognitiveKind::Procedural),
             "judgment" => return Some(CognitiveKind::Judgment),
+            "negative" => return Some(CognitiveKind::Negative),
             _ => {}
         }
     }

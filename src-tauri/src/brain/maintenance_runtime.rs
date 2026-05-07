@@ -220,6 +220,7 @@ pub fn spawn(
                 promote_tier_cooldown_ms: cooldown_ms,
                 edge_extract_cooldown_ms: cooldown_ms,
                 obsidian_export_cooldown_ms: cooldown_ms,
+                ann_compact_cooldown_ms: cooldown_ms,
             };
             let due = runtime_clone.jobs_due_with(&live_config, now).await;
 
@@ -290,6 +291,7 @@ pub async fn run_foreground(
             promote_tier_cooldown_ms: cooldown_ms,
             edge_extract_cooldown_ms: cooldown_ms,
             obsidian_export_cooldown_ms: cooldown_ms,
+            ann_compact_cooldown_ms: cooldown_ms,
         };
         let due = runtime.jobs_due_with(&live_config, now).await;
 
@@ -420,6 +422,14 @@ pub async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Resul
                 report.written, report.skipped, report.total, report.output_dir
             ))
         }
+        MaintenanceJob::AnnCompact => {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            if !store.ann_needs_compaction() {
+                return Ok("ann_compact: skipped (fragmentation below threshold)".to_string());
+            }
+            let rebuilt = store.compact_ann().map_err(|e| e.to_string())?;
+            Ok(format!("ann_compact: rebuilt index with {rebuilt} vectors"))
+        }
     }
 }
 
@@ -476,10 +486,10 @@ mod tests {
         let runtime = MaintenanceRuntime::load(dir.path(), MaintenanceConfig::default());
         // Default state = all `last_*_ms = 0` = everything always due.
         let due = runtime.jobs_due_now(123_456_789).await;
-        assert_eq!(due.len(), 5);
+        assert_eq!(due.len(), 6);
         // Canonical order from the scheduler module.
         assert_eq!(due[0], MaintenanceJob::Decay);
-        assert_eq!(due[3], MaintenanceJob::EdgeExtract);
+        assert_eq!(due[4], MaintenanceJob::EdgeExtract);
     }
 
     #[tokio::test]

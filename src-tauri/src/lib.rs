@@ -19,6 +19,7 @@ pub mod brain;
 pub mod coding;
 pub mod commands;
 pub mod container;
+pub mod hive;
 pub mod identity;
 pub mod link;
 pub mod memory;
@@ -74,6 +75,7 @@ use commands::{
         clear_self_improve_log, code_add_repo_to_group, code_architecture_tours, code_call_graph,
         code_compute_processes, code_create_group, code_cross_repo_query, code_delete_group,
         code_diff_overlay, code_explain_graph, code_export_graph, code_extract_contracts,
+        code_extract_negatives, code_detect_harnesses, code_import_sessions,
         code_generate_skills, code_generate_wiki, code_group_status, code_index_repo,
         code_list_clusters, code_list_group_contracts, code_list_groups, code_list_processes,
         code_remove_repo_from_group, code_resolve_edges, coding_session_clear_handoff,
@@ -92,7 +94,8 @@ use commands::{
     },
     coding_sessions::{
         coding_session_append_message, coding_session_clear_chat, coding_session_fork,
-        coding_session_list, coding_session_load_chat, coding_session_purge, coding_session_rename,
+        coding_session_list, coding_session_load_chat, coding_session_purge,
+        coding_session_rename, coding_session_resume,
     },
     consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
     crag::crag_retrieve,
@@ -128,13 +131,14 @@ use commands::{
     },
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
-        audit_memory_tags, auto_promote_memories, backfill_embeddings, clear_all_data,
+        audit_memory_tags, auto_promote_memories, backfill_embedding_model_id,
+        backfill_embeddings, clear_all_data, compact_ann, set_ann_quantization,
         close_memory_edge, count_memory_conflicts, daily_brief_query, delete_memory,
         delete_memory_edge, dismiss_memory_conflict, enforce_memory_storage_limit,
         evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
-        get_memory_provenance, get_memory_stats, get_relevant_memories, get_schema_info,
+        get_memory_provenance, get_memory_stats, get_memory_metrics, get_relevant_memories, get_schema_info,
         get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
         hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories, judgment_add,
         judgment_apply, judgment_list, list_memory_conflicts, list_memory_edges,
@@ -172,6 +176,9 @@ use commands::{
     routing::{
         approve_remote_command, deny_remote_command, get_device_permissions, list_pending_commands,
         match_ai_integration_intent, set_device_permission,
+    },
+    safety::{
+        safety_check_promotion, safety_list_decisions, safety_request_permission,
     },
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
@@ -316,6 +323,15 @@ pub struct AppStateInner {
     /// Prevents stampeding the embedding provider when many files are
     /// ingested concurrently. Default: 4 concurrent ingest tasks.
     pub ingest_semaphore: Arc<tokio::sync::Semaphore>,
+    /// Embedding queue worker metrics (Chunk 41.7). Exposes rate-limit
+    /// pause state and hard-fail counter through `brain_health`.
+    pub embed_worker_metrics: memory::embedding_queue::WorkerMetrics,
+    /// Cancellation token for graceful shutdown of the embedding worker.
+    pub embed_worker_shutdown: tokio::sync::watch::Sender<bool>,
+    /// Debounced async flush handle for the ANN index (Chunk 41.10).
+    pub ann_flush_handle: memory::ann_flush::AnnFlushHandle,
+    /// LRU cache for bounded KG traversals (Chunk 41.13).
+    pub kg_cache: memory::kg_cache::KgCache,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -397,6 +413,10 @@ impl AppState {
             coding_workflow_config: Mutex::new(coding::load_coding_workflow_config(data_dir)),
             provider_policy: Mutex::new(brain::ProviderPolicy::load(data_dir)),
             ingest_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            embed_worker_metrics: memory::embedding_queue::WorkerMetrics::default(),
+            embed_worker_shutdown: tokio::sync::watch::channel(false).0,
+            ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
+            kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
         }))
     }
 
@@ -457,9 +477,14 @@ impl AppState {
             coding_workflow_config: Mutex::new(coding::CodingWorkflowConfig::default()),
             provider_policy: Mutex::new(brain::ProviderPolicy::default()),
             ingest_semaphore: Arc::new(tokio::sync::Semaphore::new(4)),
+            embed_worker_metrics: memory::embedding_queue::WorkerMetrics::default(),
+            embed_worker_shutdown: tokio::sync::watch::channel(false).0,
+            ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
+            kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
         }))
     }
 }
+
 
 /// Resolve the on-disk data directory the same way the GUI does, but
 /// without requiring a Tauri `AppHandle`. Used by [`run_stdio`] so the
@@ -1040,6 +1065,7 @@ fn maintenance_config_from_settings(
         promote_tier_cooldown_ms: cooldown_ms,
         edge_extract_cooldown_ms: cooldown_ms,
         obsidian_export_cooldown_ms: cooldown_ms,
+        ann_compact_cooldown_ms: cooldown_ms,
     }
 }
 
@@ -1067,8 +1093,23 @@ fn spawn_shared_maintenance(state: &AppState, label: &str) {
 /// already have NULL embeddings — this self-heals databases populated
 /// before this worker existed.
 fn spawn_embedding_queue_worker(state: &AppState, label: &str) {
-    let _handle = memory::embedding_queue::spawn_worker(state.clone());
-    eprintln!("[{label}] embedding-queue worker started; tick=10s, batch=32");
+    let shutdown_rx = state.embed_worker_shutdown.subscribe();
+    let metrics = state.embed_worker_metrics.clone();
+    memory::embedding_queue::spawn_worker_with_metrics(state.clone(), shutdown_rx, metrics);
+    eprintln!("[{label}] embedding-queue worker started; tick=10s, provider-adaptive batch");
+}
+
+/// Spawn the debounced ANN flush background task (Chunk 41.10).
+///
+/// The task waits for flush signals, debounces them (200 ms window), then
+/// acquires the `memory_store` mutex and saves all dirty ANN indices.
+fn spawn_ann_flush_task(state: &AppState) {
+    let handle = state.ann_flush_handle.clone();
+    let store_mutex = state.0.clone();
+    memory::ann_flush::spawn_flush_task(handle, move || {
+        let store = store_mutex.memory_store.lock().unwrap_or_else(|e| e.into_inner());
+        store.ann_save_all()
+    });
 }
 
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -1324,8 +1365,12 @@ pub fn run() {
             rerank_search_memories,
             matryoshka_search_memories,
             backfill_embeddings,
+            backfill_embedding_model_id,
+            set_ann_quantization,
+            compact_ann,
             get_schema_info,
             get_memory_stats,
+            get_memory_metrics,
             enforce_memory_storage_limit,
             apply_memory_decay,
             auto_promote_memories,
@@ -1387,6 +1432,9 @@ pub fn run() {
             list_agent_capabilities,
             run_agent_in_sandbox,
             clear_agent_capabilities,
+            safety_request_permission,
+            safety_list_decisions,
+            safety_check_promotion,
             publish_agent_message,
             subscribe_agent_topic,
             unsubscribe_agent_topic,
@@ -1605,6 +1653,9 @@ pub fn run() {
             code_remove_repo_from_group,
             code_group_status,
             code_extract_contracts,
+            code_extract_negatives,
+            code_detect_harnesses,
+            code_import_sessions,
             code_list_group_contracts,
             code_cross_repo_query,
             get_github_config,
@@ -1625,6 +1676,7 @@ pub fn run() {
             coding_session_rename,
             coding_session_fork,
             coding_session_purge,
+            coding_session_resume,
             // Multi-agent workflow plans + calendar (Chunk 30.3)
             workflow_plan_list,
             workflow_plan_load,
@@ -1735,8 +1787,16 @@ pub fn run() {
 
             app.manage(AppState::new(&data_dir));
             let state = app.state::<AppState>();
+
+            // Attach the ANN flush handle to the memory store.
+            {
+                let mut store = state.memory_store.lock().unwrap();
+                store.set_flush_handle(state.ann_flush_handle.clone());
+            }
+
             spawn_shared_maintenance(&state, if mcp_app_mode { "mcp-app" } else { "app" });
             spawn_embedding_queue_worker(&state, if mcp_app_mode { "mcp-app" } else { "app" });
+            spawn_ann_flush_task(&state);
 
             // Apply shared seed data (mcp-data/shared/) to ALL modes.
             // The migration runner is idempotent: it only applies NEW
@@ -1796,13 +1856,37 @@ pub fn run() {
                                 )
                         });
 
-                    match ai_integrations::mcp::start_server_with_activity(
+                    // Headless MCP idle timeout: default 300s (5 min),
+                    // configurable via TERRANSOUL_MCP_IDLE_TIMEOUT env var.
+                    // Set to 0 to disable.
+                    let idle_timeout_secs: u64 = std::env::var("TERRANSOUL_MCP_IDLE_TIMEOUT")
+                        .ok()
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(300);
+
+                    // Resume session if --resume <name> was passed.
+                    if let Ok(resume_name) = std::env::var("TERRANSOUL_MCP_RESUME") {
+                        match coding::session_registry::resolve(&app_state_inner.data_dir, &resume_name) {
+                            Ok(Some(entry)) => {
+                                eprintln!("[mcp-app] resuming session '{}' (id: {})", resume_name, entry.session_id);
+                            }
+                            Ok(None) => {
+                                eprintln!("[mcp-app] session '{}' not found in registry; starting fresh", resume_name);
+                            }
+                            Err(e) => {
+                                eprintln!("[mcp-app] failed to resolve session '{}': {e}", resume_name);
+                            }
+                        }
+                    }
+
+                    match ai_integrations::mcp::start_server_full(
                         app_state_inner.clone(),
                         HEADLESS_MCP_PORT,
                         token.clone(),
                         false,
                         lan_public_read_only,
                         Some(app_handle),
+                        idle_timeout_secs,
                     )
                     .await
                     {

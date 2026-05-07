@@ -206,6 +206,14 @@ impl From<MemoryEntry> for SearchHit {
     }
 }
 
+/// A memory entry enriched with its reinforcement history (Chunk 43.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntryDetail {
+    #[serde(flatten)]
+    pub entry: MemoryEntry,
+    pub reinforcements: Vec<crate::memory::store::ReinforcementRecord>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentRequest {
     /// Bounded `1..=200` server-side; defaults to 20.
@@ -362,6 +370,9 @@ pub struct HealthResponse {
     pub rag_quality: RagQualityHealth,
     /// Memory tier totals that explain `memory_total`.
     pub memory: MemoryHealth,
+    /// Embedding worker status (rate-limit pauses, hard failures, throughput).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_worker: Option<crate::memory::embedding_queue::WorkerStatus>,
     /// Field-level descriptions for clients rendering raw JSON.
     pub descriptions: HealthDescriptions,
 }
@@ -429,6 +440,13 @@ pub trait BrainGateway: Send + Sync {
 
     /// `brain.get_entry` — full memory entry by id.
     async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError>;
+
+    /// `brain.get_entry` with reinforcement provenance (Chunk 43.4).
+    async fn get_entry_detail(
+        &self,
+        caps: &GatewayCaps,
+        id: i64,
+    ) -> Result<EntryDetail, GatewayError>;
 
     /// `brain.list_recent` — last N memories with optional filters.
     async fn list_recent(
@@ -637,12 +655,52 @@ impl BrainGateway for AppStateGateway {
                 for entry in &entries {
                     scores.push(agent.rerank_score(&req.query, &entry.content).await);
                 }
-                crate::memory::reranker::rerank_candidates_with_threshold(
+
+                // Build verdicts before threshold filtering (43.6).
+                let threshold_norm = req.rerank_threshold.clamp(0.0, 1.0);
+                let verdicts: Vec<(i64, crate::memory::post_retrieval::RetrievalVerdict)> = entries
+                    .iter()
+                    .zip(scores.iter())
+                    .map(|(e, s)| {
+                        let verdict = if s.is_some_and(|v| (v as f64 / 10.0) >= threshold_norm) {
+                            crate::memory::post_retrieval::RetrievalVerdict::Verified
+                        } else {
+                            crate::memory::post_retrieval::RetrievalVerdict::Rejected
+                        };
+                        (e.id, verdict)
+                    })
+                    .collect();
+
+                let reranked = crate::memory::reranker::rerank_candidates_with_threshold(
                     entries,
                     &scores,
                     limit,
                     req.rerank_threshold,
-                )
+                );
+
+                // Record reinforcement for entries that survived reranking (43.4).
+                if let Ok(store) = self.state.memory_store.lock() {
+                    let session_id = format!("brain_search_{}", crate::memory::store::now_ms());
+                    for (idx, entry) in reranked.iter().enumerate() {
+                        let _ = store.record_reinforcement(
+                            entry.id,
+                            &session_id,
+                            idx as i64,
+                        );
+                    }
+                }
+
+                // Spawn async post-retrieval maintenance (43.6).
+                if let Ok(store) = self.state.memory_store.lock() {
+                    crate::memory::post_retrieval::run_maintenance(
+                        &store,
+                        &verdicts,
+                        &req.query,
+                        &crate::memory::post_retrieval::PostRetrievalConfig::default(),
+                    );
+                }
+
+                reranked
             } else {
                 entries.into_iter().take(limit).collect()
             }
@@ -652,7 +710,7 @@ impl BrainGateway for AppStateGateway {
 
         // Step 3: stamp positional scores so clients can sort / threshold.
         let total = entries.len() as f64;
-        Ok(entries
+        let scored: Vec<SearchHit> = entries
             .into_iter()
             .enumerate()
             .map(|(idx, e)| {
@@ -665,7 +723,22 @@ impl BrainGateway for AppStateGateway {
                 };
                 hit
             })
-            .collect())
+            .collect();
+
+        // Step 4: Gap detection (43.8) — record blind spots.
+        let top_score = scored.first().map(|h| h.score).unwrap_or(0.0);
+        if let Ok(store) = self.state.memory_store.lock() {
+            let _ = crate::memory::gap_detection::detect_and_record_gap(
+                &store,
+                top_score,
+                query_emb.as_deref(),
+                &req.query,
+                None,
+                &crate::memory::gap_detection::GapDetectionConfig::default(),
+            );
+        }
+
+        Ok(scored)
     }
 
     async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError> {
@@ -680,6 +753,32 @@ impl BrainGateway for AppStateGateway {
                 GatewayError::NotFound(format!("memory id {id}"))
             }
             other => GatewayError::Storage(other.to_string()),
+        })
+    }
+
+    async fn get_entry_detail(
+        &self,
+        caps: &GatewayCaps,
+        id: i64,
+    ) -> Result<EntryDetail, GatewayError> {
+        require_read(caps)?;
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+        let entry = store.get_by_id(id).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                GatewayError::NotFound(format!("memory id {id}"))
+            }
+            other => GatewayError::Storage(other.to_string()),
+        })?;
+        let reinforcements = store
+            .get_reinforcements(id, 10)
+            .map_err(|e| GatewayError::Storage(e.to_string()))?;
+        Ok(EntryDetail {
+            entry,
+            reinforcements,
         })
     }
 
@@ -754,6 +853,39 @@ impl BrainGateway for AppStateGateway {
             _ => EdgeDirection::Both,
         };
 
+        // Check LRU cache first (Chunk 41.13).
+        let cache_key = crate::memory::kg_cache::KgCacheKey {
+            seed_id: req.id,
+            depth: req.depth,
+            direction: dir,
+        };
+        let traversal = if let Some(cached) = self.state.kg_cache.get(&cache_key) {
+            cached
+        } else {
+            // Perform bounded BFS.
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            let traversal = crate::memory::kg_cache::bounded_bfs(
+                req.id,
+                req.depth,
+                dir,
+                |node_id, direction| {
+                    store
+                        .get_edges_for(node_id, direction)
+                        .unwrap_or_default()
+                },
+            );
+            drop(store);
+            // Cache the result.
+            self.state
+                .kg_cache
+                .insert(cache_key, traversal.clone());
+            traversal
+        };
+
         let store = self
             .state
             .memory_store
@@ -766,12 +898,11 @@ impl BrainGateway for AppStateGateway {
             other => GatewayError::Storage(other.to_string()),
         })?;
 
-        let edges = store
-            .get_edges_for(req.id, dir)
-            .map_err(|e| GatewayError::Storage(e.to_string()))?;
-
-        let neighbors = edges
-            .into_iter()
+        // Flatten all edges across hops into neighbors.
+        let neighbors = traversal
+            .hops
+            .iter()
+            .flat_map(|hop| hop.edges.iter())
             .map(|edge| {
                 let other_id = if edge.src_id == req.id {
                     edge.dst_id
@@ -779,16 +910,17 @@ impl BrainGateway for AppStateGateway {
                     edge.src_id
                 };
                 let entry = store.get_by_id(other_id).ok();
-                KgNeighbor { edge, entry }
+                KgNeighbor {
+                    edge: edge.clone(),
+                    entry,
+                }
             })
             .collect();
 
         Ok(KgNeighborhood {
             center,
             neighbors,
-            // Depth >1 reserved for a future BFS impl. Always report
-            // truncation honestly rather than silently capping at 1.
-            truncated: req.depth > 1,
+            truncated: traversal.truncated,
         })
     }
 
@@ -907,6 +1039,48 @@ impl BrainGateway for AppStateGateway {
                 },
             )
             .await?;
+
+        // Step 1b: Cascade retrieval through memory_edges (43.5).
+        // Expand the top-K via BFS depth ≤ 2 with edge-weighted decay.
+        let hits = if !hits.is_empty() {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+
+            // Build seed scores: linearly decreasing from 1.0
+            let total = hits.len() as f64;
+            let seeds: Vec<(i64, f64)> = hits
+                .iter()
+                .enumerate()
+                .map(|(i, h)| {
+                    let score = if total > 0.0 { 1.0 - (i as f64 / total) } else { 0.0 };
+                    (h.id, score)
+                })
+                .collect();
+
+            let expanded = crate::memory::cascade::cascade_expand(&store.conn, &seeds, None)
+                .unwrap_or(seeds);
+
+            // Materialize expanded entries as SearchHits.
+            let expanded_total = expanded.len() as f64;
+            let mut expanded_hits: Vec<SearchHit> = Vec::with_capacity(expanded.len().min(limit));
+            for (idx, (id, _)) in expanded.iter().enumerate().take(limit) {
+                if let Ok(entry) = store.get_by_id(*id) {
+                    let mut hit: SearchHit = entry.into();
+                    hit.score = if expanded_total > 0.0 {
+                        1.0 - (idx as f64 / expanded_total)
+                    } else {
+                        0.0
+                    };
+                    expanded_hits.push(hit);
+                }
+            }
+            expanded_hits
+        } else {
+            hits
+        };
 
         // Step 2: KG one-hop around the top hit (if any).
         let kg = if let Some(top) = hits.first() {
@@ -1055,6 +1229,8 @@ impl BrainGateway for AppStateGateway {
             memory_total: "All memories stored across short, working, and long tiers.".into(),
         };
 
+        let embed_worker = Some(self.state.embed_worker_metrics.snapshot());
+
         Ok(HealthResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
             brain_provider: provider.to_string(),
@@ -1063,6 +1239,7 @@ impl BrainGateway for AppStateGateway {
             memory_total: stats.total,
             rag_quality,
             memory,
+            embed_worker,
             descriptions,
         })
     }
@@ -1445,14 +1622,14 @@ mod tests {
                 &GatewayCaps::default(),
                 KgRequest {
                     id,
-                    depth: 3,
+                    depth: 4, // exceeds MAX_DEPTH (3), triggers truncation
                     direction: "both".into(),
                 },
             )
             .await
             .unwrap();
         assert_eq!(nb.center.id, id);
-        assert!(nb.truncated, "depth > 1 must report truncation");
+        assert!(nb.truncated, "depth > MAX_DEPTH must report truncation");
     }
 
     #[tokio::test]

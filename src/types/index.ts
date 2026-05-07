@@ -242,6 +242,20 @@ export interface MemoryEntry {
   session_id: string | null;
   parent_id: number | null;
   token_count: number;
+  confidence: number;
+}
+
+/** A reinforcement provenance record (Chunk 43.4). */
+export interface ReinforcementRecord {
+  memory_id: number;
+  session_id: string;
+  message_index: number;
+  ts: number;
+}
+
+/** A memory entry enriched with reinforcement history. */
+export interface EntryDetail extends MemoryEntry {
+  reinforcements: ReinforcementRecord[];
 }
 
 export interface MemoryStats {

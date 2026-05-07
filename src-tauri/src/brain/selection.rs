@@ -312,7 +312,7 @@ mod tests {
             working_count: 2,
             long_count: 7,
             embedded_count: 0,
-            schema_version: 15,
+            schema_version: 16,
         }
     }
     fn dummy_storage() -> StorageSelection {

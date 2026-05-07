@@ -27,6 +27,7 @@ pub mod plugins;
 pub mod quest;
 pub mod registry;
 pub mod routing;
+pub mod safety;
 pub mod sandbox;
 pub mod settings;
 pub mod streaming;

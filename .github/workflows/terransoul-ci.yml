@@ -90,6 +90,68 @@ jobs:
         working-directory: src-tauri
         run: cargo test --all-targets
 
+  # ── Rust + Postgres: backend parity tests ────────────────────────────────
+  rust-postgres:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: terransoul_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Install system dependencies (Tauri / WebKit)
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yqq --no-install-recommends \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry + build
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: cargo-pg-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: cargo-pg-${{ runner.os }}-
+
+      - name: Run cargo clippy with postgres feature
+        working-directory: src-tauri
+        run: cargo clippy --features postgres -- -D warnings
+
+      - name: Run cargo test with postgres feature
+        working-directory: src-tauri
+        env:
+          TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/terransoul_test
+        run: cargo test --features postgres -- --include-ignored
+
   # ── Playwright E2E (starts as soon as frontend passes) ───────────────────
   playwright-e2e:
     runs-on: ubuntu-latest

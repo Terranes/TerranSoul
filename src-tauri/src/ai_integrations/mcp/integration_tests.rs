@@ -93,7 +93,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_returns_26_tools() {
+    async fn tools_list_returns_28_tools() {
         let (handle, url, token) = start_test_server().await;
 
         let (status, body) = rpc(
@@ -110,7 +110,7 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 26);
+        assert_eq!(tools.len(), 28);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
@@ -119,10 +119,11 @@ mod tests {
         // Verify Knowledge Wiki tools are present before code tools.
         assert_eq!(tools[9]["name"], "brain_wiki_audit");
         assert_eq!(tools[13]["name"], "brain_wiki_digest_text");
+        assert_eq!(tools[14]["name"], "brain_review_gaps");
 
         // Verify code tools are present.
-        assert_eq!(tools[14]["name"], "code_query");
-        assert_eq!(tools[17]["name"], "code_rename");
+        assert_eq!(tools[15]["name"], "code_query");
+        assert_eq!(tools[18]["name"], "code_rename");
 
         handle.stop();
     }

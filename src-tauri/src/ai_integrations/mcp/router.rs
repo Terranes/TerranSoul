@@ -342,6 +342,7 @@ async fn handle_request(
 /// Includes `Access-Control-Allow-Origin: *` so the built-in tray status
 /// page (served from `about:blank`, origin `null`) can fetch it.
 async fn handle_health(State(state): State<McpRouterState>) -> Response {
+    let metrics = crate::memory::metrics::METRICS.snapshot();
     let body = match state.gw.health(&state.caps).await {
         Ok(h) => json!({
             "status": "ok",
@@ -353,6 +354,7 @@ async fn handle_health(State(state): State<McpRouterState>) -> Response {
             "rag_quality": h.rag_quality,
             "memory": h.memory,
             "descriptions": h.descriptions,
+            "metrics": metrics,
         }),
         Err(_) => json!({
             "status": "ok",

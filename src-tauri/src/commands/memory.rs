@@ -397,10 +397,17 @@ async fn run_edge_extraction(
         if new_edges.is_empty() {
             continue;
         }
+        // Collect endpoints for cache invalidation (Chunk 41.13).
+        let endpoints: Vec<i64> = new_edges
+            .iter()
+            .flat_map(|e| [e.src_id, e.dst_id])
+            .collect();
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         if let Ok(n) = store.add_edges_batch(&new_edges) {
             total_inserted += n;
         }
+        drop(store);
+        state.kg_cache.invalidate(&endpoints);
     }
     Ok(total_inserted)
 }
@@ -681,6 +688,50 @@ pub async fn backfill_embeddings(state: State<'_, AppState>) -> Result<usize, St
         }
     }
     Ok(count)
+}
+
+/// Backfill `embedding_model_id` on existing memories that have embeddings
+/// but no model metadata. Called after switching to V16 schema (Chunk 41.8).
+/// Optionally copies embeddings into the `memory_embeddings` side table.
+#[tauri::command]
+pub async fn backfill_embedding_model_id(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .backfill_embedding_model(&model_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Rebuild the ANN index with a new quantization mode (Chunk 41.9).
+/// Valid modes: "f32" (default), "i8" (4× compression), "b1" (binary).
+/// Returns the number of vectors re-indexed.
+#[tauri::command]
+pub async fn set_ann_quantization(
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<usize, String> {
+    let quant = crate::memory::ann_index::EmbeddingQuantization::from_str_lossy(&mode);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.rebuild_ann_quantized(quant)
+}
+
+/// Compact the ANN index by rebuilding from live long-term memories (Chunk 41.11).
+///
+/// Removes tombstones from the HNSW graph. Only runs if fragmentation
+/// exceeds the threshold (20%). Returns the vector count after compaction,
+/// or 0 if compaction was not needed or no index exists.
+#[tauri::command]
+pub async fn compact_ann(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    if !force.unwrap_or(false) && !store.ann_needs_compaction() {
+        return Ok(0);
+    }
+    store.compact_ann()
 }
 
 /// Return the current database schema version and storage status.
@@ -967,6 +1018,15 @@ pub async fn get_memory_stats(
 ) -> Result<crate::memory::MemoryStats, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.stats().map_err(|e| e.to_string())
+}
+
+/// Get per-operation latency metrics (p50/p95/p99) for all memory CRUD and
+/// retrieval operations (Phase 41.2). Returns a JSON object with one key per
+/// operation name.
+#[tauri::command]
+pub async fn get_memory_metrics() -> Result<serde_json::Value, String> {
+    let snap = crate::memory::metrics::METRICS.snapshot();
+    serde_json::to_value(snap).map_err(|e| e.to_string())
 }
 
 /// Enforce the configured maximum memory/RAG storage cap immediately.
@@ -1277,7 +1337,11 @@ pub async fn add_memory_edge(
         edge_source: None,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.add_edge(edge).map_err(|e| e.to_string())
+    let result = store.add_edge(edge).map_err(|e| e.to_string())?;
+    drop(store);
+    // Invalidate KG cache for affected endpoints (Chunk 41.13).
+    state.kg_cache.invalidate(&[src_id, dst_id]);
+    Ok(result)
 }
 
 /// Close an edge's validity interval at the given Unix-ms timestamp.
@@ -1302,7 +1366,17 @@ pub async fn close_memory_edge(
 #[tauri::command]
 pub async fn delete_memory_edge(edge_id: i64, state: State<'_, AppState>) -> Result<(), String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.delete_edge(edge_id).map_err(|e| e.to_string())
+    // Look up endpoints before deletion for cache invalidation (Chunk 41.13).
+    let endpoints: Option<(i64, i64)> = store
+        .get_edge_by_id(edge_id)
+        .ok()
+        .map(|e| (e.src_id, e.dst_id));
+    store.delete_edge(edge_id).map_err(|e| e.to_string())?;
+    drop(store);
+    if let Some((src, dst)) = endpoints {
+        state.kg_cache.invalidate(&[src, dst]);
+    }
+    Ok(())
 }
 
 /// List all edges in the graph.

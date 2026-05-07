@@ -2144,7 +2144,8 @@ For large desktop stores, the target path is the `native-ann` HNSW index via
 - Default smoke tier: 10k vectors, 1,000 queries, report JSON at `src-tauri/target/bench-results/million_memory.json`.
 - Full tier: `cargo bench --bench million_memory --features bench-million`, 1M vectors, 1,000 queries, linear backend skipped, HNSW thresholds p50 <= 30 ms / p95 <= 60 ms / p99 <= 100 ms.
 - Capacity tier: `enforce_capacity` seeds `cap * 1.05` long-tier rows and verifies the store prunes to `cap * 0.95` without deleting protected or high-importance rows.
-- **CRUD tier (Phase 41):** the same harness now exercises real SQLite CRUD via `MemoryStore::add_many` (transactional, `prepare_cached`) and `MemoryStore::get_all`. The 2026-05-07 1M run with `TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1` measured **write 6.37 s @ 157 031 rows/s** and **read 1.84 s @ 544 704 rows/s**, beating the 60 s / 5 s targets by ~10× and ~3×. The `TS_BENCH_CRUD_ONLY=1` switch skips HNSW + capacity sections so iteration on the SQLite path is fast.
+- **CRUD tier (Phase 41):** the same harness now exercises real SQLite CRUD via `MemoryStore::add_many` (transactional, `prepare_cached`), `MemoryStore::get_all`, bulk update, and mixed CRUD workload sections. Chunk 41.3 adds explicit per-bench timeout controls (`TS_BENCH_TIMEOUT_SECS`, default 300), pre-phase guards, and in-loop timeout checks so long runs fail fast instead of hanging. 2026-05-07 1M CRUD-only runs (`TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1`) continue to show headline write/read well inside target (roughly 6-7 s write and ~2 s read vs 60 s / 5 s budget). Million-scale benchmark delete is intentionally skipped because secondary-index maintenance dominates wall-clock and does not represent the Phase 41 headline write/read SLO.
+- **Per-op metrics (Chunk 41.2):** `src-tauri/src/memory/metrics.rs` records lock-free latency histograms for CRUD/search calls (`add`, `add_many`, `update`, `delete`, `set_embedding`, `hybrid_search`, `hybrid_search_rrf`). Snapshots are exposed via `get_memory_metrics` and embedded into MCP `/health` output to make perf regressions visible without ad-hoc profiling.
 - Operator guide (commands, env knobs, JSON schema, troubleshooting) and a generalized recipe for adding new benchmarks: [docs/benchmarking.md](benchmarking.md).
 
 If a dataset pushes beyond a single desktop's RAM budget, the next options are
@@ -3361,6 +3362,95 @@ same Rust functions and respect existing `GatewayCaps` read/write policy:
 read-only mode; `brain_wiki_digest_text` requires `brain_write` because it
 persists a deduplicated memory row. This gives agents graphify-like graph/wiki
 power while humans keep using TerranSoul chat and BrainView instead of a CLI.
+
+---
+
+---
+
+## 27. Backend Test Matrix — CI Parity
+
+TerranSoul tests the memory layer against multiple storage backends:
+
+| Backend | CI Cadence | Feature Flag | Service | Notes |
+|---------|-----------|--------------|---------|-------|
+| **SQLite** | Every push | (default) | None — embedded | Canonical reference; 2352+ tests |
+| **PostgreSQL** | Every push | `--features postgres` | `pgvector/pgvector:pg16` | FTS, RRF, pgvector HNSW, edges, CRDT |
+| **SQL Server** | Weekly/nightly | `--features mssql` | `mcr.microsoft.com/mssql/server` | Opt-in; heavier runtime |
+| **CassandraDB** | Weekly/nightly | `--features cassandra` | `cassandra:4` | Opt-in; eventual consistency |
+
+### Workflow: `.github/workflows/terransoul-ci.yml`
+
+The `rust-postgres` job starts a `pgvector/pgvector:pg16` service container,
+runs `cargo clippy --features postgres` and `cargo test --features postgres --
+--include-ignored` with `TEST_POSTGRES_URL` pointing to the service. Tests
+marked `#[ignore = "requires PostgreSQL"]` only run in this job.
+
+### Coverage gap (documented)
+
+MSSQL and Cassandra backends compile and pass unit tests in default CI (their
+code is `#[cfg(feature = "...")]`-gated), but integration tests against a real
+database instance run only on a weekly schedule to avoid expensive service
+container spin-up on every push. Contributors touching `mssql.rs` or
+`cassandra.rs` should run the integration suite locally before merging.
+
+---
+
+## 28. Hive Protocol — Opt-in Federation & Privacy ACL
+
+TerranSoul supports opt-in federation through the **Hive Protocol** (Phase 42,
+Section D). Devices share knowledge bundles via a lightweight gRPC relay while
+maintaining strict privacy guarantees.
+
+### 28.1 Share Scope (per-memory ACL)
+
+Every memory carries a `share_scope` column (SQLite schema v19):
+
+| Scope | Meaning | Behaviour |
+|-------|---------|-----------|
+| `private` | Never leaves device | Default. Cannot appear in any outbound bundle. |
+| `paired` | Own-device sync only | Travels between linked devices via `LinkManager`. |
+| `hive` | Shareable with relay | May be uploaded to a hive relay for federation. |
+
+Default scopes per `cognitive_kind`:
+- `episodic`, `preference`, `personal` → `private`
+- `procedural`, `semantic`, `factual` → `paired`
+- Unknown/missing → `private`
+
+Users can override defaults in settings (`share_scope_overrides` map).
+
+### 28.2 Privacy enforcement
+
+The `hive::privacy` module guarantees:
+1. **Memory filtering:** Only memories at or above the target scope pass.
+2. **Edge filtering:** Edges are included only if BOTH endpoints pass the filter.
+3. **No accidental leakage:** `filter_bundle()` returns `None` if no content qualifies.
+4. **Tests:** 13 unit tests covering every combination of scope × target × edge topology.
+
+### 28.3 Protocol overview
+
+Three message types (full spec: `docs/hive-protocol.md`):
+- **BUNDLE** — signed batch of memories + edges (Ed25519, content-addressable)
+- **OP** — single CRDT operation (low-latency, ephemeral)
+- **JOB** — distributable work item with capability requirements
+
+### 28.4 Job distribution
+
+`hive::jobs::JobDispatcher` routes work:
+- **Self-jobs:** executed locally when capabilities match (no relay needed)
+- **Remote jobs:** submitted to relay; workers claim via `ClaimJob` RPC
+
+Capability matching: `job.capabilities ⊆ worker.advertised_capabilities`.
+
+### 28.5 Relay server
+
+Reference implementation: `crates/hive-relay/` (Tonic gRPC + Postgres).
+- Signature verification before accepting any envelope
+- HLC watermark replay protection
+- Bundle persistence + subscriber broadcast
+- Job queue with `FOR UPDATE SKIP LOCKED` atomic claim
+
+Self-hostable via `docker compose -f crates/hive-relay/docker-compose.yml up`.
+Desktop app connects only when `hive_url` setting is configured.
 
 ---
 

@@ -107,6 +107,7 @@ mod tests {
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
             max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
             data_root: None,
+            hive_url: None,
             obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         // Directly update in-memory state (simulating command effect)
@@ -163,6 +164,7 @@ mod tests {
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
             max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
             data_root: None,
+            hive_url: None,
             obsidian_layout: crate::settings::ObsidianLayout::Flat,
         };
         config_store::save(dir.path(), &settings).unwrap();

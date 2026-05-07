@@ -2,10 +2,12 @@
 //!
 //! Dispatches inbound `LinkMessage`s by `kind` field. The `memory_sync`
 //! handler applies CRDT deltas and optionally responds with local deltas
-//! for bidirectional sync.
+//! for bidirectional sync. `edge_sync` handles KG edge CRDT replication
+//! (Chunk 42.5).
 
 use super::{LinkMessage, LinkStatus, PeerAddr};
 use crate::memory::crdt_sync::SyncDelta;
+use crate::memory::edge_crdt_sync::EdgeSyncDelta;
 use crate::AppState;
 
 /// Dispatch an inbound LinkMessage to the appropriate handler.
@@ -18,6 +20,7 @@ pub async fn dispatch_link_message(
     match msg.kind.as_str() {
         "memory_sync" => handle_memory_sync(&msg, state).await,
         "memory_sync_request" => handle_memory_sync_request(&msg, state).await,
+        "edge_sync" => handle_edge_sync(&msg, state).await,
         "ping" => Ok(Some(LinkMessage {
             id: uuid::Uuid::new_v4().to_string(),
             origin: get_device_id(state),
@@ -108,6 +111,45 @@ async fn handle_memory_sync_request(
     }))
 }
 
+/// Handle inbound edge_sync deltas from a peer (Chunk 42.5).
+///
+/// Applies edge CRDT deltas via HLC-based LWW and responds with local
+/// edge deltas the peer doesn't have.
+async fn handle_edge_sync(
+    msg: &LinkMessage,
+    state: &AppState,
+) -> Result<Option<LinkMessage>, String> {
+    let deltas: Vec<EdgeSyncDelta> = serde_json::from_value(msg.payload.clone())
+        .map_err(|e| format!("invalid edge_sync payload: {e}"))?;
+
+    let local_device_id = get_device_id(state);
+    let response_deltas: Vec<EdgeSyncDelta>;
+
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        // Use HLC=0 to get all edge deltas for now (cursor-based in future).
+        response_deltas = store
+            .compute_edge_sync_deltas(0, &local_device_id)
+            .map_err(|e| e.to_string())?;
+
+        store
+            .apply_edge_sync_deltas(&deltas, &local_device_id)
+            .map_err(|e| e.to_string())?;
+    }
+
+    if response_deltas.is_empty() {
+        return Ok(None);
+    }
+
+    Ok(Some(LinkMessage {
+        id: uuid::Uuid::new_v4().to_string(),
+        origin: local_device_id,
+        target: msg.origin.clone(),
+        kind: "edge_sync".into(),
+        payload: serde_json::to_value(&response_deltas).unwrap_or(serde_json::json!([])),
+    }))
+}
+
 /// Start the background receive loop for Soul Link messages.
 ///
 /// This spawns a tokio task that:
@@ -158,9 +200,10 @@ pub fn start_receive_loop(state: AppState) {
     });
 }
 
-/// Trigger a full memory sync with the connected peer.
+/// Trigger a full memory + edge sync with the connected peer (Chunk 42.5).
 ///
-/// Sends all local deltas since the last sync as a `memory_sync` message.
+/// Sends all local memory deltas since the last sync as a `memory_sync`
+/// message, then sends edge deltas as an `edge_sync` message.
 pub async fn trigger_sync(state: &AppState) -> Result<(), String> {
     let peer_device_id = {
         let mgr = state.link_manager.lock().await;
@@ -171,35 +214,52 @@ pub async fn trigger_sync(state: &AppState) -> Result<(), String> {
     };
 
     let local_device_id = get_device_id(state);
-    let deltas = {
+    let (memory_deltas, edge_deltas) = {
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         let since = store
             .last_sync_time(&peer_device_id)
             .unwrap_or(Some(0))
             .unwrap_or(0);
-        store
+        let mem = store
             .compute_sync_deltas(since, &local_device_id)
-            .map_err(|e| e.to_string())?
-    };
-
-    if deltas.is_empty() {
-        return Ok(());
-    }
-
-    let msg = LinkMessage {
-        id: uuid::Uuid::new_v4().to_string(),
-        origin: local_device_id,
-        target: peer_device_id.clone(),
-        kind: "memory_sync".into(),
-        payload: serde_json::to_value(&deltas).unwrap_or(serde_json::json!([])),
+            .map_err(|e| e.to_string())?;
+        // Edge deltas: use HLC=0 for initial sync (full push).
+        let edges = store
+            .compute_edge_sync_deltas(0, &local_device_id)
+            .map_err(|e| e.to_string())?;
+        (mem, edges)
     };
 
     let mgr = state.link_manager.lock().await;
-    mgr.send(&msg).await?;
+
+    // Send memory deltas.
+    if !memory_deltas.is_empty() {
+        let msg = LinkMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            origin: local_device_id.clone(),
+            target: peer_device_id.clone(),
+            kind: "memory_sync".into(),
+            payload: serde_json::to_value(&memory_deltas).unwrap_or(serde_json::json!([])),
+        };
+        mgr.send(&msg).await?;
+    }
+
+    // Send edge deltas.
+    if !edge_deltas.is_empty() {
+        let msg = LinkMessage {
+            id: uuid::Uuid::new_v4().to_string(),
+            origin: local_device_id.clone(),
+            target: peer_device_id.clone(),
+            kind: "edge_sync".into(),
+            payload: serde_json::to_value(&edge_deltas).unwrap_or(serde_json::json!([])),
+        };
+        mgr.send(&msg).await?;
+    }
 
     // Log outbound sync.
+    drop(mgr);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    let _ = store.log_sync(&peer_device_id, "outbound", deltas.len());
+    let _ = store.log_sync(&peer_device_id, "outbound", memory_deltas.len() + edge_deltas.len());
     Ok(())
 }
 
@@ -307,6 +367,7 @@ mod tests {
             origin_device: "peer-a".into(),
             source_url: None,
             source_hash: Some("test-hash-sync".into()),
+            hlc_counter: 0,
         }];
 
         let msg = LinkMessage {
@@ -405,6 +466,7 @@ mod tests {
             origin_device: "peer-a".into(),
             source_url: None,
             source_hash: Some("remote-unsynced".into()),
+            hlc_counter: 0,
         }];
 
         let msg = LinkMessage {
@@ -451,5 +513,69 @@ mod tests {
         assert_eq!(addr.host, "127.0.0.1");
         assert_eq!(addr.port, 7422);
         assert!(parse_peer_addr("missing-port").is_err());
+    }
+
+    #[test]
+    fn dispatch_edge_sync_applies_edge_deltas() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let state = AppState::for_test();
+
+        // First insert memories so edge FK targets exist.
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(crate::memory::store::NewMemory {
+                    content: "Memory A".into(),
+                    tags: "test".into(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::store::NewMemory {
+                    content: "Memory B".into(),
+                    tags: "test".into(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let deltas = vec![EdgeSyncDelta {
+            src_id: 1,
+            dst_id: 2,
+            rel_type: "related_to".into(),
+            confidence: 0.9,
+            source: "llm".into(),
+            created_at: 1000,
+            valid_from: None,
+            valid_to: None,
+            edge_source: None,
+            origin_device: "peer-a".into(),
+            hlc_counter: 5,
+        }];
+
+        let msg = LinkMessage {
+            id: "7".into(),
+            origin: "peer-a".into(),
+            target: "local".into(),
+            kind: "edge_sync".into(),
+            payload: serde_json::to_value(&deltas).unwrap(),
+        };
+
+        let result = rt.block_on(dispatch_link_message(msg, &state)).unwrap();
+        // Should respond with local edge deltas (empty since we have none).
+        assert!(result.is_none());
+
+        // Verify edge was inserted.
+        let store = state.memory_store.lock().unwrap();
+        let edges = store.get_edges_for(1, crate::memory::edges::EdgeDirection::Both).unwrap();
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0].rel_type, "related_to");
     }
 }
