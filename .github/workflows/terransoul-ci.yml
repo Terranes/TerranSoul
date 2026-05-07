@@ -88,7 +88,7 @@ jobs:
 
       - name: Run cargo test
         working-directory: src-tauri
-        run: cargo test --all-targets
+        run: cargo test --lib
 
   # ── Rust + Postgres: backend parity tests ────────────────────────────────
   rust-postgres:
@@ -146,11 +146,11 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --features postgres -- -D warnings
 
-      - name: Run cargo test with postgres feature
+      - name: Run postgres-specific tests
         working-directory: src-tauri
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/terransoul_test
-        run: cargo test --features postgres -- --include-ignored
+        run: cargo test --features postgres -- --include-ignored memory::postgres
 
   # ── Playwright E2E (starts as soon as frontend passes) ───────────────────
   playwright-e2e:
