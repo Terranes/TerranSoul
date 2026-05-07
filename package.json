@@ -20,9 +20,7 @@
     "mcp:setup": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-setup",
     "mcp:app": "npx vite build && node scripts/run-target-mcp.mjs --mcp-app",
     "mcp:sync-docs": "node scripts/sync-docs-to-mcp.mjs",
-    "mcp:obsidian": "node scripts/mcp-obsidian.mjs",
-    "setup": "node scripts/setup-prerequisites.mjs",
-    "setup:auto": "node scripts/setup-prerequisites.mjs --auto"
+    "mcp:obsidian": "node scripts/mcp-obsidian.mjs"
   },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",

@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(*)",
-      "mcp__Claude_Preview__preview_start"
-    ]
-  }
-}

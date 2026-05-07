@@ -571,8 +571,10 @@ onMounted(async () => {
     skipSetup.value = true;
   } else {
     // True first launch: show the wizard and let the user choose.
+    // Dismiss the splash immediately — the wizard has its own UI.
     showFirstLaunchWizard.value = true;
     skipSetup.value = true; // hide BrainSetupView while wizard is open
+    appLoading.value = false;
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS
@@ -599,9 +601,6 @@ onMounted(async () => {
   } catch {
     // Not in Tauri — ignore
   }
-
-  // (Escape-to-exit safety net is attached at the top of onMounted so it
-  // works in the browser fallback too.)
 
   appLoading.value = false;
 });

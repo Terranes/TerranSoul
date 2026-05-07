@@ -48,9 +48,9 @@ use commands::{
         roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
     },
     auto_setup::{
-        check_prerequisites, list_mcp_clients, remove_claude_mcp, remove_codex_mcp,
-        remove_vscode_mcp, run_setup_auto, setup_claude_mcp, setup_claude_mcp_stdio,
-        setup_codex_mcp, setup_codex_mcp_stdio, setup_vscode_mcp, setup_vscode_mcp_stdio,
+        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_vscode_mcp,
+        setup_claude_mcp, setup_claude_mcp_stdio, setup_codex_mcp, setup_codex_mcp_stdio,
+        setup_vscode_mcp, setup_vscode_mcp_stdio,
     },
     brain::{
         brain_eviction_log, check_lm_studio_status, check_ollama_status, classify_intent,
@@ -1118,6 +1118,39 @@ fn spawn_ann_flush_task(state: &AppState) {
     });
 }
 
+/// Kill any running headless MCP service (port 7423) when the app starts
+/// in dev or release mode. The headless runner writes its PID to
+/// `mcp-data/self_improve_mcp_process.pid`; we read and kill that process.
+/// Also attempts a health-check-based kill via the PID file as a fallback.
+fn kill_headless_mcp_if_running() {
+    // Try reading the PID file from the repo-local mcp-data/ directory.
+    let pid_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join("mcp-data")
+        .join("self_improve_mcp_process.pid");
+
+    if let Ok(contents) = std::fs::read_to_string(&pid_path) {
+        if let Ok(pid) = contents.trim().parse::<u32>() {
+            // Kill the process.
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/PID", &pid.to_string(), "/F"])
+                    .output();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = std::process::Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .output();
+            }
+            // Remove the stale PID file.
+            let _ = std::fs::remove_file(&pid_path);
+            eprintln!("[app] killed headless MCP service (pid {pid})");
+        }
+    }
+}
+
 const MAIN_WINDOW_LABEL: &str = "main";
 
 fn env_flag_enabled(name: &str) -> bool {
@@ -1614,8 +1647,6 @@ pub fn run() {
             remove_claude_mcp,
             remove_codex_mcp,
             list_mcp_clients,
-            check_prerequisites,
-            run_setup_auto,
             // Consolidation (Chunk 16.7)
             run_sleep_consolidation,
             touch_activity,
@@ -1767,6 +1798,13 @@ pub fn run() {
             // instead of "dev" / "release".
             let mcp_app_mode = env_flag_enabled("TERRANSOUL_MCP_APP_MODE");
             let mcp_tray_mode = env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE");
+
+            // Kill any running headless MCP service when starting in
+            // dev or release mode to avoid port/resource conflicts.
+            if !mcp_app_mode && !mcp_tray_mode {
+                kill_headless_mcp_if_running();
+            }
+
             let data_dir = if mcp_app_mode {
                 ai_integrations::mcp::enable_mcp_pet_mode();
                 let mcp_dir = std::env::var("TERRANSOUL_MCP_DATA_DIR")

@@ -42,23 +42,25 @@ First launch walks you through brain setup automatically (free cloud, paid API, 
 | Tauri CLI | latest | `cargo tauri --version` |
 | WebView2 | any (Windows only) | Auto-detected |
 
-**One-command setup** — checks everything and installs what's missing:
+**Let your AI agent handle it** — every supported agent has a built-in setup command:
 
-```bash
-node scripts/setup-prerequisites.mjs --auto
-```
+| Agent | Command |
+|---|---|
+| VS Code Copilot | `/setup-prerequisites` |
+| Cursor | `@setup-prerequisites` |
+| Claude Code | `/setup-prerequisites` |
+| Codex CLI | "Run setup-prerequisites" |
+| Roo Code | `/setup-prerequisites` |
+| Windsurf | `@setup-prerequisites` |
+| TerranSoul (in-app) | `/setup-prerequisites` |
 
-Or use your AI coding agent:
-- **VS Code Copilot:** `/setup-prerequisites`
-- **Cursor:** `@setup-prerequisites`
-- **Claude Code / Codex:** "Run setup-prerequisites"
+The agent checks each requirement, installs what's missing, and re-verifies.
 
 ### Build & Run
 
 ```bash
 git clone https://github.com/Terranes/TerranSoul.git
 cd TerranSoul
-npm run setup        # Check prerequisites (--auto to install)
 npm install          # Install frontend dependencies
 cargo tauri dev      # Full Tauri app with hot-reload
 ```
