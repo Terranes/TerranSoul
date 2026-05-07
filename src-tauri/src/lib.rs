@@ -48,22 +48,24 @@ use commands::{
         roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
     },
     auto_setup::{
-        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_vscode_mcp, setup_claude_mcp,
-        setup_claude_mcp_stdio, setup_codex_mcp, setup_codex_mcp_stdio, setup_vscode_mcp,
-        setup_vscode_mcp_stdio,
+        check_prerequisites, list_mcp_clients, remove_claude_mcp, remove_codex_mcp,
+        remove_vscode_mcp, run_setup_auto, setup_claude_mcp, setup_claude_mcp_stdio,
+        setup_codex_mcp, setup_codex_mcp_stdio, setup_vscode_mcp, setup_vscode_mcp_stdio,
     },
     brain::{
         brain_eviction_log, check_lm_studio_status, check_ollama_status, classify_intent,
         clear_active_brain, download_lm_studio_model, embedding_queue_status, factory_reset_brain,
         get_active_brain, get_agent_routing, get_brain_mode, get_brain_selection,
-        get_embed_cache_status, get_failover_policy, get_failover_summary,
-        get_lm_studio_download_status, get_lm_studio_models, get_next_provider, get_ollama_models,
-        get_provider_policy, get_system_info, health_check_providers, list_free_providers,
-        load_lm_studio_model, pull_ollama_model, recommend_brain_models, remove_agent_route,
+        get_embed_cache_status, get_embedding_registry_state, get_failover_policy,
+        get_failover_summary, get_lm_studio_download_status, get_lm_studio_models,
+        get_next_provider, get_ollama_models, get_provider_policy, get_system_info,
+        health_check_providers, list_embedding_models, list_free_providers,
+        load_lm_studio_model, plan_embedding_model_switch, pull_ollama_model,
+        recommend_brain_models, remove_agent_route,
         remove_provider_task_override, reset_embed_cache, resolve_provider_for_role,
         resolve_provider_for_task, select_provider_with_constraints, set_active_brain,
         set_agent_route, set_brain_mode, set_failover_policy, set_provider_policy,
-        set_provider_task_override, unload_lm_studio_model,
+        set_provider_task_override, switch_embedding_model, unload_lm_studio_model,
     },
     character::load_vrm,
     charisma::{
@@ -76,6 +78,7 @@ use commands::{
         code_compute_processes, code_create_group, code_cross_repo_query, code_delete_group,
         code_diff_overlay, code_explain_graph, code_export_graph, code_extract_contracts,
         code_extract_negatives, code_detect_harnesses, code_import_sessions,
+        code_replay_session, code_replay_all_sessions,
         code_generate_skills, code_generate_wiki, code_group_status, code_index_repo,
         code_list_clusters, code_list_group_contracts, code_list_groups, code_list_processes,
         code_remove_repo_from_group, code_resolve_edges, coding_session_clear_handoff,
@@ -138,7 +141,8 @@ use commands::{
         evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
-        get_memory_provenance, get_memory_stats, get_memory_metrics, get_relevant_memories, get_schema_info,
+        get_memory_provenance, get_memory_stats, get_memory_metrics, get_search_cache_stats,
+        get_relevant_memories, get_schema_info,
         get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
         hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories, judgment_add,
         judgment_apply, judgment_list, list_memory_conflicts, list_memory_edges,
@@ -1106,6 +1110,8 @@ fn spawn_embedding_queue_worker(state: &AppState, label: &str) {
 fn spawn_ann_flush_task(state: &AppState) {
     let handle = state.ann_flush_handle.clone();
     let store_mutex = state.0.clone();
+    let rt = tauri::async_runtime::handle();
+    let _guard = rt.inner().enter();
     memory::ann_flush::spawn_flush_task(handle, move || {
         let store = store_mutex.memory_store.lock().unwrap_or_else(|e| e.into_inner());
         store.ann_save_all()
@@ -1335,6 +1341,10 @@ pub fn run() {
             list_installed_agents,
             get_system_info,
             recommend_brain_models,
+            list_embedding_models,
+            get_embedding_registry_state,
+            plan_embedding_model_switch,
+            switch_embedding_model,
             check_ollama_status,
             get_ollama_models,
             pull_ollama_model,
@@ -1371,6 +1381,7 @@ pub fn run() {
             get_schema_info,
             get_memory_stats,
             get_memory_metrics,
+            get_search_cache_stats,
             enforce_memory_storage_limit,
             apply_memory_decay,
             auto_promote_memories,
@@ -1603,6 +1614,8 @@ pub fn run() {
             remove_claude_mcp,
             remove_codex_mcp,
             list_mcp_clients,
+            check_prerequisites,
+            run_setup_auto,
             // Consolidation (Chunk 16.7)
             run_sleep_consolidation,
             touch_activity,
@@ -1656,6 +1669,8 @@ pub fn run() {
             code_extract_negatives,
             code_detect_harnesses,
             code_import_sessions,
+            code_replay_session,
+            code_replay_all_sessions,
             code_list_group_contracts,
             code_cross_repo_query,
             get_github_config,

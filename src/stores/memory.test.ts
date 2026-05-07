@@ -22,6 +22,7 @@ const entry = (id: number, content: string): MemoryEntry => ({
   session_id: null,
   parent_id: null,
   token_count: 0,
+  confidence: 1.0,
 });
 
 describe('memory store', () => {

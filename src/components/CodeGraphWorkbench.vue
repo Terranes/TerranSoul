@@ -81,6 +81,16 @@ function riskClass(risk: string): string {
         <span>{{ store.processes.length }} processes</span>
       </span>
 
+      <button
+        class="cgw-btn cgw-resync-btn"
+        :disabled="store.loading || store.activeRepoId === null"
+        title="Re-index the active repository (full re-sync)"
+        data-testid="resync-repo"
+        @click="store.reIndexRepo()"
+      >
+        🔄 Re-sync
+      </button>
+
       <span
         v-if="store.loading"
         class="cgw-loading"
@@ -424,6 +434,15 @@ function riskClass(risk: string): string {
 
 .cgw-btn:hover {
   opacity: 0.85;
+}
+
+.cgw-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cgw-resync-btn {
+  margin-left: auto;
 }
 
 .cgw-risk-summary {

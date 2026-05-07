@@ -1,9 +1,29 @@
 # Skill Tree & Quests — RPG Feature Discovery
 
-> TerranSoul gamifies feature discovery with 40+ skills across 5
-> categories, quest chains that guide setup, daily suggestions, and
-> combo unlocks when skills combine. This tutorial explains the system
-> and walks through activating your first skills.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Quick Start](quick-start-tutorial.md) ·
+> [Brain + RAG](brain-rag-setup-tutorial.md) ·
+> [Voice Setup](voice-setup-tutorial.md)
+
+TerranSoul gamifies feature discovery with 40+ skills across 5
+categories, quest chains that guide setup, daily suggestions, and
+combo unlocks when skills combine. This tutorial explains the system
+and walks through activating your first skills.
+
+---
+
+## Table of Contents
+
+1. [Open the Skill Tree](#1-open-the-skill-tree)
+2. [Understand the Structure](#2-understand-the-structure)
+3. [Auto-Detection (How Skills Activate)](#3-auto-detection-how-skills-activate)
+4. [Quest Steps (Guided Setup)](#4-quest-steps-guided-setup)
+5. [Combos (Skill Synergies)](#5-combos-skill-synergies)
+6. [Daily Suggestions (Morning Report)](#6-daily-suggestions-morning-report)
+7. [Platform-Specific Skills](#7-platform-specific-skills)
+8. [All Brain Skills (Progression Path)](#8-all-brain-skills-progression-path)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -15,7 +35,9 @@
 
 ---
 
-## Step 1 — Open the Skill Tree
+## 1. Open the Skill Tree
+
+![Constellation map showing skill nodes connected by requirement lines](screenshots/skill-tree/01-skill-tree-overview.png)
 
 Click the **✨ Skill Tree** button in the left sidebar (or navigate to the Constellation Map tab).
 
@@ -23,7 +45,9 @@ You'll see a visual constellation map with nodes representing skills, connected 
 
 ---
 
-## Step 2 — Understand the Structure
+## 2. Understand the Structure
+
+![Skill categories sidebar showing Brain, Voice, Avatar, Social, Utility icons](screenshots/skill-tree/02-categories.png)
 
 ### Skill Categories (5 Constellations)
 
@@ -53,7 +77,9 @@ You'll see a visual constellation map with nodes representing skills, connected 
 
 ---
 
-## Step 3 — Auto-Detection (How Skills Activate)
+## 3. Auto-Detection (How Skills Activate)
+
+![Skills lighting up after brain configuration — active state shown](screenshots/skill-tree/03-auto-detection.png)
 
 Most skills activate **automatically** based on your actual configuration:
 
@@ -75,7 +101,9 @@ Most skills activate **automatically** based on your actual configuration:
 
 ---
 
-## Step 4 — Quest Steps (Guided Setup)
+## 4. Quest Steps (Guided Setup)
+
+![Quest step detail panel with numbered actions and progress indicators](screenshots/skill-tree/04-quest-steps.png)
 
 Each skill has **quest steps** that guide you through activation:
 
@@ -102,7 +130,9 @@ Each skill has **quest steps** that guide you through activation:
 
 ---
 
-## Step 5 — Combos (Skill Synergies)
+## 5. Combos (Skill Synergies)
+
+![Combo unlock notification — glowing connection between skill nodes](screenshots/skill-tree/05-combos.png)
 
 When multiple skills are active simultaneously, **combos** unlock:
 
@@ -125,7 +155,9 @@ Combos appear as glowing connections between skill nodes on the constellation ma
 
 ---
 
-## Step 6 — Daily Suggestions (Morning Report)
+## 6. Daily Suggestions (Morning Report)
+
+![Morning Report panel showing daily quest suggestions](screenshots/skill-tree/06-morning-report.png)
 
 The **"Morning Report"** skill (Brain category, advanced tier) provides daily quest suggestions:
 
@@ -137,7 +169,9 @@ The **"Morning Report"** skill (Brain category, advanced tier) provides daily qu
 
 ---
 
-## Step 7 — Platform-Specific Skills
+## 7. Platform-Specific Skills
+
+![Platform-gated skills shown greyed out on non-Windows OS](screenshots/skill-tree/07-platform-skills.png)
 
 Some skills are platform-gated:
 
@@ -152,7 +186,9 @@ These only appear on their supported platform.
 
 ---
 
-## Step 8 — All Brain Skills (Progression Path)
+## 8. All Brain Skills (Progression Path)
+
+![Brain category progression tree from Foundation to Ultimate tier](screenshots/skill-tree/08-brain-progression.png)
 
 Here's the recommended Brain category progression:
 
@@ -172,7 +208,7 @@ Ultimate:  All-Seeing Eye (vision) → Council of Minds (multi-agent)
 
 ---
 
-## Troubleshooting
+## 9. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

@@ -27,6 +27,7 @@ function memory(id: number, content: string): MemoryEntry {
     session_id: null,
     parent_id: null,
     token_count: 4,
+    confidence: 1.0,
   };
 }
 

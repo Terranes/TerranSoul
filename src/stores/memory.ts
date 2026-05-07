@@ -456,6 +456,11 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke('judgment_apply', { query, limit });
   }
 
+  /** Backfill embeddings for memories that don't have them yet. */
+  async function backfillEmbeddings(): Promise<number> {
+    return await invoke<number>('backfill_embeddings');
+  }
+
   return {
     memories,
     stats,
@@ -503,5 +508,7 @@ export const useMemoryStore = defineStore('memory', () => {
     addJudgment,
     listJudgments,
     applyJudgments,
+    // Embedding management (Chunk 44.2)
+    backfillEmbeddings,
   };
 });

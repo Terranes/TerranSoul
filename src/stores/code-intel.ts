@@ -185,6 +185,23 @@ export const useCodeIntelStore = defineStore('code-intel', () => {
     diffImpact.value = null;
   }
 
+  /** Re-index the currently active repo (full re-sync of files + edges). */
+  async function reIndexRepo() {
+    const repo = activeRepo.value;
+    if (!repo) return;
+    try {
+      loading.value = true;
+      error.value = null;
+      await invoke('code_index_repo', { repoPath: repo.path });
+      await invoke('code_resolve_edges', { repoPath: repo.path });
+      await Promise.all([fetchRepos(), fetchClusters(), fetchProcesses()]);
+    } catch (e) {
+      error.value = String(e);
+    } finally {
+      loading.value = false;
+    }
+  }
+
   return {
     // State
     repos,
@@ -209,5 +226,6 @@ export const useCodeIntelStore = defineStore('code-intel', () => {
     selectCluster,
     selectSymbol,
     setActiveRepo,
+    reIndexRepo,
   };
 });

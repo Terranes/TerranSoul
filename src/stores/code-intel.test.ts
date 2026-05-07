@@ -147,4 +147,48 @@ describe('code-intel store', () => {
     store.selectedClusterId = 2;
     expect(store.selectedCluster?.label).toBe('b');
   });
+
+  it('reIndexRepo calls index + resolve + refreshes state', async () => {
+    const repos = [
+      { id: 1, path: '/tmp/a', label: 'repo-a', indexed_at: '2026-05-07' },
+    ];
+    // code_index_repo, code_resolve_edges, then fetchRepos + fetchClusters + fetchProcesses
+    mockInvoke
+      .mockResolvedValueOnce({ files_parsed: 10, symbols: 50, edges: 30 }) // code_index_repo
+      .mockResolvedValueOnce({ resolved: 20 }) // code_resolve_edges
+      .mockResolvedValueOnce(repos) // code_list_repos
+      .mockResolvedValueOnce([]) // code_list_clusters
+      .mockResolvedValueOnce([]); // code_list_processes
+
+    const store = useCodeIntelStore();
+    store.repos = repos;
+    store.activeRepoId = 1;
+    await store.reIndexRepo();
+
+    expect(mockInvoke).toHaveBeenCalledWith('code_index_repo', { repoPath: '/tmp/a' });
+    expect(mockInvoke).toHaveBeenCalledWith('code_resolve_edges', { repoPath: '/tmp/a' });
+    expect(store.error).toBeNull();
+    expect(store.loading).toBe(false);
+  });
+
+  it('reIndexRepo does nothing when no active repo', async () => {
+    const store = useCodeIntelStore();
+    await store.reIndexRepo();
+    expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it('reIndexRepo captures errors', async () => {
+    const repos = [
+      { id: 1, path: '/tmp/a', label: 'repo-a', indexed_at: '2026-05-07' },
+    ];
+    mockInvoke.mockRejectedValueOnce('index failed');
+
+    const store = useCodeIntelStore();
+    store.repos = repos;
+    store.activeRepoId = 1;
+    await store.reIndexRepo();
+
+    expect(store.error).toBe('index failed');
+    expect(store.loading).toBe(false);
+  });
 });

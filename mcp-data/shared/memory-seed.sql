@@ -1448,3 +1448,54 @@ FROM memories completion
 CROSS JOIN memories plan
 WHERE completion.content LIKE 'PHASE 43 COMPLETION (2026-05-07)%'
   AND plan.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
+
+-- Phase 45 plan + design lessons (2026-05-07): project-knowledge architecture
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07): TerranSoul code knowledge uses a 3-tier layer model — base snapshot at .codegraph/snapshot.json (deterministic, committable, no merge driver needed because every row keys on (repo_label, file, content_hash, line) and outputs are sorted), branch overlay in SQLite table code_branch_overlays(repo_id, base_ref, branch_ref, file, hash) with overlay_id columns on code_symbols/code_edges (queries union overlay-over-base), and in-memory working-tree overlay for dirty files. Branch switches call code_branch_sync(prev, new) which re-indexes only git diff --name-only prev..new files. Designed in docs/project-knowledge-architecture.md.',
+  'design,phase-45,project-knowledge,branch-overlay,snapshot,code-intelligence,architecture',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'GRAPHIFY ISSUE #52 LESSONS (2026-05-07): public failure-mode catalogue for large-repo knowledge graphs. (1) tree-sitter version mismatch crashed whole pipeline → TerranSoul gates each parser behind a parser-* Cargo feature, single file parse error never aborts others. (2) Python-only cross-file resolution crashed Swift/ObjC → resolver per-language with provenance=skipped:parser_error fallback. (3) PDFs in .imageset/.xcassets misclassified as papers → vendor/asset detector excludes by path. (4) 7414 micro-clusters on 22k nodes → min_cluster_size (default 8) + two-phase clustering (directory partition first). (5) HTML 5000-node hard error → workbench renders top-N degree nodes per cluster with drill-in, no hard cap. (6) god nodes dominated by Pods/node_modules → vendor-tier files excluded from god-node ranking by default. (7) no iOS preset → .codeignore auto-detected from build manifests. (8) no progress feedback → gate_telemetry emits code_index_progress every 100 files. Source: https://github.com/safishamsi/graphify/issues/52',
+  'lesson,graphify,scale,clustering,vendor-detection,phase-45,reverse-engineering,credits',
+  9, 'fact', 1746662400000, 'long', 1.0, 'lesson', 'semantic'
+);
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'BRANCH SYNC PROTOCOL (2026-05-07): TerranSoul code-knowledge git lifecycle uses three POSIX hook scripts (post-checkout, post-merge, post-commit) installed by code_install_hooks Tauri command. Hooks POST to local MCP (127.0.0.1:7421/7422/7423) and EXIT 0 on any error so git is never blocked. post-checkout/post-merge call code_branch_sync(prev, new); post-commit calls code_index_commit(sha) and atomically promotes overlay to base when HEAD == base_ref. No git merge driver is needed because the snapshot is deterministic. .codegraph/ is committed (snapshot.json + snapshot.meta.json); code_index.sqlite stays local-only and is a derived cache. Multi-repo orgs use existing code_repo_groups + code_contracts (chunk 37.13) plus new code_group_drift / code_branch_diff MCP tools.',
+  'design,phase-45,git-hooks,branch-sync,mcp,code-intelligence,multi-repo,non-blocking',
+  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT plan.id, lesson.id, 'informed_by', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories plan
+CROSS JOIN memories lesson
+WHERE plan.content LIKE 'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07)%'
+  AND lesson.content LIKE 'GRAPHIFY ISSUE #52 LESSONS (2026-05-07)%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT protocol.id, plan.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories protocol
+CROSS JOIN memories plan
+WHERE protocol.content LIKE 'BRANCH SYNC PROTOCOL (2026-05-07)%'
+  AND plan.content LIKE 'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07)%';
+
+-- MCP Compliance Gate (2026-05-07): active enforcement of project governance rules
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'MCP COMPLIANCE GATE (2026-05-07): TerranSoul MCP now actively enforces project rules via compliance_gate.rs. Instead of passive text, the MCP server tracks per-session compliance state and (1) injects reminder annotations into tool responses when preflight is incomplete, (2) exposes a brain_session_checklist tool showing completed/outstanding steps, (3) accepts compliance/signal notifications from agents to mark steps done. Preflight steps: brain_health called, brain_search/brain_suggest_context called, MCP receipt shown. Post-chunk steps: completion-log updated, milestones cleaned, seed synced. Reminders appear in the first 5 tool calls and every 10th call thereafter if preflight is not done. Does NOT block tool calls (MCP protocol-compliant) but makes violations visible in the response text. Located at src-tauri/src/ai_integrations/mcp/compliance_gate.rs, wired into router.rs tool dispatch.',
+  'mcp,compliance-gate,enforcement,rules,session-tracking,preflight,milestone-hygiene,non-negotiable',
+  10, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'procedural'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT gate.id, rule.id, 'implements', 1.0, 'seed', 1746662400000, 'seed'
+FROM memories gate
+CROSS JOIN memories rule
+WHERE gate.content LIKE 'MCP COMPLIANCE GATE (2026-05-07)%'
+  AND rule.content LIKE 'MILESTONE HYGIENE RULE%';

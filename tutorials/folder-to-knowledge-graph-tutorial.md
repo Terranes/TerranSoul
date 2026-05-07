@@ -1,19 +1,44 @@
-# Tutorial: Turn Any Folder Into a Navigable Knowledge Graph
+# Turn Any Folder Into a Navigable Knowledge Graph
 
-> Build a complete TerranSoul knowledge graph from a folder of code, docs,
-> and PDFs in a few commands. You will end up with a navigable graph,
-> an Obsidian vault with backlinks, an auto-generated wiki, and natural-
-> language Q&A over everything — all served from your local MCP brain.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
 >
-> Last verified against TerranSoul on 2026-05-06.
+> Related: [Knowledge Wiki](knowledge-wiki-tutorial.md) ·
+> [Advanced Memory & RAG](advanced-memory-rag-tutorial.md) ·
+> [MCP for Coding Agents](mcp-coding-agents-tutorial.md)
 
-This tutorial replaces the "one-CLI-magic-command" pitch with the
+Build a complete TerranSoul knowledge graph from a folder of code, docs,
+and PDFs in a few commands. You will end up with a navigable graph,
+an Obsidian vault with backlinks, an auto-generated wiki, and natural-
+language Q&A over everything — all served from your local MCP brain.
+
+This tutorial replaces the “one-CLI-magic-command” pitch with the
 **actual TerranSoul flow** that ships today, and is honest about what
 is supported now vs. what is on the roadmap. Read [§9 What is *not*
 yet supported](#9-what-is-not-yet-supported) before assuming feature
 parity with third-party tools that make broader claims.
 
+---
+
+## Table of Contents
+
+1. [Human-Brain ↔ AI-System ↔ RPG-Stat](#1-human-brain--ai-system--rpg-stat)
+2. [What You Are Building](#2-what-you-are-building)
+3. [Requirements](#3-requirements)
+4. [Index the Code in the Folder](#4-index-the-code-in-the-folder)
+5. [Ingest Documents and PDFs](#5-ingest-documents-and-pdfs)
+6. [Generate the Wiki](#6-generate-the-wiki)
+7. [Export to an Obsidian Vault](#7-export-to-an-obsidian-vault)
+8. [Ask Questions in Natural Language](#8-ask-questions-in-natural-language)
+9. [What Is Not Yet Supported](#9-what-is-not-yet-supported)
+10. [Worked Example: Cook County Family-Law Notes](#10-worked-example-cook-county-family-law-notes)
+11. [Troubleshooting](#11-troubleshooting)
+12. [Where to Next](#12-where-to-next)
+
+---
+
 ## 1. Human-Brain ↔ AI-System ↔ RPG-Stat
+
+![RPG stat mapping table showing Intelligence stat relationship](screenshots/folder-to-knowledge-graph/01-rpg-stat.png)
 
 | Human action | AI system surface | Persona "stat" exercised |
 | --- | --- | --- |
@@ -24,7 +49,9 @@ parity with third-party tools that make broader claims.
 | "Auto-write a wiki" | `code_generate_wiki` (code) + `brain_wiki_audit/spotlight/serendipity/revisit` (memory) | Reflection / curation |
 | "Ask a question across everything" | `brain_search` with RRF + HyDE + LLM-as-judge rerank | Hybrid retrieval |
 
-## 2. What you are building
+## 2. What You Are Building
+
+![Architecture diagram showing folder → index → graph → wiki → Q&A pipeline](screenshots/folder-to-knowledge-graph/02-architecture.png)
 
 ```
 your-folder/                          MCP brain output
@@ -51,6 +78,8 @@ Concrete artifacts you will produce by the end of this tutorial:
 
 ## 3. Requirements
 
+![System requirements checklist with checkmarks](screenshots/folder-to-knowledge-graph/03-requirements.png)
+
 - TerranSoul desktop app **or** the headless MCP runner (`npm run mcp`)
   on Windows / macOS / Linux. See
   [rules/agent-mcp-bootstrap.md](../rules/agent-mcp-bootstrap.md).
@@ -64,7 +93,9 @@ Concrete artifacts you will produce by the end of this tutorial:
 - An MCP bearer token. The headless runner writes the token to
   `.vscode/.mcp-token`; the app shows it in **Settings → MCP**.
 
-## 4. Step 1 — Index the code in the folder
+## 4. Index the Code in the Folder
+
+![Terminal showing code_query indexing a project folder with symbol count](screenshots/folder-to-knowledge-graph/04-index-code.png)
 
 For repositories with source code, run the symbol-graph pipeline.
 
@@ -95,7 +126,9 @@ up in the symbol graph as opaque files but contribute no symbols.
 > coverage, open an issue and request specific tree-sitter grammars;
 > the registry is designed to make adding one a 3-step change.
 
-## 5. Step 2 — Ingest documents and PDFs
+## 5. Ingest Documents and PDFs
+
+![Document ingestion progress showing chunking and embedding status](screenshots/folder-to-knowledge-graph/05-ingest-docs.png)
 
 Code indexing covers source files. Plain documents go through the
 **memory ingest** pipeline.
@@ -136,7 +169,9 @@ TerranSoul `ingest_semaphore` keeps embedding load capped at four
 concurrent tasks. Failed embeddings auto-retry via the
 `pending_embeddings` self-healing queue.
 
-## 6. Step 3 — Generate the wiki
+## 6. Generate the Wiki
+
+![Wiki panel showing generated pages with topic headings and links](screenshots/folder-to-knowledge-graph/06-generate-wiki.png)
 
 For the indexed code repository, run `code_generate_wiki({ repoPath })`.
 It writes:
@@ -159,7 +194,9 @@ These are read tools; they do not modify memories. They surface the
 shape of your knowledge graph the same way Wikipedia's "What links
 here" does.
 
-## 7. Step 4 — Export to an Obsidian vault
+## 7. Export to an Obsidian Vault
+
+![Obsidian graph view showing backlinked notes from the exported vault](screenshots/folder-to-knowledge-graph/07-obsidian-export.png)
 
 Trigger the export from **Settings → Memory → Obsidian** in the app,
 or call the export module directly. The export pipeline is in
@@ -194,7 +231,9 @@ Bidirectional sync uses **last-writer-wins**: if you edit a vault
 file in Obsidian, the next sync cycle imports the change back into
 the brain (`file_mtime > last_exported`).
 
-## 8. Step 5 — Ask questions in natural language
+## 8. Ask Questions in Natural Language
+
+![Chat showing natural language question with RAG-grounded answer citing sources](screenshots/folder-to-knowledge-graph/08-ask-questions.png)
 
 After indexing, ask anything from chat or any MCP-connected agent:
 
@@ -219,7 +258,9 @@ relevant tools here are `brain_search`, `brain_get_entry`,
 `brain_kg_neighbors`, `brain_suggest_context`, `code_query`,
 `code_context`, `code_impact`, and `code_rename`.
 
-## 9. What is *not* yet supported
+## 9. What Is Not Yet Supported
+
+![Feature comparison table showing supported vs. roadmap items](screenshots/folder-to-knowledge-graph/09-not-supported.png)
 
 So you can plan around real capability rather than marketing claims:
 
@@ -242,7 +283,9 @@ So you can plan around real capability rather than marketing claims:
   for the actual reduction observed in the session that wrote this
   tutorial (≈11–80× depending on query class).
 
-## 10. Worked example: "Cook County family-law notes" folder
+## 10. Worked Example: Cook County Family-Law Notes
+
+![Terminal showing the Cook County folder being indexed end-to-end](screenshots/folder-to-knowledge-graph/10-worked-example.png)
 
 A recurring example folder used in the TerranSoul corpus is
 [documents/cook-county-family-law-rules.md](../documents/cook-county-family-law-rules.md).
@@ -265,6 +308,8 @@ End-to-end:
 
 ## 11. Troubleshooting
 
+![Common error messages with resolution steps](screenshots/folder-to-knowledge-graph/11-troubleshooting.png)
+
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | `code_index_repo` returns 0 symbols | No supported source files in the folder, or required parser feature isn't built. | Build with `parser-python` / `parser-go` / etc., or expect doc-only behaviour. |
@@ -274,7 +319,7 @@ End-to-end:
 | Obsidian backlinks don't appear | Vault not opened with Obsidian, or `last_exported` already current. | Open the `<vault>/TerranSoul/` folder in Obsidian and re-run the sync; LWW resolves remaining drift. |
 | `brain_search` returns nothing even after ingest | Embedding provider unreachable; rows are queued in `pending_embeddings`. | Check `embedding_queue_status`; the self-healing worker drains every 10 s. |
 
-## 12. Where to next
+## 12. Where to Next
 
 - Brain architecture: [docs/brain-advanced-design.md](../docs/brain-advanced-design.md)
 - Benchmarks (latency + token usage):

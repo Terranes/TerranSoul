@@ -1,23 +1,44 @@
 # Charisma — Teaching TerranSoul Self, Persona & Animation
 
-> **Full conduct & analysis (to May 2026) of TerranSoul's self-learning,
-> persona, animation, and facial-expression systems, plus the Charisma
-> teaching panel introduced in Chunk 30.4.**
+> **TerranSoul v0.1** · Last updated: 2026-05-07
 >
-> Maps to the Human-Brain ↔ AI-System ↔ RPG-Stat triple:
->
-> | Human cognition | AI subsystem | RPG stat |
-> |---|---|---|
-> | Sense of Self / Mirror Neurons | Persona & Self-Learning Animation | 🎭 Charisma |
->
-> When **Self-Improve** is enabled, proven user teachings are promoted
-> from runtime data into source-code defaults, so every future install
-> ships with what *this* user (and the rest of the community, via
-> Persona Packs) has taught the companion.
+> Related: [Teaching Animations & Persona](teaching-animations-expressions-persona-tutorial.md) ·
+> [Self-Improve to PR](self-improve-to-pr-tutorial.md) ·
+> [Multi-Agent Workflows](multi-agent-workflows-tutorial.md)
+
+Full conduct & analysis (to May 2026) of TerranSoul's self-learning,
+persona, animation, and facial-expression systems, plus the Charisma
+teaching panel introduced in Chunk 30.4.
+
+| Human cognition | AI subsystem | RPG stat |
+|---|---|---|
+| Sense of Self / Mirror Neurons | Persona & Self-Learning Animation | 🎭 Charisma |
+
+When **Self-Improve** is enabled, proven user teachings are promoted
+from runtime data into source-code defaults, so every future install
+ships with what *this* user (and the rest of the community, via
+Persona Packs) has taught the companion.
 
 ---
 
-## 1. The state of the union — May 2026
+## Table of Contents
+
+1. [The State of the Union — May 2026](#1-the-state-of-the-union--may-2026)
+2. [The Four Maturity Tiers](#2-the-four-maturity-tiers)
+3. [The Charisma Management Panel](#3-the-charisma-management-panel)
+4. [How to Teach — Three Worked Examples](#4-how-to-teach--three-worked-examples)
+5. [Self-Improve Integration — Promote → Workflow → Source](#5-self-improve-integration--promote--workflow--source)
+6. [Worked End-to-End Example — “indeed”](#6-worked-end-to-end-example--indeed)
+7. [Removing / Forgetting Things](#7-removing--forgetting-things)
+8. [Where Charisma Lives in the Codebase](#8-where-charisma-lives-in-the-codebase)
+9. [Design Rationale — Why This Shape?](#9-design-rationale--why-this-shape)
+10. [See Also](#10-see-also)
+
+---
+
+## 1. The State of the Union — May 2026
+
+![Overview dashboard showing all persona/animation surfaces and their maturity status](screenshots/charisma-teaching/01-state-of-union.png)
 
 Before Chunk 30.4, TerranSoul already had the **infrastructure** to
 learn from the user; it just had no aggregate view of "what's working,
@@ -87,7 +108,9 @@ Untested → Learning → Proven → Canon.
 
 ---
 
-## 2. The four maturity tiers
+## 2. The Four Maturity Tiers
+
+![Tier progression diagram: Untested → Learning → Proven → Canon with thresholds](screenshots/charisma-teaching/02-maturity-tiers.png)
 
 | Tier | Symbol | Rule | Meaning |
 |---|---|---|---|
@@ -104,7 +127,9 @@ so the UI never disagrees with the backend.
 
 ---
 
-## 3. The Charisma management panel
+## 3. The Charisma Management Panel
+
+![Charisma panel with 3 tabs and summary dashboard showing tier counts](screenshots/charisma-teaching/03-management-panel.png)
 
 **Open:** right-click the pet character → **Charisma — Teach me…**
 
@@ -137,7 +162,9 @@ naturally falls on actionable Proven items.
 
 ---
 
-## 4. How to teach — three worked examples
+## 4. How to Teach — Three Worked Examples
+
+![Side-by-side showing expression capture, motion recording, and trait editing](screenshots/charisma-teaching/04-teaching-examples.png)
 
 ### 4.1 Teaching a facial expression ("Smug")
 
@@ -183,7 +210,9 @@ charisma. Instead:
 
 ---
 
-## 5. Self-Improve integration — Promote → Workflow → Source
+## 5. Self-Improve Integration — Promote → Workflow → Source
+
+![Promote flow diagram from Charisma panel through 4-step DAG to source code](screenshots/charisma-teaching/05-self-improve.png)
 
 The promote button does **not** edit source files directly. Instead it
 delegates to the **multi-agent workflow runner** built in Chunk 30.3.
@@ -261,7 +290,9 @@ appends rather than overwrites.
 
 ---
 
-## 6. Worked end-to-end example — "indeed"
+## 6. Worked End-to-End Example — “indeed”
+
+![Timeline showing the 10-day journey from trait addition to Canon promotion](screenshots/charisma-teaching/06-worked-example.png)
 
 > A chat user says *"You should pepper 'indeed' into your responses."*
 > By the end of this example, the word "indeed" is shipping with every
@@ -309,7 +340,9 @@ learning → measurement → promotion → bundled default → next install**.
 
 ---
 
-## 7. Removing / forgetting things
+## 7. Removing / Forgetting Things
+
+![Delete and demote options shown on Charisma panel rows](screenshots/charisma-teaching/07-removing.png)
 
 The Charisma panel has a **Delete** button per row that removes only
 the stats — the underlying `LearnedExpression` / `LearnedMotion` /
@@ -332,7 +365,9 @@ shipping something to every future install.
 
 ---
 
-## 8. Where Charisma lives in the codebase
+## 8. Where Charisma Lives in the Codebase
+
+![Codebase map showing Rust backend, Pinia store, and Vue component relationships](screenshots/charisma-teaching/08-codebase-map.png)
 
 | File | Role |
 |---|---|
@@ -350,7 +385,9 @@ file, atomic write, schema-versioned).
 
 ---
 
-## 9. Design rationale — why this shape?
+## 9. Design Rationale — Why This Shape?
+
+![Design decision tree explaining separation of stats from assets](screenshots/charisma-teaching/09-design-rationale.png)
 
 - **Why a separate stats file?** Because we want to delete a learned
   expression *without* losing the lesson "this expression was
@@ -370,7 +407,7 @@ file, atomic write, schema-versioned).
 
 ---
 
-## 10. See also
+## 10. See Also
 
 - [docs/persona-design.md](../docs/persona-design.md) — full persona system
   design (§ 2 traits, § 5 camera consent, § 8 learned artefacts).

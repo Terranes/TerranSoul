@@ -192,6 +192,7 @@ pub fn open_db(data_dir: &Path) -> Result<Connection, IndexError> {
     let conn = Connection::open(db_path)?;
     init_schema(&conn)?;
     migrate_schema(&conn)?;
+    super::branch_overlay::ensure_overlay_schema(&conn)?;
     Ok(conn)
 }
 
@@ -393,6 +394,9 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
         })
         .collect();
 
+    // Vendor/asset tier detector for tiered indexing.
+    let detector = super::vendor_detector::VendorDetector::new(&repo_path);
+
     let mut stats = IndexStats {
         files_parsed: 0,
         files_skipped: 0,
@@ -437,6 +441,13 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
             .unwrap_or(file_path)
             .to_string_lossy()
             .replace('\\', "/");
+
+        // Tiered indexing: skip assets, vendor gets symbols-only.
+        let tier = detector.classify(&rel_path);
+        if tier.skip() {
+            stats.files_skipped += 1;
+            continue;
+        }
 
         let source_bytes = match std::fs::read(file_path) {
             Ok(b) => b,
@@ -548,21 +559,25 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
             )?;
         }
 
-        for edge in &edges {
-            tx.execute(
-                "INSERT INTO code_edges (repo_id, from_file, from_line, from_col, end_line, end_col, kind, target_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![
-                    repo_id,
-                    edge.from_file,
-                    edge.from_line,
-                    edge.from_col,
-                    edge.end_line,
-                    edge.end_col,
-                    edge.kind.as_str(),
-                    edge.target_name,
-                ],
-            )?;
+        // Tiered indexing: only insert edges for App tier (full indexing).
+        if tier.index_edges() {
+            for edge in &edges {
+                tx.execute(
+                    "INSERT INTO code_edges (repo_id, from_file, from_line, from_col, end_line, end_col, kind, target_name)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                    params![
+                        repo_id,
+                        edge.from_file,
+                        edge.from_line,
+                        edge.from_col,
+                        edge.end_line,
+                        edge.end_col,
+                        edge.kind.as_str(),
+                        edge.target_name,
+                    ],
+                )?;
+            }
+            stats.edges_extracted += edges.len() as u32;
         }
 
         // Upsert the content hash.
@@ -575,7 +590,6 @@ pub fn index_repo(data_dir: &Path, repo_path: &Path) -> Result<IndexStats, Index
 
         stats.files_parsed += 1;
         stats.symbols_extracted += symbols.len() as u32;
-        stats.edges_extracted += edges.len() as u32;
     }
 
     tx.commit()?;
@@ -642,7 +656,7 @@ fn new_typescript_parser() -> tree_sitter::Parser {
 
 // ─── Rust extraction ────────────────────────────────────────────────────────
 
-fn extract_rust_symbols(
+pub(crate) fn extract_rust_symbols(
     source: &str,
     root: tree_sitter::Node,
     file: &str,
@@ -884,7 +898,7 @@ fn walk_rust_node(
 
 // ─── TypeScript extraction ──────────────────────────────────────────────────
 
-fn extract_ts_symbols(
+pub(crate) fn extract_ts_symbols(
     source: &str,
     root: tree_sitter::Node,
     file: &str,

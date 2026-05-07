@@ -9,7 +9,7 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app/)
 
-TerranSoul is a desktop AI companion with a 3D VRM avatar, persistent memory, semantic-search RAG, and a self-running MCP brain server that gives AI coding agents (Copilot, Claude Code, Cursor, Codex) project-wide knowledge, retrieval, and self-improvement — all local-first and offline-capable.
+TerranSoul is a desktop/mobile AI companion with a 3D VRM avatar, persistent memory, semantic-search RAG, and a self-running MCP brain server that gives AI coding agents (Copilot, Claude Code, Cursor, Codex) project-wide knowledge, retrieval, and self-improvement — all local-first and offline-capable.
 
 If you want a personal AI that **remembers everything**, **runs on your hardware**, and **makes your other AI tools smarter by sharing its brain** — this is it.
 
@@ -33,12 +33,33 @@ First launch walks you through brain setup automatically (free cloud, paid API, 
 
 ## Quick Start
 
+### Prerequisites
+
+| Requirement | Min Version | Check |
+|---|---|---|
+| Node.js | ≥ 20 | `node -v` |
+| Rust | stable | `rustc --version` |
+| Tauri CLI | latest | `cargo tauri --version` |
+| WebView2 | any (Windows only) | Auto-detected |
+
+**One-command setup** — checks everything and installs what's missing:
+
 ```bash
-# From source (development)
+node scripts/setup-prerequisites.mjs --auto
+```
+
+Or use your AI coding agent:
+- **VS Code Copilot:** `/setup-prerequisites`
+- **Cursor:** `@setup-prerequisites`
+- **Claude Code / Codex:** "Run setup-prerequisites"
+
+### Build & Run
+
+```bash
 git clone https://github.com/Terranes/TerranSoul.git
 cd TerranSoul
-npm install
-npm run dev          # Vite on :1420
+npm run setup        # Check prerequisites (--auto to install)
+npm install          # Install frontend dependencies
 cargo tauri dev      # Full Tauri app with hot-reload
 ```
 

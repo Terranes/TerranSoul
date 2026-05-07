@@ -1,32 +1,36 @@
-# Tutorial: Self-Improve — From a Charisma Teaching to a Merged Pull Request
+# Self-Improve — From a Charisma Teaching to a Merged Pull Request
 
-> **What you'll do.** Take any **Proven** Charisma asset (a captured
-> facial expression, body motion, or persona quirk) and walk it all the
-> way through TerranSoul's self-improve coding workflow until it lives
-> in a GitHub Pull Request waiting for human review. Verified against
-> TerranSoul `0.1` on 2026-05-06.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
 >
-> **Sister tutorial.** Capturing the asset and growing it from
-> **Untested** to **Proven** is covered in
-> [`teaching-animations-expressions-persona-tutorial.md`](./teaching-animations-expressions-persona-tutorial.md)
-> and [`charisma-teaching-tutorial.md`](./charisma-teaching-tutorial.md).
-> This file picks up at the **⭐ Promote to source** click.
->
-> **Design references.**
-> [`docs/coding-workflow-design.md`](../docs/coding-workflow-design.md) ·
-> [`docs/multi-agent-orchestration-analysis-2026.md`](../docs/multi-agent-orchestration-analysis-2026.md) ·
-> [`tutorials/multi-agent-workflows-tutorial.md`](./multi-agent-workflows-tutorial.md).
+> Related: [Teaching Animations & Persona](teaching-animations-expressions-persona-tutorial.md) ·
+> [Charisma Teaching](charisma-teaching-tutorial.md) ·
+> [Multi-Agent Workflows](multi-agent-workflows-tutorial.md) ·
+> Design: [`docs/coding-workflow-design.md`](../docs/coding-workflow-design.md)
 
-Maps to the Human-Brain ↔ AI-System ↔ RPG-Stat triple:
-
-| Human cognition | AI subsystem | RPG stat |
-|---|---|---|
-| Habit formation | Self-improve loop + multi-agent workflow | 🛠️ Engineer |
-| Peer review | Reviewer agent + GitHub PR review | 🛠️ Engineer |
+Take any **Proven** Charisma asset (a captured facial expression, body
+motion, or persona quirk) and walk it all the way through TerranSoul's
+self-improve coding workflow until it lives in a GitHub Pull Request
+waiting for human review.
 
 ---
 
-## What You Are Building
+## Table of Contents
+
+1. [What You Are Building](#1-what-you-are-building)
+2. [Requirements](#2-requirements)
+3. [Authorize TerranSoul to Talk to GitHub](#3-authorize-terransoul-to-talk-to-github)
+4. [Promote the Proven Asset](#4-promote-the-proven-asset)
+5. [Run the Workflow](#5-run-the-workflow)
+6. [Open the Pull Request](#6-open-the-pull-request)
+7. [Wait for Review](#7-wait-for-review)
+8. [Worked End-to-End Example](#8-worked-end-to-end-example)
+9. [Troubleshooting](#9-troubleshooting)
+
+---
+
+## 1. What You Are Building
+
+![Architecture diagram showing flow from Charisma Proven asset through workflow to GitHub PR](screenshots/self-improve-to-pr/01-what-you-are-building.png)
 
 ```
 Charisma row "Proven"
@@ -61,7 +65,9 @@ file, the test slice that ran green, and the reviewer verdict.
 
 ---
 
-## Requirements
+## 2. Requirements
+
+![Requirements checklist showing Self-Improve panel, Coding LLM, and GitHub setup](screenshots/self-improve-to-pr/02-requirements.png)
 
 - TerranSoul desktop running with the **Self-Improve** panel visible
   (right-click pet → **Self-Improve…**, or open via Quest tree once the
@@ -91,7 +97,9 @@ file, the test slice that ran green, and the reviewer verdict.
 
 ---
 
-## 1. Authorize TerranSoul to talk to GitHub
+## 3. Authorize TerranSoul to Talk to GitHub
+
+![GitHub authorization panel showing device flow code and verification URL](screenshots/self-improve-to-pr/03-github-auth.png)
 
 There are two supported paths. Use whichever matches your security
 posture.
@@ -129,7 +137,9 @@ POSIX. The panel never shows the raw token after the initial save.
 
 ---
 
-## 2. Promote the Proven asset
+## 4. Promote the Proven Asset
+
+![Charisma panel showing Proven row with ⭐ Promote to source button highlighted](screenshots/self-improve-to-pr/04-promote-asset.png)
 
 Pick any Charisma row whose maturity is **✨ Proven**.
 
@@ -160,7 +170,9 @@ let alone pushed to GitHub — without your explicit click.
 
 ---
 
-## 3. Run the workflow
+## 5. Run the Workflow
+
+![Multi-agent workflow panel showing 4-step DAG with Researcher → Coder → Tester → Reviewer](screenshots/self-improve-to-pr/05-run-workflow.png)
 
 1. Right-click the pet → **Multi-agent workflows…**.
 2. The **Workflows** tab lists your new plan with status
@@ -225,7 +237,9 @@ let alone pushed to GitHub — without your explicit click.
 
 ---
 
-## 4. Open the Pull Request
+## 6. Open the Pull Request
+
+![Self-Improve panel GitHub section with Open Pull Request button](screenshots/self-improve-to-pr/06-open-pr.png)
 
 The workflow runner stages and commits locally; pushing and PR opening
 is one separate human-driven action.
@@ -258,7 +272,9 @@ is one separate human-driven action.
 
 ---
 
-## 5. Wait for review
+## 7. Wait for Review
+
+![PR status pill showing open/approved/merged state in the Self-Improve panel](screenshots/self-improve-to-pr/07-wait-review.png)
 
 This is a *human* phase. TerranSoul's job is done — the rest is
 ordinary GitHub workflow.
@@ -289,7 +305,11 @@ ordinary GitHub workflow.
 
 ---
 
-## 6. Worked end-to-end example — `says 'indeed' a lot`
+## 8. Worked End-to-End Example
+
+![Complete flow screenshot showing all steps completed with green checkmarks](screenshots/self-improve-to-pr/08-worked-example.png)
+
+> `says 'indeed' a lot`
 
 The author of this tutorial walked the full flow as a dry-run:
 
@@ -321,7 +341,7 @@ over a half-day waiting on the reviewer.
 
 ---
 
-## Troubleshooting
+## 9. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|

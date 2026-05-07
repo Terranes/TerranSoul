@@ -2035,3 +2035,165 @@ fn parse_harness(s: &str) -> Result<Harness, String> {
         _ => Err(format!("unknown harness: {s}")),
     }
 }
+
+// ---------------------------------------------------------------------------
+// Cross-harness session replay (Chunk 44.4)
+// ---------------------------------------------------------------------------
+
+use crate::coding::session_replay::{self, ReplayResult, ReplaySessionConfig};
+
+/// Replay an imported session through the memory extraction pipeline.
+///
+/// Parses the transcript, plans extraction windows, feeds each through
+/// the brain, and stores extracted facts tagged with import provenance.
+/// Returns progress and per-session results.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_replay_session(
+    harness: String,
+    session_file: String,
+    config: Option<ReplaySessionConfig>,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<ReplayResult, String> {
+    use tauri::Emitter;
+
+    let h = parse_harness(&harness)?;
+    let path = std::path::PathBuf::from(&session_file);
+    if !path.is_file() {
+        return Err(format!("session file not found: {session_file}"));
+    }
+
+    let cfg = config.unwrap_or_default();
+
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    let active_model = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+
+    // Parse transcript into turns.
+    let import_result = session_import::parse_transcript(h, &path);
+    if import_result.turns_extracted == 0 {
+        return Ok(ReplayResult {
+            harness: h,
+            session_id: import_result.session_id,
+            segments_processed: 0,
+            facts_extracted: 0,
+            facts_stored: 0,
+            errors: import_result.errors,
+        });
+    }
+
+    // Re-parse to get actual turns (ImportResult doesn't carry them).
+    let turns = session_import::parse_transcript_turns(h, &path);
+    let plan = session_replay::plan_replay(&turns, &cfg);
+
+    let tag = session_replay::replay_tag(h, &plan.session_id);
+    let mut total_extracted = 0usize;
+    let mut total_stored = 0usize;
+    let errors = import_result.errors;
+    let segments_total = plan.segments.len();
+
+    for (i, segment) in plan.segments.iter().enumerate() {
+        // Check budget cap.
+        if total_stored >= cfg.max_memories_per_session {
+            break;
+        }
+
+        let facts = crate::memory::brain_memory::extract_facts_segmented_any_mode(
+            &brain_mode,
+            active_model.as_deref(),
+            &segment.history,
+            &state.provider_rotator,
+        )
+        .await;
+
+        total_extracted += facts.len();
+
+        let saved = if cfg.dry_run {
+            facts.len()
+        } else {
+            let remaining_budget = cfg.max_memories_per_session.saturating_sub(total_stored);
+            let capped_facts: Vec<&String> = facts.iter().take(remaining_budget).collect();
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            capped_facts
+                .iter()
+                .filter(|f| f.len() >= 5)
+                .filter_map(|fact| {
+                    store
+                        .add(crate::memory::NewMemory {
+                            content: fact.to_string(),
+                            tags: tag.clone(),
+                            importance: 3,
+                            memory_type: crate::memory::MemoryType::Fact,
+                            ..Default::default()
+                        })
+                        .ok()
+                })
+                .count()
+        };
+
+        total_stored += saved;
+
+        // Emit progress event.
+        let _ = app_handle.emit(
+            "session-replay-progress",
+            serde_json::json!({
+                "segment": i + 1,
+                "total_segments": segments_total,
+                "facts_extracted": total_extracted,
+                "facts_stored": total_stored,
+            }),
+        );
+    }
+
+    Ok(ReplayResult {
+        harness: h,
+        session_id: plan.session_id,
+        segments_processed: segments_total,
+        facts_extracted: total_extracted,
+        facts_stored: total_stored,
+        errors,
+    })
+}
+
+/// Replay all sessions from a harness directory through extraction.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_replay_all_sessions(
+    harness: String,
+    config: Option<ReplaySessionConfig>,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<ReplayResult>, String> {
+    let h = parse_harness(&harness)?;
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let dir = home.join(h.relative_dir());
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let files = session_import::list_session_files(&dir);
+    let mut results = Vec::new();
+
+    for file in &files {
+        let file_str = file.to_string_lossy().to_string();
+        let result = code_replay_session(
+            harness.clone(),
+            file_str,
+            config.clone(),
+            state.clone(),
+            app_handle.clone(),
+        )
+        .await?;
+        results.push(result);
+    }
+
+    Ok(results)
+}

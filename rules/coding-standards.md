@@ -454,6 +454,54 @@ blocker — they break the moment a font or padding changes.
 
 ---
 
+## Tutorial Screenshots (Mandatory)
+
+Every tutorial in `tutorials/` **must** have an accompanying screenshot for
+each numbered section. Screenshots are stored under
+`tutorials/screenshots/<tutorial-name>/NN-step-description.png`.
+
+### Rules
+
+1. **No placeholder references.** If a tutorial has an `![alt](screenshots/…)`
+   reference, the actual image file **must exist**. A tutorial with broken
+   image links is considered incomplete.
+2. **Agent-captured.** When an agent creates or updates a tutorial section, it
+   must also capture the screenshot itself using the browser tools
+   (`open_browser_page` → navigate to the relevant UI state →
+   `screenshot_page` → save the PNG to the correct path). Do NOT leave
+   screenshot capture for the user.
+3. **Capture workflow:**
+   - Start the dev server (`npm run dev` or the existing Vite terminal).
+   - Open `http://localhost:1420` in the integrated browser.
+   - Navigate to the relevant view/panel (e.g. `#/memory` for the graph,
+     `#/settings` for configuration panels, `#/chat` for chat UI).
+   - Use `screenshot_page` with an appropriate `selector` or full viewport.
+   - Save the captured image to `tutorials/screenshots/<name>/NN-step.png`.
+4. **Meaningful content.** Screenshots should show realistic UI states — not
+   empty/loading screens. If the app needs seed data (memories, personas,
+   etc.), use the MCP brain or Tauri commands to populate state first.
+5. **Consistent dimensions.** Target 1280×800 viewport. Crop to relevant
+   panels when a full-page shot is too wide.
+6. **Update on UI change.** When a PR modifies a UI component that appears in
+   a tutorial screenshot, re-capture the affected screenshots in the same PR.
+7. **Alt text.** The `![alt text]` must concisely describe what the screenshot
+   shows (for accessibility). No generic text like "screenshot" or "image".
+
+### Directory convention
+
+```
+tutorials/screenshots/
+  quick-start/
+    01-install.png
+    02-first-launch.png
+    ...
+  voice-setup/
+    01-settings-panel.png
+    ...
+```
+
+---
+
 ## Use Existing Libraries — Don't Reinvent the Wheel
 
 Before writing any non-trivial functionality from scratch, **search for a well-maintained open-source crate (Rust) or npm package (frontend)** that already solves the problem. Only write custom code when no suitable library exists, or when the library would introduce unacceptable bloat or licensing issues.

@@ -193,6 +193,16 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "name": "brain_session_checklist",
+            "description": "Show the MCP session compliance checklist: which preflight and post-chunk steps are complete, which are outstanding. Call this to verify you are following all mandatory project rules.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "signal": { "type": "string", "description": "Optional: signal a compliance step as done. Values: receipt_shown, milestones_read, completion_logged, milestones_cleaned, seed_synced, chunk_completing" }
+                }
+            }
+        }),
     ];
 
     if caps.code_read {
@@ -362,6 +372,20 @@ pub async fn dispatch(
             serde_json::to_string(&gaps).map_err(|e| e.to_string())
         }
 
+        // brain_session_checklist is handled in the router (needs compliance state)
+        "brain_session_checklist" => {
+            // Signal mode — agent can signal steps via this tool as well.
+            if let Some(signal) = args.get("signal").and_then(|v| v.as_str()) {
+                Ok(format!(
+                    "Signal '{}' acknowledged. Call brain_session_checklist without signal to see status.",
+                    signal
+                ))
+            } else {
+                // Checklist mode — actual state comes from router annotation
+                Ok("Checklist rendered by compliance gate (see response annotation).".to_string())
+            }
+        }
+
         // ─── Code-intelligence tools (native symbol index) ────────────
         "code_query"
         | "code_context"
@@ -375,7 +399,11 @@ pub async fn dispatch(
         | "code_extract_contracts"
         | "code_extract_negatives"
         | "code_list_group_contracts"
-        | "code_cross_repo_query" => dispatch_code_tool(caps, tool_name, args, app_state).await,
+        | "code_cross_repo_query"
+        | "code_branch_sync"
+        | "code_index_commit"
+        | "code_branch_diff"
+        | "code_group_drift" => dispatch_code_tool(caps, tool_name, args, app_state).await,
 
         _ => Err(format!("unknown tool: {tool_name}")),
     }
@@ -631,6 +659,57 @@ fn code_tool_definitions() -> Vec<Value> {
                 "required": ["group_id", "name"]
             }
         }),
+        // ─── Branch overlay tools (chunk 45.2) ──────────────────────────
+        json!({
+            "name": "code_branch_sync",
+            "description": "Sync the code graph overlay for a branch transition. Computes git diff between prev and new refs, re-indexes only changed files into the branch overlay. Requires code_write capability.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": { "type": "string", "description": "Repository path (defaults to first indexed repo)" },
+                    "prev": { "type": "string", "description": "Previous commit SHA (base ref)" },
+                    "new": { "type": "string", "description": "New commit SHA (branch ref)" }
+                },
+                "required": ["prev", "new"]
+            }
+        }),
+        json!({
+            "name": "code_index_commit",
+            "description": "Re-index changed files from the latest commit into the active branch overlay. If HEAD now equals base_ref, promotes overlay rows into base and drops the overlay. Requires code_write capability.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": { "type": "string", "description": "Repository path (defaults to first indexed repo)" },
+                    "commit": { "type": "string", "description": "Commit SHA to index" }
+                },
+                "required": ["commit"]
+            }
+        }),
+        // ─── Contract drift tools (chunk 45.6) ──────────────────────────
+        json!({
+            "name": "code_branch_diff",
+            "description": "Compare symbols between two refs (base vs branch overlay). Returns added/removed/modified symbols. Useful for PR review: see what a branch changes in the code graph.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "repo": { "type": "string", "description": "Repository path (defaults to first indexed repo)" },
+                    "left_ref": { "type": "string", "description": "Base ref (e.g. 'main')" },
+                    "right_ref": { "type": "string", "description": "Branch ref (e.g. 'feat/new-api')" }
+                },
+                "required": ["left_ref", "right_ref"]
+            }
+        }),
+        json!({
+            "name": "code_group_drift",
+            "description": "Detect contract drift across repos in a group. Finds shared contracts whose signature_hash differs between repos, indicating a breaking change or sync issue.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "group_label": { "type": "string", "description": "Label of the repo group to check for drift" }
+                },
+                "required": ["group_label"]
+            }
+        }),
     ]
 }
 
@@ -784,6 +863,103 @@ async fn dispatch_code_tool(
                 crate::coding::repo_groups::cross_repo_query(&data_dir, group_id, name, limit)
                     .map_err(|e| e.to_string())?;
             return serde_json::to_string(&matches).map_err(|e| e.to_string());
+        }
+        "code_branch_sync" => {
+            if !caps.code_write {
+                return Err("permission denied: capability `code_write` is not granted".into());
+            }
+            let prev = args["prev"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: prev".to_string())?;
+            let new_ref = args["new"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: new".to_string())?;
+            let repo_path_str = args["repo"].as_str();
+
+            let repo_path = if let Some(p) = repo_path_str {
+                std::path::PathBuf::from(p)
+            } else {
+                // Use the first indexed repo's path.
+                let path: String = conn
+                    .query_row(
+                        "SELECT path FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .map_err(|_| "no repos indexed yet".to_string())?;
+                std::path::PathBuf::from(path)
+            };
+
+            let result = crate::coding::branch_sync::execute_branch_sync(
+                &conn, &repo_path, &data_dir, prev, new_ref,
+            )
+            .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
+        }
+        "code_index_commit" => {
+            if !caps.code_write {
+                return Err("permission denied: capability `code_write` is not granted".into());
+            }
+            let commit = args["commit"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: commit".to_string())?;
+            let repo_path_str = args["repo"].as_str();
+
+            let repo_path = if let Some(p) = repo_path_str {
+                std::path::PathBuf::from(p)
+            } else {
+                let path: String = conn
+                    .query_row(
+                        "SELECT path FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .map_err(|_| "no repos indexed yet".to_string())?;
+                std::path::PathBuf::from(path)
+            };
+
+            let result = crate::coding::branch_sync::execute_index_commit(
+                &conn, &repo_path, &data_dir, commit,
+            )
+            .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
+        }
+        "code_branch_diff" => {
+            let left_ref = args["left_ref"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: left_ref".to_string())?;
+            let right_ref = args["right_ref"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: right_ref".to_string())?;
+
+            let repo_id: i64 = if let Some(repo_path) = args["repo"].as_str() {
+                conn.query_row(
+                    "SELECT id FROM code_repos WHERE path = ?1",
+                    rusqlite::params![repo_path],
+                    |r| r.get(0),
+                )
+                .map_err(|_| format!("repo not indexed: {repo_path}"))?
+            } else {
+                conn.query_row(
+                    "SELECT id FROM code_repos ORDER BY indexed_at DESC LIMIT 1",
+                    [],
+                    |r| r.get(0),
+                )
+                .map_err(|_| "no repos indexed yet".to_string())?
+            };
+
+            let result = crate::coding::drift::branch_diff(&conn, repo_id, left_ref, right_ref)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
+        }
+        "code_group_drift" => {
+            let group_label = args["group_label"]
+                .as_str()
+                .ok_or_else(|| "missing required arg: group_label".to_string())?;
+
+            let result = crate::coding::drift::group_drift(&conn, &data_dir, group_label)
+                .map_err(|e| e.to_string())?;
+            return serde_json::to_string(&result).map_err(|e| e.to_string());
         }
         _ => {}
     }
@@ -1740,14 +1916,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 15);
+        assert_eq!(defs.len(), 16);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 28);
+        assert_eq!(defs.len(), 33);
     }
 
     #[test]
@@ -1783,6 +1959,7 @@ mod tests {
             "brain_wiki_revisit",
             "brain_wiki_digest_text",
             "brain_review_gaps",
+            "brain_session_checklist",
         ];
         assert_eq!(names, expected);
     }
@@ -1791,7 +1968,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[15..]
+        let code_names: Vec<&str> = defs[16..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();
@@ -1809,6 +1986,10 @@ mod tests {
             "code_extract_negatives",
             "code_list_group_contracts",
             "code_cross_repo_query",
+            "code_branch_sync",
+            "code_index_commit",
+            "code_branch_diff",
+            "code_group_drift",
         ];
         assert_eq!(code_names, expected);
     }

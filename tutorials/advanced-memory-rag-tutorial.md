@@ -1,9 +1,30 @@
 # Advanced Memory & RAG — HyDE, Reranking, Cognitive Axes & Memory Lifecycle
 
-> TerranSoul's memory system goes far beyond simple chat history. This
-> tutorial covers the full RAG pipeline (RRF fusion, HyDE, cross-encoder
-> reranking), cognitive memory classification, temporal queries, conflict
-> resolution, decay/eviction, and the memory audit/provenance system.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Brain + RAG Setup](brain-rag-setup-tutorial.md) ·
+> [Folder to Knowledge Graph](folder-to-knowledge-graph-tutorial.md) ·
+> Architecture: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
+
+TerranSoul's memory system goes far beyond simple chat history. This
+tutorial covers the full RAG pipeline (RRF fusion, HyDE, cross-encoder
+reranking), cognitive memory classification, temporal queries, conflict
+resolution, decay/eviction, and the memory audit/provenance system.
+
+---
+
+## Table of Contents
+
+1. [The RAG Pipeline (What Happens on Every Message)](#1-the-rag-pipeline-what-happens-on-every-message)
+2. [Tuning RAG Settings](#2-tuning-rag-settings)
+3. [Cognitive Memory Axes](#3-cognitive-memory-axes)
+4. [Auto-Learn Policy](#4-auto-learn-policy)
+5. [Memory Conflict Resolution](#5-memory-conflict-resolution)
+6. [Temporal Queries (Time-Scoped Search)](#6-temporal-queries-time-scoped-search)
+7. [Decay, Eviction & Garbage Collection](#7-decay-eviction--garbage-collection)
+8. [Memory Audit & Provenance](#8-memory-audit--provenance)
+9. [Session Reflection (`/reflect`)](#9-session-reflection-reflect)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -16,7 +37,9 @@
 
 ---
 
-## Part 1 — The RAG Pipeline (What Happens on Every Message)
+## 1. The RAG Pipeline (What Happens on Every Message)
+
+![RAG pipeline diagram showing 6-signal search → RRF fusion → rerank → inject](screenshots/advanced-memory-rag/01-rag-pipeline.png)
 
 Every time you send a message, TerranSoul runs a multi-stage retrieval pipeline:
 
@@ -80,7 +103,9 @@ Top-k surviving memories are injected into the system prompt as `[LONG-TERM MEMO
 
 ---
 
-## Part 2 — Tuning RAG Settings
+## 2. Tuning RAG Settings
+
+![Brain settings panel showing RAG threshold, top-k, and HyDE toggle](screenshots/advanced-memory-rag/02-rag-settings.png)
 
 Open **Settings → Brain** to adjust:
 
@@ -97,7 +122,9 @@ Open **Settings → Brain** to adjust:
 
 ---
 
-## Part 3 — Cognitive Memory Axes
+## 3. Cognitive Memory Axes
+
+![Memory detail showing cognitive_kind badge and tier classification](screenshots/advanced-memory-rag/03-cognitive-axes.png)
 
 Every memory is automatically classified into one of four **cognitive kinds**:
 
@@ -123,7 +150,9 @@ Every memory is automatically classified into one of four **cognitive kinds**:
 
 ---
 
-## Part 4 — Auto-Learn Policy
+## 4. Auto-Learn Policy
+
+![Settings showing auto-learn toggle with cognitive kind routing rules](screenshots/advanced-memory-rag/04-auto-learn.png)
 
 TerranSoul automatically extracts memories from conversations:
 
@@ -146,7 +175,9 @@ TerranSoul automatically extracts memories from conversations:
 
 ---
 
-## Part 5 — Memory Conflict Resolution
+## 5. Memory Conflict Resolution
+
+![Conflict resolution dialog showing two conflicting memories with resolution options](screenshots/advanced-memory-rag/05-conflict-resolution.png)
 
 When a new memory contradicts an existing one:
 
@@ -164,7 +195,9 @@ When a new memory contradicts an existing one:
 
 ---
 
-## Part 6 — Temporal Queries (Time-Scoped Search)
+## 6. Temporal Queries (Time-Scoped Search)
+
+![Chat showing natural-language time query “what did I learn last week?” with results](screenshots/advanced-memory-rag/06-temporal-queries.png)
 
 TerranSoul understands natural-language time expressions in searches:
 
@@ -181,7 +214,9 @@ Use these in chat naturally: *"What did we discuss last week about deployments?"
 
 ---
 
-## Part 7 — Decay, Eviction & Garbage Collection
+## 7. Decay, Eviction & Garbage Collection
+
+![Brain debug view showing decay scores and GC status indicators](screenshots/advanced-memory-rag/07-decay-gc.png)
 
 ### Decay (Gradual Forgetting)
 
@@ -213,7 +248,9 @@ Manually trigger GC to remove fully-decayed memories:
 
 ---
 
-## Part 8 — Memory Audit & Provenance
+## 8. Memory Audit & Provenance
+
+![Memory version history panel showing edit chain and provenance graph](screenshots/advanced-memory-rag/08-audit-provenance.png)
 
 ### Audit Tab
 
@@ -237,7 +274,9 @@ Click any memory → **Audit** tab to see its full history:
 
 ---
 
-## Part 9 — Session Reflection (`/reflect`)
+## 9. Session Reflection (`/reflect`)
+
+![Chat showing /reflect command output with session learning summary](screenshots/advanced-memory-rag/09-session-reflection.png)
 
 After a productive conversation, type `/reflect` to trigger session reflection:
 
@@ -250,7 +289,7 @@ After a productive conversation, type `/reflect` to trigger session reflection:
 
 ---
 
-## Troubleshooting
+## 10. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

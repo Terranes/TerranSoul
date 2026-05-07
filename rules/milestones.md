@@ -32,24 +32,7 @@
 
 ## Next Chunk
 
-The next `not-started` chunk is **44.1 — RAG latency optimization**.
-Implement chunks in order; each one must keep the Full CI Gate green before moving on.
+No chunks remain. All phases through 45 are complete.
+Add new phases below when planning future work.
 
 ---
-
-## Phase 44 — Retrieval Quality & Onboarding (May 2026)
-
-> **Goal.** Address the top findings from the Phase 43 comparison review:
-> optimize RAG hot paths, smooth out new-user onboarding, validate the
-> ambient maintenance agent in production-like conditions, unlock
-> cross-harness replay, and support embedding model switching. Five chunks.
-
-| ID | Title |
-| -- | ----- |
-| 44.1 | RAG latency optimization — benchmark end-to-end retrieval, add query result caching |
-| 44.2 | First-run setup wizard — guided Ollama install + model pull + embedding warmup |
-| 44.3 | Ambient agent validation — run 50+ simulated garden cycles, measure quality metrics |
-| 44.4 | Cross-harness replay mode — replay imported sessions to extract/verify context |
-| 44.5 | Embedding model registry — switch models with automatic re-embedding migration |
-
-> Detailed specs for each chunk live in [`rules/backlog.md`](backlog.md) § Phase 43.

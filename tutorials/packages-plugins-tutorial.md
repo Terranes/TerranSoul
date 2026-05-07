@@ -1,9 +1,25 @@
 # AI Packages & Plugin Development — Marketplace, Agents & Extensibility
 
-> TerranSoul's package manager lets you browse, install, and manage AI
-> agents from a built-in marketplace. For developers, the plugin system
-> supports custom commands, views, themes, slash commands, and memory
-> hooks. This tutorial covers both the user and developer perspectives.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [OpenClaw Plugin](openclaw-plugin-tutorial.md) ·
+> [Multi-Agent Workflows](multi-agent-workflows-tutorial.md) ·
+> [Plugin Development: `docs/plugin-development.md`](../docs/plugin-development.md)
+
+TerranSoul's package manager lets you browse, install, and manage AI
+agents from a built-in marketplace. For developers, the plugin system
+supports custom commands, views, themes, slash commands, and memory
+hooks. This tutorial covers both the user and developer perspectives.
+
+---
+
+## Table of Contents
+
+1. [Agent Marketplace (User Guide)](#1-agent-marketplace-user-guide)
+2. [Plugin System (Developer Guide)](#2-plugin-system-developer-guide)
+3. [WASM Plugin Sandbox](#3-wasm-plugin-sandbox)
+4. [Registry Server (Advanced)](#4-registry-server-advanced)
+5. [Troubleshooting](#5-troubleshooting)
 
 ---
 
@@ -16,7 +32,9 @@
 
 ---
 
-## Part 1 — Agent Marketplace (User Guide)
+## 1. Agent Marketplace (User Guide)
+
+![Marketplace panel showing available agents with Install buttons](screenshots/packages-plugins/01-marketplace.png)
 
 ### Step 1: Open the Marketplace
 
@@ -62,7 +80,9 @@ If Ollama is running locally, its models automatically appear in the **Local LLM
 
 ---
 
-## Part 2 — Plugin System (Developer Guide)
+## 2. Plugin System (Developer Guide)
+
+![Plugin manifest structure showing contributes fields and activation events](screenshots/packages-plugins/02-plugin-system.png)
 
 ### Plugin Architecture
 
@@ -182,7 +202,9 @@ This fires whenever a memory with the "meeting" tag is created.
 
 ---
 
-## Part 3 — WASM Plugin Sandbox
+## 3. WASM Plugin Sandbox
+
+![WASM sandbox architecture showing isolated execution environment](screenshots/packages-plugins/03-wasm-sandbox.png)
 
 For untrusted or third-party plugins, TerranSoul supports optional WASM sandboxing:
 
@@ -201,7 +223,9 @@ For untrusted or third-party plugins, TerranSoul supports optional WASM sandboxi
 
 ---
 
-## Part 4 — Registry Server (Advanced)
+## 4. Registry Server (Advanced)
+
+![Registry server configuration showing package publishing flow](screenshots/packages-plugins/04-registry-server.png)
 
 TerranSoul includes a built-in package registry server for teams:
 
@@ -212,7 +236,7 @@ TerranSoul includes a built-in package registry server for teams:
 
 ---
 
-## Troubleshooting
+## 5. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

@@ -240,6 +240,47 @@ pub fn parse_transcript(
     }
 }
 
+/// Parse a transcript file and return the actual turns (not just metadata).
+///
+/// Same parsing logic as [`parse_transcript`] but returns the turn vector
+/// for downstream replay processing.
+pub fn parse_transcript_turns(harness: Harness, path: &Path) -> Vec<ImportedTurn> {
+    let session_id = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("unknown")
+        .to_string();
+
+    let raw = match fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut turns = Vec::new();
+
+    if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&raw) {
+        for (i, obj) in arr.iter().enumerate() {
+            if let Some(turn) = value_to_turn(harness, &session_id, obj, i) {
+                turns.push(turn);
+            }
+        }
+    } else {
+        for (i, line) in raw.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Ok(obj) = serde_json::from_str::<serde_json::Value>(line) {
+                if let Some(turn) = value_to_turn(harness, &session_id, &obj, i) {
+                    turns.push(turn);
+                }
+            }
+        }
+    }
+
+    turns
+}
+
 /// Extract a turn from a JSON value.
 fn value_to_turn(
     harness: Harness,

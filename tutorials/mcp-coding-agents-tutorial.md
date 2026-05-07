@@ -1,9 +1,29 @@
 # MCP for Coding Agents — VS Code Copilot, Headless Brain & Code Intelligence
 
-> TerranSoul exposes its brain as an MCP (Model Context Protocol) server
-> that AI coding assistants can query for project knowledge, semantic
-> search, and code intelligence. This tutorial covers setup for VS Code
-> Copilot, the headless runner for CI/automation, and the code tools.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [LAN Brain Sharing](lan-mcp-sharing-tutorial.md) ·
+> [Advanced Memory & RAG](advanced-memory-rag-tutorial.md) ·
+> [Multi-Agent Workflows](multi-agent-workflows-tutorial.md)
+
+TerranSoul exposes its brain as an MCP (Model Context Protocol) server
+that AI coding assistants can query for project knowledge, semantic
+search, and code intelligence. This tutorial covers setup for VS Code
+Copilot, the headless runner for CI/automation, and the code tools.
+
+---
+
+## Table of Contents
+
+1. [Understanding MCP Ports](#1-understanding-mcp-ports)
+2. [Quick Start (Headless MCP)](#2-quick-start-headless-mcp)
+3. [VS Code Copilot Integration](#3-vs-code-copilot-integration)
+4. [Available Brain Tools](#4-available-brain-tools)
+5. [Using Brain Search in Practice](#5-using-brain-search-in-practice)
+6. [Code Intelligence Setup](#6-code-intelligence-setup)
+7. [Workflow for Coding Sessions](#7-workflow-for-coding-sessions)
+8. [Stdio Transport (Direct Pipe)](#8-stdio-transport-direct-pipe)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -17,7 +37,9 @@
 
 ---
 
-## Part 1 — Understanding MCP Ports
+## 1. Understanding MCP Ports
+
+![Diagram showing three MCP ports — 7421 release, 7422 dev, 7423 headless](screenshots/mcp-coding-agents/01-mcp-ports.png)
 
 TerranSoul runs MCP on three ports depending on context:
 
@@ -31,7 +53,9 @@ For coding work, use the **headless runner on port 7423** — it doesn't touch y
 
 ---
 
-## Part 2 — Quick Start (Headless MCP)
+## 2. Quick Start (Headless MCP)
+
+![Terminal showing npm run mcp starting on port 7423 with health check](screenshots/mcp-coding-agents/02-headless-start.png)
 
 ### Step 1: Start the MCP Server
 
@@ -73,7 +97,9 @@ export TERRANSOUL_MCP_TOKEN_MCP=$(cat .vscode/.mcp-token)
 
 ---
 
-## Part 3 — VS Code Copilot Integration
+## 3. VS Code Copilot Integration
+
+![VS Code MCP panel showing terransoul-brain-mcp connected](screenshots/mcp-coding-agents/03-vscode-copilot.png)
 
 ### Auto-Start (Recommended)
 
@@ -104,7 +130,9 @@ Copilot picks these up automatically. The environment variable for each:
 
 ---
 
-## Part 4 — Available Brain Tools
+## 4. Available Brain Tools
+
+![MCP tool list showing brain_search, brain_health, code_query etc.](screenshots/mcp-coding-agents/04-brain-tools.png)
 
 Once connected, coding agents can call these tools:
 
@@ -141,7 +169,9 @@ Once connected, coding agents can call these tools:
 
 ---
 
-## Part 5 — Using Brain Search in Practice
+## 5. Using Brain Search in Practice
+
+![Copilot chat calling brain_search and getting relevant memories](screenshots/mcp-coding-agents/05-brain-search.png)
 
 ### Basic Search
 
@@ -169,7 +199,9 @@ Returns memories most relevant to the task you're about to work on.
 
 ---
 
-## Part 6 — Code Intelligence Setup
+## 6. Code Intelligence Setup
+
+![Code indexing progress showing symbols and edges being indexed](screenshots/mcp-coding-agents/06-code-intelligence.png)
 
 ### Index a Repository
 
@@ -200,7 +232,9 @@ Shows what would be affected by changing this function: callers, tests, dependen
 
 ---
 
-## Part 7 — Workflow for Coding Sessions
+## 7. Workflow for Coding Sessions
+
+![Session workflow diagram: health check → brain_search → implement → sync](screenshots/mcp-coding-agents/07-workflow.png)
 
 The recommended workflow for AI coding agents:
 
@@ -218,7 +252,9 @@ MCP returns focused, relevant context instead of raw file content:
 
 ---
 
-## Part 8 — Stdio Transport (Direct Pipe)
+## 8. Stdio Transport (Direct Pipe)
+
+![Terminal showing stdio MCP connection via node scripts](screenshots/mcp-coding-agents/08-stdio-transport.png)
 
 For editors that prefer stdio over HTTP:
 
@@ -230,7 +266,7 @@ The binary reads JSON-RPC from stdin and writes responses to stdout. Same capabi
 
 ---
 
-## Troubleshooting
+## 9. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

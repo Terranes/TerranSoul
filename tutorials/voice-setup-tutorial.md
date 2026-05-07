@@ -1,8 +1,27 @@
 # Voice Setup — Speech Recognition, Text-to-Speech & Lip Sync
 
-> Enable hands-free conversation with TerranSoul using speech recognition
-> (ASR) and text-to-speech (TTS). This tutorial covers provider selection,
-> hotword configuration, and the lip-sync animation pipeline.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Quick Start](quick-start-tutorial.md) ·
+> [Teaching Animations](teaching-animations-expressions-persona-tutorial.md) ·
+> [Skill Tree](skill-tree-quests-tutorial.md)
+
+Enable hands-free conversation with TerranSoul using speech recognition
+(ASR) and text-to-speech (TTS). This tutorial covers provider selection,
+hotword configuration, and the lip-sync animation pipeline.
+
+---
+
+## Table of Contents
+
+1. [Open Voice Settings](#1-open-voice-settings)
+2. [Choose an ASR Provider](#2-choose-an-asr-provider)
+3. [Choose a TTS Provider](#3-choose-a-tts-provider)
+4. [Configure Hotwords](#4-configure-hotwords-power-words)
+5. [Lip Sync Pipeline](#5-lip-sync-pipeline)
+6. [Full Conversation Mode](#6-full-conversation-mode)
+7. [Voice Auto-Configure](#7-voice-auto-configure)
+8. [Troubleshooting](#8-troubleshooting)
 
 ---
 
@@ -16,7 +35,9 @@
 
 ---
 
-## Step 1 — Open Voice Settings
+## 1. Open Voice Settings
+
+![Settings → Voice tab showing ASR and TTS sections](screenshots/voice-setup/01-voice-settings.png)
 
 Navigate to **Settings → Voice** tab (or activate the **"Gift of Speech"** quest in the Skill Tree).
 
@@ -26,7 +47,9 @@ You'll see two sections:
 
 ---
 
-## Step 2 — Choose an ASR Provider
+## 2. Choose an ASR Provider
+
+![ASR provider dropdown with Web Speech, Groq Whisper, and OpenAI options](screenshots/voice-setup/02-asr-provider.png)
 
 | Provider | Privacy | Speed | Quality | Key Required |
 |----------|---------|-------|---------|--------------|
@@ -58,7 +81,9 @@ You'll see two sections:
 
 ---
 
-## Step 3 — Choose a TTS Provider
+## 3. Choose a TTS Provider
+
+![TTS provider dropdown with Web Speech and OpenAI TTS options](screenshots/voice-setup/03-tts-provider.png)
 
 | Provider | Privacy | Voices | Quality | Key Required |
 |----------|---------|--------|---------|--------------|
@@ -83,7 +108,9 @@ Already active by default. To customize:
 
 ---
 
-## Step 4 — Configure Hotwords (Power Words)
+## 4. Configure Hotwords (Power Words)
+
+![Hotwords section showing added words with boost values](screenshots/voice-setup/04-hotwords.png)
 
 Hotwords boost recognition accuracy for frequently-used names or terms.
 
@@ -99,7 +126,9 @@ Hotwords boost recognition accuracy for frequently-used names or terms.
 
 ---
 
-## Step 5 — Lip Sync Pipeline
+## 5. Lip Sync Pipeline
+
+![Character lip-syncing during TTS playback with viseme indicators](screenshots/voice-setup/05-lip-sync.png)
 
 When TTS speaks, the 3D character automatically lip-syncs:
 
@@ -116,7 +145,9 @@ When TTS speaks, the 3D character automatically lip-syncs:
 
 ---
 
-## Step 6 — Full Conversation Mode
+## 6. Full Conversation Mode
+
+![Full conversation — microphone active, character speaking, continuous mode enabled](screenshots/voice-setup/06-full-conversation.png)
 
 When both ASR and TTS are configured, you unlock the **"Full Conversation"** combo in the Skill Tree:
 
@@ -137,7 +168,9 @@ If multiple people are speaking, TerranSoul can identify different speakers:
 
 ---
 
-## Step 7 — Voice Auto-Configure
+## 7. Voice Auto-Configure
+
+![Voice settings pre-configured after First Launch Wizard](screenshots/voice-setup/07-auto-configure.png)
 
 If you used the First Launch Wizard with "Auto-Accept All," voice was configured automatically:
 
@@ -151,7 +184,7 @@ To reconfigure at any time:
 
 ---
 
-## Troubleshooting
+## 8. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

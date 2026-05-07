@@ -100,6 +100,9 @@ pub struct GatewayCaps {
     pub brain_write: bool,
     /// Reserved for future code-introspection ops; not consulted in 15.3.
     pub code_read: bool,
+    /// Write to the code graph overlays (branch sync, index commit).
+    #[serde(default)]
+    pub code_write: bool,
 }
 
 impl Default for GatewayCaps {
@@ -110,6 +113,7 @@ impl Default for GatewayCaps {
             brain_read: true,
             brain_write: false,
             code_read: false,
+            code_write: false,
         }
     }
 }
@@ -120,6 +124,7 @@ impl GatewayCaps {
         brain_read: false,
         brain_write: false,
         code_read: false,
+        code_write: false,
     };
 
     /// Convenience constant for tests + auto-setup: read + write enabled.
@@ -127,6 +132,7 @@ impl GatewayCaps {
         brain_read: true,
         brain_write: true,
         code_read: true,
+        code_write: true,
     };
 }
 

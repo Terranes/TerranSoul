@@ -58,7 +58,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "npx vitest run && cd src-tauri && cargo test",
+      "command": "npx vitest run && cd src-tauri && cargo test --lib --tests",
       "group": "test",
       "presentation": { "reveal": "always" }
     },
@@ -79,7 +79,7 @@
     {
       "label": "Full CI Gate",
       "type": "shell",
-      "command": "npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test",
+      "command": "npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test --lib --tests",
       "group": "test",
       "dependsOrder": "sequence",
       "presentation": { "reveal": "always" }

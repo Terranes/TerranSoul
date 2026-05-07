@@ -22,6 +22,12 @@ vi.mock('../stores/brain', () => ({
   }),
 }));
 
+vi.mock('../stores/memory', () => ({
+  useMemoryStore: defineStore('memory', () => ({
+    backfillEmbeddings: vi.fn().mockResolvedValue(0),
+  })),
+}));
+
 vi.mock('../stores/voice', () => ({
   useVoiceStore: defineStore('voice', () => ({
     hasVoice: { value: false },

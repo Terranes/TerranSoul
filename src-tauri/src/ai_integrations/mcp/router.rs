@@ -22,6 +22,7 @@ use crate::ai_integrations::gateway::*;
 use crate::AppState;
 
 use super::activity::McpActivityReporter;
+use super::compliance_gate::{self, ComplianceState};
 use super::hooks::IndexStalenessTracker;
 use super::tools;
 
@@ -40,6 +41,8 @@ pub struct McpRouterState {
     pub app_state: Option<AppState>,
     /// Tracks git HEAD for staleness detection on post-tool-use hooks.
     pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
+    /// Per-session compliance tracking — enforces MCP preflight + milestone hygiene.
+    pub compliance: ComplianceState,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -257,6 +260,19 @@ async fn handle_request(
     // Notifications (no id) — dispatch to hook handlers, then acknowledge.
     if req.id.is_none() {
         let params = req.params.unwrap_or(Value::Null);
+
+        // Handle compliance signals before general notifications.
+        if req.method == "compliance/signal" {
+            if let Some(signal) = params.get("signal").and_then(|v| v.as_str()) {
+                let compliance = state.compliance.clone();
+                let signal_owned = signal.to_string();
+                tokio::spawn(async move {
+                    compliance_gate::on_compliance_signal(&compliance, &signal_owned).await;
+                });
+            }
+            return StatusCode::ACCEPTED.into_response();
+        }
+
         // Fire-and-forget notification handling
         super::hooks::handle_notification(
             &req.method,
@@ -280,7 +296,7 @@ async fn handle_request(
             if let Some(activity) = &state.activity {
                 activity.tool_started(&tool_name, &args);
             }
-            Some((tool_name, state.activity.clone()))
+            Some((tool_name, args, state.activity.clone()))
         } else {
             None
         }
@@ -294,7 +310,7 @@ async fn handle_request(
         GatewayCaps::default()
     };
 
-    let resp = dispatch_method_with_state(
+    let mut resp = dispatch_method_with_state(
         state.gw.as_ref(),
         &effective_caps,
         &req.method,
@@ -304,7 +320,46 @@ async fn handle_request(
     )
     .await;
 
-    if let Some((tool_name, Some(activity))) = tool_activity {
+    // ─── Compliance gate: track tool calls + annotate responses ──────────
+    if let Some((ref tool_name, ref args, _)) = tool_activity {
+        // Handle signal param on brain_session_checklist
+        if tool_name == "brain_session_checklist" {
+            if let Some(signal) = args.get("signal").and_then(|v| v.as_str()) {
+                compliance_gate::on_compliance_signal(&state.compliance, signal).await;
+            }
+            // Always replace the response with the full checklist
+            let checklist = compliance_gate::get_checklist(&state.compliance).await;
+            resp = JsonRpcResponse::ok(
+                resp.id.clone(),
+                json!({
+                    "content": [{ "type": "text", "text": checklist }]
+                }),
+            );
+        } else {
+            compliance_gate::on_tool_called(&state.compliance, tool_name, args).await;
+
+            // Annotate successful tool responses with compliance reminders
+            if resp.error.is_none() {
+                if let Some(annotation) =
+                    compliance_gate::get_response_annotation(&state.compliance).await
+                {
+                    // Append compliance reminder to the text content of the tool result
+                    if let Some(result) = resp.result.as_mut() {
+                        if let Some(content) = result.get_mut("content") {
+                            if let Some(arr) = content.as_array_mut() {
+                                arr.push(json!({
+                                    "type": "text",
+                                    "text": annotation
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some((tool_name, _args, Some(activity))) = tool_activity {
         let is_error = resp
             .result
             .as_ref()

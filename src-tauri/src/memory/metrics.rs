@@ -136,6 +136,11 @@ pub struct MetricsSnapshot {
     pub set_embedding: OpSnapshot,
     pub hybrid_search: OpSnapshot,
     pub hybrid_search_rrf: OpSnapshot,
+    // Per-stage RAG pipeline metrics (Chunk 44.1)
+    pub rag_candidate_retrieval: OpSnapshot,
+    pub rag_scoring: OpSnapshot,
+    pub rag_rrf_fusion: OpSnapshot,
+    pub rag_cache_hit: OpSnapshot,
 }
 
 /// Process-wide memory operation metrics.
@@ -152,6 +157,11 @@ pub struct MemoryMetrics {
     pub set_embedding: OpMetrics,
     pub hybrid_search: OpMetrics,
     pub hybrid_search_rrf: OpMetrics,
+    // Per-stage RAG pipeline metrics (Chunk 44.1)
+    pub rag_candidate_retrieval: OpMetrics,
+    pub rag_scoring: OpMetrics,
+    pub rag_rrf_fusion: OpMetrics,
+    pub rag_cache_hit: OpMetrics,
 }
 
 impl MemoryMetrics {
@@ -164,6 +174,10 @@ impl MemoryMetrics {
             set_embedding: OpMetrics::new(),
             hybrid_search: OpMetrics::new(),
             hybrid_search_rrf: OpMetrics::new(),
+            rag_candidate_retrieval: OpMetrics::new(),
+            rag_scoring: OpMetrics::new(),
+            rag_rrf_fusion: OpMetrics::new(),
+            rag_cache_hit: OpMetrics::new(),
         }
     }
 }
@@ -185,6 +199,10 @@ impl MemoryMetrics {
             set_embedding: self.set_embedding.snapshot(),
             hybrid_search: self.hybrid_search.snapshot(),
             hybrid_search_rrf: self.hybrid_search_rrf.snapshot(),
+            rag_candidate_retrieval: self.rag_candidate_retrieval.snapshot(),
+            rag_scoring: self.rag_scoring.snapshot(),
+            rag_rrf_fusion: self.rag_rrf_fusion.snapshot(),
+            rag_cache_hit: self.rag_cache_hit.snapshot(),
         }
     }
 }

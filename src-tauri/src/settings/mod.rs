@@ -49,6 +49,10 @@ pub struct UserModel {
     /// 'female' or 'male' — drives TTS voice selection. Defaults to 'female'.
     #[serde(default = "default_user_model_gender")]
     pub gender: String,
+    /// Persona name associated with this model (optional).
+    /// When switching to this model, the app can auto-apply this persona.
+    #[serde(default)]
+    pub persona: String,
     /// Unix milliseconds when the model was imported.
     #[serde(default)]
     pub imported_at: u64,

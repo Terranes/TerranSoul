@@ -110,7 +110,7 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 28);
+        assert_eq!(tools.len(), 33);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
@@ -120,10 +120,15 @@ mod tests {
         assert_eq!(tools[9]["name"], "brain_wiki_audit");
         assert_eq!(tools[13]["name"], "brain_wiki_digest_text");
         assert_eq!(tools[14]["name"], "brain_review_gaps");
+        assert_eq!(tools[15]["name"], "brain_session_checklist");
 
         // Verify code tools are present.
-        assert_eq!(tools[15]["name"], "code_query");
-        assert_eq!(tools[18]["name"], "code_rename");
+        assert_eq!(tools[16]["name"], "code_query");
+        assert_eq!(tools[19]["name"], "code_rename");
+        assert_eq!(tools[29]["name"], "code_branch_sync");
+        assert_eq!(tools[30]["name"], "code_index_commit");
+        assert_eq!(tools[31]["name"], "code_branch_diff");
+        assert_eq!(tools[32]["name"], "code_group_drift");
 
         handle.stop();
     }

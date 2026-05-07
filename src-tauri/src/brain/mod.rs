@@ -4,6 +4,7 @@ pub mod cloud_embeddings;
 pub mod context_budget;
 pub mod doc_catalogue;
 pub mod docker_ollama;
+pub mod embedding_registry;
 pub mod free_api;
 pub mod intent_classifier;
 pub mod lm_studio;

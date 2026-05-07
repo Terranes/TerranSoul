@@ -1039,6 +1039,157 @@ pub async fn resolve_provider_for_role(
     Ok(resolved)
 }
 
+// ---------------------------------------------------------------------------
+// Embedding model registry (Chunk 44.5)
+// ---------------------------------------------------------------------------
+
+use crate::brain::embedding_registry::{
+    self, EmbeddingModelEntry, EmbeddingRegistryState, ModelSwitchResult,
+};
+
+/// List all known embedding models in the catalogue.
+#[tauri::command]
+pub async fn list_embedding_models() -> Vec<EmbeddingModelEntry> {
+    embedding_registry::catalogue()
+}
+
+/// Get the current embedding registry state (active model, migration status).
+#[tauri::command]
+pub async fn get_embedding_registry_state(
+    state: State<'_, crate::AppState>,
+) -> Result<EmbeddingRegistryState, String> {
+    Ok(embedding_registry::load_state(&state.data_dir))
+}
+
+/// Preview what would happen if we switch to a new embedding model.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn plan_embedding_model_switch(
+    model_id: String,
+    state: State<'_, crate::AppState>,
+) -> Result<ModelSwitchResult, String> {
+    // Count memories that have embeddings.
+    let embedded_count = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.embedded_count().map_err(|e| e.to_string())?
+    };
+    Ok(embedding_registry::plan_model_switch(
+        &state.data_dir,
+        &model_id,
+        embedded_count,
+    ))
+}
+
+/// Switch the active embedding model and start re-embedding migration.
+///
+/// This commits the switch and begins re-embedding in batches, emitting
+/// `embedding-migration-progress` events. Returns the final state.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn switch_embedding_model(
+    model_id: String,
+    state: State<'_, crate::AppState>,
+    app_handle: AppHandle,
+) -> Result<EmbeddingRegistryState, String> {
+    // Count embedded memories.
+    let embedded_count = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.embedded_count().map_err(|e| e.to_string())?
+    };
+
+    // Commit the switch.
+    let registry_state =
+        embedding_registry::commit_model_switch(&state.data_dir, &model_id, embedded_count)?;
+
+    // Emit initial progress.
+    let _ = app_handle.emit(
+        "embedding-migration-progress",
+        serde_json::json!({
+            "remaining": registry_state.migration_remaining,
+            "total": registry_state.migration_total,
+            "done": !registry_state.migration_pending,
+        }),
+    );
+
+    // If no migration needed, we're done.
+    if !registry_state.migration_pending {
+        return Ok(registry_state);
+    }
+
+    // Clear existing embeddings to force re-embedding with new model.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.clear_all_embeddings().map_err(|e| e.to_string())?;
+    }
+
+    // Tag existing embeddings with the new model ID.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let _ = store.backfill_embedding_model(&model_id);
+    }
+
+    // Re-embed in batches.
+    let batch_size = 50;
+    loop {
+        let unembedded: Vec<(i64, String)> = {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let all = store.unembedded_ids().map_err(|e| e.to_string())?;
+            all.into_iter().take(batch_size).collect()
+        };
+
+        if unembedded.is_empty() {
+            break;
+        }
+
+        let mut batch_count = 0;
+        for (id, content) in &unembedded {
+            let (brain_mode, active_brain) = {
+                let bm = state.brain_mode.lock().ok().and_then(|g| g.clone());
+                let ab = state.active_brain.lock().ok().and_then(|g| g.clone());
+                (bm, ab)
+            };
+            if let Some(emb) =
+                crate::brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref())
+                    .await
+            {
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                if store.set_embedding(*id, &emb).is_ok() {
+                    batch_count += 1;
+                }
+            }
+        }
+
+        // Update registry progress.
+        let updated =
+            embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
+
+        let _ = app_handle.emit(
+            "embedding-migration-progress",
+            serde_json::json!({
+                "remaining": updated.migration_remaining,
+                "total": updated.migration_total,
+                "done": !updated.migration_pending,
+            }),
+        );
+
+        if batch_count == 0 {
+            // No embeddings could be generated (brain offline?). Stop.
+            break;
+        }
+    }
+
+    // Final state.
+    let final_state = embedding_registry::complete_migration(&state.data_dir)?;
+    let _ = app_handle.emit(
+        "embedding-migration-progress",
+        serde_json::json!({
+            "remaining": 0,
+            "total": final_state.migration_total,
+            "done": true,
+        }),
+    );
+
+    Ok(final_state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

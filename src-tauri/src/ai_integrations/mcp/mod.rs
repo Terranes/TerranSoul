@@ -17,6 +17,7 @@
 pub mod activity;
 pub mod auth;
 pub mod auto_setup;
+pub mod compliance_gate;
 pub mod hooks;
 pub mod router;
 pub mod self_host;
@@ -320,6 +321,7 @@ pub async fn start_server_full(
         activity: Some(activity.clone()),
         app_state: Some(state),
         staleness_tracker: Arc::new(tokio::sync::Mutex::new(hooks::IndexStalenessTracker::new())),
+        compliance: compliance_gate::new_compliance_state(),
     };
     let app = router::build(router_state);
 

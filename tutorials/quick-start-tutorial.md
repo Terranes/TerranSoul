@@ -1,8 +1,25 @@
 # Quick Start — Your First Chat, Pet Mode & Custom VRM Models
 
-> TerranSoul's first-launch wizard gets you chatting in under 2 minutes.
-> This tutorial covers platform setup, importing your own VRM avatar,
-> switching display modes, and the floating Pet Mode overlay.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Voice Setup](voice-setup-tutorial.md) ·
+> [Brain + RAG](brain-rag-setup-tutorial.md) ·
+> [Skill Tree](skill-tree-quests-tutorial.md)
+
+TerranSoul's first-launch wizard gets you chatting in under 2 minutes.
+This tutorial covers platform setup, importing your own VRM avatar,
+switching display modes, and the floating Pet Mode overlay.
+
+---
+
+## Table of Contents
+
+1. [First Launch Wizard](#1-first-launch-wizard)
+2. [The Three Display Modes](#2-the-three-display-modes)
+3. [Pet Mode (Desktop Familiar)](#3-pet-mode-desktop-familiar)
+4. [Import a Custom VRM Model](#4-import-a-custom-vrm-model)
+5. [Send Your First Message](#5-send-your-first-message)
+6. [Troubleshooting](#6-troubleshooting)
 
 ---
 
@@ -24,7 +41,9 @@
 
 ---
 
-## Step 1 — First Launch Wizard
+## 1. First Launch Wizard
+
+![First Launch Wizard — three setup options shown on the welcome screen](screenshots/quick-start/01-first-launch-wizard.png)
 
 When TerranSoul opens for the first time, the **First Launch Wizard** appears automatically.
 
@@ -49,7 +68,9 @@ Once complete, you'll see a summary of what was configured (brain provider, voic
 
 ---
 
-## Step 2 — The Three Display Modes
+## 2. The Three Display Modes
+
+![Mode selector toolbar showing 3D, Chat, and Pet buttons](screenshots/quick-start/02-display-modes.png)
 
 TerranSoul's toolbar (top of the chat area) has a mode selector with three options:
 
@@ -63,7 +84,9 @@ Click any mode button to switch instantly.
 
 ---
 
-## Step 3 — Pet Mode (Desktop Familiar)
+## 3. Pet Mode (Desktop Familiar)
+
+![Pet mode — transparent character floating above desktop](screenshots/quick-start/03-pet-mode.png)
 
 Pet Mode turns TerranSoul into a floating desktop companion:
 
@@ -87,7 +110,9 @@ In Pet Mode, TerranSoul can span across all your monitors. The character follows
 
 ---
 
-## Step 4 — Import a Custom VRM Model
+## 4. Import a Custom VRM Model
+
+![Model dropdown showing Import VRM button](screenshots/quick-start/04-import-vrm.png)
 
 TerranSoul ships with two bundled avatars (**Shinra** and **Komori**), but you can import any VRM 0.0 or VRM 1.0 model.
 
@@ -125,7 +150,9 @@ Use the model dropdown at the top of the 3D viewport to switch between bundled a
 
 ---
 
-## Step 5 — Send Your First Message
+## 5. Send Your First Message
+
+![Chat input with a typed message and character responding](screenshots/quick-start/05-first-message.png)
 
 1. Type a message in the chat input at the bottom.
 2. Press **Enter** or click the send button.
@@ -139,7 +166,7 @@ Use the model dropdown at the top of the 3D viewport to switch between bundled a
 
 ---
 
-## Troubleshooting
+## 6. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

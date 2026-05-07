@@ -1,4 +1,9 @@
-# OpenClaw Plugin Example - Using OpenClaw Effectively With TerranSoul
+# OpenClaw Plugin — Using OpenClaw Effectively With TerranSoul
+
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [AI Packages & Plugins](packages-plugins-tutorial.md) ·
+> [Plugin Development: `docs/plugin-development.md`](../docs/plugin-development.md)
 
 This walkthrough shows how to use the built-in **OpenClaw Bridge** plugin that
 ships with TerranSoul. It follows the same PluginHost path as Translator Mode:
@@ -7,7 +12,6 @@ capability-gated execution through the shared plugin command dispatcher.
 
 > Source: `src-tauri/src/plugins/host.rs` (`openclaw-bridge` built-in plugin)
 > Parser compatibility: `src-tauri/src/agent/openclaw_agent.rs`
-> Related example: `docs/plugin-development.md` (`terransoul-translator`)
 
 OpenClaw is no longer surfaced as an Agent Marketplace entry. The Marketplace
 catalog stays focused on installable agents and sidecars; OpenClaw is a plugin
@@ -16,7 +20,21 @@ general chat routing.
 
 ---
 
-## 1. Integration model
+## Table of Contents
+
+1. [Integration Model](#1-integration-model)
+2. [What the Plugin Contributes](#2-what-the-plugin-contributes)
+3. [Capability Grants](#3-capability-grants)
+4. [Wiring a Real OpenClaw Runtime](#4-wiring-a-real-openclaw-runtime)
+5. [How TerranSoul and OpenClaw Work Best Together](#5-how-terransoul-and-openclaw-work-best-together)
+6. [Chunk Plan for Deeper Integration](#6-chunk-plan-for-deeper-integration)
+7. [Tests](#7-tests)
+
+---
+
+## 1. Integration Model
+
+![Plugin architecture diagram showing PluginHost → OpenClaw Bridge dispatch](screenshots/openclaw-plugin/01-integration-model.png)
 
 OpenClaw-style runtimes are strongest when they own external tool execution:
 filesystem reads, network fetches, and runtime-specific tool calls. TerranSoul is
@@ -38,7 +56,9 @@ boundary visible and make file/network access auditable.
 
 ---
 
-## 2. What the plugin contributes
+## 2. What the Plugin Contributes
+
+![Plugin contribution table showing commands, slash commands, and events](screenshots/openclaw-plugin/02-contributions.png)
 
 The built-in plugin id is `openclaw-bridge`. It contributes these commands:
 
@@ -60,7 +80,9 @@ without requiring an OpenClaw runtime in CI.
 
 ---
 
-## 3. Capability grants
+## 3. Capability Grants
+
+![Capability grant flow showing permission check before command execution](screenshots/openclaw-plugin/03-capability-grants.png)
 
 Sensitive OpenClaw tools are denied unless the persisted capability store has a
 grant for plugin id `openclaw-bridge`.
@@ -87,7 +109,9 @@ the built-in placeholder path.
 
 ---
 
-## 4. Wiring a real OpenClaw runtime
+## 4. Wiring a Real OpenClaw Runtime
+
+![Configuration panel showing OpenClaw runtime URL and API key fields](screenshots/openclaw-plugin/04-wiring-runtime.png)
 
 The real-runtime seam is `invoke_openclaw_tool()` in
 `src-tauri/src/plugins/host.rs`. Replace the placeholder output with a thin
@@ -136,7 +160,9 @@ the normal plugin command result path.
 
 ---
 
-## 5. How TerranSoul and OpenClaw work best together
+## 5. How TerranSoul and OpenClaw Work Best Together
+
+![Workflow diagram showing TerranSoul chat triggering OpenClaw contract execution](screenshots/openclaw-plugin/05-best-together.png)
 
 Use TerranSoul for planning, memory, and coordination:
 
@@ -166,7 +192,9 @@ Avoid hidden coupling:
 
 ---
 
-## 6. Chunk plan for deeper integration
+## 6. Chunk Plan for Deeper Integration
+
+![Roadmap showing planned integration chunks with dependencies](screenshots/openclaw-plugin/06-chunk-plan.png)
 
 | Chunk | Goal | Status |
 |---|---|---|
@@ -182,6 +210,8 @@ changing the core chat orchestrator or weakening plugin capability consent.
 ---
 
 ## 7. Tests
+
+![Test output showing OpenClaw plugin integration test results](screenshots/openclaw-plugin/07-tests.png)
 
 Focused Rust tests live in `src-tauri/src/plugins/host.rs`:
 

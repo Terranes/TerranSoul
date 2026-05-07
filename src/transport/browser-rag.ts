@@ -190,6 +190,7 @@ export async function addBrowserMemory(input: NewMemory): Promise<MemoryEntry> {
     session_id: null,
     parent_id: null,
     token_count: tokenize(input.content).length,
+    confidence: 1.0,
     embedding: await embedTextForBrowser(input.content),
   };
   await writeRecords([record, ...records]);

@@ -21,6 +21,17 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 45.6 — Cross-repo contract drift across PR / main](#chunk-456--cross-repo-contract-drift-across-pr--main) | 2026-05-07 |
+| [Chunk 45.5 — Cluster fragmentation guard + visualisation sampling](#chunk-455--cluster-fragmentation-guard--visualisation-sampling) | 2026-05-07 |
+| [Chunk 45.4 — Vendor / asset detection + tiered indexing](#chunk-454--vendor--asset-detection--tiered-indexing) | 2026-05-07 |
+| [Chunk 45.3 — Deterministic `.codegraph/snapshot.json` export/import](#chunk-453--deterministic-codegraphsnapshotjson-exportimport) | 2026-05-07 |
+| [Chunk 45.2 — Git hook installer + code_branch_sync MCP tool](#chunk-452--git-hook-installer--code_branch_sync-mcp-tool) | 2026-05-07 |
+| [Chunk 45.1 — Branch-overlay schema + content-hash diff sync](#chunk-451--branch-overlay-schema--content-hash-diff-sync) | 2026-05-07 |
+| [Chunk 44.5 — Embedding model registry](#chunk-445--embedding-model-registry) | 2026-05-08 |
+| [Chunk 44.4 — Cross-harness replay mode](#chunk-444--cross-harness-replay-mode) | 2026-05-08 |
+| [Chunk 44.3 — Ambient agent validation](#chunk-443--ambient-agent-validation) | 2026-05-08 |
+| [Chunk 44.2 — First-run setup wizard](#chunk-442--first-run-setup-wizard) | 2026-05-08 |
+| [Chunk 44.1 — RAG latency optimization](#chunk-441--rag-latency-optimization) | 2026-05-08 |
 | [Chunk 43.13 — Post-completion comparative review](#chunk-4313--post-completion-comparative-review) | 2026-05-07 |
 | [Chunk 43.12 — Cross-harness session import](#chunk-4312--cross-harness-session-import) | 2026-05-07 |
 | [Chunk 43.11 — Background-maintenance agent skeleton](#chunk-4311--background-maintenance-agent-skeleton) | 2026-05-07 |
@@ -357,6 +368,300 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 45.6 — Cross-repo contract drift across PR / main
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add MCP tools `code_branch_diff` and `code_group_drift` that consult branch overlays and contract tables to detect symbols added/removed/modified between refs and signature-hash mismatches across repos in a group.
+
+**Architecture:**
+- `drift.rs` module with `branch_diff(conn, repo_id, left_ref, right_ref)` → `BranchDiffResult` and `group_drift(conn, data_dir, group_label)` → `GroupDriftResult`
+- Branch diff compares base symbols (overlay_id IS NULL) against overlay symbols for the given branch pair
+- Group drift loads contracts across all member repos and detects `signature_hash` mismatches on same-named contracts
+
+**Files created:**
+- `src-tauri/src/coding/drift.rs` — 600+ lines, types + logic + 5 tests
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod drift;`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added `code_branch_diff` and `code_group_drift` tool definitions + dispatch (tools count 31→33)
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — updated tool count assertion 31→33, added new tool name checks
+
+**Tests:** 5 unit tests (branch_diff_detects_added_symbols, branch_diff_detects_removed_symbols, branch_diff_detects_modified_symbols, group_drift_detects_signature_mismatch, group_drift_no_drift_when_hashes_match)
+
+---
+
+## Chunk 45.5 — Cluster fragmentation guard + visualisation sampling
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Prevent cluster fragmentation in large code graphs. Add `min_cluster_size` threshold, two-phase partitioned clustering for graphs > 5000 nodes, and a visualisation sampling utility.
+
+**Architecture:**
+- `MIN_CLUSTER_SIZE = 8` — clusters smaller than this are merged into the nearest large cluster by edge affinity.
+- `LARGE_GRAPH_THRESHOLD = 5000` — above this, use partitioned BFS instead of label-propagation.
+- `partitioned_label_propagation()` — Phase 1: partition nodes by directory. Phase 2: find connected components within each partition via BFS. O(V+E), no iteration-count issues.
+- `merge_small_clusters()` — counts edges from small cluster members to each large cluster, merges into the one with highest affinity (or largest if no connections).
+- `sample_clusters_for_viz()` — returns top-N highest-degree nodes per cluster for workbench rendering.
+- Improved label-propagation majority rule: switch when best label has strict majority (>50% of votes) or is the only neighbor label.
+
+**Files Modified:**
+- `src-tauri/src/coding/processes.rs` — added fragmentation guard (~200 lines), 3 new tests
+- `rules/milestones.md` — removed 45.5, updated Next Chunk to 45.6
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 3 new tests (merge_small_clusters, large_graph_no_panics with 22k nodes, sample_clusters_for_viz).
+
+---
+
+## Chunk 45.4 — Vendor / asset detection + tiered indexing
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Classify repository files into tiers (app/vendor/asset/generated) and apply tiered indexing — vendor gets symbols-only, assets are skipped, app gets full symbol + edge extraction. Exclude vendor-tier symbols from the process call graph.
+
+**Architecture:**
+- New `coding/vendor_detector.rs` — `VendorDetector` struct with 3-layer classification:
+  1. `.codeignore` file (gitignore syntax + tier annotations like `[asset]`, `[vendor]`, `[generated]`)
+  2. Auto-detected vendor directories based on manifests (package.json → node_modules/, Cargo.toml → target/, etc.)
+  3. Extension/path heuristics (asset extensions, vendor path markers, minified files)
+- `FileTier` enum: App, Vendor, Asset, Generated — with `index_edges()`, `index_symbols()`, `skip()` methods.
+- Pattern matching: simplified gitignore with `*`, `**`, `?`, trailing `/` for dirs, leading `/` for anchored, `!` negation.
+
+**Integration:**
+- `symbol_index.rs` `index_repo()`: creates `VendorDetector` from repo root, skips asset-tier files, only inserts edges for app-tier files.
+- `processes.rs` `build_call_graph()`: excludes non-app-tier symbols from the call graph (prevents vendor noise in clustering and entry-point scoring).
+
+**Files Created:**
+- `src-tauri/src/coding/vendor_detector.rs` — ~500 lines
+
+**Files Modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod vendor_detector;`
+- `src-tauri/src/coding/symbol_index.rs` — integrated tiered indexing in `index_repo()`
+- `src-tauri/src/coding/processes.rs` — excluded vendor-tier symbols from `build_call_graph()`
+- `rules/milestones.md` — removed 45.4, updated Next Chunk to 45.5
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 14 unit tests (empty detector, asset extensions, vendor paths, manifest detection, generated patterns, codeignore overrides, codeignore negation, codeignore parsing, file tier rules, classify_all, glob star, glob double-star, directory patterns, anchored patterns).
+
+---
+
+## Chunk 45.3 — Deterministic `.codegraph/snapshot.json` export/import
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add `coding/snapshot.rs` with `export_snapshot(base_ref)` and `import_snapshot(path)`. Output is sorted lexicographically and free of timestamps so two devs at the same commit produce byte-identical files (no git merge driver needed). Includes `snapshot.meta.json`.
+
+**Architecture:**
+- New `coding/snapshot.rs` — deterministic export/import of the code graph to `.codegraph/snapshot.json`. Output is sorted by (file, line, name) for symbols, (from_file, from_line, kind, target_name) for edges, and (path) for files. No timestamps in serialized output.
+- Types: `CodeGraphSnapshot`, `SnapshotMeta`, `SnapshotFile`, `SnapshotSymbol`, `SnapshotEdge`, `ImportResult`.
+- Functions: `export_snapshot(conn, repo_id, base_ref)`, `write_snapshot(repo_path, snapshot)`, `import_snapshot(conn, snapshot, repo_path)`, `read_snapshot(path)`.
+- Export only includes base data (overlay_id IS NULL).
+- Import replaces existing base data for the repo (clean import), preserves overlays.
+- SCHEMA_VERSION = 1 for forward-compat detection.
+
+**Files Created:**
+- `src-tauri/src/coding/snapshot.rs` — ~350 lines
+
+**Files Modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod snapshot;`
+- `rules/milestones.md` — removed 45.3, updated Next Chunk to 45.4
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 6 unit tests (export sorted deterministic, determinism same bytes, round-trip export/import, import replaces existing, excludes overlay data, no timestamps in output).
+
+---
+
+## Chunk 45.2 — Git hook installer + code_branch_sync MCP tool
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Install git hooks that auto-notify TerranSoul's MCP server of branch changes, and expose `code_branch_sync` + `code_index_commit` as MCP tools.
+
+**Architecture:**
+- New `coding/hooks.rs` — generates `post-checkout`, `post-merge`, `post-commit` POSIX shell scripts that POST to local MCP. Always exit 0 (never block git). Support for release (:7421), dev (:7422), headless (:7423) targets. Skips foreign hooks by default, force-overwrite option.
+- New `coding/branch_sync.rs` — orchestrates git diff → overlay re-index: runs `git diff --name-only prev..new`, reads file contents from working tree, calls `branch_overlay::branch_sync`. Also handles `index_commit` (re-index commit, promote overlay to base when HEAD matches main).
+- New `GatewayCaps.code_write` field (serde-defaulted to false for backward compat) gates the write tools.
+- Two new MCP tools: `code_branch_sync` and `code_index_commit` in `code_tool_definitions()` and dispatch.
+
+**Files created:**
+- `src-tauri/src/coding/hooks.rs` (~285 lines, 9 tests)
+- `src-tauri/src/coding/branch_sync.rs` (~210 lines, 1 test)
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `pub mod hooks`, `pub mod branch_sync`
+- `src-tauri/src/ai_integrations/gateway.rs` — added `code_write` field to `GatewayCaps`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added 2 tool definitions + dispatch
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — updated tool count assertions
+
+**Tests:** 9 hook tests + 1 branch_sync test + 9 tool assertion tests (all pass). Full suite: 2559 tests pass.
+
+**CI:** clippy clean, 2559 Rust tests pass, 1750 frontend tests pass.
+
+---
+
+## Chunk 45.1 — Branch-overlay schema + content-hash diff sync
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add branch-aware overlay schema to the code-intelligence graph so only files that differ between branches are re-indexed, avoiding full re-parse on checkout.
+
+**Architecture:**
+- New `code_branch_overlays` table: `(repo_id, base_ref, branch_ref, file, hash, indexed_at)` with unique constraint on `(repo_id, base_ref, branch_ref, file)`.
+- Added `overlay_id` nullable FK column to `code_symbols` and `code_edges` (NULL = base snapshot).
+- `branch_sync()` takes a diff file list + content map, re-indexes only changed files into the overlay, removes overlay rows for files no longer in diff.
+- Overlay-aware queries: `query_symbols_with_overlay()` and `query_symbols_in_file_with_overlay()` union base rows (where file NOT overlaid) with overlay rows for the active branch.
+- Multiple overlays coexist — switching branches doesn't destroy other branch data.
+- Content-hash check skips re-indexing if overlay file hasn't changed.
+
+**Files created:**
+- `src-tauri/src/coding/branch_overlay.rs` — full module (~580 lines)
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `pub mod branch_overlay`
+- `src-tauri/src/coding/symbol_index.rs` — call `ensure_overlay_schema` from `open_db`, made `extract_rust_symbols` and `extract_ts_symbols` `pub(crate)`
+
+**Tests:** 8 unit tests covering schema creation, sync, overlay-aware queries, re-switch, delete, unchanged-file skip, and file-level query.
+
+**CI:** clippy clean, 2549 Rust tests pass (1 pre-existing flaky unrelated), 1750 frontend tests pass, vue-tsc clean.
+
+---
+
+## Chunk 44.5 — Embedding model registry
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**What was done:**
+- Created `brain/embedding_registry.rs`: `EmbedProvider` enum (Ollama/CloudFree/CloudPaid/LmStudio), `EmbeddingModelEntry` struct (id, display_name, dimensions, provider, max_tokens, description), `EmbeddingRegistryState` (active model, previous model, migration tracking). Catalogue of 12 known models (5 Ollama local, 4 cloud-paid, 2 cloud-free, 1 LM Studio). State persistence to `embedding_registry.json`. Pure model-switch logic: `plan_model_switch()`, `commit_model_switch()`, `update_migration_progress()`, `complete_migration()`.
+- Added Tauri commands in `commands/brain.rs`: `list_embedding_models`, `get_embedding_registry_state`, `plan_embedding_model_switch`, `switch_embedding_model` (clears embeddings, re-embeds in batches of 50, emits `embedding-migration-progress` events, updates registry state).
+- Added `embedded_count()` and `clear_all_embeddings()` methods to `MemoryStore`.
+- 13 unit tests: catalogue non-empty/unique-IDs/positive-dimensions, find_model known/unknown, state round-trip, plan same/different model, commit switch, migration progress decrements, complete migration, no-previous-model edge case.
+
+**Files changed:**
+- `src-tauri/src/brain/embedding_registry.rs` (new)
+- `src-tauri/src/brain/mod.rs` (register module)
+- `src-tauri/src/commands/brain.rs` (4 new Tauri commands)
+- `src-tauri/src/memory/store.rs` (added `embedded_count`, `clear_all_embeddings`)
+- `src-tauri/src/lib.rs` (imports + invoke_handler registration)
+
+---
+
+## Chunk 44.4 — Cross-harness replay mode
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**What was done:**
+- Created `coding/session_replay.rs`: `ReplaySessionConfig` (window_size, dry_run, max_turns, max_memories_per_session), `ReplaySegment`, `ReplayPlan`, `ReplayResult` types. `plan_replay()` splits ImportedTurns into overlapping windows (50% overlap) for extraction. `replay_tag()` builds provenance tag strings. `plan_file_replay()` combines parse + plan for a single file.
+- Added `parse_transcript_turns()` to `session_import.rs` — returns actual `Vec<ImportedTurn>` (the existing `parse_transcript` only returned metadata).
+- Added Tauri commands `code_replay_session` and `code_replay_all_sessions` in `commands/coding.rs`. `code_replay_session` takes a harness + file path, parses, plans windows, feeds each through `extract_facts_segmented_any_mode`, stores facts tagged with import provenance (budget-capped), emits `session-replay-progress` events. `code_replay_all_sessions` replays all sessions from a harness directory.
+- 12 unit tests: empty/few/overlapping/large windows, max_turns cap, minimum window clamp, tag format, harness preservation, config defaults, result structure, file-based JSON replay, missing file handling.
+
+**Files changed:**
+- `src-tauri/src/coding/session_replay.rs` (new)
+- `src-tauri/src/coding/session_import.rs` (added `parse_transcript_turns`)
+- `src-tauri/src/coding/mod.rs` (register `session_replay`)
+- `src-tauri/src/commands/coding.rs` (added `code_replay_session`, `code_replay_all_sessions`)
+- `src-tauri/src/lib.rs` (register new commands)
+
+---
+
+## Chunk 44.3 — Ambient agent validation
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Validate the ambient maintenance agent (chunk 43.11) by running 50+
+simulated garden cycles on a pre-populated memory store, measuring decay
+progression, GC effectiveness, and scheduling correctness.
+
+**Architecture:**
+- 7 validation tests with synthetic clock (no real-time dependency)
+- `run_60_simulated_garden_cycles`: 200 entries, 60 cycles × 24h, verifies decay applications ≥50, GC deletions >0, store not emptied, decay scores properly distributed
+- `stress_100_cycles_500_entries`: 500 entries through 100 cycles, verifies high-importance entries survive
+- `high_importance_survives_gc`: importance=5 entries persist even at decay_score=0.01
+- `decay_respects_floor`: decay never goes below 0.01 minimum
+- `garden_on_empty_store_is_safe`: no panics on empty DB
+- `cycle_state_accumulation`: 50 cycles of tool tracking
+- `cooldown_respected_across_cycles`: 48h cooldown correctly blocks intermediate cycles
+
+**Files created:**
+- `src-tauri/src/coding/ambient_validation.rs` — 7 tests
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `mod ambient_validation`
+
+**Test count:** 2512 Rust tests passing. Clippy clean.
+
+---
+
+## Chunk 44.2 — First-run setup wizard
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Complete the guided first-run setup wizard with embedding warmup
+visibility. The wizard already existed (Ollama install + model pull + brain
+auto-config + voice + skill tree). This chunk added the missing embedding
+warmup step and fixed pre-existing type errors from Phase 43's confidence field.
+
+**Architecture:**
+- Embedding warmup phase (Phase 1b) added to `FirstLaunchWizard.vue` between brain config and voice setup.
+- Calls `backfillEmbeddings()` after brain is configured to index any existing memories.
+- Shows user-visible progress: "Warming up vector search..." with count of embedded memories.
+- Non-blocking: if no brain or embedding fails, wizard continues.
+
+**Files modified:**
+- `src/components/FirstLaunchWizard.vue` — added memory store import, Phase 1b embedding warmup step
+- `src/components/FirstLaunchWizard.test.ts` — added memory store mock
+- `src/stores/memory.ts` — added `backfillEmbeddings()` function wrapping Tauri command
+- `src/stores/conversation.ts` — added `confidence: 1.0` to inline memory mock
+- `src/components/WikiPanel.test.ts` — added `confidence: 1.0` to helper
+- `src/components/BrainGraphViewport.test.ts` — added `confidence: 1.0` to `makeEntry`
+- `src/views/BrainView.test.ts` — added `confidence: 1.0` to mock entries
+- `src/views/MemoryView.test.ts` — added `confidence: 1.0` to helpers
+- `src/transport/browser-rag.ts` — added `confidence: 1.0` to mock record
+
+**Test count:** 1749 frontend tests passing, 2505 Rust tests. vue-tsc clean.
+
+---
+
+## Chunk 44.1 — RAG latency optimization
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Benchmark and optimize end-to-end RAG retrieval latency. Add query
+result caching (LRU with generation-based invalidation) and per-stage metrics
+for the hot RRF path.
+
+**Architecture:**
+- `SearchCache` — LRU cache keyed by (query, mode, limit) with 30s TTL and generation-based invalidation on any store write (add/update/delete/set_embedding). Capacity 128 entries. Thread-safe via Mutex + AtomicU64.
+- Per-stage `Timer` metrics: `rag_candidate_retrieval`, `rag_scoring`, `rag_rrf_fusion`, `rag_cache_hit` added to `MemoryMetrics`.
+- Cache wired into `hybrid_search_rrf`: on hit, bypass all candidate/scoring/fusion work and serve from cache; on miss, compute and store.
+- Fixed confidence_decay re-sort tie-break: preserves RRF position order (first-appearance) instead of ascending ID, preventing incorrect reordering of tied entries.
+
+**Files created:**
+- `src-tauri/src/memory/search_cache.rs` — SearchCache module with 9 unit tests
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — added `pub mod search_cache`
+- `src-tauri/src/memory/metrics.rs` — 4 new per-stage metric fields
+- `src-tauri/src/memory/store.rs` — cache invalidation in write ops, per-stage timers, cache lookup/store in hybrid_search_rrf, confidence_decay tie-break fix
+- `src-tauri/src/commands/memory.rs` — `get_search_cache_stats` command
+- `src-tauri/src/lib.rs` — registered new command
+
+**Test count:** 2505 Rust tests passing, 0 failed. Clippy clean.
 
 ---
 

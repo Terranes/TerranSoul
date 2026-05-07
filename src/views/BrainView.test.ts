@@ -30,19 +30,19 @@ const sampleMemories: MemoryEntry[] = [
     id: 1, content: 'User prefers dark mode', tags: '', memory_type: 'preference',
     tier: 'long', importance: 5, decay_score: 1.0, access_count: 3,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 5,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
   {
     id: 2, content: 'Yesterday we shipped the v1.0 release', tags: '', memory_type: 'fact',
     tier: 'working', importance: 3, decay_score: 0.8, access_count: 1,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 7,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
   {
     id: 3, content: 'How to deploy: 1. build 2. tag 3. push', tags: '', memory_type: 'fact',
     tier: 'long', importance: 4, decay_score: 0.9, access_count: 5,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 10,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
 ];
 
@@ -172,7 +172,7 @@ describe('BrainView', () => {
           id: 4, content: 'Prefer minimal patches before broad refactors', tags: 'judgment', memory_type: 'fact',
           tier: 'long', importance: 4, decay_score: 0.95, access_count: 2,
           created_at: Date.now(), last_accessed: Date.now(), token_count: 8,
-          session_id: null, parent_id: null,
+          session_id: null, parent_id: null, confidence: 1.0,
         },
       ],
     }));

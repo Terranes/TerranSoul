@@ -36,8 +36,9 @@ export const useWindowStore = defineStore('window', () => {
       isMcpMode.value = mcp;
       return mcp;
     } catch {
-      isMcpMode.value = false;
-      return false;
+      // Tauri unavailable — check for VITE_MCP_MODE env simulation
+      isMcpMode.value = import.meta.env.VITE_MCP_MODE === '1';
+      return isMcpMode.value;
     }
   }
 

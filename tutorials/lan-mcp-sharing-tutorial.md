@@ -1,4 +1,10 @@
-# Tutorial: Share a TerranSoul Brain on Your LAN
+# LAN Brain Sharing — Share a TerranSoul Brain on Your Network
+
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [MCP for Coding Agents](mcp-coding-agents-tutorial.md) ·
+> [Device Sync & Hive](device-sync-hive-tutorial.md) ·
+> [Brain + RAG Setup](brain-rag-setup-tutorial.md)
 
 This tutorial walks through a local-network setup where Alice hosts a
 TerranSoul MCP brain on her desktop and other TerranSoul devices on the same
@@ -12,7 +18,26 @@ database.
 > Legal note: this is a software workflow tutorial, not legal advice. Use
 > official sources and qualified legal review for real legal decisions.
 
-## What You Are Building
+---
+
+## Table of Contents
+
+1. [What You Are Building](#1-what-you-are-building)
+2. [Alice Teaches Her Local Brain](#2-alice-teaches-her-local-brain)
+3. [Alice Enables LAN Mode](#3-alice-enables-lan-mode)
+4. [Alice Starts the MCP Server](#4-alice-starts-the-mcp-server)
+5. [Alice Starts Sharing Her Brain](#5-alice-starts-sharing-her-brain)
+6. [Bob Discovers Alice’s Brain](#6-bob-discovers-alices-brain)
+7. [Bob Connects with the Matching Access Mode](#7-bob-connects-with-the-matching-access-mode)
+8. [Bob Retrieves Vietnamese Law Context](#8-bob-retrieves-vietnamese-law-context)
+9. [Security Checklist](#9-security-checklist)
+10. [Troubleshooting](#10-troubleshooting)
+
+---
+
+## 1. What You Are Building
+
+![Architecture diagram — Alice’s desktop sharing brain to Bob’s device over LAN](screenshots/lan-mcp-sharing/01-architecture.png)
 
 ```text
 Alice's desktop TerranSoul
@@ -41,7 +66,9 @@ Alice's whole `memory.db`, and discovery does not broadcast the bearer token.
 - If Alice chooses token-required mode, she shares the bearer token out-of-band,
   for example in person or through a secure company channel.
 
-## Step 1: Alice Teaches Her Local Brain
+## 2. Alice Teaches Her Local Brain
+
+![Alice’s TerranSoul with ingested Vietnamese law documents visible in Memory tab](screenshots/lan-mcp-sharing/02-teach-brain.png)
 
 Alice first imports the knowledge she wants TerranSoul to retrieve. For this
 example, she stores notes such as:
@@ -61,7 +88,9 @@ tags: vietnamese-law,labor,alice-notes
 importance: 4
 ```
 
-## Step 2: Alice Enables LAN Mode
+## 3. Alice Enables LAN Mode
+
+![Settings → Network panel with LAN Sharing toggle enabled](screenshots/lan-mcp-sharing/03-enable-lan.png)
 
 On Alice's desktop:
 
@@ -73,7 +102,9 @@ This setting is intentionally off by default. TerranSoul reads it when the MCP
 server starts, so enable it before starting MCP. If MCP was already running,
 stop and start it again so it rebinds for LAN access.
 
-## Step 3: Alice Starts the MCP Server
+## 4. Alice Starts the MCP Server
+
+![Terminal showing MCP server binding to LAN address on port 7421](screenshots/lan-mcp-sharing/04-start-mcp.png)
 
 Still on Alice's desktop:
 
@@ -83,7 +114,9 @@ Still on Alice's desktop:
 The same server powers LAN retrieval. With LAN mode enabled before startup,
 TerranSoul binds the server to LAN interfaces instead of loopback-only.
 
-## Step 4: Alice Starts Sharing Her Brain
+## 5. Alice Starts Sharing Her Brain
+
+![Brain sharing panel showing access mode selection and advertised URL](screenshots/lan-mcp-sharing/05-share-brain.png)
 
 Still on Alice's desktop:
 
@@ -103,7 +136,9 @@ What happens under the hood:
 - Token mode still requires authentication to Alice's MCP HTTP endpoint.
 - Public mode exposes only the read-only brain MCP methods with no token.
 
-## Step 5: Bob Discovers Alice's Brain
+## 6. Bob Discovers Alice’s Brain
+
+![Bob’s device showing discovered LAN brain with Alice’s name and topic](screenshots/lan-mcp-sharing/06-discover-brain.png)
 
 On Bob's TerranSoul desktop:
 
@@ -119,7 +154,9 @@ On Bob's TerranSoul desktop:
 If discovery fails, Bob can still connect manually with Alice's LAN IP, MCP
 port, and the matching access mode. Token mode also needs Alice's token.
 
-## Step 6: Bob Connects with the Matching Access Mode
+## 7. Bob Connects with the Matching Access Mode
+
+![Bob’s connection dialog showing public_read_only mode matching](screenshots/lan-mcp-sharing/07-connect.png)
 
 Bob uses the access mode Alice selected:
 
@@ -136,7 +173,9 @@ TerranSoul validates the connection by calling Alice's remote `/health` route.
 After success, Bob sees Alice under **Connected Brains**. In public mode, Bob
 can search but cannot call write tools or code-intelligence tools through LAN.
 
-## Step 7: Bob Retrieves Vietnamese Law Context
+## 8. Bob Retrieves Vietnamese Law Context
+
+![Bob’s chat showing RAG answer sourced from Alice’s shared brain](screenshots/lan-mcp-sharing/08-retrieve-context.png)
 
 Now Bob can ask Alice's brain for targeted context without copying her whole
 memory database.
@@ -160,7 +199,9 @@ Good retrieval results should show:
 - Snippets from Alice's stored notes or documents.
 - Tags such as `vietnamese-law,labor,contracts`.
 
-## Security Checklist
+## 9. Security Checklist
+
+![Security settings panel showing auth mode and access controls](screenshots/lan-mcp-sharing/09-security.png)
 
 - Use this only on a trusted LAN. Do not enable it on airport, cafe, hotel, or
   public Wi-Fi.
@@ -174,7 +215,7 @@ Good retrieval results should show:
   queries. Treat both token access and public read-only mode as read access to
   the shared knowledge surface.
 
-## Troubleshooting
+## 10. Troubleshooting
 
 | Symptom | What To Check |
 |---|---|

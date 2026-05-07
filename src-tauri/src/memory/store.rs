@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::metrics::{Timer, METRICS};
+use super::search_cache::SEARCH_CACHE;
 use super::schema;
 
 pub(crate) fn now_ms() -> i64 {
@@ -368,6 +369,7 @@ impl MemoryStore {
     /// Insert a new memory entry and return it with its assigned id.
     pub fn add(&self, m: NewMemory) -> SqlResult<MemoryEntry> {
         let _t = Timer::start(&METRICS.add);
+        SEARCH_CACHE.invalidate();
         let importance = m.importance.clamp(1, 5);
         let now = now_ms();
         let token_count = estimate_tokens(&m.content);
@@ -391,6 +393,7 @@ impl MemoryStore {
     /// auto-commit + per-row fsync) to >100k rows/s on commodity hardware.
     pub fn add_many(&mut self, mut items: Vec<NewMemory>) -> SqlResult<Vec<i64>> {
         let _t = Timer::start(&METRICS.add_many);
+        SEARCH_CACHE.invalidate();
         if items.is_empty() {
             return Ok(Vec::new());
         }
@@ -605,6 +608,7 @@ impl MemoryStore {
     /// update still proceeds.
     pub fn update(&self, id: i64, upd: MemoryUpdate) -> SqlResult<MemoryEntry> {
         let _t = Timer::start(&METRICS.update);
+        SEARCH_CACHE.invalidate();
         // Snapshot the current state before editing (best-effort).
         let content_changed = upd.content.is_some();
         let has_changes = content_changed
@@ -663,6 +667,7 @@ impl MemoryStore {
     /// Delete a memory entry by id.
     pub fn delete(&self, id: i64) -> SqlResult<()> {
         let _t = Timer::start(&METRICS.delete);
+        SEARCH_CACHE.invalidate();
         self.conn
             .execute("DELETE FROM memories WHERE id = ?1", params![id])?;
         // Remove from ANN index (best-effort).
@@ -912,6 +917,24 @@ impl MemoryStore {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
         })?;
         rows.collect()
+    }
+
+    /// Count memories that have embeddings.
+    pub fn embedded_count(&self) -> Result<usize, String> {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM memories WHERE embedding IS NOT NULL",
+                [],
+                |row| row.get::<_, usize>(0),
+            )
+            .map_err(|e| e.to_string())
+    }
+
+    /// Clear all embeddings (set to NULL) for re-embedding with a new model.
+    pub fn clear_all_embeddings(&self) -> Result<usize, String> {
+        self.conn
+            .execute("UPDATE memories SET embedding = NULL", [])
+            .map_err(|e| e.to_string())
     }
 
     /// Fast cosine-similarity vector search.  Returns the top `limit`
@@ -1262,10 +1285,33 @@ impl MemoryStore {
         use crate::memory::cognitive_kind::classify as classify_kind;
         use crate::memory::confidence_decay::{confidence_factor, ConfidenceDecayConfig};
         use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
+        use crate::memory::search_cache::{CachedHit, SearchCacheKey, SEARCH_CACHE};
         use std::collections::HashMap;
 
         if limit == 0 {
             return Ok(vec![]);
+        }
+
+        // ── Cache check ───────────────────────────────────────────────────
+        let cache_key = SearchCacheKey {
+            query: query.to_string(),
+            mode: if query_embedding.is_some() { "rrf_vec".into() } else { "rrf".into() },
+            limit,
+        };
+        if let Some(cached) = SEARCH_CACHE.get(&cache_key) {
+            let _ch = Timer::start(&METRICS.rag_cache_hit);
+            let ids: Vec<i64> = cached.iter().map(|h| h.memory_id).collect();
+            // Fetch full entries preserving cached order.
+            let mut by_id: HashMap<i64, MemoryEntry> = self
+                .get_entries_by_ids(&ids)?
+                .into_iter()
+                .map(|e| (e.id, e))
+                .collect();
+            let results: Vec<MemoryEntry> = ids
+                .into_iter()
+                .filter_map(|id| by_id.remove(&id))
+                .collect();
+            return Ok(results);
         }
 
         let now = now_ms();
@@ -1280,7 +1326,10 @@ impl MemoryStore {
             .collect();
 
         // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
-        let all = self.search_candidates(&words, query_embedding)?;
+        let all = {
+            let _tc = Timer::start(&METRICS.rag_candidate_retrieval);
+            self.search_candidates(&words, query_embedding)?
+        };
 
         if all.is_empty() {
             return Ok(vec![]);
@@ -1362,6 +1411,7 @@ impl MemoryStore {
         // Build the slice-of-slices input. Empty rankings (e.g. no embedding
         // or no usable query words) are simply skipped — RRF handles
         // missing-from-some-rankings gracefully.
+        let _tf = Timer::start(&METRICS.rag_rrf_fusion);
         let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
         if !vector_rank.is_empty() {
             rankings.push(&vector_rank);
@@ -1375,29 +1425,40 @@ impl MemoryStore {
 
         // ── (4) Per-kind confidence decay (43.3) ──────────────────────────
         let decay_cfg = ConfidenceDecayConfig::default();
-        let mut fused: Vec<(i64, f64)> = fused
+        let mut fused: Vec<(usize, i64, f64)> = fused
             .into_iter()
-            .map(|(id, score)| {
-                if let Some(entry) = by_id.get(&id) {
+            .enumerate()
+            .map(|(pos, (id, score))| {
+                let adjusted = if let Some(entry) = by_id.get(&id) {
                     let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
                     let factor = confidence_factor(&decay_cfg, Some(kind), entry.confidence, now - entry.created_at);
-                    (id, score * factor)
+                    score * factor
                 } else {
-                    (id, score)
-                }
+                    score
+                };
+                (pos, id, adjusted)
             })
             .collect();
+        // Re-sort: descending score, preserving RRF position order for ties.
         fused.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
+            b.2.partial_cmp(&a.2)
                 .unwrap_or(std::cmp::Ordering::Equal)
                 .then_with(|| a.0.cmp(&b.0))
         });
+
+        // Store result in cache for future lookups.
+        let cached_hits: Vec<CachedHit> = fused
+            .iter()
+            .take(limit)
+            .map(|(_, id, score)| CachedHit { memory_id: *id, score: *score })
+            .collect();
+        SEARCH_CACHE.put(cache_key, cached_hits);
 
         // Materialize the top-`limit` MemoryEntry list, preserving fused order.
         let top: Vec<MemoryEntry> = fused
             .into_iter()
             .take(limit)
-            .filter_map(|(id, _)| by_id.get(&id).cloned())
+            .filter_map(|(_, id, _)| by_id.get(&id).cloned())
             .collect();
 
         // Touch access counters for the matched entries.

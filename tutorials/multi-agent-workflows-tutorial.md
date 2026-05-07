@@ -1,9 +1,15 @@
 # Multi-Agent Workflows — Tutorial
 
-> **TerranSoul's gamified, scheduled, multi-agent task system.**
-> Coordinate Planner, Coder, Reviewer, Tester, Researcher, and Orchestrator
-> agents through editable YAML workflow plans with Microsoft Teams-style
-> recurrence and live monitoring.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Self-Improve to PR](self-improve-to-pr-tutorial.md) ·
+> [MCP for Coding Agents](mcp-coding-agents-tutorial.md) ·
+> Design: [`docs/multi-agent-orchestration-analysis-2026.md`](../docs/multi-agent-orchestration-analysis-2026.md)
+
+**TerranSoul's gamified, scheduled, multi-agent task system.**
+Coordinate Planner, Coder, Reviewer, Tester, Researcher, and Orchestrator
+agents through editable YAML workflow plans with Microsoft Teams-style
+recurrence and live monitoring.
 
 This tutorial walks through the multi-agent workflow system added in
 **Chunk 30.3** (Phase 30 — Self-Improve & Coding Workflow). It covers the
@@ -11,15 +17,27 @@ six agent roles, creating and editing plans, swapping LLMs per agent,
 scheduling recurring runs, and a worked self-improve example triggered
 from a chat suggestion.
 
-For the 2026-05 backend/system/UI research plan behind the next runtime layer,
-see [multi-agent-orchestration-analysis-2026.md](../docs/multi-agent-orchestration-analysis-2026.md).
-The current production surface is the YAML plan + DAG execution model described
-here; the next step is live sub-agent lineage, bounded swarm joins, richer
-queue recovery, and an operations workbench UI.
+---
+
+## Table of Contents
+
+1. [Why Multi-Agent?](#1-why-multi-agent)
+2. [The Three Workflow Kinds](#2-the-three-workflow-kinds)
+3. [Anatomy of a Workflow Plan](#3-anatomy-of-a-workflow-plan)
+4. [Quick Start: Create Your First Plan](#4-quick-start-create-your-first-plan)
+5. [Switching LLMs per Agent](#5-switching-llms-per-agent)
+6. [Recurring Schedules (Teams-Style)](#6-recurring-schedules-teams-style)
+7. [Calendar View](#7-calendar-view)
+8. [Worked Example — Self-Improve from a Chat Suggestion](#8-worked-example--self-improve-from-a-chat-suggestion)
+9. [Best-Practice Patterns Absorbed](#9-best-practice-patterns-absorbed)
+10. [CLI / Programmatic Access](#10-cli--programmatic-access)
+11. [See Also](#11-see-also)
 
 ---
 
-## Why multi-agent?
+## 1. Why Multi-Agent?
+
+![Single vs multi-agent comparison diagram showing parallel task execution](screenshots/multi-agent-workflows/01-why-multi-agent.png)
 
 A single LLM doing every job is wasteful and error-prone. Anthropic's
 *Building Effective Agents* (2024) and the AutoGen / CrewAI bodies of
@@ -43,7 +61,9 @@ actually works on your machine (RAM-aware, network-aware).
 
 ---
 
-## The three workflow kinds
+## 2. The Three Workflow Kinds
+
+![Three workflow kinds — sequential, parallel, and DAG — with node diagrams](screenshots/multi-agent-workflows/02-workflow-kinds.png)
 
 | Kind | When to use | Examples |
 |---|---|---|
@@ -56,7 +76,9 @@ is the same YAML format under the hood.
 
 ---
 
-## Anatomy of a workflow plan
+## 3. Anatomy of a Workflow Plan
+
+![YAML plan editor showing steps, agents, and dependencies](screenshots/multi-agent-workflows/03-plan-anatomy.png)
 
 Plans persist as YAML files in `<data_dir>/workflow_plans/<id>.yaml`.
 A typical plan:
@@ -148,7 +170,9 @@ parallel automatically.
 
 ---
 
-## Quick start: create your first plan
+## 4. Quick Start: Create Your First Plan
+
+![New Plan dialog with template selection and name field](screenshots/multi-agent-workflows/04-create-plan.png)
 
 1. **Right-click** the pet character → **Multi-agent workflows…**
 2. Click **+ New Workflow**.
@@ -163,7 +187,9 @@ favourite editor — both flows update through the same
 
 ---
 
-## Switching LLMs per agent
+## 5. Switching LLMs per Agent
+
+![Agent configuration panel showing LLM model dropdown per agent role](screenshots/multi-agent-workflows/05-switch-llms.png)
 
 Open a plan → **Steps** section. Each step has an **LLM** dropdown that
 groups recommendations by tier:
@@ -187,7 +213,9 @@ are also possible via direct YAML edit if you need finer-grained control.
 
 ---
 
-## Recurring schedules (Microsoft Teams-style)
+## 6. Recurring Schedules (Teams-Style)
+
+![Schedule editor with daily/weekly/cron recurrence options](screenshots/multi-agent-workflows/06-schedules.png)
 
 Open a plan → **Add schedule (recurring)** disclosure. Pick a pattern:
 
@@ -223,7 +251,9 @@ the UI fast).
 
 ---
 
-## Calendar view
+## 7. Calendar View
+
+![Calendar view showing scheduled workflow runs across the week](screenshots/multi-agent-workflows/07-calendar.png)
 
 The **Calendar** tab is a 7-day × 24-hour grid styled after Microsoft
 Teams calendar. Each plan's projected occurrences appear as colored
@@ -243,7 +273,9 @@ how many plans exist.
 
 ---
 
-## Worked example — self-improve from a chat suggestion
+## 8. Worked Example — Self-Improve from a Chat Suggestion
+
+![Self-improve workflow executing — steps completing with green checkmarks](screenshots/multi-agent-workflows/08-self-improve-example.png)
 
 This example shows how the multi-agent system pairs with TerranSoul's
 **Self-Improve** loop. Scenario: while chatting, you say *"You should
@@ -314,7 +346,9 @@ self-improvement closing the loop.**
 
 ---
 
-## Best-practice patterns absorbed
+## 9. Best-Practice Patterns Absorbed
+
+![Pattern reference table showing adopted agent orchestration patterns](screenshots/multi-agent-workflows/09-best-practices.png)
 
 The system implements three patterns from Anthropic's
 *Building Effective Agents*:
@@ -336,7 +370,9 @@ is a finite DAG, no `while True:` loops.
 
 ---
 
-## CLI / programmatic access
+## 10. CLI / Programmatic Access
+
+![Terminal showing CLI commands for workflow creation and execution](screenshots/multi-agent-workflows/10-cli-access.png)
 
 All ten Tauri commands are also reachable via the brain MCP server on
 `127.0.0.1:7421` for AI coding assistants:
@@ -359,7 +395,7 @@ run, and observe its own workflows with zero UI involvement.
 
 ---
 
-## See also
+## 11. See Also
 
 - [docs/coding-workflow-design.md](../docs/coding-workflow-design.md) — full
   design context, including DAG runner internals (§3.9).

@@ -112,6 +112,7 @@ pub fn import_user_model_inner(
         name: derive_name(&original_filename),
         original_filename,
         gender: "female".to_string(),
+        persona: String::new(),
         imported_at: current_unix_ms(),
     };
     settings.user_models.push(entry.clone());
@@ -123,11 +124,43 @@ pub fn import_user_model_inner(
 #[tauri::command(rename_all = "camelCase")]
 pub async fn import_user_model(
     source_path: String,
+    name: Option<String>,
+    gender: Option<String>,
+    persona: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<UserModel, String> {
     let data_dir = state.data_dir.clone();
     let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
-    import_user_model_inner(&data_dir, &mut settings, Path::new(&source_path))
+    let mut entry =
+        import_user_model_inner(&data_dir, &mut settings, Path::new(&source_path))?;
+    let mut changed = false;
+    if let Some(n) = name {
+        let trimmed = n.trim();
+        if !trimmed.is_empty() {
+            entry.name = trimmed.to_string();
+            changed = true;
+        }
+    }
+    if let Some(g) = &gender {
+        if g == "female" || g == "male" {
+            entry.gender = g.clone();
+            changed = true;
+        }
+    }
+    if let Some(p) = persona {
+        entry.persona = p.trim().to_string();
+        changed = true;
+    }
+    if changed {
+        // Update the just-inserted entry in settings
+        if let Some(stored) = settings.user_models.iter_mut().find(|m| m.id == entry.id) {
+            stored.name = entry.name.clone();
+            stored.gender = entry.gender.clone();
+            stored.persona = entry.persona.clone();
+        }
+        config_store::save(&data_dir, &settings)?;
+    }
+    Ok(entry)
 }
 
 /// Return the persisted list of user-imported models.
@@ -177,12 +210,13 @@ pub async fn read_user_model_bytes(
     fs::read(&path).map_err(|e| format!("read {}: {e}", path.display()))
 }
 
-/// Update the friendly name and/or gender of a user-imported model.
+/// Update the friendly name, gender, and/or persona of a user-imported model.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn update_user_model(
     id: String,
     name: Option<String>,
     gender: Option<String>,
+    persona: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<UserModel, String> {
     validate_id(&id)?;
@@ -203,6 +237,9 @@ pub async fn update_user_model(
         if g == "female" || g == "male" {
             entry.gender = g;
         }
+    }
+    if let Some(p) = persona {
+        entry.persona = p.trim().to_string();
     }
     let updated = entry.clone();
     config_store::save(&data_dir, &settings)?;

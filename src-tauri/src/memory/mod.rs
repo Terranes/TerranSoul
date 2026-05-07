@@ -46,6 +46,7 @@ pub mod replay;
 pub mod reranker;
 pub mod metrics;
 pub mod schema;
+pub mod search_cache;
 pub mod seed_migrations;
 pub mod snapshot;
 pub mod store;

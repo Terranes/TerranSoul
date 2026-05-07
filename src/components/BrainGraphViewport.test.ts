@@ -57,6 +57,7 @@ function makeEntry(
     token_count: 5,
     session_id: null,
     parent_id: null,
+    confidence: 1.0,
     ...overrides,
   };
 }

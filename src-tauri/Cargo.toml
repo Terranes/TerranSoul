@@ -3,6 +3,7 @@ name = "terransoul"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+default-run = "terransoul"
 
 [lib]
 name = "terransoul_lib"

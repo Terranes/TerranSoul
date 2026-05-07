@@ -155,3 +155,137 @@ pub async fn setup_codex_mcp_stdio(state: State<'_, AppState>) -> Result<SetupRe
     track_auto_configured(&state, "mcp_codex_stdio")?;
     Ok(result)
 }
+
+// ─── Dev prerequisites check (Chunk: setup-prerequisites) ───────────
+
+/// Status of a single development prerequisite.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PrereqStatus {
+    pub name: String,
+    pub ok: bool,
+    pub version: Option<String>,
+    pub install_hint: String,
+}
+
+/// Check all development prerequisites and return their status.
+///
+/// This is designed to be called from the frontend First Launch Wizard
+/// or from the companion's chat (e.g., "check my dev setup").
+#[tauri::command]
+pub async fn check_prerequisites() -> Result<Vec<PrereqStatus>, String> {
+    let mut results = Vec::new();
+
+    // Node.js ≥ 20
+    let node = std::process::Command::new("node")
+        .arg("-v")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string());
+    let node_ok = node.as_ref().is_some_and(|v| {
+        v.trim_start_matches('v')
+            .split('.')
+            .next()
+            .and_then(|m| m.parse::<u32>().ok())
+            .is_some_and(|major| major >= 20)
+    });
+    results.push(PrereqStatus {
+        name: "Node.js ≥ 20".into(),
+        ok: node_ok,
+        version: node,
+        install_hint: if cfg!(target_os = "windows") {
+            "winget install OpenJS.NodeJS.LTS".into()
+        } else {
+            "brew install node@20".into()
+        },
+    });
+
+    // Rust
+    let rustc = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string());
+    results.push(PrereqStatus {
+        name: "Rust (stable)".into(),
+        ok: rustc.is_some(),
+        version: rustc,
+        install_hint: if cfg!(target_os = "windows") {
+            "winget install Rustlang.Rustup".into()
+        } else {
+            "curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh".into()
+        },
+    });
+
+    // Tauri CLI
+    let tauri_ver = std::process::Command::new("cargo")
+        .args(["tauri", "--version"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string());
+    results.push(PrereqStatus {
+        name: "Tauri CLI".into(),
+        ok: tauri_ver.is_some(),
+        version: tauri_ver,
+        install_hint: "cargo install tauri-cli".into(),
+    });
+
+    // WebView2 (Windows only)
+    #[cfg(target_os = "windows")]
+    {
+        let webview2 = std::process::Command::new("reg")
+            .args([
+                "query",
+                r"HKLM\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+                "/v", "pv",
+            ])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .and_then(|s| {
+                if s.contains("0.0.0.0") { None }
+                else { Some(s) }
+            });
+        results.push(PrereqStatus {
+            name: "WebView2 Runtime".into(),
+            ok: webview2.is_some(),
+            version: webview2.and_then(|s| {
+                s.lines()
+                    .find(|l| l.contains("pv"))
+                    .and_then(|l| l.split_whitespace().last())
+                    .map(|v| v.to_string())
+            }),
+            install_hint: "winget install Microsoft.EdgeWebView2Runtime".into(),
+        });
+    }
+
+    Ok(results)
+}
+
+/// Run the cross-platform setup script with --auto flag.
+/// Returns stdout from the script execution.
+#[tauri::command]
+pub async fn run_setup_auto() -> Result<String, String> {
+    let script_path = std::env::current_dir()
+        .unwrap_or_default()
+        .join("scripts")
+        .join("setup-prerequisites.mjs");
+
+    let output = std::process::Command::new("node")
+        .args([script_path.to_string_lossy().as_ref(), "--auto"])
+        .output()
+        .map_err(|e| format!("Failed to run setup script: {e}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+    if output.status.success() {
+        Ok(stdout)
+    } else {
+        Ok(format!("{stdout}\n{stderr}"))
+    }
+}

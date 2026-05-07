@@ -1,9 +1,29 @@
 # Knowledge Wiki — Graph Curation with Slash Commands
 
-> TerranSoul's Knowledge Wiki brings graph-based memory curation to chat.
-> Audit your brain's health, discover hidden connections, spotlight hub
-> memories, and manage a review queue — all through slash commands and
-> the Wiki Panel UI.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Folder to Knowledge Graph](folder-to-knowledge-graph-tutorial.md) ·
+> [Advanced Memory & RAG](advanced-memory-rag-tutorial.md) ·
+> [Brain + RAG Setup](brain-rag-setup-tutorial.md)
+
+TerranSoul's Knowledge Wiki brings graph-based memory curation to chat.
+Audit your brain’s health, discover hidden connections, spotlight hub
+memories, and manage a review queue — all through slash commands and
+the Wiki Panel UI.
+
+---
+
+## Table of Contents
+
+1. [Open the Wiki Panel](#1-open-the-wiki-panel)
+2. [Audit Your Brain (`/ponder`)](#2-audit-your-brain-ponder)
+3. [Spotlight Hub Memories (`/spotlight`)](#3-spotlight-hub-memories-spotlight)
+4. [Serendipity: Cross-Community Connections (`/serendipity`)](#4-serendipity-cross-community-connections-serendipity)
+5. [Review Queue (`/revisit`)](#5-review-queue-revisit)
+6. [Digest New Content (`/digest`)](#6-digest-new-content-digest)
+7. [Planned Commands (Coming Soon)](#7-planned-commands-coming-soon)
+8. [Confidence Rubric (How Edges Are Scored)](#8-confidence-rubric-how-edges-are-scored)
+9. [Troubleshooting](#9-troubleshooting)
 
 ---
 
@@ -16,7 +36,9 @@
 
 ---
 
-## Step 1 — Open the Wiki Panel
+## 1. Open the Wiki Panel
+
+![Wiki Panel opened from sidebar showing slash command input area](screenshots/knowledge-wiki/01-wiki-panel.png)
 
 Navigate to **Brain View** (sidebar → 🧠 Brain icon) → click the **Wiki** tab.
 
@@ -27,7 +49,9 @@ The panel has three tabs:
 
 ---
 
-## Step 2 — Audit Your Brain (`/ponder`)
+## 2. Audit Your Brain (`/ponder`)
+
+![/ponder output showing brain health metrics and memory statistics](screenshots/knowledge-wiki/02-ponder-audit.png)
 
 Type `/ponder` in chat (or click the Audit tab):
 
@@ -51,7 +75,9 @@ The audit report shows:
 
 ---
 
-## Step 3 — Spotlight Hub Memories (`/spotlight`)
+## 3. Spotlight Hub Memories (`/spotlight`)
+
+![/spotlight results showing highest-connected memory nodes](screenshots/knowledge-wiki/03-spotlight.png)
 
 Type `/spotlight` in chat (or click the Spotlight tab):
 
@@ -70,7 +96,9 @@ Shows the **most-connected memories** in your knowledge graph — the "god nodes
 
 ---
 
-## Step 4 — Serendipity: Cross-Community Connections (`/serendipity`)
+## 4. Serendipity: Cross-Community Connections (`/serendipity`)
+
+![/serendipity showing unexpected cross-topic connections between memories](screenshots/knowledge-wiki/04-serendipity.png)
 
 Type `/serendipity` in chat (or click the Serendipity tab):
 
@@ -86,7 +114,9 @@ Discovers **surprising high-confidence edges between otherwise unrelated memory 
 
 ---
 
-## Step 5 — Review Queue (`/revisit`)
+## 5. Review Queue (`/revisit`)
+
+![/revisit showing queue of memories pending human review](screenshots/knowledge-wiki/05-revisit.png)
 
 Type `/revisit` in chat:
 
@@ -107,7 +137,9 @@ Returns memories that are **most ready for review** using the append-and-review 
 
 ---
 
-## Step 6 — Digest New Content (`/digest`)
+## 6. Digest New Content (`/digest`)
+
+![/digest showing recently ingested content with summary cards](screenshots/knowledge-wiki/06-digest.png)
 
 Type `/digest <text>` in chat to store a deduplicated source note:
 
@@ -132,7 +164,9 @@ Type `/digest <text>` in chat to store a deduplicated source note:
 
 ---
 
-## Step 7 — Planned Commands (Coming Soon)
+## 7. Planned Commands (Coming Soon)
+
+![Roadmap list of upcoming slash commands with status indicators](screenshots/knowledge-wiki/07-planned-commands.png)
 
 | Command | Purpose |
 |---------|---------|
@@ -142,7 +176,9 @@ Type `/digest <text>` in chat to store a deduplicated source note:
 
 ---
 
-## Step 8 — Confidence Rubric (How Edges Are Scored)
+## 8. Confidence Rubric (How Edges Are Scored)
+
+![Confidence scoring rubric showing edge weight calculation](screenshots/knowledge-wiki/08-confidence-rubric.png)
 
 The knowledge graph uses a confidence rubric for edges:
 
@@ -157,7 +193,7 @@ The Wiki Panel uses these levels to flag which edges might need human verificati
 
 ---
 
-## Troubleshooting
+## 9. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

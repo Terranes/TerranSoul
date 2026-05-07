@@ -1,9 +1,26 @@
 # Browser & Mobile — Web Deployment, Phone Pairing & Remote Control
 
-> TerranSoul runs as a desktop Tauri app by default, but also supports
-> browser deployment (Vercel/static hosting), mobile pairing via QR code,
-> and remote control from a phone over gRPC-Web. This tutorial covers all
-> three modes.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Device Sync & Hive](device-sync-hive-tutorial.md) ·
+> [Quick Start](quick-start-tutorial.md) ·
+> [LAN Brain Sharing](lan-mcp-sharing-tutorial.md)
+
+TerranSoul runs as a desktop Tauri app by default, but also supports
+browser deployment (Vercel/static hosting), mobile pairing via QR code,
+and remote control from a phone over gRPC-Web. This tutorial covers all
+three modes.
+
+---
+
+## Table of Contents
+
+1. [Browser Mode (Static Web Deployment)](#1-browser-mode-static-web-deployment)
+2. [Mobile Pairing (Phone Link)](#2-mobile-pairing-phone-link)
+3. [Remote Control (gRPC/gRPC-Web)](#3-remote-control-grpcgrpc-web)
+4. [Provider Onboarding (First Use in Browser)](#4-provider-onboarding-first-use-in-browser)
+5. [Settings Sync Between Devices](#5-settings-sync-between-devices)
+6. [Troubleshooting](#6-troubleshooting)
 
 ---
 
@@ -17,7 +34,9 @@
 
 ---
 
-## Part 1 — Browser Mode (Static Web Deployment)
+## 1. Browser Mode (Static Web Deployment)
+
+![TerranSoul running in a browser tab with limited feature badges](screenshots/browser-mobile/01-browser-mode.png)
 
 TerranSoul's Vue frontend can run standalone in a browser without Tauri:
 
@@ -71,7 +90,9 @@ Browser builds can connect to a running desktop instance for full capabilities:
 
 ---
 
-## Part 2 — Mobile Pairing (Phone Link)
+## 2. Mobile Pairing (Phone Link)
+
+![QR code pairing screen on desktop with phone scanning](screenshots/browser-mobile/02-mobile-pairing.png)
 
 ### Step 1: Enable on Desktop
 
@@ -113,7 +134,9 @@ In the Mobile Pairing view:
 
 ---
 
-## Part 3 — Remote Control (gRPC/gRPC-Web)
+## 3. Remote Control (gRPC/gRPC-Web)
+
+![Phone remote control interface sending commands to desktop](screenshots/browser-mobile/03-remote-control.png)
 
 Once paired, the phone can control the desktop companion:
 
@@ -145,7 +168,9 @@ The phone can narrate context to the desktop's coding agent:
 
 ---
 
-## Part 4 — Provider Onboarding (First Use in Browser)
+## 4. Provider Onboarding (First Use in Browser)
+
+![Browser first-launch showing provider selection panel](screenshots/browser-mobile/04-provider-onboarding.png)
 
 When opening TerranSoul in a browser for the first time (no Tauri backend):
 
@@ -158,7 +183,9 @@ When opening TerranSoul in a browser for the first time (no Tauri backend):
 
 ---
 
-## Part 5 — Settings Sync Between Devices
+## 5. Settings Sync Between Devices
+
+![Settings tab showing sync status indicators between desktop and phone](screenshots/browser-mobile/05-settings-sync.png)
 
 Once devices are paired:
 
@@ -173,7 +200,7 @@ Once devices are paired:
 
 ---
 
-## Troubleshooting
+## 6. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

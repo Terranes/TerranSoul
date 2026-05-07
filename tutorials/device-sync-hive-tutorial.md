@@ -1,10 +1,28 @@
 # Device Sync & Hive Federation — Cross-Device Memory, Privacy ACLs & Distributed Jobs
 
-> TerranSoul can sync memories between your own devices via peer-to-peer
-> CRDT replication, and optionally participate in a federated "Hive" for
-> shared knowledge and distributed AI jobs. This tutorial covers device
-> pairing, memory sync, the Hive relay, privacy controls, and job
-> distribution.
+> **TerranSoul v0.1** · Last updated: 2026-05-07
+>
+> Related: [Hive Relay Self-Hosting](hive-relay-tutorial.md) ·
+> [LAN Brain Sharing](lan-mcp-sharing-tutorial.md) ·
+> [Advanced Memory & RAG](advanced-memory-rag-tutorial.md)
+
+TerranSoul can sync memories between your own devices via peer-to-peer
+CRDT replication, and optionally participate in a federated “Hive” for
+shared knowledge and distributed AI jobs. This tutorial covers device
+pairing, memory sync, the Hive relay, privacy controls, and job
+distribution.
+
+---
+
+## Table of Contents
+
+1. [Device Pairing (Soul Link)](#1-device-pairing-soul-link)
+2. [Memory Sync (CRDT Replication)](#2-memory-sync-crdt-replication)
+3. [Privacy Controls (Share Scope ACL)](#3-privacy-controls-share-scope-acl)
+4. [Hive Federation (Opt-in Relay)](#4-hive-federation-opt-in-relay)
+5. [Distributed Jobs](#5-distributed-jobs)
+6. [Security Model](#6-security-model)
+7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
@@ -18,7 +36,9 @@
 
 ---
 
-## Part 1 — Device Pairing (Soul Link)
+## 1. Device Pairing (Soul Link)
+
+![Settings → Devices panel showing QR code for pairing](screenshots/device-sync/01-pairing-qr.png)
 
 ### Step 1: Enable LAN on the Host Device
 
@@ -50,7 +70,9 @@
 
 ---
 
-## Part 2 — Memory Sync (CRDT Replication)
+## 2. Memory Sync (CRDT Replication)
+
+![Two devices showing synced memory entries with connected status](screenshots/device-sync/02-memory-sync.png)
 
 Once paired, memories sync automatically:
 
@@ -82,7 +104,9 @@ Once paired, memories sync automatically:
 
 ---
 
-## Part 3 — Privacy Controls (Share Scope ACL)
+## 3. Privacy Controls (Share Scope ACL)
+
+![Memory detail panel showing Share Scope dropdown — Private / Paired / Hive](screenshots/device-sync/03-privacy-controls.png)
 
 Every memory has a `share_scope` that controls where it can travel:
 
@@ -118,7 +142,9 @@ The privacy engine (`hive/privacy.rs`) enforces:
 
 ---
 
-## Part 4 — Hive Federation (Opt-in Relay)
+## 4. Hive Federation (Opt-in Relay)
+
+![Settings → Network showing Hive URL field and connection status](screenshots/device-sync/04-hive-connect.png)
 
 The Hive is a **fully optional** federation layer for sharing knowledge across users or teams.
 
@@ -161,7 +187,9 @@ All messages are **Ed25519 signed** by the originating device. The relay verifie
 
 ---
 
-## Part 5 — Distributed Jobs
+## 5. Distributed Jobs
+
+![Job queue showing submitted work and capability matching](screenshots/device-sync/05-distributed-jobs.png)
 
 Hive supports distributing AI work across participants:
 
@@ -189,7 +217,9 @@ If your device has the required capabilities, the job executes locally without t
 
 ---
 
-## Part 6 — Security Model
+## 6. Security Model
+
+![Architecture diagram showing Ed25519 signing flow between devices and relay](screenshots/device-sync/06-security-model.png)
 
 | Layer | Protection |
 |-------|-----------|
@@ -208,7 +238,7 @@ timestamp(8 bytes LE) ∥ hlc_counter(8 bytes LE) ∥ payload(variable)
 
 ---
 
-## Troubleshooting
+## 7. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|

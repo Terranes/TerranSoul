@@ -1029,6 +1029,12 @@ pub async fn get_memory_metrics() -> Result<serde_json::Value, String> {
     serde_json::to_value(snap).map_err(|e| e.to_string())
 }
 
+/// Return search cache statistics (hit rate, entries, generation).
+#[tauri::command]
+pub async fn get_search_cache_stats() -> Result<crate::memory::search_cache::CacheStats, String> {
+    Ok(crate::memory::search_cache::SEARCH_CACHE.stats())
+}
+
 /// Enforce the configured maximum memory/RAG storage cap immediately.
 #[tauri::command]
 pub async fn enforce_memory_storage_limit(

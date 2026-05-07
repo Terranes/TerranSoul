@@ -56,6 +56,7 @@ function makeEntry(id: number, tags: string): MemoryEntry {
     token_count: 5,
     session_id: null,
     parent_id: null,
+    confidence: 1.0,
   };
 }
 
@@ -178,6 +179,7 @@ function makeAuditEntry(
     token_count: 5,
     session_id: null,
     parent_id: null,
+    confidence: 1.0,
   };
 }
 

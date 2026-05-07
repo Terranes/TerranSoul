@@ -12,6 +12,7 @@ export interface UserModel {
   name: string;
   original_filename: string;
   gender: ModelGender;
+  persona: string;
   imported_at: number;
 }
 
@@ -152,10 +153,33 @@ export const useCharacterStore = defineStore('character', () => {
   /** Import a VRM from an absolute filesystem path. The backend copies the
    *  bytes into `<app_data_dir>/user_models/` so the model persists across
    *  fresh builds. Returns the new entry. */
-  async function importUserModel(sourcePath: string): Promise<UserModel> {
-    const entry = await invoke<UserModel>('import_user_model', { sourcePath });
+  async function importUserModel(
+    sourcePath: string,
+    opts?: { name?: string; gender?: ModelGender; persona?: string },
+  ): Promise<UserModel> {
+    const entry = await invoke<UserModel>('import_user_model', {
+      sourcePath,
+      name: opts?.name,
+      gender: opts?.gender,
+      persona: opts?.persona,
+    });
     userModels.value = [...userModels.value, entry];
     return entry;
+  }
+
+  /** Update a user model's name, gender, and/or persona. */
+  async function updateUserModel(
+    id: string,
+    opts: { name?: string; gender?: ModelGender; persona?: string },
+  ): Promise<UserModel> {
+    const updated = await invoke<UserModel>('update_user_model', {
+      id,
+      name: opts.name,
+      gender: opts.gender,
+      persona: opts.persona,
+    });
+    userModels.value = userModels.value.map((m) => (m.id === id ? updated : m));
+    return updated;
   }
 
   /** Delete a user-imported model (file + metadata). If it was the active
@@ -186,6 +210,6 @@ export const useCharacterStore = defineStore('character', () => {
     defaultModels, userModels, allModels,
     setState, setMetadata, setLoadError, setLoaded,
     loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender,
-    loadUserModels, importUserModel, deleteUserModel,
+    loadUserModels, importUserModel, updateUserModel, deleteUserModel,
   };
 });
