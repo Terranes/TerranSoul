@@ -321,8 +321,8 @@ mod tests {
         // p50 and p99 should both be in the 64–128 µs range → 0.064–0.128 ms
         let p50 = snap.p50_ms.unwrap();
         let p99 = snap.p99_ms.unwrap();
-        assert!(p50 >= 0.064 && p50 <= 0.128, "p50_ms={p50}");
-        assert!(p99 >= 0.064 && p99 <= 0.128, "p99_ms={p99}");
+        assert!((0.064..=0.128).contains(&p50), "p50_ms={p50}");
+        assert!((0.064..=0.128).contains(&p99), "p99_ms={p99}");
     }
 
     #[test]

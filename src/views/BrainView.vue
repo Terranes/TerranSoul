@@ -761,6 +761,14 @@
       <PluginsView />
     </section>
 
+    <!-- ── Prompt Commands ─────────────────────────────────────────────────── -->
+    <section
+      class="bv-autolearn-section"
+      data-testid="bv-prompt-commands-section"
+    >
+      <PromptCommandsPanel />
+    </section>
+
     <!-- ── AI Coding Integrations — Phase 15.4 ────────────────────────────── -->
     <section
       class="bv-aiv-section"
@@ -908,6 +916,7 @@ import WikiPanel from '../components/WikiPanel.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import LanSharePanel from '../components/LanSharePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
+import PromptCommandsPanel from '../components/PromptCommandsPanel.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
 import AICodingIntegrationsView from './AICodingIntegrationsView.vue';

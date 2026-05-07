@@ -32,8 +32,8 @@ const DEFAULT_SMOKE_SCALE: usize = 10_000;
 const ONE_MILLION: usize = 1_000_000;
 const QUERY_COUNT: usize = 1_000;
 const TOP_K: usize = 10;
-const VECTOR_SEED: u64 = 0x38_05_0000_0000_0001;
-const QUERY_SEED: u64 = 0x38_05_0000_0000_0002;
+const VECTOR_SEED: u64 = 0x3805_0000_0000_0001;
+const QUERY_SEED: u64 = 0x3805_0000_0000_0002;
 const P50_TARGET_MS: f64 = 30.0;
 const P95_TARGET_MS: f64 = 60.0;
 const P99_TARGET_MS: f64 = 100.0;
@@ -872,7 +872,7 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
             ));
             return report;
         }
-        let stride = (scale / mixed_updates).max(1);
+        let stride = scale.checked_div(mixed_updates).unwrap_or(1).max(1);
         let mut upd_batch: Vec<(i64, String)> = Vec::with_capacity(mixed_updates);
         for n in 0..mixed_updates {
             let idx = ((n * stride) % scale) as i64 + 1;

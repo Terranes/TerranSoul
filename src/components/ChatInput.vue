@@ -6,6 +6,25 @@
     @dragleave="dragOver = false"
     @drop.prevent="handleDrop"
   >
+    <!-- Slash command suggestions dropdown -->
+    <Transition name="fade-up">
+      <div
+        v-if="showSuggestions && filteredSuggestions.length > 0"
+        class="slash-suggestions"
+      >
+        <button
+          v-for="(cmd, idx) in filteredSuggestions"
+          :key="cmd.name"
+          type="button"
+          class="suggestion-item"
+          :class="{ active: idx === selectedSuggestionIdx }"
+          @mousedown.prevent="selectSuggestion(cmd)"
+        >
+          <span class="suggestion-name">/{{ cmd.name }}</span>
+          <span class="suggestion-desc">{{ cmd.description }}</span>
+        </button>
+      </div>
+    </Transition>
     <div
       class="input-wrapper"
       :class="{ 'drag-over': dragOver }"
@@ -36,6 +55,7 @@
         autocomplete="off"
         @focus="handleFocus"
         @blur="handleBlur"
+        @keydown="handleKeydown"
       >
       <button
         type="submit"
@@ -64,8 +84,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { burstResetScroll } from '../utils/scroll-reset';
+import { usePromptCommandsStore } from '../stores/prompt-commands';
 
 const props = defineProps<{ disabled: boolean }>();
 const emit = defineEmits<{ submit: [message: string]; focus: []; blur: [] }>();
@@ -74,6 +95,63 @@ const inputText = ref('');
 const inputRef = ref<HTMLInputElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
+const selectedSuggestionIdx = ref(0);
+
+const promptCommandsStore = usePromptCommandsStore();
+
+/** Built-in commands to show in suggestions. */
+const builtInCommands = [
+  { name: 'commands', description: 'List all available commands' },
+  { name: 'reflect', description: 'Reflect on the current session' },
+];
+
+/** Whether to show the slash command suggestion dropdown. */
+const showSuggestions = computed(() => {
+  const text = inputText.value;
+  return text.startsWith('/') && !text.includes(' ');
+});
+
+/** Filter suggestions based on what the user has typed. */
+const filteredSuggestions = computed(() => {
+  const text = inputText.value.slice(1).toLowerCase();
+  const allCommands = [
+    ...builtInCommands,
+    ...promptCommandsStore.commands.map((c) => ({ name: c.name, description: c.description })),
+  ];
+  if (!text) return allCommands;
+  return allCommands.filter((c) => c.name.toLowerCase().startsWith(text));
+});
+
+/** Reset selection index when suggestions change. */
+watch(filteredSuggestions, () => {
+  selectedSuggestionIdx.value = 0;
+});
+
+function selectSuggestion(cmd: { name: string }) {
+  inputText.value = `/${cmd.name} `;
+  inputRef.value?.focus();
+}
+
+function handleKeydown(e: KeyboardEvent) {
+  if (!showSuggestions.value || filteredSuggestions.value.length === 0) return;
+
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    selectedSuggestionIdx.value =
+      (selectedSuggestionIdx.value + 1) % filteredSuggestions.value.length;
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    selectedSuggestionIdx.value =
+      (selectedSuggestionIdx.value - 1 + filteredSuggestions.value.length) %
+      filteredSuggestions.value.length;
+  } else if (e.key === 'Tab' || (e.key === 'Enter' && showSuggestions.value)) {
+    if (inputText.value.trim() !== `/${filteredSuggestions.value[selectedSuggestionIdx.value]?.name}`) {
+      e.preventDefault();
+      const cmd = filteredSuggestions.value[selectedSuggestionIdx.value];
+      if (cmd) selectSuggestion(cmd);
+    }
+  }
+}
 
 function handleSubmit() {
   const text = inputText.value.trim();
@@ -282,5 +360,72 @@ async function handleDrop(e: DragEvent) {
     width: 16px;
     height: 16px;
   }
+}
+
+/* Slash command suggestion dropdown */
+.slash-suggestions {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.92));
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: var(--ts-radius-md, 8px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: var(--ts-shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+  padding: 4px;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  background: transparent;
+  color: var(--ts-text-primary, #e2e8f0);
+  font-size: var(--ts-text-sm, 0.85rem);
+  cursor: pointer;
+  border-radius: var(--ts-radius-sm, 4px);
+  text-align: left;
+  transition: background 0.15s;
+}
+
+.suggestion-item:hover,
+.suggestion-item.active {
+  background: rgba(124, 111, 255, 0.12);
+}
+
+.suggestion-name {
+  font-weight: 600;
+  color: var(--ts-accent, #7c6fff);
+  white-space: nowrap;
+}
+
+.suggestion-desc {
+  color: var(--ts-text-dim, #888);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Transition */
+.fade-up-enter-active,
+.fade-up-leave-active {
+  transition: opacity 0.15s, transform 0.15s;
+}
+.fade-up-enter-from,
+.fade-up-leave-to {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.chat-input-bar {
+  position: relative;
 }
 </style>

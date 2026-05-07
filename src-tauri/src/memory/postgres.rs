@@ -384,6 +384,7 @@ impl PostgresBackend {
             updated_at: row.try_get("updated_at").ok(),
             origin_device: row.try_get("origin_device").ok(),
             hlc_counter: row.try_get("hlc_counter").ok(),
+            confidence: row.try_get("confidence").unwrap_or(1.0),
         }
     }
 

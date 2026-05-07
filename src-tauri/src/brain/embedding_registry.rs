@@ -333,7 +333,7 @@ mod tests {
         let loaded = load_state(dir.path());
         assert_eq!(loaded.active_model_id, state.active_model_id);
         assert_eq!(loaded.previous_model_id, state.previous_model_id);
-        assert_eq!(loaded.migration_pending, true);
+        assert!(loaded.migration_pending);
         assert_eq!(loaded.migration_remaining, 42);
         assert_eq!(loaded.migration_total, 100);
     }

@@ -523,6 +523,8 @@ import { useSkillTreeStore } from '../stores/skill-tree';
 import { useTaskStore } from '../stores/tasks';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { usePluginSlashDispatch } from '../composables/usePluginSlashDispatch';
+import { usePromptCommandDispatch } from '../composables/usePromptCommandDispatch';
+import { usePromptCommandsStore } from '../stores/prompt-commands';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
@@ -547,6 +549,8 @@ const { muted: audioMuted } = storeToRefs(audioStore);
 const skillTree = useSkillTreeStore();
 const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
 const { tryDispatchSlashCommand } = usePluginSlashDispatch();
+const { tryDispatchPromptCommand } = usePromptCommandDispatch();
+const promptCommandsStore = usePromptCommandsStore();
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
@@ -1151,23 +1155,24 @@ async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
 
-  // /setup-prerequisites — inject the prompt and let the LLM guide setup
-  if (message.trim().toLowerCase() === '/setup-prerequisites') {
+  // /commands — list all available slash commands (built-in + prompt files)
+  if (message.trim().toLowerCase() === '/commands') {
     addUserChatMessage(message);
-    const setupPrompt = `Check and install all prerequisites needed for TerranSoul development on my current OS.
-
-Prerequisites to verify:
-1. Node.js ≥ 20 — check with \`node -v\`
-2. Rust (latest stable) — check with \`rustc --version\`
-3. Tauri CLI — check with \`npx tauri --version\` or \`cargo tauri --version\`
-4. WebView2 (Windows only) — check registry key
-5. VBScript (Windows only) — check CBS package registry
-
-For each prerequisite: check if installed, report the status, suggest install commands if missing (winget on Windows, brew/curl on macOS/Linux), and re-verify after installation.
-
-Finish with a summary table showing each prerequisite, its status, and installed version.`;
-    // Send as a regular chat message with the injected context
-    await conversationStore.sendMessage(setupPrompt);
+    const { getAvailableCommands } = usePromptCommandDispatch();
+    const promptCmds = getAvailableCommands();
+    const builtIn = ['reflect', 'commands'];
+    let output = '**Available Commands:**\n\n';
+    output += '**Built-in:**\n';
+    for (const cmd of builtIn) {
+      output += `- \`/${cmd}\`\n`;
+    }
+    if (promptCmds.length > 0) {
+      output += '\n**Prompt Commands** (`.terransoul/prompts/`):\n';
+      for (const cmd of promptCmds) {
+        output += `- \`/${cmd.name}\` — ${cmd.description}\n`;
+      }
+    }
+    addTerranSoulChatMessage(output);
     return;
   }
 
@@ -1183,6 +1188,26 @@ Finish with a summary table showing each prerequisite, its status, and installed
   }
 
   if (await handleBrainWikiSlashCommand(message)) {
+    return;
+  }
+
+  // Extensible prompt commands: if the message matches a loaded
+  // `.terransoul/prompts/*.md` file, inject its content as the prompt.
+  const promptResult = tryDispatchPromptCommand(message);
+  if (promptResult.handled) {
+    addUserChatMessage(message);
+    if (promptResult.error) {
+      addTerranSoulChatMessage(`⚠️ Prompt command /${promptResult.name} failed: ${promptResult.error}`, 'sad');
+      return;
+    }
+    setAvatarState('thinking');
+    await conversationStore.sendMessage(promptResult.prompt!);
+    const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
+    const reactionState = lastMsg?.role === 'assistant'
+      ? sentimentToState(lastMsg.sentiment)
+      : pendingEmotion.value;
+    setAvatarState(reactionState);
+    pendingEmotion.value = 'idle';
     return;
   }
 
@@ -1710,6 +1735,9 @@ watch(
 onMounted(async () => {
   window.addEventListener('ts:llm-sentence', handleBrowserSentenceEvent);
   await setupTauriEventListener();
+
+  // Load extensible prompt commands from .terransoul/prompts/
+  promptCommandsStore.loadCommands();
 
   // Initialise background task listener
   const taskStore = useTaskStore();

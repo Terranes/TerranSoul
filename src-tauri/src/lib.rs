@@ -173,6 +173,7 @@ use commands::{
         plugin_install, plugin_list, plugin_list_commands, plugin_list_slash_commands,
         plugin_list_themes, plugin_parse_manifest, plugin_set_setting, plugin_uninstall,
     },
+    prompt_commands::{delete_prompt_command, list_prompt_commands, save_prompt_command},
     quest::{get_quest_tracker, save_quest_tracker},
     registry::{
         get_registry_server_port, search_agents, start_registry_server, stop_registry_server,
@@ -1774,6 +1775,10 @@ pub fn run() {
             plugin_set_setting,
             plugin_host_status,
             plugin_parse_manifest,
+            // Extensible prompt commands
+            list_prompt_commands,
+            save_prompt_command,
+            delete_prompt_command,
         ])
         .setup(|app| {
             let stronghold_dir = app

@@ -273,10 +273,7 @@ mod tests {
     #[test]
     fn bounded_bfs_single_hop() {
         // A -> B, A -> C
-        let edges = vec![
-            make_edge(1, 10, 20, "related_to"),
-            make_edge(2, 10, 30, "related_to"),
-        ];
+        let edges = [make_edge(1, 10, 20, "related_to"), make_edge(2, 10, 30, "related_to")];
         let result = bounded_bfs(10, 1, EdgeDirection::Both, |id, _dir| {
             edges
                 .iter()
@@ -295,10 +292,7 @@ mod tests {
     #[test]
     fn bounded_bfs_multi_hop() {
         // A -> B -> C (chain)
-        let edges = vec![
-            make_edge(1, 10, 20, "related_to"),
-            make_edge(2, 20, 30, "cites"),
-        ];
+        let edges = [make_edge(1, 10, 20, "related_to"), make_edge(2, 20, 30, "cites")];
         let result = bounded_bfs(10, 2, EdgeDirection::Both, |id, _dir| {
             edges
                 .iter()

@@ -24,6 +24,7 @@ pub mod messaging;
 pub mod package;
 pub mod persona;
 pub mod plugins;
+pub mod prompt_commands;
 pub mod quest;
 pub mod registry;
 pub mod routing;

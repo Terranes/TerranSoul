@@ -251,6 +251,7 @@ fn now_ms() -> i64 {
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     fn test_conn() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch("PRAGMA foreign_keys=ON;").unwrap();

@@ -200,7 +200,7 @@ mod tests {
     #[test]
     fn zero_max_stops_uses_default_cap() {
         let p = fake_process(4, "entry", 30);
-        let tour = process_to_tour(p, 0_u32.max(12));
+        let tour = process_to_tour(p, 12);
         assert_eq!(tour.stops.len(), 12);
     }
 
