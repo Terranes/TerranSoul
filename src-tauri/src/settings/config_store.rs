@@ -117,6 +117,10 @@ mod tests {
             data_root: None,
             hive_url: None,
             obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -185,6 +189,10 @@ mod tests {
             data_root: None,
             hive_url: None,
             obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -238,6 +246,10 @@ mod tests {
             data_root: None,
             hive_url: None,
             obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         save(dir.path(), &s).unwrap();
 
