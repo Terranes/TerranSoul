@@ -45,3 +45,4 @@ test-output.txt
 /target-copilot-bench
 /crates/hive-relay/target
 /mcp-data/wiki
+scripts/*.py
