@@ -3068,6 +3068,16 @@ mod tests {
         let a = store.add(new_memory("alpha content")).unwrap();
         let b = store.add(new_memory("beta content")).unwrap();
         let c = store.add(new_memory("gamma content")).unwrap();
+        // Normalize creation time to remove freshness/decay drift between rows;
+        // this test is specifically about vector ranking impact.
+        let same_created_at = now_ms();
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET created_at = ?1 WHERE id IN (?2, ?3, ?4)",
+                params![same_created_at, a.id, b.id, c.id],
+            )
+            .unwrap();
 
         // Hand-crafted unit vectors: query is most similar to `b`.
         let qe = vec![0.0_f32, 1.0, 0.0];
