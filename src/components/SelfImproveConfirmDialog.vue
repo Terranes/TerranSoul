@@ -14,6 +14,7 @@
           <div
             v-if="visible"
             class="si-confirm-card"
+            :style="cardStyle"
             tabindex="-1"
           >
             <header class="si-header">
@@ -95,12 +96,13 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
+import { nextTick, ref, watch, type CSSProperties } from 'vue';
 
 const props = defineProps<{
   visible: boolean;
   hasCodingLlm: boolean;
   providerLabel: string;
+  cardStyle?: CSSProperties;
 }>();
 
 defineEmits<{

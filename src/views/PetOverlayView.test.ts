@@ -48,6 +48,7 @@ vi.mock('../renderer/character-animator', () => ({
 
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { useConversationStore } from '../stores/conversation';
+import { useWindowStore } from '../stores/window';
 
 const mockClipboard = {
   readText: vi.fn().mockResolvedValue(''),
@@ -128,6 +129,24 @@ describe('PetOverlayView', () => {
     expect(input.exists()).toBe(true);
   });
 
+  it('anchors expanded chat near the projected head instead of the container edge', async () => {
+    localStorage.setItem('ts.pet.charSize', JSON.stringify({ w: 350, h: 500 }));
+    localStorage.setItem('ts.pet.charPos', JSON.stringify({ x: 600, y: 120 }));
+
+    const wrapper = mount(PetOverlayView, {
+      global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
+    });
+    const character = wrapper.find('.pet-character');
+    await character.trigger('mousedown', { button: 0, clientX: 620, clientY: 140 });
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 620, clientY: 140 }));
+    await wrapper.vm.$nextTick();
+
+    const chatStyle = (wrapper.find('.pet-chat').element as HTMLElement).style;
+    expect(chatStyle.left).toBe('-200px');
+    expect(chatStyle.right).toBe('auto');
+    expect(chatStyle.marginRight).toBe('');
+  });
+
   it('right-click on character opens the context menu', async () => {
     const wrapper = mount(PetOverlayView, {
       global: { stubs: { CharacterViewport: true, PetContextMenu: true } },
@@ -194,5 +213,48 @@ describe('PetOverlayView', () => {
     await wrapper.find('.pet-chat-action-btn.skip').trigger('click');
     expect(store.isStreaming).toBe(false);
     expect(store.streamingText).toBe('');
+  });
+
+  it('keeps the self-improve confirmation clickable and centered on the invoking monitor', async () => {
+    const monitors = [
+      { name: 'left', x: 0, y: 0, width: 1920, height: 1080, scale_factor: 1 },
+      { name: 'right', x: 1920, y: 0, width: 1920, height: 1080, scale_factor: 1 },
+    ];
+    mockInvoke.mockImplementation((command: string) => (
+      command === 'get_all_monitors'
+        ? Promise.resolve(monitors)
+        : Promise.resolve(undefined)
+    ));
+    const windowStore = useWindowStore();
+    windowStore.monitors = monitors;
+
+    const wrapper = mount(PetOverlayView, {
+      global: {
+        stubs: {
+          CharacterViewport: true,
+          PetContextMenu: true,
+          SelfImproveConfirmDialog: {
+            name: 'SelfImproveConfirmDialog',
+            props: ['visible', 'hasCodingLlm', 'providerLabel', 'cardStyle'],
+            template: '<div class="mock-si-dialog" />',
+          },
+        },
+      },
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    mockInvoke.mockClear();
+
+    await wrapper.find('.pet-character').trigger('contextmenu', { clientX: 2500, clientY: 400 });
+    wrapper.findComponent({ name: 'PetContextMenu' }).vm.$emit('request-self-improve');
+    await wrapper.vm.$nextTick();
+
+    expect(mockInvoke).toHaveBeenCalledWith('set_cursor_passthrough', { ignore: false });
+    const dialog = wrapper.findComponent({ name: 'SelfImproveConfirmDialog' });
+    expect(dialog.props('visible')).toBe(true);
+    expect(dialog.props('cardStyle')).toMatchObject({
+      left: '2880px',
+      top: '540px',
+      transform: 'translate(-50%, -50%)',
+    });
   });
 });
