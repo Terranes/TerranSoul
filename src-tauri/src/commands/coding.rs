@@ -167,6 +167,24 @@ pub struct SelfImproveStatus {
     pub autostart_enabled: bool,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct SelfImproveWorkboardItem {
+    pub id: String,
+    pub title: String,
+    pub detail: String,
+    pub status: String,
+    pub source: String,
+    pub updated_at_ms: u64,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SelfImproveWorkboard {
+    pub generated_at_ms: u64,
+    pub finished: Vec<SelfImproveWorkboardItem>,
+    pub working: Vec<SelfImproveWorkboardItem>,
+    pub backlog: Vec<SelfImproveWorkboardItem>,
+}
+
 /// Read-only status snapshot. Cheap; safe to poll from the UI on focus.
 #[tauri::command]
 pub async fn get_self_improve_status(
@@ -188,6 +206,134 @@ pub async fn get_self_improve_status(
         has_coding_llm,
         autostart_enabled: autostart::is_enabled(),
     })
+}
+
+#[tauri::command]
+pub async fn get_self_improve_workboard(
+    state: State<'_, AppState>,
+) -> Result<SelfImproveWorkboard, String> {
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let generated_at_ms = now_secs().saturating_mul(1000);
+    let mut board = SelfImproveWorkboard {
+        generated_at_ms,
+        ..Default::default()
+    };
+
+    for item in parse_milestones(&repo.join("rules/milestones.md"), generated_at_ms) {
+        match item.status.as_str() {
+            "in-progress" => board.working.push(item),
+            _ => board.backlog.push(item),
+        }
+    }
+
+    let metrics = MetricsLog::new(&repo);
+    for run in metrics.recent(100) {
+        let item = SelfImproveWorkboardItem {
+            id: run.chunk_id.clone(),
+            title: if run.chunk_title.is_empty() {
+                run.chunk_id.clone()
+            } else {
+                run.chunk_title.clone()
+            },
+            detail: run
+                .error
+                .clone()
+                .unwrap_or_else(|| format!("{} via {} · {}", run.outcome, run.provider, run.model)),
+            status: run.outcome.clone(),
+            source: "self-improve-run-log".to_string(),
+            updated_at_ms: run.finished_at_ms,
+        };
+        match run.outcome.as_str() {
+            "running" => board.working.push(item),
+            "success" => board.finished.push(item),
+            "failure" => board.backlog.push(item),
+            _ => {}
+        }
+    }
+
+    board.finished.extend(parse_completion_log(
+        &repo.join("rules/completion-log.md"),
+        generated_at_ms,
+    ));
+
+    let path = state.data_dir.join("self_improve_workboard.json");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(&board).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())?;
+    Ok(board)
+}
+
+fn parse_milestones(path: &std::path::Path, generated_at_ms: u64) -> Vec<SelfImproveWorkboardItem> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let cells = markdown_table_cells(line);
+            if cells.len() < 4 || cells[0] == "ID" || cells[0].starts_with("---") {
+                return None;
+            }
+            Some(SelfImproveWorkboardItem {
+                id: cells[0].clone(),
+                status: cells[1].clone(),
+                title: cells[2].clone(),
+                detail: cells[3].clone(),
+                source: "rules/milestones.md".to_string(),
+                updated_at_ms: generated_at_ms,
+            })
+        })
+        .collect()
+}
+
+fn parse_completion_log(
+    path: &std::path::Path,
+    generated_at_ms: u64,
+) -> Vec<SelfImproveWorkboardItem> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| {
+            let cells = markdown_table_cells(line);
+            if cells.len() < 2 || !cells[0].starts_with("[") {
+                return None;
+            }
+            let title = cells[0]
+                .trim_start_matches('[')
+                .split("](")
+                .next()
+                .unwrap_or(cells[0].as_str())
+                .to_string();
+            Some(SelfImproveWorkboardItem {
+                id: title
+                    .split('—')
+                    .next()
+                    .unwrap_or(title.as_str())
+                    .trim()
+                    .to_string(),
+                title,
+                detail: format!("Completed {}", cells[1]),
+                status: "completed".to_string(),
+                source: "rules/completion-log.md".to_string(),
+                updated_at_ms: generated_at_ms,
+            })
+        })
+        .take(20)
+        .collect()
+}
+
+fn markdown_table_cells(line: &str) -> Vec<String> {
+    let trimmed = line.trim();
+    if !trimmed.starts_with('|') || !trimmed.ends_with('|') {
+        return Vec::new();
+    }
+    trimmed
+        .trim_matches('|')
+        .split('|')
+        .map(|cell| cell.trim().to_string())
+        .collect()
 }
 
 /// Start the autonomous self-improve loop. Idempotent — calling while
@@ -221,7 +367,11 @@ pub async fn start_self_improve(app: AppHandle, state: State<'_, AppState>) -> R
     let worktree_dir = {
         let s = state.self_improve.lock().map_err(|e| e.to_string())?;
         let d = s.worktree_dir.clone();
-        if d.is_empty() { None } else { Some(d) }
+        if d.is_empty() {
+            None
+        } else {
+            Some(d)
+        }
     };
     coding::engine::start(app, engine, cfg, workflow_cfg, worktree_dir, repo_hint).await;
     Ok(())
@@ -285,6 +435,271 @@ pub async fn clear_self_improve_log(state: State<'_, AppState>) -> Result<Metric
     let log = MetricsLog::new(&state.data_dir);
     log.clear().map_err(|e| format!("clear log: {e}"))?;
     Ok(log.summary())
+}
+
+// ---------------------------------------------------------------------------
+// Gate telemetry (Phase 34 — Chunk 34.2)
+// ---------------------------------------------------------------------------
+
+/// Per-gate aggregate metrics: pass/fail rates, average duration, last
+/// error per gate. Computed from the gate event JSONL log, capped at the
+/// most recent [`coding::gate_telemetry::MAX_GATE_RECORDS`] end-events.
+#[tauri::command]
+pub async fn get_self_improve_gate_metrics(
+    state: State<'_, AppState>,
+) -> Result<coding::gate_telemetry::GateMetricsSummary, String> {
+    let log = coding::gate_telemetry::GateLog::new(&state.data_dir);
+    Ok(log.summary())
+}
+
+/// Most recent gate end-events (newest first). The UI displays these in
+/// the per-gate timing breakdown panel.
+#[tauri::command]
+pub async fn get_self_improve_gate_history(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<coding::gate_telemetry::GateEvent>, String> {
+    let log = coding::gate_telemetry::GateLog::new(&state.data_dir);
+    let n = limit
+        .unwrap_or(50)
+        .min(coding::gate_telemetry::MAX_GATE_RECORDS);
+    Ok(log.recent_ends(n))
+}
+
+// ---------------------------------------------------------------------------
+// Backlog promotion (Phase 34 — Chunk 34.3)
+// ---------------------------------------------------------------------------
+
+/// Result of promoting a backlog item to a milestone chunk.
+///
+/// Reports the new chunk's ID (e.g. `"34.4"`) plus the phase it was
+/// inserted into so the UI can show a confirmation toast and refresh
+/// the workboard without re-parsing markdown by hand.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PromoteToChunkResult {
+    pub chunk_id: String,
+    pub phase_id: u32,
+    pub title: String,
+}
+
+/// Promote a backlog item (failed run, research idea, deferred suggestion)
+/// to a scoped milestone chunk by safely appending a new row to
+/// `rules/milestones.md`.
+///
+/// Behaviour:
+/// - Auto-selects the next unused chunk ID in the target phase
+///   (e.g. if Phase 34 has `34.3`, the new row becomes `34.4`).
+/// - Defaults to the highest phase that already has a `## Phase N` header
+///   when no `phase_id` is supplied.
+/// - Refuses to write if the target phase has no markdown table yet —
+///   the caller must ensure the phase header + table skeleton exist.
+/// - Writes atomically via `std::fs::write` after a single string mutation.
+///
+/// Title and goal are sanitised (newlines / pipes stripped) so the
+/// markdown table stays valid.
+#[tauri::command]
+pub async fn promote_to_milestone_chunk(
+    title: String,
+    goal: String,
+    phase_id: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<PromoteToChunkResult, String> {
+    let title = sanitise_table_cell(&title);
+    let goal = sanitise_table_cell(&goal);
+    if title.is_empty() {
+        return Err("Title is required.".to_string());
+    }
+    if goal.is_empty() {
+        return Err("Goal is required.".to_string());
+    }
+
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let path = repo.join("rules/milestones.md");
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
+
+    let target_phase = match phase_id {
+        Some(p) => p,
+        None => detect_latest_phase(&text)
+            .ok_or_else(|| "No phase headers found in milestones.md".to_string())?,
+    };
+
+    let next_id = next_chunk_id_in_phase(&text, target_phase);
+    let chunk_id = format!("{}.{}", target_phase, next_id);
+    let new_row = format!("| {} | not-started | {} | {} |", chunk_id, title, goal);
+
+    let updated = insert_row_in_phase_table(&text, target_phase, &new_row).ok_or_else(|| {
+        format!(
+            "Phase {} table not found in milestones.md — add the phase header + table skeleton first.",
+            target_phase
+        )
+    })?;
+
+    std::fs::write(&path, updated).map_err(|e| format!("Failed to write milestones.md: {}", e))?;
+
+    Ok(PromoteToChunkResult {
+        chunk_id,
+        phase_id: target_phase,
+        title,
+    })
+}
+
+fn sanitise_table_cell(s: &str) -> String {
+    s.replace(['\r', '\n'], " ")
+        .replace('|', "/")
+        .trim()
+        .to_string()
+}
+
+/// Find the largest `## Phase N` header in the document. Returns `None`
+/// when no phase headers exist.
+fn detect_latest_phase(text: &str) -> Option<u32> {
+    text.lines()
+        .filter_map(|line| {
+            let trimmed = line.trim_start();
+            let rest = trimmed.strip_prefix("## Phase ")?;
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            num_str.parse::<u32>().ok()
+        })
+        .max()
+}
+
+/// Compute the next unused chunk number within a phase. Walks every
+/// `| N.M |` row inside the phase's table and returns `max(M) + 1`,
+/// defaulting to `1` if the table is empty.
+fn next_chunk_id_in_phase(text: &str, phase: u32) -> u32 {
+    let prefix = format!("{}.", phase);
+    let mut max_seen: u32 = 0;
+    let mut in_target_phase = false;
+
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("## Phase ") {
+            let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+            in_target_phase = num_str.parse::<u32>().ok() == Some(phase);
+            continue;
+        }
+        if !in_target_phase {
+            continue;
+        }
+        let cells = markdown_table_cells(line);
+        if cells.len() < 2 {
+            continue;
+        }
+        let id = &cells[0];
+        if let Some(suffix) = id.strip_prefix(&prefix) {
+            if let Ok(n) = suffix.parse::<u32>() {
+                if n > max_seen {
+                    max_seen = n;
+                }
+            }
+        }
+    }
+    max_seen + 1
+}
+
+/// Insert `new_row` at the end of the markdown table under `## Phase N`.
+/// The table is delimited by the first non-table line (blank, `---`, or
+/// next heading) after the header row. Returns the updated document, or
+/// `None` if the phase header or its table cannot be found.
+fn insert_row_in_phase_table(text: &str, phase: u32, new_row: &str) -> Option<String> {
+    let lines: Vec<&str> = text.lines().collect();
+
+    let phase_idx = lines.iter().position(|l| {
+        let trimmed = l.trim_start();
+        let Some(rest) = trimmed.strip_prefix("## Phase ") else {
+            return false;
+        };
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        num_str.parse::<u32>().ok() == Some(phase)
+    })?;
+
+    // Find the table header row (starts with `| ID `) after the phase heading.
+    let mut header_row_idx: Option<usize> = None;
+    for (i, line) in lines.iter().enumerate().skip(phase_idx + 1) {
+        let t = line.trim_start();
+        if t.starts_with("## ") {
+            // hit next phase before finding a table
+            return None;
+        }
+        if t.starts_with("| ID ") || t.starts_with("|ID ") {
+            header_row_idx = Some(i);
+            break;
+        }
+    }
+    let header_row_idx = header_row_idx?;
+
+    // Skip the separator row (|---|) and walk forward while still in the table.
+    let mut last_table_line = header_row_idx + 1; // separator
+    for (i, line) in lines.iter().enumerate().skip(header_row_idx + 2) {
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('|') && trimmed.ends_with('|') {
+            last_table_line = i;
+        } else {
+            break;
+        }
+    }
+
+    // Rebuild the document with the new row inserted right after the
+    // last table row. Preserve original line endings as `\n`.
+    let mut out = String::with_capacity(text.len() + new_row.len() + 1);
+    for (i, line) in lines.iter().enumerate() {
+        out.push_str(line);
+        out.push('\n');
+        if i == last_table_line {
+            out.push_str(new_row);
+            out.push('\n');
+        }
+    }
+    // Preserve trailing newline state of the input.
+    if !text.ends_with('\n') && out.ends_with('\n') {
+        out.pop();
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod promote_tests {
+    use super::*;
+
+    const SAMPLE: &str = "# Milestones\n\n## Phase 34 — Foo\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n| 34.3 | not-started | Backlog promotion | Some goal |\n\n## Phase 35 — Bar\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n| 35.1 | not-started | Other | More |\n";
+
+    #[test]
+    fn detects_latest_phase() {
+        assert_eq!(detect_latest_phase(SAMPLE), Some(35));
+    }
+
+    #[test]
+    fn next_chunk_id_after_existing_row() {
+        assert_eq!(next_chunk_id_in_phase(SAMPLE, 34), 4);
+        assert_eq!(next_chunk_id_in_phase(SAMPLE, 35), 2);
+    }
+
+    #[test]
+    fn next_chunk_id_for_empty_phase_starts_at_one() {
+        let empty = "## Phase 36 — Empty\n\n| ID | Status | Title | Goal |\n|---|---|---|---|\n";
+        assert_eq!(next_chunk_id_in_phase(empty, 36), 1);
+    }
+
+    #[test]
+    fn inserts_row_at_end_of_phase_table() {
+        let new_row = "| 34.4 | not-started | New thing | Do it |";
+        let updated = insert_row_in_phase_table(SAMPLE, 34, new_row).expect("inserted");
+        assert!(updated.contains("| 34.3 | not-started | Backlog promotion | Some goal |\n| 34.4 | not-started | New thing | Do it |\n"));
+        // Phase 35 table is untouched and still present.
+        assert!(updated.contains("| 35.1 | not-started | Other | More |"));
+    }
+
+    #[test]
+    fn sanitise_strips_pipes_and_newlines() {
+        assert_eq!(sanitise_table_cell("a|b\nc"), "a/b c");
+    }
+
+    #[test]
+    fn missing_phase_returns_none() {
+        let new_row = "| 99.1 | not-started | x | y |";
+        assert!(insert_row_in_phase_table(SAMPLE, 99, new_row).is_none());
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -745,7 +1160,9 @@ pub async fn list_self_improve_worktrees(
     state: State<'_, AppState>,
 ) -> Result<Vec<coding::worktree::WorktreeInfo>, String> {
     let repo = coding_repo::detect_repo(&state.data_dir);
-    let repo_root = repo.root.as_deref()
+    let repo_root = repo
+        .root
+        .as_deref()
         .ok_or_else(|| "No git repository detected".to_string())?;
     let repo_root = std::path::Path::new(repo_root);
     coding::worktree::list_worktrees(repo_root)
@@ -847,8 +1264,7 @@ pub async fn code_compute_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            coding::processes::compute_processes(&data_dir, &repo, depth)
-                .map_err(|e| e.to_string())
+            coding::processes::compute_processes(&data_dir, &repo, depth).map_err(|e| e.to_string())
         }
     })
     .await
@@ -870,7 +1286,9 @@ pub async fn code_list_clusters(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -902,7 +1320,9 @@ pub async fn code_list_processes(
         let data_dir = data_dir.to_path_buf();
         let repo = repo.to_path_buf();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
             let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
             let repo_str = repo.to_string_lossy().to_string();
             let repo_id: i64 = conn
@@ -942,9 +1362,10 @@ pub async fn code_generate_wiki(
         let repo = repo.to_path_buf();
         let wiki_dir = wiki_dir.clone();
         move || {
-            let repo = repo.canonicalize().map_err(|e| format!("invalid path: {e}"))?;
-            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir)
-                .map_err(|e| e.to_string())
+            let repo = repo
+                .canonicalize()
+                .map_err(|e| format!("invalid path: {e}"))?;
+            coding::wiki::generate_wiki_sync(&data_dir, &repo, &wiki_dir).map_err(|e| e.to_string())
         }
     })
     .await
@@ -977,9 +1398,369 @@ pub async fn code_generate_wiki(
     tokio::task::spawn_blocking({
         let wiki_dir = wiki_dir.clone();
         move || {
-            coding::wiki::write_wiki_pages(&wiki_dir, &clusters, &all_syms_raw, &all_edges_raw, &summaries)
-                .map_err(|e| e.to_string())
+            coding::wiki::write_wiki_pages(
+                &wiki_dir,
+                &clusters,
+                &all_syms_raw,
+                &all_edges_raw,
+                &summaries,
+            )
+            .map_err(|e| e.to_string())
         }
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Generate agent skill files (SKILL.md) from the code graph.
+///
+/// Output goes to `<data_dir>/skills/` by default. Returns the list of
+/// generated skill files and their paths.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_generate_skills(
+    repo_path: String,
+    output_dir: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::skills::SkillGenResult, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let out = output_dir
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("skills"));
+
+    tokio::task::spawn_blocking(move || {
+        let repo = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        coding::skills::generate_skills(&data_dir, &repo, &out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+// ─── Multi-repo groups and contracts (chunk 37.13) ───────────────────────
+
+/// List all repo groups.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_groups(
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::RepoGroup>, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::list_groups(&data_dir).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Create a new repo group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_create_group(
+    label: String,
+    description: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::RepoGroup, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::create_group(&data_dir, &label, description.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Delete a repo group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_delete_group(group_id: i64, state: State<'_, AppState>) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::delete_group(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Add a repo to a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_add_repo_to_group(
+    group_id: i64,
+    repo_id: i64,
+    role: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::add_repo_to_group(&data_dir, group_id, repo_id, role.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Remove a repo from a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_remove_repo_from_group(
+    group_id: i64,
+    repo_id: i64,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::remove_repo_from_group(&data_dir, group_id, repo_id)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Aggregated status for a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_group_status(
+    group_id: i64,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::GroupStatus, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::group_status(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Extract public-API contracts for a repo.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_extract_contracts(
+    repo_id: i64,
+    state: State<'_, AppState>,
+) -> Result<coding::repo_groups::ContractExtractResult, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::extract_contracts(&data_dir, repo_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// List all contracts for a group's member repos.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_list_group_contracts(
+    group_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::ContractEntry>, String> {
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::list_group_contracts(&data_dir, group_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Search for a symbol name across all repos in a group.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_cross_repo_query(
+    group_id: i64,
+    name: String,
+    limit: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::repo_groups::CrossRepoMatch>, String> {
+    let data_dir = state.data_dir.clone();
+    let lim = limit.unwrap_or(50) as usize;
+    tokio::task::spawn_blocking(move || {
+        coding::repo_groups::cross_repo_query(&data_dir, group_id, &name, lim)
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Export the code graph for a repository as a JSON snapshot (Chunk 36B.1).
+///
+/// The snapshot includes all symbols and edges, suitable for committing
+/// to version control for architecture review.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_export_graph(
+    repo_path: String,
+    output_path: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<coding::graph_export::CodeGraphSnapshot, String> {
+    let data_dir = state.data_dir.clone();
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    tokio::task::spawn_blocking(move || {
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let canon_str = canon.to_string_lossy();
+        // Find the repo_id for this path
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str.as_ref()],
+                |row| row.get(0),
+            )
+            .map_err(|_| format!("repository not indexed: {}", canon_str))?;
+        let out = match output_path {
+            Some(p) => std::path::PathBuf::from(p),
+            None => canon.join("code-graph.json"),
+        };
+        coding::graph_export::export_to_file(&conn, repo_id, &out).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Generate a persona-adaptive explanation of a code symbol (Chunk 36B.2).
+///
+/// Loads the symbol's call graph (callers + callees) from the code index
+/// and asks the active brain to explain it for the requested audience.
+///
+/// `audience` accepts: `newcomer`, `maintainer`, `pm` / `project_manager`,
+/// or `power_user` / `expert`.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_explain_graph(
+    repo_path: String,
+    symbol_name: String,
+    audience: String,
+    state: State<'_, AppState>,
+) -> Result<coding::graph_explain::GraphExplanation, String> {
+    let audience_kind = coding::graph_explain::Audience::parse(&audience)
+        .ok_or_else(|| format!("unknown audience: {audience}"))?;
+
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+
+    // Phase 1: load the call graph (blocking SQLite work).
+    let data_dir = state.data_dir.clone();
+    let symbol_for_load = symbol_name.clone();
+    let call_graph = tokio::task::spawn_blocking(move || {
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon_str = canon.to_string_lossy().to_string();
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("repo not indexed: {canon_str}"))?;
+        coding::resolver::call_graph(&conn, repo_id, &symbol_for_load).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))??;
+
+    let symbol_kind = "symbol".to_string();
+    let file_path = call_graph
+        .symbol_file
+        .clone()
+        .unwrap_or_else(|| "<unknown>".to_string());
+    let incoming: Vec<(String, String)> = call_graph
+        .incoming
+        .iter()
+        .map(|e| (e.symbol_name.clone(), e.kind.clone()))
+        .collect();
+    let outgoing: Vec<(String, String)> = call_graph
+        .outgoing
+        .iter()
+        .map(|e| (e.symbol_name.clone(), e.kind.clone()))
+        .collect();
+
+    let (system_prompt, user_prompt) = coding::graph_explain::explain_symbol_prompt(
+        audience_kind,
+        &symbol_name,
+        &symbol_kind,
+        &file_path,
+        &incoming,
+        &outgoing,
+    );
+
+    // Phase 2: ask the brain for the explanation (best-effort).
+    let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+    let explanation = if let Some(mode) = &brain_mode {
+        crate::memory::brain_memory::complete_via_mode(
+            mode,
+            &system_prompt,
+            &user_prompt,
+            &state.provider_rotator,
+        )
+        .await
+        .unwrap_or_default()
+        .trim()
+        .to_string()
+    } else {
+        String::new()
+    };
+
+    Ok(coding::graph_explain::GraphExplanation {
+        subject: symbol_name,
+        audience: audience_kind.label().to_string(),
+        explanation,
+        context_summary: user_prompt,
+    })
+}
+
+/// Build guided architecture tours for a repo (Chunk 36B.3).
+///
+/// Each indexed process becomes one tour, with steps converted into
+/// ordered, narrated stops. `max_stops` caps tour length (default 12).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_architecture_tours(
+    repo_path: String,
+    max_stops: Option<u32>,
+    state: State<'_, AppState>,
+) -> Result<Vec<coding::graph_tours::ArchitectureTour>, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    let cap = max_stops.unwrap_or(12);
+    tokio::task::spawn_blocking(move || {
+        let canon = repo
+            .canonicalize()
+            .map_err(|e| format!("invalid path: {e}"))?;
+        let conn = coding::symbol_index::open_db(&data_dir).map_err(|e| e.to_string())?;
+        let canon_str = canon.to_string_lossy().to_string();
+        let repo_id: i64 = conn
+            .query_row(
+                "SELECT id FROM code_repos WHERE path = ?1",
+                rusqlite::params![canon_str],
+                |r| r.get(0),
+            )
+            .map_err(|_| format!("repo not indexed: {canon_str}"))?;
+        coding::graph_tours::build_tours(&conn, repo_id, cap).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("join error: {e}"))?
+}
+
+/// Build a diff impact overlay for the given git ref (Chunk 36B.4).
+///
+/// Combines `analyze_diff_impact` with per-file lookups of impacted
+/// processes, related docs (under `docs/` and `wiki/`), and related
+/// test files — designed as a pre-commit reviewer aid.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_diff_overlay(
+    repo_path: String,
+    diff_ref: String,
+    state: State<'_, AppState>,
+) -> Result<coding::diff_overlay::DiffOverlay, String> {
+    let repo = std::path::PathBuf::from(&repo_path);
+    if !repo.is_dir() {
+        return Err(format!("not a directory: {repo_path}"));
+    }
+    let data_dir = state.data_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        coding::diff_overlay::build_overlay(&data_dir, &repo, &diff_ref).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| format!("join error: {e}"))?
@@ -1019,4 +1800,400 @@ mod tests {
         let loaded = state.coding_llm_config.lock().unwrap().clone();
         assert_eq!(loaded, Some(cfg));
     }
+
+    #[test]
+    fn milestone_table_parser_extracts_workboard_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("milestones.md");
+        std::fs::write(
+            &path,
+            "| ID | Status | Title | Goal |\n|---|---|---|---|\n| 34.1 | not-started | Persisted workboard | Keep lanes durable. |\n",
+        )
+        .unwrap();
+
+        let rows = parse_milestones(&path, 42);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "34.1");
+        assert_eq!(rows[0].title, "Persisted workboard");
+        assert_eq!(rows[0].status, "not-started");
+    }
+
+    #[test]
+    fn completion_log_parser_extracts_finished_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("completion-log.md");
+        std::fs::write(
+            &path,
+            "| Entry | Date |\n|-------|------|\n| [Chunk 33.6 — Maintenance](#chunk-336) | 2026-05-05 |\n",
+        )
+        .unwrap();
+
+        let rows = parse_completion_log(&path, 42);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "Chunk 33.6");
+        assert_eq!(rows[0].status, "completed");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Negative-memory backfill from coding-standards (Chunk 43.7)
+// ---------------------------------------------------------------------------
+
+/// Result of extracting negative-memory rules from a rules file.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ExtractNegativesResult {
+    pub created: usize,
+    pub skipped: usize,
+    pub rules: Vec<String>,
+}
+
+/// Extract "never / don't / avoid" anti-pattern lines from
+/// `rules/coding-standards.md` and ingest them as negative memories with
+/// substring trigger patterns.
+///
+/// Idempotent — rules that already exist as negative memories (by exact
+/// content match) are skipped.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_extract_negatives(
+    state: State<'_, AppState>,
+) -> Result<ExtractNegativesResult, String> {
+    let repo = coding_repo::guess_repo_root(&state.data_dir);
+    let path = repo.join("rules/coding-standards.md");
+    let text =
+        std::fs::read_to_string(&path).map_err(|e| format!("read coding-standards.md: {e}"))?;
+
+    let negatives = extract_negative_lines(&text);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    let mut created = 0usize;
+    let mut skipped = 0usize;
+    let rule_texts: Vec<String> = negatives.iter().map(|(r, _)| r.clone()).collect();
+
+    for (rule, triggers) in &negatives {
+        // Check if already exists by exact content match.
+        let exists: bool = store
+            .conn
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM memories WHERE content = ?1 AND valid_to IS NULL)",
+                rusqlite::params![rule],
+                |row| row.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if exists {
+            skipped += 1;
+            continue;
+        }
+
+        let entry = store
+            .add(crate::memory::store::NewMemory {
+                content: rule.clone(),
+                tags: "negative,coding-standard,auto-extracted".to_string(),
+                importance: 4,
+                memory_type: crate::memory::store::MemoryType::Fact,
+                ..Default::default()
+            })
+            .map_err(|e| e.to_string())?;
+
+        // Set cognitive_kind to negative.
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET cognitive_kind = 'negative' WHERE id = ?1",
+                rusqlite::params![entry.id],
+            )
+            .map_err(|e| e.to_string())?;
+
+        // Add trigger patterns.
+        for trigger in triggers {
+            crate::memory::negative::add_trigger(&store, entry.id, trigger, "substring")
+                .map_err(|e| e.to_string())?;
+        }
+
+        created += 1;
+    }
+
+    Ok(ExtractNegativesResult {
+        created,
+        skipped,
+        rules: rule_texts,
+    })
+}
+
+/// Parse coding-standards.md for lines containing "never", "don't",
+/// "do not", "avoid", "must not" indicators. Returns (rule_text, triggers).
+pub fn extract_negative_lines(text: &str) -> Vec<(String, Vec<String>)> {
+    let negative_indicators = [
+        "never ", "don't ", "do not ", "avoid ", "must not ", "must never ",
+        "- no ", "forbidden", "anti-pattern",
+    ];
+
+    let mut results = Vec::new();
+    for line in text.lines() {
+        let trimmed = line.trim().trim_start_matches("- ").trim_start_matches("* ");
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('|') {
+            continue;
+        }
+        let lower = trimmed.to_lowercase();
+        let is_negative = negative_indicators.iter().any(|ind| lower.contains(ind));
+        if !is_negative {
+            continue;
+        }
+        // Extract meaningful keywords for triggers (words > 5 chars).
+        let triggers: Vec<String> = trimmed
+            .split_whitespace()
+            .filter(|w| {
+                let clean = w.trim_matches(|c: char| !c.is_alphanumeric());
+                clean.len() > 5
+                    && !matches!(
+                        clean.to_lowercase().as_str(),
+                        "never" | "don't" | "avoid" | "should" | "instead" | "always" | "before"
+                    )
+            })
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .take(3)
+            .collect();
+
+        if !triggers.is_empty() {
+            results.push((trimmed.to_string(), triggers));
+        }
+    }
+    results
+}
+
+#[cfg(test)]
+mod extract_negatives_tests {
+    use super::*;
+
+    #[test]
+    fn extracts_never_lines() {
+        let text = "# Standards\n\n- Never use `.unwrap()` in library code\n- Use `thiserror` for errors\n- Don't hardcode hex colors\n";
+        let results = extract_negative_lines(text);
+        assert!(results.len() >= 2);
+        assert!(results.iter().any(|(r, _)| r.contains("unwrap")));
+    }
+
+    #[test]
+    fn skips_headers_and_empty() {
+        let text = "# Never skip tests\n\n\n";
+        let results = extract_negative_lines(text);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn extracts_triggers() {
+        let text = "- Never use placeholder implementations in production code\n";
+        let results = extract_negative_lines(text);
+        assert!(!results.is_empty());
+        let (_, triggers) = &results[0];
+        assert!(!triggers.is_empty());
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-harness session import (Chunk 43.12)
+// ---------------------------------------------------------------------------
+
+use crate::coding::session_import::{self, DetectedHarness, Harness, ImportResult};
+
+/// Detect which AI coding harnesses have importable sessions.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_detect_harnesses() -> Result<Vec<DetectedHarness>, String> {
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    Ok(session_import::detect_harnesses(&home))
+}
+
+/// Import sessions from a detected harness directory.
+///
+/// Parses all JSON/JSONL files, redacts secrets, and returns the
+/// structured turns for each session. The caller is responsible for
+/// feeding these through `brain_memory::extract_facts` if desired.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_import_sessions(
+    harness: String,
+) -> Result<Vec<ImportResult>, String> {
+    let h = parse_harness(&harness)?;
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let dir = home.join(h.relative_dir());
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+    let files = session_import::list_session_files(&dir);
+    let results: Vec<ImportResult> = files
+        .iter()
+        .map(|f| session_import::parse_transcript(h, f))
+        .collect();
+    Ok(results)
+}
+
+fn parse_harness(s: &str) -> Result<Harness, String> {
+    match s {
+        "claude" => Ok(Harness::Claude),
+        "codex" => Ok(Harness::Codex),
+        "opencode" => Ok(Harness::OpenCode),
+        "cursor" => Ok(Harness::Cursor),
+        "copilot_cli" => Ok(Harness::CopilotCli),
+        _ => Err(format!("unknown harness: {s}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cross-harness session replay (Chunk 44.4)
+// ---------------------------------------------------------------------------
+
+use crate::coding::session_replay::{self, ReplayResult, ReplaySessionConfig};
+
+/// Replay an imported session through the memory extraction pipeline.
+///
+/// Parses the transcript, plans extraction windows, feeds each through
+/// the brain, and stores extracted facts tagged with import provenance.
+/// Returns progress and per-session results.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_replay_session(
+    harness: String,
+    session_file: String,
+    config: Option<ReplaySessionConfig>,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<ReplayResult, String> {
+    use tauri::Emitter;
+
+    let h = parse_harness(&harness)?;
+    let path = std::path::PathBuf::from(&session_file);
+    if !path.is_file() {
+        return Err(format!("session file not found: {session_file}"));
+    }
+
+    let cfg = config.unwrap_or_default();
+
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+
+    let active_model = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone());
+
+    // Parse transcript into turns.
+    let import_result = session_import::parse_transcript(h, &path);
+    if import_result.turns_extracted == 0 {
+        return Ok(ReplayResult {
+            harness: h,
+            session_id: import_result.session_id,
+            segments_processed: 0,
+            facts_extracted: 0,
+            facts_stored: 0,
+            errors: import_result.errors,
+        });
+    }
+
+    // Re-parse to get actual turns (ImportResult doesn't carry them).
+    let turns = session_import::parse_transcript_turns(h, &path);
+    let plan = session_replay::plan_replay(&turns, &cfg);
+
+    let tag = session_replay::replay_tag(h, &plan.session_id);
+    let mut total_extracted = 0usize;
+    let mut total_stored = 0usize;
+    let errors = import_result.errors;
+    let segments_total = plan.segments.len();
+
+    for (i, segment) in plan.segments.iter().enumerate() {
+        // Check budget cap.
+        if total_stored >= cfg.max_memories_per_session {
+            break;
+        }
+
+        let facts = crate::memory::brain_memory::extract_facts_segmented_any_mode(
+            &brain_mode,
+            active_model.as_deref(),
+            &segment.history,
+            &state.provider_rotator,
+        )
+        .await;
+
+        total_extracted += facts.len();
+
+        let saved = if cfg.dry_run {
+            facts.len()
+        } else {
+            let remaining_budget = cfg.max_memories_per_session.saturating_sub(total_stored);
+            let capped_facts: Vec<&String> = facts.iter().take(remaining_budget).collect();
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            capped_facts
+                .iter()
+                .filter(|f| f.len() >= 5)
+                .filter_map(|fact| {
+                    store
+                        .add(crate::memory::NewMemory {
+                            content: fact.to_string(),
+                            tags: tag.clone(),
+                            importance: 3,
+                            memory_type: crate::memory::MemoryType::Fact,
+                            ..Default::default()
+                        })
+                        .ok()
+                })
+                .count()
+        };
+
+        total_stored += saved;
+
+        // Emit progress event.
+        let _ = app_handle.emit(
+            "session-replay-progress",
+            serde_json::json!({
+                "segment": i + 1,
+                "total_segments": segments_total,
+                "facts_extracted": total_extracted,
+                "facts_stored": total_stored,
+            }),
+        );
+    }
+
+    Ok(ReplayResult {
+        harness: h,
+        session_id: plan.session_id,
+        segments_processed: segments_total,
+        facts_extracted: total_extracted,
+        facts_stored: total_stored,
+        errors,
+    })
+}
+
+/// Replay all sessions from a harness directory through extraction.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn code_replay_all_sessions(
+    harness: String,
+    config: Option<ReplaySessionConfig>,
+    state: tauri::State<'_, crate::AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<Vec<ReplayResult>, String> {
+    let h = parse_harness(&harness)?;
+    let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
+    let dir = home.join(h.relative_dir());
+    if !dir.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let files = session_import::list_session_files(&dir);
+    let mut results = Vec::new();
+
+    for file in &files {
+        let file_str = file.to_string_lossy().to_string();
+        let result = code_replay_session(
+            harness.clone(),
+            file_str,
+            config.clone(),
+            state.clone(),
+            app_handle.clone(),
+        )
+        .await?;
+        results.push(result);
+    }
+
+    Ok(results)
 }

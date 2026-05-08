@@ -269,6 +269,38 @@
       <CodingWorkflowConfigPanel />
     </section>
 
+    <!-- ── Background task progress ────────────────────────────────────────── -->
+    <TaskProgressBar />
+
+    <!-- ── Self-healing embedding queue strip (Chunk 38.2) ─────────────────── -->
+    <section
+      v-if="embedQueueStatus && embedQueueStatus.pending > 0"
+      class="bv-embed-queue"
+      data-testid="bv-embed-queue"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="bv-embed-queue__icon" aria-hidden="true">🔄</span>
+      <span class="bv-embed-queue__text">
+        Self-healing embeddings:
+        <strong>{{ embedQueueStatus.pending }}</strong> pending
+        <template v-if="embedQueueStatus.failing > 0">
+          (<span class="bv-embed-queue__warn">{{ embedQueueStatus.failing }}</span> retrying)
+        </template>
+      </span>
+      <span class="bv-embed-queue__hint">Auto-retries every 10 s — no action needed.</span>
+    </section>
+
+    <!-- ── Brain Capacity & Storage (Chunk 38.5 — unified config) ──────────── -->
+    <section class="bv-capacity-section">
+      <BrainCapacityPanel />
+    </section>
+
+    <!-- ── Knowledge Wiki operations (graph + LLM-wiki pattern) ────────────── -->
+    <section class="bv-wiki-section">
+      <WikiPanel />
+    </section>
+
     <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
     <section class="bv-grid">
       <!-- Brain config card -->
@@ -721,11 +753,6 @@
       <BrainStatSheet />
     </section>
 
-    <!-- ── Code knowledge (GitNexus mirror) — Phase 13 Tier 4 ────────────── -->
-    <section class="bv-code-knowledge-section">
-      <CodeKnowledgePanel />
-    </section>
-
     <!-- ── Plugins — Phase 22 ─────────────────────────────────────────────── -->
     <section
       class="bv-plugins-section"
@@ -734,12 +761,55 @@
       <PluginsView />
     </section>
 
+    <!-- ── Prompt Commands ─────────────────────────────────────────────────── -->
+    <section
+      class="bv-autolearn-section"
+      data-testid="bv-prompt-commands-section"
+    >
+      <PromptCommandsPanel />
+    </section>
+
     <!-- ── AI Coding Integrations — Phase 15.4 ────────────────────────────── -->
     <section
       class="bv-aiv-section"
       data-testid="bv-aiv-section"
     >
       <AICodingIntegrationsView />
+    </section>
+
+    <!-- ── LAN Brain Sharing — remote MCP retrieval over local network ─────── -->
+    <section
+      class="bv-aiv-section"
+      data-testid="bv-lan-share-section"
+    >
+      <header class="bv-autolearn-header">
+        <span class="bv-section-title">🖧 LAN Brain Sharing</span>
+      </header>
+      <label
+        class="bv-config-list"
+        style="display:flex;align-items:center;gap:8px;"
+      >
+        <input
+          type="checkbox"
+          :checked="appSettings.settings?.lan_enabled ?? false"
+          data-testid="bv-lan-enabled-toggle"
+          @change="onToggleLanEnabled(($event.target as HTMLInputElement).checked)"
+        >
+        <span>Enable LAN brain sharing and discovery on this device</span>
+      </label>
+      <p class="bv-cog-desc">
+        LAN sharing exposes only to your local network after you opt in. Discovery
+        broadcasts metadata on UDP <code>7424</code>; actual memory retrieval still
+        requires the MCP bearer token shown below.
+      </p>
+      <LanSharePanel v-if="appSettings.settings?.lan_enabled ?? false" />
+      <p
+        v-else
+        class="bv-cog-desc"
+      >
+        Enable LAN sharing, start the MCP server in the integrations panel, then
+        use this panel to share or connect to another TerranSoul brain.
+      </p>
     </section>
 
     <!-- ── Persona panel (data storage & management) ──────────────────────── -->
@@ -828,7 +898,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from '../stores/brain';
@@ -837,11 +907,16 @@ import { useConversationStore } from '../stores/conversation';
 import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-decision-policy';
 import { useSettingsStore } from '../stores/settings';
 import { useSelfImproveStore } from '../stores/self-improve';
+import { useTaskStore } from '../stores/tasks';
 import BrainAvatar from '../components/BrainAvatar.vue';
+import BrainCapacityPanel from '../components/BrainCapacityPanel.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
-import CodeKnowledgePanel from '../components/CodeKnowledgePanel.vue';
 import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
+import WikiPanel from '../components/WikiPanel.vue';
+import TaskProgressBar from '../components/TaskProgressBar.vue';
+import LanSharePanel from '../components/LanSharePanel.vue';
 import MemoryGraph from '../components/MemoryGraph.vue';
+import PromptCommandsPanel from '../components/PromptCommandsPanel.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
 import AICodingIntegrationsView from './AICodingIntegrationsView.vue';
@@ -860,8 +935,28 @@ const emitNavigate = (target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'ski
 const brain = useBrainStore();
 const memory = useMemoryStore();
 const appSettings = useSettingsStore();
+const taskStore = useTaskStore();
+taskStore.init();
 
 const isRefreshing = ref(false);
+
+// ── Embedding queue status (Chunk 38.2) ─────────────────────────────────
+type EmbeddingQueueStatus = {
+  pending: number;
+  failing: number;
+  next_retry_at: number | null;
+};
+const embedQueueStatus = ref<EmbeddingQueueStatus | null>(null);
+let embedQueuePollHandle: ReturnType<typeof setInterval> | null = null;
+
+async function refreshEmbedQueueStatus() {
+  try {
+    embedQueueStatus.value = await invoke<EmbeddingQueueStatus>('embedding_queue_status');
+  } catch (e) {
+    // Silent — backend may not be ready, or we hit a brief lock contention.
+    void e;
+  }
+}
 
 // ── Hero text ──────────────────────────────────────────────────────────────
 
@@ -944,6 +1039,14 @@ const cognitiveRows = computed(() => {
       count: cognitiveKinds.value.procedural,
       percent: pct(cognitiveKinds.value.procedural),
       description: 'How-to knowledge & repeatable workflows',
+    },
+    {
+      key: 'judgment' as const,
+      label: 'Judgment',
+      emoji: '⚖',
+      count: cognitiveKinds.value.judgment,
+      percent: pct(cognitiveKinds.value.judgment),
+      description: 'Persisted rules, heuristics & operating preferences',
     },
   ];
 });
@@ -1103,10 +1206,10 @@ const ramTier = computed(() => {
   // 4 → 8 → 16 → 32+ GB tiers map to 25/50/75/100% with colors.
   let percent = Math.min(100, (gb / 32) * 100);
   let color: string;
-  if (gb >= 32) { percent = 100; color = '#34d399'; }
-  else if (gb >= 16) color = '#60a5fa';
-  else if (gb >= 8) color = '#fbbf24';
-  else color = '#f87171';
+  if (gb >= 32) { percent = 100; color = 'var(--ts-success)'; }
+  else if (gb >= 16) color = 'var(--ts-accent-blue)';
+  else if (gb >= 8) color = 'var(--ts-warning)';
+  else color = 'var(--ts-error)';
   return { percent, color, label: sys.ram_tier_label || '' };
 });
 
@@ -1540,6 +1643,15 @@ async function onTogglePreferLocal(enabled: boolean) {
   }
 }
 
+async function onToggleLanEnabled(enabled: boolean) {
+  try {
+    await appSettings.saveSettings({ lan_enabled: enabled });
+  } catch (err) {
+    console.warn('[BrainView] save lan_enabled failed; reverting UI:', err);
+    await appSettings.loadSettings();
+  }
+}
+
 async function forceExtractNow() {
   try {
     const count = await invoke<number>('extract_memories_from_session');
@@ -1664,6 +1776,15 @@ async function refresh() {
 onMounted(async () => {
   await refresh();
   await selfImprove.initialise();
+  await refreshEmbedQueueStatus();
+  embedQueuePollHandle = setInterval(refreshEmbedQueueStatus, 5_000);
+});
+
+onUnmounted(() => {
+  if (embedQueuePollHandle !== null) {
+    clearInterval(embedQueuePollHandle);
+    embedQueuePollHandle = null;
+  }
 });
 </script>
 
@@ -1717,9 +1838,9 @@ onMounted(async () => {
   color: var(--ts-text-secondary);
   border: 1px solid var(--ts-border);
 }
-.bv-pill-mood.bv-pill-free { background: rgba(123, 224, 179, 0.18); color: #7be0b3; border-color: rgba(123, 224, 179, 0.4); }
-.bv-pill-mood.bv-pill-paid { background: rgba(124, 200, 255, 0.18); color: #7cc8ff; border-color: rgba(124, 200, 255, 0.4); }
-.bv-pill-mood.bv-pill-local { background: rgba(200, 164, 255, 0.18); color: #c8a4ff; border-color: rgba(200, 164, 255, 0.4); }
+.bv-pill-mood.bv-pill-free { background: rgba(123, 224, 179, 0.18); color: var(--ts-mode-free); border-color: rgba(123, 224, 179, 0.4); }
+.bv-pill-mood.bv-pill-paid { background: rgba(124, 200, 255, 0.18); color: var(--ts-mode-paid); border-color: rgba(124, 200, 255, 0.4); }
+.bv-pill-mood.bv-pill-local { background: rgba(200, 164, 255, 0.18); color: var(--ts-mode-local); border-color: rgba(200, 164, 255, 0.4); }
 .bv-pill-mood.bv-pill-none { background: rgba(248, 113, 113, 0.18); color: var(--ts-error); border-color: rgba(248, 113, 113, 0.4); }
 
 .bv-hero-actions {
@@ -1795,7 +1916,7 @@ onMounted(async () => {
   font-size: 0.68rem;
   font-weight: 700;
   background: rgba(251, 191, 36, 0.18);
-  color: #fde68a;
+  color: var(--ts-warning);
   padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid rgba(251, 191, 36, 0.35);
@@ -1848,7 +1969,7 @@ onMounted(async () => {
 }
 .bv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .bv-btn-primary {
-  background: linear-gradient(135deg, #7c6fff, #a78bfa);
+  background: var(--ts-gradient-accent);
   color: white;
 }
 .bv-btn-ghost {
@@ -1857,8 +1978,8 @@ onMounted(async () => {
   border-color: rgba(255, 255, 255, 0.1);
 }
 .bv-coding-status { margin: 8px 0 0; font-size: 0.82rem; }
-.bv-coding-status--ok { color: #86efac; }
-.bv-coding-status--err { color: #fca5a5; }
+.bv-coding-status--ok { color: var(--ts-success); }
+.bv-coding-status--err { color: var(--ts-error); }
 .bv-coding-detail { color: var(--ts-text-muted, #94a3b8); font-style: italic; margin-left: 4px; }
 .bv-coding-hint {
   margin: 4px 0 8px;
@@ -1899,12 +2020,49 @@ onMounted(async () => {
   opacity: 0.45;
   cursor: not-allowed;
 }
-.bv-mode-card.active.bv-mode-free { border-color: #7be0b3; background: rgba(123, 224, 179, 0.10); }
-.bv-mode-card.active.bv-mode-paid { border-color: #7cc8ff; background: rgba(124, 200, 255, 0.10); }
-.bv-mode-card.active.bv-mode-local { border-color: #c8a4ff; background: rgba(200, 164, 255, 0.10); }
+.bv-mode-card.active.bv-mode-free { border-color: var(--ts-mode-free); background: rgba(123, 224, 179, 0.10); }
+.bv-mode-card.active.bv-mode-paid { border-color: var(--ts-mode-paid); background: rgba(124, 200, 255, 0.10); }
+.bv-mode-card.active.bv-mode-local { border-color: var(--ts-mode-local); background: rgba(200, 164, 255, 0.10); }
 .bv-mode-emoji { font-size: 1.5rem; }
 .bv-mode-label { font-weight: 700; }
 .bv-mode-detail { font-size: 0.75rem; color: var(--ts-text-muted); }
+
+/* ── Self-healing embedding queue strip ─────────────────────────────────── */
+.bv-embed-queue {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.875rem;
+  border-radius: 0.5rem;
+  background: var(--ts-surface-2, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.08));
+  font-size: 0.8125rem;
+  color: var(--ts-text);
+}
+.bv-embed-queue__icon {
+  font-size: 1rem;
+  animation: bv-embed-spin 2s linear infinite;
+}
+.bv-embed-queue__text { flex: 0 0 auto; }
+.bv-embed-queue__hint {
+  margin-left: auto;
+  color: var(--ts-text-muted);
+  font-size: 0.75rem;
+}
+.bv-embed-queue__warn { color: var(--ts-warning, #f59e0b); font-weight: 600; }
+@keyframes bv-embed-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── Brain Capacity section ─────────────────────────────────────────────── */
+.bv-capacity-section {
+  margin: 0.5rem 0;
+}
+
+.bv-wiki-section {
+  margin: 0.5rem 0;
+}
 
 /* ── Cards grid ─────────────────────────────────────────────────────────── */
 .bv-grid {
@@ -2081,9 +2239,10 @@ onMounted(async () => {
   border-radius: 3px;
   transition: width 0.4s ease;
 }
-.bv-cog-episodic .bv-cog-bar-fill { background: linear-gradient(90deg, #f97316, #fb923c); }
-.bv-cog-semantic .bv-cog-bar-fill { background: linear-gradient(90deg, #60a5fa, #93c5fd); }
-.bv-cog-procedural .bv-cog-bar-fill { background: linear-gradient(90deg, #34d399, #86efac); }
+.bv-cog-episodic .bv-cog-bar-fill { background: linear-gradient(90deg, var(--ts-warning), var(--ts-warning-text)); }
+.bv-cog-semantic .bv-cog-bar-fill { background: linear-gradient(90deg, var(--ts-accent-blue-hover), var(--ts-accent-blue)); }
+.bv-cog-procedural .bv-cog-bar-fill { background: linear-gradient(90deg, var(--ts-success-dim), var(--ts-success)); }
+.bv-cog-judgment .bv-cog-bar-fill { background: linear-gradient(90deg, var(--ts-accent-violet-hover), var(--ts-accent-violet)); }
 .bv-cog-desc { font-size: 0.7rem; color: var(--ts-text-muted); }
 
 /* ── RAG capability strip ──────────────────────────────────────────────── */
@@ -2189,7 +2348,7 @@ onMounted(async () => {
 }
 .btn-danger:hover {
   background: var(--ts-error, #f87171);
-  color: #fff;
+  color: var(--ts-text-on-accent);
 }
 
 @media (max-width: 720px) {

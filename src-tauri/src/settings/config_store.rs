@@ -1,10 +1,20 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::AppSettings;
 
 /// File name used to store application settings.
 const SETTINGS_FILE: &str = "app_settings.json";
+
+/// Resolve the effective data directory, applying the user's `data_root`
+/// override from settings when present.
+pub fn resolve_effective_data_dir(default_dir: &Path) -> PathBuf {
+    let settings = load(default_dir);
+    match settings.data_root.as_deref() {
+        Some(root) if !root.is_empty() => PathBuf::from(root),
+        _ => default_dir.to_path_buf(),
+    }
+}
 
 /// Load application settings from disk, applying env overrides.
 ///
@@ -85,6 +95,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -102,6 +113,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -148,6 +167,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -165,6 +185,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -196,6 +224,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -213,6 +242,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         save(dir.path(), &s).unwrap();
 

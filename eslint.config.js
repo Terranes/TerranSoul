@@ -170,6 +170,7 @@ export default [
       'src/views/BrainView.vue',
       'src/views/ChatView.vue',
       'src/views/MarketplaceView.vue',
+      'src/views/MemoryView.vue',
       'src/views/PetOverlayView.vue',
       'src/components/SplashScreen.vue',
       'src/stores/skill-tree.ts',

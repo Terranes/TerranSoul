@@ -87,6 +87,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -104,6 +105,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -139,6 +148,7 @@ mod tests {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: crate::settings::LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms:
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
@@ -156,6 +166,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: crate::settings::DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: crate::settings::DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: crate::settings::ObsidianLayout::Flat,
+            sqlite_cache_mb: crate::settings::DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

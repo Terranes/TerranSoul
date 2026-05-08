@@ -9,10 +9,24 @@
 > `.cursorrules`) are kept in sync per the Multi-Agent Instruction Sync rule
 > in `rules/coding-standards.md`.
 
+## MANDATORY — MCP Preflight (every session, no exceptions)
+
+**Execute this before any other work. Skipping is a violation.**
+
+1. Call `brain_health` (MCP tool) or `GET http://127.0.0.1:7423/health`.
+2. If healthy → `brain_search` / `brain_suggest_context` with the current task before broad repo searches.
+3. If not healthy → run `node scripts/copilot-start-mcp.mjs`, wait, retry.
+4. If MCP cannot start → record the blocker. Do NOT silently skip.
+5. After MCP succeeds → show a user-visible MCP receipt with health/provider and the `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are not enough.
+6. If an MCP call errors → do not silently fall back. Classify the error as bad tool arguments/contract mismatch, unhealthy or stale server, or missing durable knowledge; fix the MCP schema/adapter/gateway, restart/rebuild the server, or update `mcp-data/shared/` plus a numbered seed migration as appropriate. Add a regression test for code changes and report the root cause/fix.
+7. After work → sync lessons into `mcp-data/shared/memory-seed.sql`.
+
+---
+
 Read the following files for full project context (in order of priority):
 
 1. `.github/copilot-instructions.md` — full architecture, tech stack, coding standards, patterns, session resumption protocol
-2. `rules/agent-mcp-bootstrap.md` — MCP brain server usage (Docker container on port 7423)
+2. `rules/agent-mcp-bootstrap.md` — MCP brain server usage (headless runner on port 7423)
 3. `rules/milestones.md` — current work queue (find the next `not-started` chunk)
 4. `rules/coding-standards.md` — detailed coding rules
 5. `rules/architecture-rules.md` — architectural constraints
@@ -47,3 +61,5 @@ When starting or resuming:
 - Tests required for all new functionality
 - Use existing libraries — don't reinvent the wheel
 - Credit external influences in `CREDITS.md`
+- Reverse-engineer GitHub projects through `https://deepwiki.org/<owner>/<repo>` first when reachable, then verify against upstream and sync durable lessons into `mcp-data/shared/**`
+- Do not treat Markdown as MCP memory; sync any durable Markdown knowledge into `mcp-data/shared/memory-seed.sql` and KG edges so SQLite + `memory_edges` stays authoritative

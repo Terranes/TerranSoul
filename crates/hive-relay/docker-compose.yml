@@ -1,0 +1,42 @@
+# TerranSoul Hive Relay — Docker Compose
+#
+# Usage:
+#   docker compose -f crates/hive-relay/docker-compose.yml up -d
+#
+# This spins up:
+#   1. PostgreSQL 16 with pgvector extension
+#   2. The hive-relay gRPC server on port 50051
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: hive_relay
+      POSTGRES_USER: hive
+      POSTGRES_PASSWORD: hive_dev_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - hive_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hive -d hive_relay"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  relay:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgres://hive:hive_dev_password@postgres:5432/hive_relay
+      LISTEN_ADDR: 0.0.0.0:50051
+      RUST_LOG: hive_relay=info
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  hive_pg_data:

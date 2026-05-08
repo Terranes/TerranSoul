@@ -203,7 +203,109 @@ not as a fixed-position element outside the layout.
 
 ---
 
-## 8. Enforcement
+## 8. Design Reference Workflow (mandatory)
+
+> **Before implementing any new UI screen, component, or layout**, agents and
+> developers must consult design references and the project DESIGN.md.
+
+### 8.1 Primary Reference: styles.refero.design
+
+[styles.refero.design](https://styles.refero.design) is the canonical design
+reference library for this project. It provides:
+
+- 130,000+ real product screens with structured metadata
+- 10,000+ user flows (onboarding, paywalls, empty states, settings, etc.)
+- Per-style DESIGN.md output: color palette, typography, spacing, components
+- MCP integration for agent-assisted research
+
+**Workflow:**
+1. Before designing a new screen → search Refero for similar patterns
+   (e.g. "dark mode chat interface", "settings panel with cards")
+2. Extract relevant spacing, hierarchy, and layout patterns
+3. Map findings to TerranSoul's `--ts-*` token system
+4. Document which reference informed the design in the component's comment
+
+**MCP usage (when Refero MCP is available):**
+```
+# Search for onboarding patterns
+refero_search("dark AI companion chat interface")
+# Get style details
+refero_get_style("linear")  # returns DESIGN.md with tokens
+```
+
+### 8.2 Project Style Definition
+
+TerranSoul's canonical style definition lives at `docs/DESIGN.md`. This file
+follows the Refero DESIGN.md format and defines:
+
+- Color palette (brand, accent, neutrals, semantic)
+- Typography scale, fonts, weights
+- Spacing & shape (base unit, density, radius)
+- Elevation / shadow system
+- Motion / transition guidelines
+- Do's and don'ts
+
+**All UI work must conform to `docs/DESIGN.md`.** When adding new tokens,
+update both `src/style.css` and `docs/DESIGN.md` in the same PR.
+
+### 8.3 Recommended Design Tools (audited 05/2026)
+
+| Tool | Purpose | Integration |
+|---|---|---|
+| [styles.refero.design](https://styles.refero.design) | Design reference library + MCP | MCP server, DESIGN.md export |
+| [Open Props](https://open-props.style) v1.7 | CSS custom properties (500+ tokens) | `@import "open-props"` or cherry-pick |
+| [Tailwind CSS v4](https://tailwindcss.com) | Utility-first CSS framework | `@import "tailwindcss/utilities"` (already used) |
+| [Radix Colors](https://www.radix-ui.com/colors) | Accessible color scales (P3 gamut) | Reference for palette expansion |
+| [W3C Design Tokens](https://tr.designtokens.org/format/) | Standard token format (DTCG) | Future export format |
+| [Style Dictionary](https://amzn.github.io/style-dictionary/) | Token transformation pipeline | CI/CD token builds |
+| [Figma Variables](https://figma.com) + Dev Mode | Design handoff & variable sync | Designer workflow |
+| [Storybook](https://storybook.js.org) 8.x | Component documentation & testing | Visual regression |
+| [shadcn/ui](https://ui.shadcn.com) | Copy-paste component patterns | Layout/pattern reference |
+| [UnoCSS](https://unocss.dev) | Atomic CSS engine | Alternative to Tailwind |
+| [Panda CSS](https://panda-css.com) | Type-safe CSS-in-JS with tokens | Reference architecture |
+| [Every Layout](https://every-layout.dev) | Intrinsic CSS layout patterns | Flex/grid reference |
+| [Inclusive Components](https://inclusive-components.design) | Accessible component patterns | A11y patterns |
+
+### 8.4 Design Token Hierarchy
+
+```
+┌─────────────────────────────────────────┐
+│  Design Reference (styles.refero.design) │
+│  → Informs palette/hierarchy choices     │
+└────────────────┬────────────────────────┘
+                 │
+┌────────────────▼────────────────────────┐
+│  docs/DESIGN.md (canonical style spec)   │
+│  → Human & agent readable                │
+└────────────────┬────────────────────────┘
+                 │
+┌────────────────▼────────────────────────┐
+│  src/style.css :root { --ts-* }          │
+│  → Runtime CSS custom properties         │
+└────────────────┬────────────────────────┘
+                 │
+┌────────────────▼────────────────────────┐
+│  Vue Components (scoped styles)          │
+│  → Consume tokens via var(--ts-*)        │
+└─────────────────────────────────────────┘
+```
+
+### 8.5 Agent Design Research Protocol
+
+When an AI coding agent builds UI:
+
+1. **Research** — query styles.refero.design (via MCP or web) for the screen
+   type being built (dashboard, form, modal, list, etc.)
+2. **Extract** — note the reference's spacing density, type scale ratio,
+   color distribution, and component patterns
+3. **Map** — translate to `--ts-*` tokens; add new tokens if needed
+4. **Build** — implement using tokens, flex/grid, scoped styles
+5. **Validate** — check against `docs/DESIGN.md` do's and don'ts
+6. **Document** — note which Refero reference informed the design
+
+---
+
+## 9. Enforcement
 
 - **Lint rule** (future): `stylelint-declaration-strict-value` for color,
   z-index, border-radius.
@@ -211,3 +313,5 @@ not as a fixed-position element outside the layout.
   bare z-index integers, and hardcoded hex colors.
 - **Migration**: Existing violations are tracked in the backlog. New code must
   not introduce new violations.
+- **Design conformance**: New UI must reference `docs/DESIGN.md`. Components
+  without token usage are rejected.

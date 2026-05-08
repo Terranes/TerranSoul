@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 13;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 20;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -26,6 +26,8 @@ CREATE TABLE IF NOT EXISTS memories (
     last_accessed INTEGER,
     access_count  INTEGER NOT NULL DEFAULT 0,
     embedding     BLOB,
+    embedding_model_id TEXT,
+    embedding_dim INTEGER,
     source_url    TEXT,
     source_hash   TEXT,
     expires_at    INTEGER,
@@ -40,7 +42,11 @@ CREATE TABLE IF NOT EXISTS memories (
     category      TEXT,
     cognitive_kind TEXT,
     updated_at    INTEGER,
-    origin_device TEXT
+    origin_device TEXT,
+    hlc_counter   INTEGER NOT NULL DEFAULT 0,
+    protected     INTEGER NOT NULL DEFAULT 0,
+    share_scope   TEXT    NOT NULL DEFAULT 'private',
+    confidence    REAL    NOT NULL DEFAULT 1.0
 );
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
@@ -50,6 +56,10 @@ CREATE INDEX IF NOT EXISTS idx_memories_session ON memories(session_id);
 CREATE INDEX IF NOT EXISTS idx_memories_decay ON memories(decay_score DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_category ON memories(category);
 CREATE INDEX IF NOT EXISTS idx_memories_updated_at ON memories(updated_at);
+CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);
+CREATE INDEX IF NOT EXISTS idx_memories_long_embedded ON memories(id) WHERE tier='long' AND embedding IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(id) WHERE valid_to IS NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_session_recent ON memories(session_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS memory_edges (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +72,8 @@ CREATE TABLE IF NOT EXISTS memory_edges (
     valid_from  INTEGER,
     valid_to    INTEGER,
     edge_source TEXT,
+    origin_device TEXT,
+    hlc_counter INTEGER NOT NULL DEFAULT 0,
     UNIQUE(src_id, dst_id, rel_type)
 );
 CREATE INDEX IF NOT EXISTS idx_edges_src ON memory_edges(src_id);
@@ -112,12 +124,72 @@ CREATE TABLE IF NOT EXISTS sync_log (
     timestamp   INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sync_log_peer ON sync_log(peer_device);
+
+CREATE TABLE IF NOT EXISTS pending_embeddings (
+    memory_id    INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    attempts     INTEGER NOT NULL DEFAULT 0,
+    last_error   TEXT,
+    next_retry_at INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_pending_embeddings_next ON pending_embeddings(next_retry_at);
+
+CREATE TABLE IF NOT EXISTS memory_embeddings (
+    memory_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    model_id     TEXT    NOT NULL,
+    dim          INTEGER NOT NULL,
+    embedding    BLOB    NOT NULL,
+    created_at   INTEGER NOT NULL,
+    PRIMARY KEY (memory_id, model_id)
+);
+CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model_id);
+
+CREATE TABLE IF NOT EXISTS memory_reinforcements (
+    memory_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    session_id    TEXT    NOT NULL,
+    message_index INTEGER NOT NULL DEFAULT 0,
+    ts            INTEGER NOT NULL,
+    PRIMARY KEY (memory_id, session_id, message_index)
+);
+CREATE INDEX IF NOT EXISTS idx_reinforcements_memory ON memory_reinforcements(memory_id);
+
+CREATE TABLE IF NOT EXISTS memory_trigger_patterns (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    pattern   TEXT    NOT NULL,
+    kind      TEXT    NOT NULL DEFAULT 'regex'
+);
+CREATE INDEX IF NOT EXISTS idx_trigger_patterns_memory ON memory_trigger_patterns(memory_id);
+
+CREATE TABLE IF NOT EXISTS memory_gaps (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_embedding BLOB,
+    context_snippet TEXT    NOT NULL DEFAULT '',
+    session_id      TEXT,
+    ts              INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_gaps_ts ON memory_gaps(ts);
+
+CREATE TABLE IF NOT EXISTS safety_decisions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    action      TEXT    NOT NULL,
+    decision    TEXT    NOT NULL,
+    decided_at  INTEGER NOT NULL,
+    decided_via TEXT    NOT NULL DEFAULT 'auto'
+);
+CREATE INDEX IF NOT EXISTS idx_safety_decided_at ON safety_decisions(decided_at);
 "#;
 
 /// Create the final memory schema directly and record its canonical version.
 pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(CANONICAL_SCHEMA_SQL)?;
     ensure_memories_cognitive_kind(conn)?;
+    ensure_pending_embeddings(conn)?;
+    ensure_protected_column(conn)?;
+    ensure_multi_model_embeddings(conn)?;
+    ensure_hlc_counter(conn)?;
+    ensure_edge_crdt_columns(conn)?;
+    ensure_share_scope(conn)?;
+    ensure_v20_tables(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
 }
@@ -132,6 +204,187 @@ fn ensure_memories_cognitive_kind(conn: &Connection) -> SqlResult<()> {
         }
     }
     conn.execute_batch("ALTER TABLE memories ADD COLUMN cognitive_kind TEXT")
+}
+
+/// Ensure the `pending_embeddings` table exists (upgrade path from v13).
+fn ensure_pending_embeddings(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS pending_embeddings (
+            memory_id    INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+            attempts     INTEGER NOT NULL DEFAULT 0,
+            last_error   TEXT,
+            next_retry_at INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_pending_embeddings_next ON pending_embeddings(next_retry_at);",
+    )
+}
+
+/// Ensure the `protected` column exists on `memories` (upgrade path from v14).
+fn ensure_protected_column(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "protected" {
+            // Already exists — just ensure the eviction index.
+            conn.execute_batch(
+                "CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);"
+            )?;
+            return Ok(());
+        }
+    }
+    conn.execute_batch(
+        "ALTER TABLE memories ADD COLUMN protected INTEGER NOT NULL DEFAULT 0;
+         CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, decay_score);"
+    )
+}
+
+/// Ensure multi-model embedding columns + side table exist (upgrade path from v15 to v16).
+fn ensure_multi_model_embeddings(conn: &Connection) -> SqlResult<()> {
+    // Check if embedding_model_id column already exists
+    let mut has_model_id = false;
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "embedding_model_id" {
+            has_model_id = true;
+            break;
+        }
+    }
+    if !has_model_id {
+        conn.execute_batch(
+            "ALTER TABLE memories ADD COLUMN embedding_model_id TEXT;
+             ALTER TABLE memories ADD COLUMN embedding_dim INTEGER;",
+        )?;
+    }
+    // Create the side table (IF NOT EXISTS is safe for idempotency)
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_embeddings (
+            memory_id    INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+            model_id     TEXT    NOT NULL,
+            dim          INTEGER NOT NULL,
+            embedding    BLOB    NOT NULL,
+            created_at   INTEGER NOT NULL,
+            PRIMARY KEY (memory_id, model_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_embeddings_model ON memory_embeddings(model_id);",
+    )
+}
+
+/// Ensure the `hlc_counter` column exists on `memories` (upgrade path from v16 to v17).
+fn ensure_hlc_counter(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "hlc_counter" {
+            return Ok(());
+        }
+    }
+    conn.execute_batch("ALTER TABLE memories ADD COLUMN hlc_counter INTEGER NOT NULL DEFAULT 0")
+}
+
+/// Ensure `origin_device` and `hlc_counter` columns exist on `memory_edges` (v17 → v18).
+fn ensure_edge_crdt_columns(conn: &Connection) -> SqlResult<()> {
+    let mut has_origin = false;
+    let mut has_hlc = false;
+    let mut stmt = conn.prepare("PRAGMA table_info(memory_edges)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "origin_device" {
+            has_origin = true;
+        }
+        if name == "hlc_counter" {
+            has_hlc = true;
+        }
+    }
+    if !has_origin {
+        conn.execute_batch("ALTER TABLE memory_edges ADD COLUMN origin_device TEXT")?;
+    }
+    if !has_hlc {
+        conn.execute_batch(
+            "ALTER TABLE memory_edges ADD COLUMN hlc_counter INTEGER NOT NULL DEFAULT 0",
+        )?;
+    }
+    Ok(())
+}
+
+/// Ensure the `share_scope` column exists on `memories` (upgrade path v18 → v19).
+fn ensure_share_scope(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "share_scope" {
+            return Ok(());
+        }
+    }
+    conn.execute_batch(
+        "ALTER TABLE memories ADD COLUMN share_scope TEXT NOT NULL DEFAULT 'private'",
+    )
+}
+
+/// V20 migration: add `confidence` column, reinforcements, trigger patterns,
+/// gaps, and safety decisions tables (upgrade path v19 → v20).
+fn ensure_v20_tables(conn: &Connection) -> SqlResult<()> {
+    // Add `confidence` column if missing
+    let mut has_confidence = false;
+    {
+        let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == "confidence" {
+                has_confidence = true;
+                break;
+            }
+        }
+    }
+    if !has_confidence {
+        conn.execute_batch(
+            "ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
+        )?;
+    }
+
+    // Create the four new tables (IF NOT EXISTS makes them idempotent)
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_reinforcements (
+            memory_id     INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+            session_id    TEXT    NOT NULL,
+            message_index INTEGER NOT NULL DEFAULT 0,
+            ts            INTEGER NOT NULL,
+            PRIMARY KEY (memory_id, session_id, message_index)
+        );
+        CREATE INDEX IF NOT EXISTS idx_reinforcements_memory ON memory_reinforcements(memory_id);
+
+        CREATE TABLE IF NOT EXISTS memory_trigger_patterns (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            memory_id INTEGER NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+            pattern   TEXT    NOT NULL,
+            kind      TEXT    NOT NULL DEFAULT 'regex'
+        );
+        CREATE INDEX IF NOT EXISTS idx_trigger_patterns_memory ON memory_trigger_patterns(memory_id);
+
+        CREATE TABLE IF NOT EXISTS memory_gaps (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            query_embedding BLOB,
+            context_snippet TEXT    NOT NULL DEFAULT '',
+            session_id      TEXT,
+            ts              INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_gaps_ts ON memory_gaps(ts);
+
+        CREATE TABLE IF NOT EXISTS safety_decisions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            action      TEXT    NOT NULL,
+            decision    TEXT    NOT NULL,
+            decided_at  INTEGER NOT NULL,
+            decided_via TEXT    NOT NULL DEFAULT 'auto'
+        );
+        CREATE INDEX IF NOT EXISTS idx_safety_decided_at ON safety_decisions(decided_at);"
+    )
 }
 
 /// Return the recorded canonical schema version, or 0 before initialization.
@@ -161,15 +414,21 @@ fn record_schema_version(conn: &Connection) -> SqlResult<()> {
 fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.prepare(
         "SELECT id, content, tags, importance, memory_type, created_at,
-                last_accessed, access_count, embedding, source_url, source_hash,
+                last_accessed, access_count, embedding, embedding_model_id,
+                embedding_dim, source_url, source_hash,
                 expires_at, tier, decay_score, session_id, parent_id, token_count,
                 valid_to, obsidian_path, last_exported, category, cognitive_kind,
-                updated_at, origin_device
+                updated_at, origin_device, protected, hlc_counter, share_scope,
+                confidence
           FROM memories LIMIT 0",
     )?;
     conn.prepare(
+        "SELECT memory_id, model_id, dim, embedding, created_at
+         FROM memory_embeddings LIMIT 0",
+    )?;
+    conn.prepare(
         "SELECT id, src_id, dst_id, rel_type, confidence, source, created_at,
-                valid_from, valid_to, edge_source
+                valid_from, valid_to, edge_source, origin_device, hlc_counter
          FROM memory_edges LIMIT 0",
     )?;
     conn.prepare(
@@ -190,6 +449,26 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.prepare(
         "SELECT id, peer_device, direction, entry_count, timestamp
          FROM sync_log LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT memory_id, attempts, last_error, next_retry_at
+         FROM pending_embeddings LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT memory_id, session_id, message_index, ts
+         FROM memory_reinforcements LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT id, memory_id, pattern, kind
+         FROM memory_trigger_patterns LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT id, query_embedding, context_snippet, session_id, ts
+         FROM memory_gaps LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT id, action, decision, decided_at, decided_via
+         FROM safety_decisions LIMIT 0",
     )?;
     Ok(())
 }
@@ -390,5 +669,82 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM memory_edges", [], |row| row.get(0))
             .unwrap();
         assert_eq!(edge_count, 0);
+    }
+
+    #[test]
+    fn v20_confidence_column_exists_with_default() {
+        let conn = fresh_conn();
+        create_canonical_schema(&conn).unwrap();
+
+        conn.execute("INSERT INTO memories (content, created_at) VALUES ('test', 100)", [])
+            .unwrap();
+
+        let confidence: f64 = conn
+            .query_row("SELECT confidence FROM memories WHERE content = 'test'", [], |row| row.get(0))
+            .unwrap();
+        assert!((confidence - 1.0).abs() < f64::EPSILON, "default confidence should be 1.0");
+    }
+
+    #[test]
+    fn v20_new_tables_exist() {
+        let conn = fresh_conn();
+        create_canonical_schema(&conn).unwrap();
+
+        for table in [
+            "memory_reinforcements",
+            "memory_trigger_patterns",
+            "memory_gaps",
+            "safety_decisions",
+        ] {
+            assert!(object_exists(&conn, "table", table), "missing V20 table {table}");
+        }
+    }
+
+    #[test]
+    fn v20_upgrade_from_v19_adds_confidence_and_tables() {
+        let conn = fresh_conn();
+
+        // Simulate a V19 database: create the canonical schema first,
+        // then drop the V20-only column and tables.
+        create_canonical_schema(&conn).unwrap();
+        // We can't DROP COLUMN in older SQLite, so instead let's start
+        // from a minimal V19-like memories table without confidence.
+        conn.execute_batch("DROP TABLE IF EXISTS memory_reinforcements").unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_trigger_patterns").unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_gaps").unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS safety_decisions").unwrap();
+
+        // Verify tables are gone
+        assert!(!object_exists(&conn, "table", "memory_reinforcements"));
+
+        // Re-run canonical schema (idempotent migration)
+        create_canonical_schema(&conn).unwrap();
+
+        // V20 tables should be back
+        for table in [
+            "memory_reinforcements",
+            "memory_trigger_patterns",
+            "memory_gaps",
+            "safety_decisions",
+        ] {
+            assert!(object_exists(&conn, "table", table), "V20 upgrade missing table {table}");
+        }
+    }
+
+    #[test]
+    fn v20_reinforcements_round_trip() {
+        let conn = fresh_conn();
+        create_canonical_schema(&conn).unwrap();
+
+        conn.execute("INSERT INTO memories (content, created_at) VALUES ('m1', 100)", []).unwrap();
+        conn.execute(
+            "INSERT INTO memory_reinforcements (memory_id, session_id, message_index, ts) VALUES (1, 'sess-1', 0, 200)",
+            [],
+        ).unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_reinforcements WHERE memory_id = 1", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

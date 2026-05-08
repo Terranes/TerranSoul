@@ -1399,7 +1399,7 @@ onUnmounted(() => {
   border-radius: 50%;
   border: 1px solid rgba(255, 255, 255, 0.15);
   background: rgba(0, 0, 0, 0.5);
-  color: #eaecf4;
+  color: var(--ts-text-primary);
   cursor: pointer;
   font-size: 0.9rem;
   display: flex;
@@ -1408,7 +1408,7 @@ onUnmounted(() => {
 }
 :global(.pet-si-panel-close:hover) {
   background: rgba(239, 68, 68, 0.2);
-  color: #fca5a5;
+  color: var(--ts-error);
 }
 
 .pet-character {

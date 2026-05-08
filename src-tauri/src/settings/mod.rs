@@ -49,6 +49,10 @@ pub struct UserModel {
     /// 'female' or 'male' — drives TTS voice selection. Defaults to 'female'.
     #[serde(default = "default_user_model_gender")]
     pub gender: String,
+    /// Persona name associated with this model (optional).
+    /// When switching to this model, the app can auto-apply this persona.
+    #[serde(default)]
+    pub persona: String,
     /// Unix milliseconds when the model was imported.
     #[serde(default)]
     pub imported_at: u64,
@@ -182,6 +186,12 @@ pub struct AppSettings {
     #[serde(default)]
     pub lan_enabled: bool,
 
+    /// LAN MCP authentication mode. `token_required` keeps the existing
+    /// bearer-token gate; `public_read_only` exposes a restricted read-only
+    /// LAN surface without requiring a token.
+    #[serde(default)]
+    pub lan_auth_mode: LanAuthMode,
+
     /// When `true` (default), a paired mobile shell may show local
     /// notifications for long-running remote work that completes or crosses
     /// the mobile threshold. Uses Tauri's local notification plugin only;
@@ -297,6 +307,64 @@ pub struct AppSettings {
     /// in-memory working set returned by broad list calls. Default 10 MB.
     #[serde(default = "default_max_memory_mb")]
     pub max_memory_mb: f64,
+
+    /// Maximum number of long-term memory entries before capacity eviction
+    /// kicks in during maintenance. Default 1 000 000.
+    #[serde(default = "default_max_long_term_entries")]
+    pub max_long_term_entries: u64,
+
+    /// Optional override for data directory path (per-workspace root).
+    #[serde(default)]
+    pub data_root: Option<String>,
+
+    /// Optional Hive relay URL (gRPC endpoint, e.g. `http://relay.example.com:50051`).
+    /// When set, the app participates in hive federation — sharing
+    /// `hive`-scoped memories and processing distributed jobs.
+    /// When `None` (default), hive features are invisible.
+    #[serde(default)]
+    pub hive_url: Option<String>,
+
+    /// Layout style for Obsidian vault export.
+    #[serde(default)]
+    pub obsidian_layout: ObsidianLayout,
+
+    /// SQLite page-cache size for memory.db (MiB). Default 16.
+    /// Larger = more RAM usage, faster repeated queries.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_sqlite_cache_mb")]
+    pub sqlite_cache_mb: u32,
+
+    /// SQLite mmap window for memory.db (MiB). Default 64.
+    /// OS pages in data on-demand; larger window helps sequential scans.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_sqlite_mmap_mb")]
+    pub sqlite_mmap_mb: u32,
+
+    /// SQLite page-cache size for code_index.sqlite (MiB). Default 8.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_code_index_cache_mb")]
+    pub code_index_cache_mb: u32,
+
+    /// SQLite mmap window for code_index.sqlite (MiB). Default 32.
+    /// Takes effect on next app restart.
+    #[serde(default = "default_code_index_mmap_mb")]
+    pub code_index_mmap_mb: u32,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ObsidianLayout {
+    #[default]
+    Flat,
+    Para,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LanAuthMode {
+    #[default]
+    TokenRequired,
+    PublicReadOnly,
 }
 
 fn default_true() -> bool {
@@ -327,8 +395,44 @@ pub const DEFAULT_MAX_MEMORY_MB: f64 = 10.0;
 pub const MIN_MAX_MEMORY_MB: f64 = 1.0;
 pub const MAX_MAX_MEMORY_MB: f64 = 1024.0;
 
+/// Default SQLite cache size for memory.db (MiB).
+pub const DEFAULT_SQLITE_CACHE_MB: u32 = 16;
+pub const MIN_SQLITE_CACHE_MB: u32 = 2;
+pub const MAX_SQLITE_CACHE_MB: u32 = 512;
+
+/// Default SQLite mmap window for memory.db (MiB).
+pub const DEFAULT_SQLITE_MMAP_MB: u32 = 64;
+pub const MIN_SQLITE_MMAP_MB: u32 = 0;
+pub const MAX_SQLITE_MMAP_MB: u32 = 2048;
+
+/// Default SQLite cache size for code_index.sqlite (MiB).
+pub const DEFAULT_CODE_INDEX_CACHE_MB: u32 = 8;
+pub const MIN_CODE_INDEX_CACHE_MB: u32 = 2;
+pub const MAX_CODE_INDEX_CACHE_MB: u32 = 256;
+
+/// Default SQLite mmap window for code_index.sqlite (MiB).
+pub const DEFAULT_CODE_INDEX_MMAP_MB: u32 = 32;
+pub const MIN_CODE_INDEX_MMAP_MB: u32 = 0;
+pub const MAX_CODE_INDEX_MMAP_MB: u32 = 1024;
+
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
+}
+
+fn default_sqlite_cache_mb() -> u32 {
+    DEFAULT_SQLITE_CACHE_MB
+}
+
+fn default_sqlite_mmap_mb() -> u32 {
+    DEFAULT_SQLITE_MMAP_MB
+}
+
+fn default_code_index_cache_mb() -> u32 {
+    DEFAULT_CODE_INDEX_CACHE_MB
+}
+
+fn default_code_index_mmap_mb() -> u32 {
+    DEFAULT_CODE_INDEX_MMAP_MB
 }
 
 fn default_max_memory_gb() -> f64 {
@@ -337,6 +441,10 @@ fn default_max_memory_gb() -> f64 {
 
 fn default_max_memory_mb() -> f64 {
     DEFAULT_MAX_MEMORY_MB
+}
+
+fn default_max_long_term_entries() -> u64 {
+    crate::memory::eviction::DEFAULT_MAX_LONG_TERM
 }
 
 fn default_mobile_notification_threshold_ms() -> u64 {
@@ -351,6 +459,10 @@ fn default_mobile_notification_poll_ms() -> u64 {
 /// [`AppSettings::relevance_threshold`] and `docs/brain-advanced-design.md`
 /// § 16 Phase 4 (Chunk 16.1).
 pub const DEFAULT_RELEVANCE_THRESHOLD: f64 = 0.30;
+
+/// Default LLM-as-judge rerank threshold for RRF results. Scores are
+/// normalised from the reranker's 0–10 rubric into 0.0–1.0 before pruning.
+pub const DEFAULT_RERANK_THRESHOLD: f64 = 0.55;
 
 fn default_relevance_threshold() -> f64 {
     DEFAULT_RELEVANCE_THRESHOLD
@@ -396,6 +508,7 @@ impl Default for AppSettings {
             late_chunking: false,
             web_search_enabled: false,
             lan_enabled: false,
+            lan_auth_mode: LanAuthMode::TokenRequired,
             mobile_notifications_enabled: true,
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
@@ -412,6 +525,14 @@ impl Default for AppSettings {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: ObsidianLayout::Flat,
+            sqlite_cache_mb: DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
         }
     }
 }
@@ -564,6 +685,7 @@ mod tests {
             preferred_container_runtime: crate::container::RuntimePreference::Docker,
             auto_learn_policy: crate::memory::AutoLearnPolicy::default(),
             relevance_threshold: DEFAULT_RELEVANCE_THRESHOLD,
+            lan_auth_mode: LanAuthMode::TokenRequired,
             auto_tag: false,
             contextual_retrieval: false,
             late_chunking: false,
@@ -585,6 +707,14 @@ mod tests {
             maintenance_idle_minimum_minutes: 0,
             max_memory_gb: DEFAULT_MAX_MEMORY_GB,
             max_memory_mb: DEFAULT_MAX_MEMORY_MB,
+            max_long_term_entries: crate::memory::eviction::DEFAULT_MAX_LONG_TERM,
+            data_root: None,
+            hive_url: None,
+            obsidian_layout: ObsidianLayout::Flat,
+            sqlite_cache_mb: DEFAULT_SQLITE_CACHE_MB,
+            sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
+            code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
+            code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

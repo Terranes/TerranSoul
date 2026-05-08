@@ -2,6 +2,23 @@
   "version": "2.0.0",
   "tasks": [
     {
+      "label": "TerranSoul MCP: Auto-Start",
+      "type": "shell",
+      "command": "node",
+      "args": ["scripts/copilot-start-mcp.mjs"],
+      "isBackground": true,
+      "runOptions": { "runOn": "folderOpen" },
+      "presentation": { "reveal": "silent", "panel": "dedicated", "close": true },
+      "problemMatcher": {
+        "pattern": { "regexp": "." },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "copilot-mcp",
+          "endsPattern": "healthy"
+        }
+      }
+    },
+    {
       "label": "Dev Server",
       "type": "shell",
       "command": "npm run dev",
@@ -41,7 +58,7 @@
     {
       "label": "Run All Tests",
       "type": "shell",
-      "command": "npx vitest run && cd src-tauri && cargo test",
+      "command": "npx vitest run && cd src-tauri && cargo test --lib --tests",
       "group": "test",
       "presentation": { "reveal": "always" }
     },
@@ -62,7 +79,7 @@
     {
       "label": "Full CI Gate",
       "type": "shell",
-      "command": "npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test",
+      "command": "npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test --lib --tests",
       "group": "test",
       "dependsOrder": "sequence",
       "presentation": { "reveal": "always" }

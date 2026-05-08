@@ -1,8 +1,8 @@
-//! LWW-Map CRDT sync for cross-device memory merge (Chunk 17.5).
+//! LWW-Map CRDT sync for cross-device memory merge (Chunk 17.5, upgraded 42.3).
 //!
 //! Implements a Last-Write-Wins element dictionary keyed on
-//! `(source_hash, source_url)` with `updated_at` as the timestamp and
-//! `origin_device` as a tiebreaker.
+//! `(source_hash, source_url)` with HLC (Hybrid Logical Clock) as the
+//! ordering and `origin_device` as a tiebreaker.
 //!
 //! # Protocol
 //!
@@ -10,6 +10,15 @@
 //! 2. Sends deltas over Soul Link as `kind: "memory_sync"`.
 //! 3. Device B applies deltas (`apply_deltas`) — LWW resolves conflicts.
 //! 4. B responds with its own deltas (bidirectional push).
+//!
+//! # HLC-based conflict resolution (Chunk 42.3)
+//!
+//! - **Winner**: highest `(hlc_counter, origin_device)` wins (total order).
+//! - **Loser archival**: the overwritten local state is saved to `memory_versions`.
+//! - **Concurrent detection**: when local and remote have the same `hlc_counter`
+//!   but different `origin_device` (independent ops), a `memory_conflicts` row
+//!   is created for user resolution. The lexicographic device-id tiebreaker
+//!   still picks a deterministic winner.
 //!
 //! Entries without `source_hash` are keyed on `(content_prefix, created_at)`
 //! to handle legacy/unindexed memories.
@@ -21,6 +30,7 @@ use rusqlite::{params, Result as SqlResult};
 use serde::{Deserialize, Serialize};
 
 use super::store::{MemoryEntry, MemoryStore};
+use super::versioning::save_version;
 
 // ─── Types ─────────────────────────────────────────────────────────────
 
@@ -88,6 +98,8 @@ pub struct SyncDelta {
     pub memory_type: String,
     pub created_at: i64,
     pub updated_at: i64,
+    /// HLC counter for causal ordering (Chunk 42.3).
+    pub hlc_counter: u64,
     pub origin_device: String,
     pub source_url: Option<String>,
     pub source_hash: Option<String>,
@@ -96,7 +108,7 @@ pub struct SyncDelta {
 /// Operation type for a sync delta.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SyncOp {
-    /// Insert or update (LWW — highest updated_at wins).
+    /// Insert or update (LWW — highest HLC wins).
     Upsert,
     /// Soft-close (valid_to set).
     SoftClose { valid_to: i64 },
@@ -109,6 +121,8 @@ pub struct ApplyResult {
     pub updated: usize,
     pub skipped: usize,
     pub soft_closed: usize,
+    /// Number of concurrent-edit conflicts detected (Chunk 42.3).
+    pub conflicts: usize,
 }
 
 // ─── Delta Computation ─────────────────────────────────────────────────
@@ -126,7 +140,8 @@ impl MemoryStore {
         let conn = self.conn();
         let mut stmt = conn.prepare(
             "SELECT id, content, tags, importance, memory_type, created_at,
-                    updated_at, origin_device, source_url, source_hash, valid_to
+                    updated_at, origin_device, source_url, source_hash, valid_to,
+                    hlc_counter
              FROM memories
              WHERE COALESCE(updated_at, created_at) >= ?1",
         )?;
@@ -136,6 +151,7 @@ impl MemoryStore {
             let origin_device: Option<String> = row.get(7)?;
             let created_at: i64 = row.get(5)?;
             let valid_to: Option<i64> = row.get(10)?;
+            let hlc_counter: i64 = row.get(11)?;
 
             let content: String = row.get(1)?;
             let source_hash: Option<String> = row.get(9)?;
@@ -166,6 +182,7 @@ impl MemoryStore {
                 memory_type: row.get::<_, String>(4)?,
                 created_at,
                 updated_at: updated_at.unwrap_or(created_at),
+                hlc_counter: hlc_counter as u64,
                 origin_device: origin_device.unwrap_or_else(|| local_device_id.to_string()),
                 source_url,
                 source_hash,
@@ -175,13 +192,17 @@ impl MemoryStore {
         rows.collect()
     }
 
-    /// Apply inbound deltas from a peer device using LWW conflict resolution.
+    /// Apply inbound deltas from a peer device using HLC-based LWW conflict resolution.
     ///
     /// For each delta:
     /// 1. If no local entry matches the key → insert.
-    /// 2. If a local entry exists and the delta has a higher `updated_at` → update.
-    /// 3. If `updated_at` is equal → lexicographic `origin_device` tiebreaker (higher wins).
-    /// 4. Otherwise → skip (local is newer).
+    /// 2. Compare HLCs: `(hlc_counter, origin_device)` total order.
+    ///    - If remote HLC is strictly greater → remote wins. Archive local to
+    ///      `memory_versions`, then update.
+    ///    - If same `hlc_counter` but different device → **concurrent edit**.
+    ///      Lexicographic device-id picks deterministic winner, but also record
+    ///      a `memory_conflicts` row for user review.
+    ///    - If local HLC is strictly greater → skip (local is newer).
     pub fn apply_sync_deltas(
         &self,
         deltas: &[SyncDelta],
@@ -202,28 +223,7 @@ impl MemoryStore {
                             conn.execute(
                                 "INSERT INTO memories (content, tags, importance, memory_type,
                                     created_at, tier, decay_score, token_count, source_url,
-                                    source_hash, updated_at, origin_device)
-                                 VALUES (?1, ?2, ?3, ?4, ?5, 'long', 1.0, 0, ?6, ?7, ?8, ?9)",
-                                params![
-                                    delta.content,
-                                    delta.tags,
-                                    delta.importance,
-                                    delta.memory_type,
-                                    delta.created_at,
-                                    delta.source_url,
-                                    delta.source_hash,
-                                    delta.updated_at,
-                                    delta.origin_device,
-                                ],
-                            )?;
-                            result.inserted += 1;
-                        }
-                        SyncOp::SoftClose { valid_to } => {
-                            // Insert as already-closed.
-                            conn.execute(
-                                "INSERT INTO memories (content, tags, importance, memory_type,
-                                    created_at, tier, decay_score, token_count, source_url,
-                                    source_hash, updated_at, origin_device, valid_to)
+                                    source_hash, updated_at, origin_device, hlc_counter)
                                  VALUES (?1, ?2, ?3, ?4, ?5, 'long', 1.0, 0, ?6, ?7, ?8, ?9, ?10)",
                                 params![
                                     delta.content,
@@ -235,6 +235,28 @@ impl MemoryStore {
                                     delta.source_hash,
                                     delta.updated_at,
                                     delta.origin_device,
+                                    delta.hlc_counter as i64,
+                                ],
+                            )?;
+                            result.inserted += 1;
+                        }
+                        SyncOp::SoftClose { valid_to } => {
+                            conn.execute(
+                                "INSERT INTO memories (content, tags, importance, memory_type,
+                                    created_at, tier, decay_score, token_count, source_url,
+                                    source_hash, updated_at, origin_device, hlc_counter, valid_to)
+                                 VALUES (?1, ?2, ?3, ?4, ?5, 'long', 1.0, 0, ?6, ?7, ?8, ?9, ?10, ?11)",
+                                params![
+                                    delta.content,
+                                    delta.tags,
+                                    delta.importance,
+                                    delta.memory_type,
+                                    delta.created_at,
+                                    delta.source_url,
+                                    delta.source_hash,
+                                    delta.updated_at,
+                                    delta.origin_device,
+                                    delta.hlc_counter as i64,
                                     valid_to,
                                 ],
                             )?;
@@ -243,24 +265,33 @@ impl MemoryStore {
                     }
                 }
                 Some(local_entry) => {
-                    // Existing entry — apply LWW.
-                    let local_ts = local_entry.updated_at.unwrap_or(local_entry.created_at);
+                    // Existing entry — HLC-based LWW resolution.
+                    let local_hlc = local_entry.hlc_counter.unwrap_or(0) as u64;
                     let local_device = local_entry
                         .origin_device
                         .as_deref()
                         .unwrap_or(local_device_id);
 
-                    if delta.updated_at > local_ts
-                        || (delta.updated_at == local_ts && *delta.origin_device > *local_device)
-                    {
-                        // Remote wins — update local.
+                    // Detect concurrency: same counter, different devices.
+                    let is_concurrent = delta.hlc_counter == local_hlc
+                        && delta.origin_device != local_device;
+
+                    // Total order: (hlc_counter, origin_device) lexicographic.
+                    let remote_wins = delta.hlc_counter > local_hlc
+                        || (delta.hlc_counter == local_hlc
+                            && *delta.origin_device > *local_device);
+
+                    if remote_wins {
+                        // Archive the local state before overwriting.
+                        let _ = save_version(conn, local_entry.id);
+
                         match &delta.operation {
                             SyncOp::Upsert => {
                                 conn.execute(
                                     "UPDATE memories SET content = ?1, tags = ?2, importance = ?3,
                                         memory_type = ?4, updated_at = ?5, origin_device = ?6,
-                                        source_url = ?7, source_hash = ?8
-                                     WHERE id = ?9",
+                                        source_url = ?7, source_hash = ?8, hlc_counter = ?9
+                                     WHERE id = ?10",
                                     params![
                                         delta.content,
                                         delta.tags,
@@ -270,6 +301,7 @@ impl MemoryStore {
                                         delta.origin_device,
                                         delta.source_url,
                                         delta.source_hash,
+                                        delta.hlc_counter as i64,
                                         local_entry.id,
                                     ],
                                 )?;
@@ -278,25 +310,53 @@ impl MemoryStore {
                             SyncOp::SoftClose { valid_to } => {
                                 conn.execute(
                                     "UPDATE memories SET valid_to = ?1, updated_at = ?2,
-                                        origin_device = ?3 WHERE id = ?4",
+                                        origin_device = ?3, hlc_counter = ?4 WHERE id = ?5",
                                     params![
                                         valid_to,
                                         delta.updated_at,
                                         delta.origin_device,
+                                        delta.hlc_counter as i64,
                                         local_entry.id,
                                     ],
                                 )?;
                                 result.soft_closed += 1;
                             }
                         }
+
+                        // Record conflict if the edit was concurrent.
+                        if is_concurrent {
+                            self.record_conflict(local_entry.id, local_entry.id)?;
+                            result.conflicts += 1;
+                        }
                     } else {
                         result.skipped += 1;
+
+                        // Even when local wins, record the conflict for user visibility.
+                        if is_concurrent {
+                            self.record_conflict(local_entry.id, local_entry.id)?;
+                            result.conflicts += 1;
+                        }
                     }
                 }
             }
         }
 
         Ok(result)
+    }
+
+    /// Record a concurrent-edit conflict in `memory_conflicts`.
+    fn record_conflict(&self, entry_a_id: i64, entry_b_id: i64) -> SqlResult<()> {
+        let conn = self.conn();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        conn.execute(
+            "INSERT INTO memory_conflicts (entry_a_id, entry_b_id, status, created_at, reason)
+             VALUES (?1, ?2, 'open', ?3, 'concurrent_hlc')",
+            params![entry_a_id, entry_b_id, now],
+        )?;
+        Ok(())
     }
 
     /// Record a sync event in the audit log.
@@ -398,6 +458,7 @@ mod tests {
             origin_device: "device-b".into(),
             source_url: None,
             source_hash: Some("remote-hash".into()),
+            hlc_counter: 0,
         }];
 
         let result = store.apply_sync_deltas(&deltas, "device-a").unwrap();
@@ -415,15 +476,15 @@ mod tests {
         let store = make_store();
         let id = add_memory(&store, "Old content", Some("shared-hash"));
 
-        // Set local updated_at to 1000.
+        // Set local hlc_counter to 5, remote will have hlc_counter=10 (higher → remote wins).
         let conn = store.conn();
         conn.execute(
-            "UPDATE memories SET updated_at = 1000, origin_device = 'device-a' WHERE id = ?1",
+            "UPDATE memories SET updated_at = 1000, origin_device = 'device-a', hlc_counter = 5 WHERE id = ?1",
             params![id],
         )
         .unwrap();
 
-        // Remote delta has updated_at = 2000 (newer).
+        // Remote delta has hlc_counter = 10 (higher → remote wins).
         let deltas = vec![SyncDelta {
             key: SyncKey {
                 content_hash: Some("shared-hash".into()),
@@ -441,6 +502,7 @@ mod tests {
             origin_device: "device-b".into(),
             source_url: None,
             source_hash: Some("shared-hash".into()),
+            hlc_counter: 10,
         }];
 
         let result = store.apply_sync_deltas(&deltas, "device-a").unwrap();
@@ -455,15 +517,15 @@ mod tests {
         let store = make_store();
         let id = add_memory(&store, "Fresh local content", Some("shared-hash"));
 
-        // Set local updated_at to 5000 (newer than remote).
+        // Set local hlc_counter to 10 (higher than remote's 5).
         let conn = store.conn();
         conn.execute(
-            "UPDATE memories SET updated_at = 5000, origin_device = 'device-a' WHERE id = ?1",
+            "UPDATE memories SET updated_at = 5000, origin_device = 'device-a', hlc_counter = 10 WHERE id = ?1",
             params![id],
         )
         .unwrap();
 
-        // Remote delta has updated_at = 2000 (older).
+        // Remote delta has hlc_counter = 5 (lower → local wins).
         let deltas = vec![SyncDelta {
             key: SyncKey {
                 content_hash: Some("shared-hash".into()),
@@ -481,6 +543,7 @@ mod tests {
             origin_device: "device-b".into(),
             source_url: None,
             source_hash: Some("shared-hash".into()),
+            hlc_counter: 5,
         }];
 
         let result = store.apply_sync_deltas(&deltas, "device-a").unwrap();
@@ -520,6 +583,7 @@ mod tests {
             origin_device: "device-b".into(), // "device-b" > "device-a"
             source_url: None,
             source_hash: Some("shared-hash".into()),
+            hlc_counter: 0,
         }];
 
         let result = store.apply_sync_deltas(&deltas, "device-a").unwrap();
@@ -559,6 +623,7 @@ mod tests {
             origin_device: "device-b".into(),
             source_url: None,
             source_hash: Some("close-hash".into()),
+            hlc_counter: 0,
         }];
 
         let result = store.apply_sync_deltas(&deltas, "device-a").unwrap();
@@ -631,5 +696,113 @@ mod tests {
 
         let all_b = store_b.get_all().unwrap();
         assert_eq!(all_b[0].content, "Memory from A");
+    }
+
+    /// Two devices converge to the same state regardless of apply order.
+    /// Device A and B both edit the same entry; the higher HLC wins.
+    #[test]
+    fn two_device_convergence_hlc() {
+        // Setup: both stores have the same entry (simulating prior sync).
+        let store_a = make_store();
+        let store_b = make_store();
+        let id_a = add_memory(&store_a, "Original", Some("conv-hash"));
+        let _id_b = add_memory(&store_b, "Original", Some("conv-hash"));
+
+        // Device A edits at HLC=10, Device B edits at HLC=20.
+        store_a.conn().execute(
+            "UPDATE memories SET content='From A', updated_at=1000, origin_device='dev-a', hlc_counter=10 WHERE id=?1",
+            params![id_a],
+        ).unwrap();
+        store_b.conn().execute(
+            "UPDATE memories SET content='From B', updated_at=1000, origin_device='dev-b', hlc_counter=20 WHERE id=?1",
+            params![_id_b],
+        ).unwrap();
+
+        // Compute deltas.
+        let deltas_a = store_a.compute_sync_deltas(0, "dev-a").unwrap();
+        let deltas_b = store_b.compute_sync_deltas(0, "dev-b").unwrap();
+
+        // Apply B→A and A→B.
+        store_a.apply_sync_deltas(&deltas_b, "dev-a").unwrap();
+        store_b.apply_sync_deltas(&deltas_a, "dev-b").unwrap();
+
+        // Both should converge on "From B" (HLC 20 > 10).
+        let a_all = store_a.get_all().unwrap();
+        let b_all = store_b.get_all().unwrap();
+        assert_eq!(a_all[0].content, "From B");
+        assert_eq!(b_all[0].content, "From B");
+    }
+
+    /// When HLC counters are equal, device ID breaks the tie deterministically.
+    #[test]
+    fn convergence_equal_hlc_device_tiebreaker() {
+        let store_a = make_store();
+        let store_b = make_store();
+        add_memory(&store_a, "Original", Some("tie-hash"));
+        add_memory(&store_b, "Original", Some("tie-hash"));
+
+        // Same HLC=5, different devices and content.
+        store_a.conn().execute(
+            "UPDATE memories SET content='A edit', updated_at=1000, origin_device='dev-a', hlc_counter=5 WHERE source_hash='tie-hash'",
+            [],
+        ).unwrap();
+        store_b.conn().execute(
+            "UPDATE memories SET content='B edit', updated_at=1000, origin_device='dev-b', hlc_counter=5 WHERE source_hash='tie-hash'",
+            [],
+        ).unwrap();
+
+        let deltas_a = store_a.compute_sync_deltas(0, "dev-a").unwrap();
+        let deltas_b = store_b.compute_sync_deltas(0, "dev-b").unwrap();
+
+        // Apply in both directions.
+        store_a.apply_sync_deltas(&deltas_b, "dev-a").unwrap();
+        store_b.apply_sync_deltas(&deltas_a, "dev-b").unwrap();
+
+        // "dev-b" > "dev-a" lexicographically, so B wins.
+        let a_all = store_a.get_all().unwrap();
+        let b_all = store_b.get_all().unwrap();
+        assert_eq!(a_all[0].content, "B edit");
+        assert_eq!(b_all[0].content, "B edit");
+    }
+
+    /// Concurrent edits (same HLC, different device) are detected as conflicts.
+    #[test]
+    fn concurrent_edit_detected_as_conflict() {
+        let store = make_store();
+        let id = add_memory(&store, "Local version", Some("conflict-hash"));
+
+        // Local has HLC=7, device=dev-a
+        store.conn().execute(
+            "UPDATE memories SET updated_at=1000, origin_device='dev-a', hlc_counter=7 WHERE id=?1",
+            params![id],
+        ).unwrap();
+
+        // Remote also has HLC=7, but device=dev-b
+        let deltas = vec![SyncDelta {
+            key: SyncKey {
+                content_hash: Some("conflict-hash".into()),
+                source_url: None,
+                content_prefix: None,
+                created_at: 100,
+            },
+            operation: SyncOp::Upsert,
+            content: "Remote version".into(),
+            tags: "test".into(),
+            importance: 3,
+            memory_type: "fact".into(),
+            created_at: 100,
+            updated_at: 1000,
+            origin_device: "dev-b".into(),
+            source_url: None,
+            source_hash: Some("conflict-hash".into()),
+            hlc_counter: 7,
+        }];
+
+        let result = store.apply_sync_deltas(&deltas, "dev-a").unwrap();
+        // dev-b > dev-a so remote wins and it's flagged as a conflict.
+        assert_eq!(result.conflicts, 1);
+        assert_eq!(result.updated, 1);
+        let all = store.get_all().unwrap();
+        assert_eq!(all[0].content, "Remote version");
     }
 }

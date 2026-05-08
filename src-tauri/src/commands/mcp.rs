@@ -48,16 +48,23 @@ pub async fn mcp_server_start(
 
     let token = mcp::auth::load_or_create(&state.data_dir)?;
     let port = mcp::default_port();
-    let lan_enabled = state
-        .app_settings
-        .lock()
-        .map_err(|e| e.to_string())?
-        .lan_enabled;
+    let (lan_enabled, lan_public_read_only) = {
+        let settings = state.app_settings.lock().map_err(|e| e.to_string())?;
+        (
+            settings.lan_enabled,
+            settings.lan_enabled
+                && matches!(
+                    settings.lan_auth_mode,
+                    crate::settings::LanAuthMode::PublicReadOnly
+                ),
+        )
+    };
     let handle = mcp::start_server_with_activity(
         state.inner().clone(),
         port,
         token,
         lan_enabled,
+        lan_public_read_only,
         Some(app),
     )
     .await?;

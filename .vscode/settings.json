@@ -10,7 +10,7 @@
   "chat.autopilot.enabled": true,
 
   // Agent request budget — raise for long multi-chunk sessions
-  "chat.agent.maxRequests": 100,
+  "chat.agent.maxRequests": 100000000,
 
   // Auto-summarize conversation history when context window fills up,
   // enabling long-running sessions that exceed the context limit.

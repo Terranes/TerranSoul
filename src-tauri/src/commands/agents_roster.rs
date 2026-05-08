@@ -35,6 +35,8 @@ pub struct CreateAgentRequest {
     pub brain_backend: BrainBackend,
     #[serde(default)]
     pub working_folder: Option<PathBuf>,
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 /// List every agent profile on disk, sorted by last-active desc. If the
@@ -81,6 +83,7 @@ pub async fn roster_create(
         vrm_model_id: request.vrm_model_id,
         brain_backend: request.brain_backend,
         working_folder: request.working_folder,
+        capabilities: request.capabilities,
         created_at: now,
         last_active_at: now,
     };

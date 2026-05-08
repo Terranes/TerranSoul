@@ -4,7 +4,9 @@ qa-screenshots/
 .DS_Store
 *.local
 src-tauri/target/
+target-mcp/
 src-tauri/gen/
+src-tauri/code_index.sqlite
 test-results/
 playwright-report/
 /.claude/worktrees
@@ -17,6 +19,9 @@ mcp-data/*
 !mcp-data/README.md
 !mcp-data/shared/
 !mcp-data/shared/**
+!mcp-data/wiki/
+!mcp-data/wiki/**
+mcp-data/wiki/.obsidian/
 mcp-data/mcp-token.txt
 mcp-data/*.db
 mcp-data/*.db-*
@@ -37,3 +42,6 @@ test-output.txt
 *.tmp
 .scratch/
 /tmp-agent/
+/target-copilot-bench
+/crates/hive-relay/target
+/mcp-data/wiki

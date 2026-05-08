@@ -212,6 +212,8 @@ impl Brain for BrainGrpcService {
                 GatewaySummarizeRequest {
                     text: req.text,
                     memory_ids: (!req.memory_ids.is_empty()).then_some(req.memory_ids),
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -283,6 +285,8 @@ fn gateway_search_request(req: proto::SearchRequest) -> GatewaySearchRequest {
             proto::SearchMode::Hyde => GatewaySearchMode::Hyde,
             proto::SearchMode::Rrf => GatewaySearchMode::Rrf,
         },
+        rerank: true,
+        rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
     }
 }
 

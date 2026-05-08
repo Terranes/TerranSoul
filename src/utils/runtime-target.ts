@@ -31,7 +31,11 @@ export function shouldUseRemoteConversation(
   const param = readRemoteConversationParam(snapshot.search ?? '');
   if (param !== null) return param;
   if (isBrowserRuntime() && hasStoredBrowserLanHost()) return true;
-  return isIosRuntime(snapshot);
+  // iOS Safari without a paired desktop has no real backend — fall through to
+  // browser/cloud-LLM mode so the user is prompted to configure a provider
+  // instead of silently selecting the remote-conversation store and showing
+  // a stale "Remote Desktop" badge against an unreachable host.
+  return isIosRuntime(snapshot) && hasStoredBrowserLanHost();
 }
 
 function currentRuntimeSnapshot(): RuntimeTargetSnapshot {

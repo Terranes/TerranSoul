@@ -55,13 +55,8 @@
     },
     "terransoul-brain-stdio": {
       "type": "stdio",
-      "command": "cargo",
+      "command": "${workspaceFolder}/target-mcp/release/terransoul.exe",
       "args": [
-        "run",
-        "--manifest-path",
-        "${workspaceFolder}/src-tauri/Cargo.toml",
-        "--quiet",
-        "--",
         "--mcp-stdio"
       ],
       "env": {

@@ -6,7 +6,7 @@
  * appropriately, <anim> tags are stripped from display, and the character
  * state updates.
  *
- * **Three Streams Contract** (see instructions/BRAIN-COMPLEX-EXAMPLE.md
+ * **Three Streams Contract** (see tutorials/brain-rag-setup-tutorial.md
  * and src-tauri/src/commands/streaming.rs::tests::headless_linux):
  *   1. `llm-chunk` text deltas → `conversation.streamingText` accumulates
  *   2. `llm-animation` events → final `Message.sentiment` / `Message.motion`

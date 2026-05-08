@@ -66,7 +66,8 @@ const taskStore = useTaskStore();
 function kindLabel(kind: string): string {
   const labels: Record<string, string> = {
     ingest: '📄 Import', crawl: '🕸️ Crawl',
-    quest: '⚔️ Quest', extract: '🔍 Extract', custom: '⚙️ Task',
+    quest: '⚔️ Quest', extract: '🔍 Extract',
+    model_pull: '🧠 Model Pull', custom: '⚙️ Task',
   };
   return labels[kind] ?? kind;
 }

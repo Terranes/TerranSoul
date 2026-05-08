@@ -1189,7 +1189,7 @@ fn openclaw_manifest() -> PluginManifest {
         },
         system_requirements: None,
         api_version: 1,
-        homepage: Some("instructions/OPENCLAW-EXAMPLE.md".into()),
+        homepage: Some("tutorials/openclaw-plugin-tutorial.md".into()),
         license: Some("MIT".into()),
         author: Some("TerranSoul / OpenClaw Community".into()),
         icon: Some("🧰".into()),
@@ -1477,6 +1477,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "wasm-sandbox")]
     fn command_wasm(output_text: &str) -> Vec<u8> {
         use wasm_encoder::{
             CodeSection, ConstExpr, DataSection, ExportKind, ExportSection, Function,
@@ -2011,6 +2012,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(feature = "wasm-sandbox")]
     async fn invoke_wasm_command_returns_output() {
         let tmp = tempfile::TempDir::new().unwrap();
         let wasm_path = tmp.path().join("command.wasm");

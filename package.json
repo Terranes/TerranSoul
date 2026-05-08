@@ -16,9 +16,11 @@
     "tauri": "tauri",
     "tauri:ios:check": "node scripts/tauri-ios-check.mjs",
     "tauri:ios:init": "node scripts/tauri-ios-check.mjs --init",
-    "mcp": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-http",
+    "mcp": "npx vite build && node scripts/copilot-start-mcp.mjs 240",
     "mcp:setup": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-setup",
-    "mcp:app": "npx vite build && cargo run --release --manifest-path src-tauri/Cargo.toml -- --mcp-app"
+    "mcp:app": "npx vite build && node scripts/run-target-mcp.mjs --mcp-app",
+    "mcp:sync-docs": "node scripts/sync-docs-to-mcp.mjs",
+    "mcp:obsidian": "node scripts/mcp-obsidian.mjs"
   },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",
@@ -36,6 +38,7 @@
     "@tauri-apps/plugin-stronghold": "^2.3.1",
     "@types/cytoscape": "^3.21.9",
     "cytoscape": "^3.33.2",
+    "d3-force-3d": "^3.0.6",
     "pinia": "^2.3.1",
     "primevue": "^4.5.5",
     "three": "^0.175.0",

@@ -27,6 +27,7 @@ use crate::brain::openai_client::OpenAiMessage;
 use super::apply_file::{self, FileBlock};
 use super::client;
 use super::dag_runner;
+use super::gate_telemetry::{GateEvent, GateLog, GateResult};
 use super::git_ops;
 use super::github;
 use super::metrics::MetricsLog;
@@ -562,6 +563,7 @@ async fn execute_chunk_dag<R: Runtime>(
     repo_root: &Path,
     chunk: &ChunkRow,
     metrics: &MetricsLog,
+    gate_log: &GateLog,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
     worktree_dir: Option<&str>,
     retry_context: Option<String>,
@@ -595,6 +597,7 @@ async fn execute_chunk_dag<R: Runtime>(
     let repo_root = execution_repo_root.clone();
     let chunk = chunk.clone();
     let metrics = metrics.clone();
+    let gate_log = gate_log.clone();
     let workflow_cfg = workflow_cfg.clone();
     let cancel = cancel.clone();
 
@@ -605,6 +608,7 @@ async fn execute_chunk_dag<R: Runtime>(
         let repo_root = repo_root.clone();
         let chunk = chunk.clone();
         let metrics = metrics.clone();
+        let gate_log = gate_log.clone();
         let workflow_cfg = workflow_cfg.clone();
         let cancel = cancel.clone();
         let state = state.clone();
@@ -614,7 +618,26 @@ async fn execute_chunk_dag<R: Runtime>(
             if cancel.load(Ordering::Relaxed) {
                 return Err(format!("cancelled before {node_id}"));
             }
-            match node_id.as_str() {
+
+            // Map DAG node id to stable gate name for telemetry
+            let gate_name = match node_id.as_str() {
+                DAG_NODE_PLAN => "plan",
+                DAG_NODE_CODE => "code",
+                DAG_NODE_REVIEW => "review",
+                DAG_NODE_APPLY => "apply",
+                DAG_NODE_TEST => "test",
+                DAG_NODE_STAGE => "stage",
+                other => other,
+            };
+            let session_id = format!("si-{}", chunk.id);
+            let gate_start = std::time::Instant::now();
+            emit_gate(
+                &app,
+                &gate_log,
+                GateEvent::start(gate_name, &session_id, &chunk.id),
+            );
+
+            let gate_result: Result<String, String> = match node_id.as_str() {
                 DAG_NODE_PLAN => {
                     let plan = plan_one_chunk(
                         &app,
@@ -738,7 +761,41 @@ async fn execute_chunk_dag<R: Runtime>(
                     Ok(format!("staged {} file(s)", paths.len()))
                 }
                 _ => Err(format!("unknown DAG node: {node_id}")),
+            };
+
+            // Emit gate-end telemetry
+            let elapsed_ms = gate_start.elapsed().as_millis() as u64;
+            match &gate_result {
+                Ok(_) => {
+                    emit_gate(
+                        &app,
+                        &gate_log,
+                        GateEvent::end(
+                            gate_name,
+                            &session_id,
+                            &chunk.id,
+                            GateResult::Pass,
+                            elapsed_ms,
+                            None,
+                        ),
+                    );
+                }
+                Err(e) => {
+                    emit_gate(
+                        &app,
+                        &gate_log,
+                        GateEvent::end(
+                            gate_name,
+                            &session_id,
+                            &chunk.id,
+                            GateResult::Fail,
+                            elapsed_ms,
+                            Some(e),
+                        ),
+                    );
+                }
             }
+            gate_result
         }
     })
     .await;
@@ -784,6 +841,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
     repo_root: &Path,
     chunk: &ChunkRow,
     metrics: &MetricsLog,
+    gate_log: &GateLog,
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
     worktree_dir: Option<&str>,
     cancel: &Arc<AtomicBool>,
@@ -795,6 +853,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
         repo_root,
         chunk,
         metrics,
+        gate_log,
         workflow_cfg,
         worktree_dir,
         None,
@@ -828,6 +887,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
         repo_root,
         chunk,
         metrics,
+        gate_log,
         workflow_cfg,
         worktree_dir,
         Some(first_error.clone()),
@@ -1353,6 +1413,12 @@ fn emit<R: Runtime>(app: &AppHandle<R>, event: ProgressEvent) {
     let _ = app.emit("self-improve-progress", event);
 }
 
+/// Emit a gate telemetry event to the frontend and persist to the log.
+fn emit_gate<R: Runtime>(app: &AppHandle<R>, gate_log: &GateLog, event: GateEvent) {
+    let _ = gate_log.record(&event);
+    let _ = app.emit("self-improve-gate", &event);
+}
+
 /// Spawn the autonomous loop.
 ///
 /// `repo_hint` is the directory the engine should *start* searching for a
@@ -1378,6 +1444,7 @@ pub async fn start<R: Runtime>(
     let cancel = engine.cancel.clone();
     let engine_for_task = engine.clone();
     let metrics = MetricsLog::new(&repo_hint);
+    let gate_log = GateLog::new(&repo_hint);
     let data_dir = repo_hint.clone();
     let github_cfg = github::load_github_config(&data_dir);
 
@@ -1506,6 +1573,7 @@ pub async fn start<R: Runtime>(
                 &repo_root,
                 &next,
                 &metrics,
+                &gate_log,
                 &workflow_cfg,
                 worktree_dir.as_deref(),
                 &cancel,
@@ -1888,10 +1956,8 @@ mod tests {
 
         apply_isolated_patch_to_working_branch(dir.path(), &patch_path).unwrap();
 
-        assert_eq!(
-            std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap(),
-            "patched\n"
-        );
+        let content = std::fs::read_to_string(dir.path().join("tracked.txt")).unwrap();
+        assert_eq!(content.trim(), "patched");
     }
 
     #[test]

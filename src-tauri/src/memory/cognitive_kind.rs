@@ -46,6 +46,10 @@ pub enum CognitiveKind {
     Semantic,
     /// How-to knowledge, learned skills, repeatable routines.
     Procedural,
+    /// Persisted rules, heuristics, and value judgments the LLM should follow.
+    Judgment,
+    /// Anti-pattern or explicit "do not do this" knowledge.
+    Negative,
 }
 
 impl CognitiveKind {
@@ -55,6 +59,8 @@ impl CognitiveKind {
             CognitiveKind::Episodic => "episodic",
             CognitiveKind::Semantic => "semantic",
             CognitiveKind::Procedural => "procedural",
+            CognitiveKind::Judgment => "judgment",
+            CognitiveKind::Negative => "negative",
         }
     }
 }
@@ -136,6 +142,8 @@ fn classify_from_tags(tags: &str) -> Option<CognitiveKind> {
             "episodic" => return Some(CognitiveKind::Episodic),
             "semantic" => return Some(CognitiveKind::Semantic),
             "procedural" => return Some(CognitiveKind::Procedural),
+            "judgment" => return Some(CognitiveKind::Judgment),
+            "negative" => return Some(CognitiveKind::Negative),
             _ => {}
         }
     }
@@ -219,6 +227,16 @@ mod tests {
     }
 
     #[test]
+    fn explicit_judgment_tag_wins() {
+        let k = classify(
+            &MemoryType::Fact,
+            "judgment:workflow",
+            "Always run tests before archiving",
+        );
+        assert_eq!(k, CognitiveKind::Judgment);
+    }
+
+    #[test]
     fn tag_prefix_with_detail_is_recognised() {
         let k = classify(&MemoryType::Fact, "episodic:meeting", "team sync notes");
         assert_eq!(k, CognitiveKind::Episodic);
@@ -297,6 +315,7 @@ mod tests {
         assert_eq!(CognitiveKind::Episodic.as_str(), "episodic");
         assert_eq!(CognitiveKind::Semantic.as_str(), "semantic");
         assert_eq!(CognitiveKind::Procedural.as_str(), "procedural");
+        assert_eq!(CognitiveKind::Judgment.as_str(), "judgment");
     }
 
     #[test]

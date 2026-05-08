@@ -117,26 +117,17 @@
     <div
       v-show="!appLoading"
       class="app-shell"
-      :class="{ 'pet-mode': isPetMode }"
+      :class="{ 'pet-mode': isPetMode && !windowStore.isMcpMode }"
     >
-      <!-- Pet overlay mode: transparent character + floating chat -->
+      <!-- Pet overlay mode: transparent character + floating chat
+           MCP mode overrides pet mode to show full tabbed UI -->
       <div
-        v-if="isPetMode"
+        v-if="isPetMode && !windowStore.isMcpMode"
         class="pet-mode-wrapper"
       >
-        <!-- Build-mode badge — inline in the pet mode layout, top-left.
-             MCP mode (npm run mcp) takes priority over DEV. -->
+        <!-- Build-mode badge — inline in the pet mode layout, top-left. -->
         <FloatingBadge
-          v-if="windowStore.isMcpMode"
-          class="pet-mcp-badge"
-          tone="info"
-          readonly
-          title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
-        >
-          MCP
-        </FloatingBadge>
-        <FloatingBadge
-          v-else-if="windowStore.isDevBuild"
+          v-if="windowStore.isDevBuild"
           class="pet-dev-badge"
           tone="warning"
           readonly
@@ -147,7 +138,7 @@
         <PetOverlayView />
       </div>
 
-      <!-- Normal mode: Brain onboarding or tabbed UI -->
+      <!-- Normal mode (or MCP mode): Brain onboarding or tabbed UI -->
       <template v-else>
         <!-- Brain onboarding: shown until a brain is configured -->
         <BrainSetupView
@@ -534,6 +525,8 @@ onMounted(async () => {
     if (import.meta.env.VITE_E2E) {
       brain.autoConfigureFreeApi();
     }
+    // Simulate MCP mode flag in browser/E2E when VITE_MCP_MODE is set
+    await windowStore.loadMcpModeFlag();
     skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();
@@ -578,8 +571,10 @@ onMounted(async () => {
     skipSetup.value = true;
   } else {
     // True first launch: show the wizard and let the user choose.
+    // Dismiss the splash immediately — the wizard has its own UI.
     showFirstLaunchWizard.value = true;
     skipSetup.value = true; // hide BrainSetupView while wizard is open
+    appLoading.value = false;
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS
@@ -606,9 +601,6 @@ onMounted(async () => {
   } catch {
     // Not in Tauri — ignore
   }
-
-  // (Escape-to-exit safety net is attached at the top of onMounted so it
-  // works in the browser fallback too.)
 
   appLoading.value = false;
 });

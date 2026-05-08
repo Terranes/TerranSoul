@@ -45,14 +45,14 @@ future agents can verify rather than rebuild.
 
 | Requirement from the essay | TerranSoul implementation | File / chunk |
 |---|---|---|
-| Schema-first structured store | `memories` table v13 (24 columns: content, tags, importance, memory_type, tier, decay_score, category, embedding, source_url, source_hash, parent_id, session_id, valid_to, origin_device, …) | `src-tauri/src/memory/schema.rs` |
+| Schema-first structured store | `memories` table V15 (content, tags, importance, memory_type, tier, decay_score, category, cognitive_kind, embedding, source_url, source_hash, parent_id, session_id, valid_to, origin_device, protected, etc.) plus `pending_embeddings` for self-healing backfill | `src-tauri/src/memory/schema.rs` |
 | Real query language | SQL via `rusqlite`; `WHERE`, `ORDER BY`, joins, indexes | `src-tauri/src/memory/store.rs` (`hybrid_search`, `hybrid_search_rrf`) |
 | Full-text search | SQLite **FTS5** virtual table | `schema.rs` |
 | Vector / semantic search | HNSW ANN via `usearch` 2.x | `src-tauri/src/memory/ann_index.rs` |
 | Hybrid ranking | 6-signal: vector(40) + keyword(20) + recency(15) + importance(10) + decay(10) + tier(5), fused via RRF k=60 | `src-tauri/src/memory/store.rs`, `fusion.rs` |
 | Knowledge graph (real traversals, not visual wikilinks) | Typed/directional `memory_edges` table + `idx_edges_src/dst/type/valid_to` indexes | `schema.rs`, `src-tauri/src/memory/edges.rs`, `graph_rag.rs` |
 | Provenance / "show me the receipt" | `source_url`, `source_hash`, `parent_id`, `session_id`, `origin_device`, `memory_versions` (non-destructive history) | `schema.rs`, `versioning.rs` |
-| Schema enforcement / no format drift | Canonical V13 schema + `cognitive_kind.rs` taxonomy + `tag_vocabulary.rs` controlled vocabulary + `auto_tag.rs` | `cognitive_kind.rs`, `tag_vocabulary.rs` |
+| Schema enforcement / no format drift | Canonical V15 schema + `cognitive_kind.rs` taxonomy + `tag_vocabulary.rs` controlled vocabulary + `auto_tag.rs` | `cognitive_kind.rs`, `tag_vocabulary.rs` |
 | Concurrent access | SQLite WAL mode (default in `rusqlite`); `Arc<AppStateInner>` shared across MCP/gRPC servers | `lib.rs`, `store.rs` |
 | Background consolidation / decay (essay's "the system needs to keep itself sane") | `maintenance_runtime.rs` + `maintenance_scheduler.rs` (decay, GC, summarization); `consolidation.rs`; `conflicts.rs` + `edge_conflict_scan.rs` (LLM-powered contradiction resolution) | brain + memory modules |
 | Markdown stays a *projection*, not the source of truth | `obsidian_export.rs` (one-way export with `obsidian_path` + `last_exported` columns) and `obsidian_sync.rs` (opt-in bidirectional) | `src-tauri/src/memory/` |
@@ -81,6 +81,12 @@ the MCP brain can recall them.
    Everything in `rules/`, `docs/`, `.github/copilot-instructions.md`,
    `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `mcp-data/shared/*.md` is
    *instruction* — descriptive prose pointing at where the data lives.
+
+   If any Markdown file does introduce durable MCP knowledge, the PR is
+   incomplete until the same knowledge is synced into
+   `mcp-data/shared/memory-seed.sql` and connected through `memory_edges`.
+   The database/knowledge graph, not the `.md` file, is what future MCP
+   agents must retrieve.
 
 2. **Never propose "let's store memories in `.md` / Obsidian as the
    source of truth"**. Obsidian is a one-way **projection** via

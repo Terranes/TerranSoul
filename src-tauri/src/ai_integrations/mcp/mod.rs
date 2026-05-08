@@ -17,6 +17,7 @@
 pub mod activity;
 pub mod auth;
 pub mod auto_setup;
+pub mod compliance_gate;
 pub mod hooks;
 pub mod router;
 pub mod self_host;
@@ -28,10 +29,14 @@ mod integration_tests;
 
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use tauri::Manager;
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
 
-use crate::ai_integrations::gateway::{AppStateGateway, GatewayCaps};
+use crate::ai_integrations::gateway::{
+    AppStateGateway, GatewayCaps, GatewayError, IngestSink, IngestUrlResponse,
+};
 use crate::AppState;
 
 use router::McpRouterState;
@@ -81,6 +86,90 @@ pub fn is_mcp_pet_mode() -> bool {
     MCP_PET_MODE.load(std::sync::atomic::Ordering::Relaxed)
 }
 
+/// Capability profile granted to explicit MCP transports.
+///
+/// The gateway default stays read-only for embedders/tests, but MCP is a
+/// user-started integration surface: HTTP is bearer-token authenticated and
+/// stdio is a trusted parent-child process. Agents using MCP must be able to
+/// persist durable self-improve lessons through `brain_ingest_url`.
+pub fn transport_caps() -> GatewayCaps {
+    GatewayCaps::READ_WRITE
+}
+
+#[derive(Clone)]
+struct AppHandleIngestSink {
+    app: tauri::AppHandle,
+}
+
+#[async_trait]
+impl IngestSink for AppHandleIngestSink {
+    async fn start_ingest(
+        &self,
+        source: String,
+        tags: Option<String>,
+        importance: Option<i64>,
+    ) -> Result<IngestUrlResponse, GatewayError> {
+        let state = self.app.state::<AppState>();
+        let result = crate::commands::ingest::ingest_document(
+            source,
+            tags,
+            importance,
+            self.app.clone(),
+            state,
+        )
+        .await
+        .map_err(|error| GatewayError::Internal(format!("ingest_document: {error}")))?;
+
+        Ok(IngestUrlResponse {
+            task_id: result.task_id,
+            source: result.source,
+            source_type: result.source_type,
+        })
+    }
+}
+
+/// Headless ingest sink used by the standalone `npm run mcp` runner.
+///
+/// The desktop app composes [`AppHandleIngestSink`] which dispatches
+/// through the Tauri command surface so progress events reach the
+/// frontend. The headless runner has no AppHandle / WebView, so it
+/// dispatches directly to [`crate::commands::ingest::ingest_document_silent`]
+/// instead — same chunking + embedding + KG pipeline, no event emitter.
+///
+/// This is what lets `brain_ingest_url` (and the doc-corpus sync script)
+/// work against the headless MCP brain on `127.0.0.1:7423`. Without it,
+/// writes return `NotConfigured` and AI agents cannot keep the brain in
+/// sync with `rules/`, `docs/`, `tutorials/`, and `instructions/`.
+#[derive(Clone)]
+struct HeadlessIngestSink {
+    state: AppState,
+}
+
+#[async_trait]
+impl IngestSink for HeadlessIngestSink {
+    async fn start_ingest(
+        &self,
+        source: String,
+        tags: Option<String>,
+        importance: Option<i64>,
+    ) -> Result<IngestUrlResponse, GatewayError> {
+        let result = crate::commands::ingest::ingest_document_silent(
+            source,
+            tags,
+            importance,
+            self.state.clone(),
+        )
+        .await
+        .map_err(|error| GatewayError::Internal(format!("ingest_document_silent: {error}")))?;
+
+        Ok(IngestUrlResponse {
+            task_id: result.task_id,
+            source: result.source,
+            source_type: result.source_type,
+        })
+    }
+}
+
 fn seed_loaded_from_state(state: &AppState) -> bool {
     if !is_mcp_pet_mode() {
         return false;
@@ -126,8 +215,9 @@ pub async fn start_server(
     port: u16,
     token: String,
     lan_enabled: bool,
+    lan_public_read_only: bool,
 ) -> Result<McpServerHandle, String> {
-    start_server_with_activity(state, port, token, lan_enabled, None).await
+    start_server_full(state, port, token, lan_enabled, lan_public_read_only, None, 0).await
 }
 
 /// Start the MCP HTTP server and optionally emit live activity events to
@@ -137,17 +227,42 @@ pub async fn start_server_with_activity(
     port: u16,
     token: String,
     lan_enabled: bool,
+    lan_public_read_only: bool,
     app: Option<tauri::AppHandle>,
 ) -> Result<McpServerHandle, String> {
+    start_server_full(state, port, token, lan_enabled, lan_public_read_only, app, 0).await
+}
+
+/// Start the MCP HTTP server with optional idle timeout.
+///
+/// `idle_timeout_secs`: when > 0, the server shuts itself down after
+/// this many seconds without any MCP tool activity. Set to 0 (or use
+/// the simpler `start_server` / `start_server_with_activity`) to
+/// disable. Default for headless `npm run mcp` is 300 (5 min);
+/// disabled for app MCP.
+pub async fn start_server_full(
+    state: AppState,
+    port: u16,
+    token: String,
+    lan_enabled: bool,
+    lan_public_read_only: bool,
+    app: Option<tauri::AppHandle>,
+    idle_timeout_secs: u64,
+) -> Result<McpServerHandle, String> {
+    let ingest_sink: Arc<dyn IngestSink> = match app.as_ref() {
+        Some(app_handle) => Arc::new(AppHandleIngestSink {
+            app: app_handle.clone(),
+        }),
+        None => Arc::new(HeadlessIngestSink {
+            state: state.clone(),
+        }),
+    };
+    let tauri_app_handle = app.clone();
     let activity = activity::McpActivityReporter::new(state.clone(), app);
     activity.startup(format!("Starting MCP brain server on port {port}."));
-    let gw = Arc::new(AppStateGateway::new(state.clone()))
+    let gw = Arc::new(AppStateGateway::with_ingest(state.clone(), ingest_sink))
         as Arc<dyn crate::ai_integrations::gateway::BrainGateway>;
-    let caps = GatewayCaps {
-        brain_read: true,
-        brain_write: false,
-        code_read: true,
-    };
+    let caps = transport_caps();
 
     // Try the requested port first, then fallbacks.
     let mut last_err = String::new();
@@ -201,13 +316,53 @@ pub async fn start_server_with_activity(
         gw,
         caps,
         token: token.clone(),
+        lan_public_read_only,
         port: bound_port,
         seed_loaded,
         activity: Some(activity.clone()),
         app_state: Some(state),
         staleness_tracker: Arc::new(tokio::sync::Mutex::new(hooks::IndexStalenessTracker::new())),
+        compliance: compliance_gate::new_compliance_state(),
+        shutdown_tx: Some(shutdown_tx.clone()),
+        tauri_app_handle,
     };
     let app = router::build(router_state);
+
+    // Idle timeout watchdog: when idle_timeout_secs > 0, a background
+    // task polls the activity snapshot and triggers shutdown when no MCP
+    // tool activity has occurred for the configured duration.
+    let idle_shutdown_tx = if idle_timeout_secs > 0 {
+        let idle_tx = shutdown_tx.clone();
+        let idle_activity = activity.clone();
+        let timeout = std::time::Duration::from_secs(idle_timeout_secs);
+        let poll_interval = std::time::Duration::from_secs(
+            (idle_timeout_secs / 4).clamp(5, 60),
+        );
+        Some(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(poll_interval).await;
+                let snap = idle_activity.snapshot();
+                let last_ms = snap.updated_at_ms;
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(last_ms));
+                if elapsed >= timeout {
+                    eprintln!(
+                        "[mcp] idle timeout ({idle_timeout_secs}s) reached — shutting down"
+                    );
+                    idle_activity.failed(format!(
+                        "MCP server shutting down after {idle_timeout_secs}s idle timeout."
+                    ));
+                    let _ = idle_tx.send(true);
+                    break;
+                }
+            }
+        }))
+    } else {
+        None
+    };
 
     let task = tokio::spawn(async move {
         let server = axum::serve(listener, app);
@@ -223,8 +378,12 @@ pub async fn start_server_with_activity(
                     shutdown_rx.changed().await.ok();
                 }
             } => {
-                // Graceful shutdown requested.
+                // Graceful shutdown requested (manual or idle timeout).
             }
+        }
+        // Cancel idle watchdog if it's still running.
+        if let Some(handle) = idle_shutdown_tx {
+            handle.abort();
         }
     });
 
@@ -234,4 +393,17 @@ pub async fn start_server_with_activity(
         port: bound_port,
         token,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mcp_transport_caps_allow_brain_writes() {
+        let caps = transport_caps();
+        assert!(caps.brain_read);
+        assert!(caps.brain_write);
+        assert!(caps.code_read);
+    }
 }

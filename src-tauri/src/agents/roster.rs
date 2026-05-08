@@ -136,6 +136,10 @@ pub struct AgentProfile {
     /// Working folder for `ExternalCli` backends. Ignored for native.
     #[serde(default)]
     pub working_folder: Option<PathBuf>,
+    /// Capability tags for tag-based routing (chunk 33B.6).
+    /// Example tags: `["code", "plan", "review", "fix", "explain"]`.
+    #[serde(default)]
+    pub capabilities: Vec<String>,
     /// Epoch seconds.
     pub created_at: i64,
     /// Epoch seconds; updated on every `switch_agent`.
@@ -386,6 +390,7 @@ pub fn default_agent(vrm_model_id: &str) -> AgentProfile {
         vrm_model_id: vrm_model_id.to_string(),
         brain_backend: BrainBackend::Native { mode: None },
         working_folder: None,
+        capabilities: Vec::new(),
         created_at: now,
         last_active_at: now,
     }
@@ -418,6 +423,7 @@ mod tests {
             vrm_model_id: "shinra".into(),
             brain_backend: BrainBackend::Native { mode: None },
             working_folder: None,
+            capabilities: Vec::new(),
             created_at: 1,
             last_active_at: 2,
         }
@@ -434,6 +440,7 @@ mod tests {
                 extra_args: vec!["--yolo".into()],
             },
             working_folder: Some(PathBuf::from("/tmp/repo")),
+            capabilities: vec!["code".into(), "implement".into()],
             created_at: 3,
             last_active_at: 4,
         }

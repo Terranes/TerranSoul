@@ -791,6 +791,7 @@ async function runAutoInstall(topic: string): Promise<void> {
               session_id: null,
               parent_id: null,
               token_count: 12,
+              confidence: 1.0,
             });
           }
         }

@@ -68,7 +68,7 @@ pub struct ProcessStats {
 
 // ─── Schema extension ───────────────────────────────────────────────────────
 
-fn ensure_process_tables(conn: &Connection) -> Result<(), IndexError> {
+pub(crate) fn ensure_process_tables(conn: &Connection) -> Result<(), IndexError> {
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS code_clusters (
@@ -167,8 +167,15 @@ pub fn compute_processes(
     // Load symbols + edges into petgraph.
     let (graph, node_map, sym_info) = build_call_graph(&conn, repo_id)?;
 
-    // 1. Community detection (label propagation).
-    let clusters = label_propagation(&graph, &node_map, &sym_info);
+    // 1. Community detection (label propagation) with fragmentation guard.
+    let clusters = if graph.node_count() > LARGE_GRAPH_THRESHOLD {
+        // Two-phase: directory partition → label-propagation per partition.
+        partitioned_label_propagation(&graph, &node_map, &sym_info)
+    } else {
+        label_propagation(&graph, &node_map, &sym_info)
+    };
+    // Merge tiny clusters below min_cluster_size into nearest neighbor.
+    let clusters = merge_small_clusters(clusters, &graph, &node_map, MIN_CLUSTER_SIZE);
 
     // 2. Entry-point scoring.
     let entry_points = score_entry_points(&graph, &node_map, &sym_info);
@@ -307,22 +314,22 @@ struct SymInfo {
 }
 
 /// Graph data needed for clustering and process tracing.
-type CallGraphData = (DiGraph<i64, ()>, HashMap<i64, NodeIndex>, HashMap<i64, SymInfo>);
+type CallGraphData = (
+    DiGraph<i64, ()>,
+    HashMap<i64, NodeIndex>,
+    HashMap<i64, SymInfo>,
+);
 
 /// Build a directed call graph from the DB.
 /// Returns: (graph, node_index→sym_id map, sym_id→SymInfo map)
-fn build_call_graph(
-    conn: &Connection,
-    repo_id: i64,
-) -> Result<CallGraphData, IndexError> {
+fn build_call_graph(conn: &Connection, repo_id: i64) -> Result<CallGraphData, IndexError> {
     let mut graph = DiGraph::new();
     let mut node_map: HashMap<i64, NodeIndex> = HashMap::new();
     let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
 
-    // Load all symbols.
-    let mut stmt = conn.prepare(
-        "SELECT id, name, kind, file, line FROM code_symbols WHERE repo_id = ?1",
-    )?;
+    // Load all symbols, excluding vendor-tier paths (reduces graph noise).
+    let mut stmt =
+        conn.prepare("SELECT id, name, kind, file, line FROM code_symbols WHERE repo_id = ?1")?;
     let symbols: Vec<(i64, String, String, String, u32)> = stmt
         .query_map(params![repo_id], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
@@ -330,16 +337,36 @@ fn build_call_graph(
         .filter_map(|r| r.ok())
         .collect();
 
+    // Use a lightweight vendor-path check to exclude third-party symbols from
+    // the process graph. This prevents vendor code from polluting clusters and
+    // entry-point rankings.
+    let vendor_detector = super::vendor_detector::VendorDetector::empty();
+
     for (id, name, kind, file, line) in symbols {
+        let tier = vendor_detector.classify(&file);
+        if !tier.index_edges() {
+            // Vendor/generated/asset symbols don't participate in the call graph.
+            continue;
+        }
         let idx = graph.add_node(id);
         node_map.insert(id, idx);
-        sym_info.insert(id, SymInfo { id, name, file, line, kind });
+        sym_info.insert(
+            id,
+            SymInfo {
+                id,
+                name,
+                file,
+                line,
+                kind,
+            },
+        );
     }
 
-    // Load resolved CALLS edges.
+    // Load resolved CALLS + heritage edges for graph construction.
+    // Calls for flow tracing; heritage (implements/extends) for clustering affinity.
     let mut edge_stmt = conn.prepare(
         "SELECT from_symbol_id, target_symbol_id FROM code_edges
-         WHERE repo_id = ?1 AND kind = 'calls'
+         WHERE repo_id = ?1 AND kind IN ('calls', 'implements', 'extends')
          AND from_symbol_id IS NOT NULL AND target_symbol_id IS NOT NULL",
     )?;
     let edges: Vec<(i64, i64)> = edge_stmt
@@ -405,8 +432,12 @@ fn label_propagation(
                 label_counts.iter().max_by_key(|(_, &count)| count)
             {
                 let current = labels[&idx];
-                // Only switch if the majority label is different and has > 1 vote.
-                if best_label != current && best_count > 1 {
+                let total_votes: u32 = label_counts.values().sum();
+                // Switch if the best label is different and either:
+                // - has strict majority (> half of total votes), or
+                // - is the only label among all neighbors
+                let has_majority = best_count * 2 > total_votes || label_counts.len() == 1;
+                if best_label != current && has_majority {
                     labels.insert(idx, best_label);
                     changed = true;
                 }
@@ -476,6 +507,260 @@ fn generate_cluster_label(symbol_ids: &[i64], sym_info: &HashMap<i64, SymInfo>) 
         .unwrap_or_else(|| format!("cluster_{}", symbol_ids.len()))
 }
 
+// ─── Fragmentation guard (Chunk 45.5) ───────────────────────────────────────
+
+/// Minimum cluster size below which small clusters get merged into neighbors.
+const MIN_CLUSTER_SIZE: u32 = 8;
+
+/// Node count above which the two-phase partitioned strategy is used.
+const LARGE_GRAPH_THRESHOLD: usize = 5_000;
+
+/// Merge clusters smaller than `min_size` into the nearest larger cluster.
+///
+/// "Nearest" = the cluster with the most edges connecting to the small cluster's members.
+fn merge_small_clusters(
+    clusters: Vec<Cluster>,
+    graph: &DiGraph<i64, ()>,
+    node_map: &HashMap<i64, NodeIndex>,
+    min_size: u32,
+) -> Vec<Cluster> {
+    if clusters.is_empty() {
+        return clusters;
+    }
+
+    // Build symbol → cluster_id map.
+    let mut sym_to_cluster: HashMap<i64, u32> = HashMap::new();
+    for c in &clusters {
+        for &sym_id in &c.symbol_ids {
+            sym_to_cluster.insert(sym_id, c.id);
+        }
+    }
+
+    // Identify small and large clusters.
+    let mut large: Vec<Cluster> = Vec::new();
+    let mut small: Vec<Cluster> = Vec::new();
+    for c in clusters {
+        if c.size >= min_size {
+            large.push(c);
+        } else {
+            small.push(c);
+        }
+    }
+
+    // If there are no large clusters to merge into, just return everything.
+    if large.is_empty() {
+        large.append(&mut small);
+        return renumber_clusters(large);
+    }
+
+    // For each small cluster, find the large cluster with the most connecting edges.
+    for sc in small {
+        let mut affinity: HashMap<u32, u32> = HashMap::new();
+
+        for &sym_id in &sc.symbol_ids {
+            if let Some(&idx) = node_map.get(&sym_id) {
+                // Count edges to nodes in large clusters.
+                for neighbor in graph.neighbors_directed(idx, Direction::Outgoing) {
+                    let neighbor_sym = graph[neighbor];
+                    if let Some(&cid) = sym_to_cluster.get(&neighbor_sym) {
+                        if large.iter().any(|lc| lc.id == cid) {
+                            *affinity.entry(cid).or_insert(0) += 1;
+                        }
+                    }
+                }
+                for neighbor in graph.neighbors_directed(idx, Direction::Incoming) {
+                    let neighbor_sym = graph[neighbor];
+                    if let Some(&cid) = sym_to_cluster.get(&neighbor_sym) {
+                        if large.iter().any(|lc| lc.id == cid) {
+                            *affinity.entry(cid).or_insert(0) += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Merge into the cluster with highest affinity, or the largest cluster.
+        let target_id = affinity
+            .into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(cid, _)| cid)
+            .unwrap_or_else(|| large.iter().max_by_key(|c| c.size).unwrap().id);
+
+        if let Some(target) = large.iter_mut().find(|c| c.id == target_id) {
+            target.symbol_ids.extend(sc.symbol_ids.iter());
+            target.size += sc.size;
+        }
+    }
+
+    renumber_clusters(large)
+}
+
+/// Re-assign sequential IDs after merging.
+fn renumber_clusters(mut clusters: Vec<Cluster>) -> Vec<Cluster> {
+    clusters.sort_by_key(|c| std::cmp::Reverse(c.size));
+    for (i, c) in clusters.iter_mut().enumerate() {
+        c.id = i as u32;
+    }
+    clusters
+}
+
+/// Two-phase community detection for large graphs (> 5000 nodes).
+///
+/// Phase 1: Partition nodes by directory (first path segment after src/).
+/// Phase 2: Within each partition, find connected components (undirected BFS).
+///          This is O(V+E) per partition and handles chains/trees correctly,
+///          unlike label-propagation which needs O(chain_length) iterations.
+///
+/// Cross-partition edges are ignored for clustering (they're sparse and the
+/// directory partition already provides meaningful grouping).
+fn partitioned_label_propagation(
+    graph: &DiGraph<i64, ()>,
+    node_map: &HashMap<i64, NodeIndex>,
+    sym_info: &HashMap<i64, SymInfo>,
+) -> Vec<Cluster> {
+    // Phase 1: group symbols by directory partition.
+    let mut partitions: HashMap<String, Vec<i64>> = HashMap::new();
+    for (&sym_id, info) in sym_info {
+        let dir_key = extract_directory_key(&info.file);
+        partitions.entry(dir_key).or_default().push(sym_id);
+    }
+
+    let mut all_clusters: Vec<Cluster> = Vec::new();
+    let mut cluster_id_offset: u32 = 0;
+
+    // Phase 2: find connected components within each partition via BFS.
+    for partition_syms in partitions.values() {
+        if partition_syms.is_empty() {
+            continue;
+        }
+
+        // Build a set of nodes in this partition for quick lookup.
+        let partition_set: HashSet<i64> = partition_syms.iter().copied().collect();
+
+        // BFS to find connected components (undirected).
+        let mut visited: HashSet<i64> = HashSet::new();
+        let mut component_id: u32 = 0;
+
+        for &start_sym in partition_syms {
+            if visited.contains(&start_sym) {
+                continue;
+            }
+
+            // BFS from this node.
+            let mut component: Vec<i64> = Vec::new();
+            let mut queue: VecDeque<i64> = VecDeque::new();
+            queue.push_back(start_sym);
+            visited.insert(start_sym);
+
+            while let Some(sym_id) = queue.pop_front() {
+                component.push(sym_id);
+
+                if let Some(&idx) = node_map.get(&sym_id) {
+                    // Visit neighbors in both directions (undirected view).
+                    for neighbor in graph.neighbors_directed(idx, Direction::Outgoing) {
+                        let n_sym = graph[neighbor];
+                        if partition_set.contains(&n_sym) && !visited.contains(&n_sym) {
+                            visited.insert(n_sym);
+                            queue.push_back(n_sym);
+                        }
+                    }
+                    for neighbor in graph.neighbors_directed(idx, Direction::Incoming) {
+                        let n_sym = graph[neighbor];
+                        if partition_set.contains(&n_sym) && !visited.contains(&n_sym) {
+                            visited.insert(n_sym);
+                            queue.push_back(n_sym);
+                        }
+                    }
+                }
+            }
+
+            let label = generate_cluster_label(&component, sym_info);
+            all_clusters.push(Cluster {
+                id: cluster_id_offset + component_id,
+                label,
+                size: component.len() as u32,
+                symbol_ids: component,
+            });
+            component_id += 1;
+        }
+
+        cluster_id_offset += component_id;
+    }
+
+    renumber_clusters(all_clusters)
+}
+
+/// Extract a directory key from a file path for partitioning.
+fn extract_directory_key(file: &str) -> String {
+    let path = file
+        .strip_prefix("src/")
+        .or_else(|| file.strip_prefix("src-tauri/src/"))
+        .unwrap_or(file);
+    path.split('/').next().unwrap_or("root").to_string()
+}
+
+// ─── Visualisation sampling (Chunk 45.5) ────────────────────────────────────
+
+/// A sampled node for cluster visualisation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SampledNode {
+    pub symbol_id: i64,
+    pub name: String,
+    pub file: String,
+    pub line: u32,
+    pub degree: u32,
+}
+
+/// Sample the top-N highest-degree nodes from each cluster for visualisation.
+///
+/// Returns a map of cluster_id → sampled nodes. This allows the workbench
+/// to render a manageable overview with drill-into-cluster navigation.
+#[allow(dead_code)]
+fn sample_clusters_for_viz(
+    clusters: &[Cluster],
+    graph: &DiGraph<i64, ()>,
+    node_map: &HashMap<i64, NodeIndex>,
+    sym_info: &HashMap<i64, SymInfo>,
+    top_n: usize,
+) -> HashMap<u32, Vec<SampledNode>> {
+    let mut result: HashMap<u32, Vec<SampledNode>> = HashMap::new();
+
+    for cluster in clusters {
+        let mut nodes_with_degree: Vec<(i64, u32)> = cluster
+            .symbol_ids
+            .iter()
+            .filter_map(|&sym_id| {
+                let idx = node_map.get(&sym_id)?;
+                let degree = graph.neighbors_directed(*idx, Direction::Outgoing).count()
+                    + graph.neighbors_directed(*idx, Direction::Incoming).count();
+                Some((sym_id, degree as u32))
+            })
+            .collect();
+
+        // Sort by degree descending.
+        nodes_with_degree.sort_by_key(|(_, deg)| std::cmp::Reverse(*deg));
+
+        let sampled: Vec<SampledNode> = nodes_with_degree
+            .into_iter()
+            .take(top_n)
+            .filter_map(|(sym_id, degree)| {
+                let info = sym_info.get(&sym_id)?;
+                Some(SampledNode {
+                    symbol_id: sym_id,
+                    name: info.name.clone(),
+                    file: info.file.clone(),
+                    line: info.line,
+                    degree,
+                })
+            })
+            .collect();
+
+        result.insert(cluster.id, sampled);
+    }
+
+    result
+}
+
 // ─── Entry-point scoring ────────────────────────────────────────────────────
 
 /// Score symbols as potential entry points.
@@ -538,6 +823,12 @@ fn score_entry_points(
             score += 5.0;
         }
 
+        // Exported/public heuristic: names starting with uppercase (Go)
+        // or lacking a leading underscore are more likely entry points.
+        if info.name.starts_with(|c: char| c.is_uppercase()) && info.kind == "function" {
+            score += 10.0;
+        }
+
         // Threshold: only include if score > 30.
         if score > 30.0 {
             scored.push(EntryPoint {
@@ -551,7 +842,11 @@ fn score_entry_points(
     }
 
     // Sort by score descending.
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     // Cap at 50 entry points.
     scored.truncate(50);
@@ -735,9 +1030,18 @@ pub fn parse_port(s: &str) -> u16 {
 
         // Compute processes.
         let proc_stats = compute_processes(data_dir.path(), repo_dir.path(), 10).unwrap();
-        assert!(proc_stats.clusters_found > 0, "should find at least one cluster");
-        assert!(proc_stats.entry_points_found > 0, "should find entry points");
-        assert!(proc_stats.processes_traced > 0, "should trace at least one process");
+        assert!(
+            proc_stats.clusters_found > 0,
+            "should find at least one cluster"
+        );
+        assert!(
+            proc_stats.entry_points_found > 0,
+            "should find entry points"
+        );
+        assert!(
+            proc_stats.processes_traced > 0,
+            "should trace at least one process"
+        );
     }
 
     #[test]
@@ -757,7 +1061,10 @@ pub fn parse_port(s: &str) -> u16 {
 
         // Find a process that starts from main.
         let main_proc = processes.iter().find(|p| p.entry_point == "main");
-        assert!(main_proc.is_some(), "should have a process from main: {processes:?}");
+        assert!(
+            main_proc.is_some(),
+            "should have a process from main: {processes:?}"
+        );
 
         let main_proc = main_proc.unwrap();
         let step_names: Vec<&str> = main_proc.steps.iter().map(|s| s.name.as_str()).collect();
@@ -786,5 +1093,193 @@ pub fn parse_port(s: &str) -> u16 {
             assert!(c.size > 0, "cluster should not be empty");
             assert!(!c.label.is_empty(), "cluster should have a label");
         }
+    }
+
+    #[test]
+    fn test_merge_small_clusters() {
+        // Create a graph with several small clusters connected to one large cluster.
+        let mut graph = DiGraph::new();
+        let mut node_map: HashMap<i64, NodeIndex> = HashMap::new();
+        let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
+
+        // Large cluster: 10 nodes interconnected.
+        for i in 0..10 {
+            let idx = graph.add_node(i);
+            node_map.insert(i, idx);
+            sym_info.insert(i, SymInfo {
+                id: i,
+                name: format!("large_{i}"),
+                file: "src/large.rs".to_string(),
+                line: i as u32,
+                kind: "function".to_string(),
+            });
+        }
+        for i in 0..9 {
+            let a = *node_map.get(&i).unwrap();
+            let b = *node_map.get(&(i + 1)).unwrap();
+            graph.add_edge(a, b, ());
+        }
+
+        // Small cluster: 3 nodes (below MIN_CLUSTER_SIZE).
+        for i in 10..13 {
+            let idx = graph.add_node(i);
+            node_map.insert(i, idx);
+            sym_info.insert(i, SymInfo {
+                id: i,
+                name: format!("small_{i}"),
+                file: "src/small.rs".to_string(),
+                line: i as u32,
+                kind: "function".to_string(),
+            });
+        }
+        // Connect small cluster internally.
+        let s0 = *node_map.get(&10).unwrap();
+        let s1 = *node_map.get(&11).unwrap();
+        graph.add_edge(s0, s1, ());
+        // Connect small cluster to large cluster.
+        let l5 = *node_map.get(&5).unwrap();
+        graph.add_edge(s0, l5, ());
+
+        // Create initial clusters.
+        let clusters = vec![
+            Cluster {
+                id: 0,
+                label: "large".to_string(),
+                symbol_ids: (0..10).collect(),
+                size: 10,
+            },
+            Cluster {
+                id: 1,
+                label: "small".to_string(),
+                symbol_ids: (10..13).collect(),
+                size: 3,
+            },
+        ];
+
+        let merged = merge_small_clusters(clusters, &graph, &node_map, MIN_CLUSTER_SIZE);
+
+        // Small cluster should be merged into the large one.
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged[0].size, 13);
+    }
+
+    #[test]
+    fn test_large_graph_no_panics() {
+        // Synthetic 22k-node graph to test the partitioned strategy.
+        let mut graph = DiGraph::new();
+        let mut node_map: HashMap<i64, NodeIndex> = HashMap::new();
+        let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
+
+        // Create 22 directories with 1000 nodes each.
+        let dirs = ["api", "auth", "billing", "cache", "config", "core",
+                    "crypto", "db", "email", "events", "gateway", "grpc",
+                    "health", "jobs", "logging", "metrics", "middleware",
+                    "parser", "queue", "router", "schema", "transport"];
+
+        let mut sym_id: i64 = 0;
+        for dir in &dirs {
+            for j in 0..1000 {
+                let idx = graph.add_node(sym_id);
+                node_map.insert(sym_id, idx);
+                sym_info.insert(sym_id, SymInfo {
+                    id: sym_id,
+                    name: format!("fn_{dir}_{j}"),
+                    file: format!("src/{dir}/mod.rs"),
+                    line: j as u32,
+                    kind: "function".to_string(),
+                });
+                sym_id += 1;
+            }
+        }
+
+        // Add edges within each directory (chain pattern).
+        for dir_idx in 0..22 {
+            let base = dir_idx * 1000;
+            for j in 0..999 {
+                let a = *node_map.get(&(base + j)).unwrap();
+                let b = *node_map.get(&(base + j + 1)).unwrap();
+                graph.add_edge(a, b, ());
+            }
+        }
+
+        // Add cross-directory edges (sparse).
+        for dir_idx in 0..21 {
+            let src_base = dir_idx * 1000;
+            let dst_base = (dir_idx + 1) * 1000;
+            let a = *node_map.get(&(src_base + 500)).unwrap();
+            let b = *node_map.get(&dst_base).unwrap();
+            graph.add_edge(a, b, ());
+        }
+
+        assert_eq!(graph.node_count(), 22_000);
+
+        // This should use partitioned_label_propagation.
+        let clusters = partitioned_label_propagation(&graph, &node_map, &sym_info);
+        let clusters = merge_small_clusters(clusters, &graph, &node_map, MIN_CLUSTER_SIZE);
+
+        // Should produce a manageable number of clusters (≤ 500).
+        assert!(
+            clusters.len() <= 500,
+            "Expected ≤ 500 clusters, got {}",
+            clusters.len()
+        );
+        assert!(!clusters.is_empty(), "Should produce at least one cluster");
+
+        // All clusters should be reachable (non-empty).
+        for c in &clusters {
+            assert!(c.size > 0);
+        }
+
+        // Total symbol count should be preserved.
+        let total: u32 = clusters.iter().map(|c| c.size).sum();
+        assert_eq!(total, 22_000);
+    }
+
+    #[test]
+    fn test_sample_clusters_for_viz() {
+        let mut graph = DiGraph::new();
+        let mut node_map: HashMap<i64, NodeIndex> = HashMap::new();
+        let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
+
+        // Create 20 nodes with varying degrees.
+        for i in 0..20i64 {
+            let idx = graph.add_node(i);
+            node_map.insert(i, idx);
+            sym_info.insert(i, SymInfo {
+                id: i,
+                name: format!("fn_{i}"),
+                file: "src/mod.rs".to_string(),
+                line: i as u32,
+                kind: "function".to_string(),
+            });
+        }
+        // Node 0 is a hub (high degree).
+        for i in 1..15 {
+            let a = *node_map.get(&0).unwrap();
+            let b = *node_map.get(&i).unwrap();
+            graph.add_edge(a, b, ());
+        }
+        // Node 5 has moderate degree.
+        for i in 6..10 {
+            let a = *node_map.get(&5).unwrap();
+            let b = *node_map.get(&i).unwrap();
+            graph.add_edge(a, b, ());
+        }
+
+        let clusters = vec![Cluster {
+            id: 0,
+            label: "test".to_string(),
+            symbol_ids: (0..20).collect(),
+            size: 20,
+        }];
+
+        let sampled = sample_clusters_for_viz(&clusters, &graph, &node_map, &sym_info, 3);
+        let cluster_sample = &sampled[&0];
+
+        // Should return top-3 by degree.
+        assert_eq!(cluster_sample.len(), 3);
+        // Node 0 should be first (highest degree = 14).
+        assert_eq!(cluster_sample[0].symbol_id, 0);
+        assert_eq!(cluster_sample[0].degree, 14);
     }
 }

@@ -326,27 +326,122 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
             api_key,
             model,
         }) => {
-            // Check rotator for a healthy provider, falling back to configured one
-            let effective_provider_id = {
+            // Build failover chain: ordered list of providers to try
+            let failover_chain = {
                 let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
-                rotator
-                    .next_healthy_provider()
-                    .map(|p| p.id.clone())
-                    .unwrap_or(provider_id.clone())
+                let policy = state
+                    .failover_policy
+                    .lock()
+                    .map(|p| p.clone())
+                    .unwrap_or_default();
+                let constraints = crate::brain::SelectionConstraints::default();
+                let mut chain = rotator.select_failover_chain(&constraints, &policy);
+                // Ensure the configured provider is first if it's not already in the chain
+                if !chain.contains(&provider_id) {
+                    chain.insert(0, provider_id.clone());
+                }
+                chain
             };
-            stream_openai_api(
-                app_handle,
-                state,
-                &message,
-                &history,
-                &effective_provider_id,
-                api_key.as_deref(),
-                model
-                    .as_deref()
-                    .filter(|_| effective_provider_id == provider_id.as_str()),
-                None,
-            )
-            .await
+
+            // Retry loop: try each provider in the failover chain
+            let mut attempts: Vec<crate::brain::FailoverAttempt> = Vec::new();
+            let original_provider_id = failover_chain
+                .first()
+                .cloned()
+                .unwrap_or_else(|| provider_id.clone());
+
+            for candidate_id in &failover_chain {
+                let result = stream_openai_api(
+                    app_handle,
+                    state,
+                    &message,
+                    &history,
+                    candidate_id,
+                    api_key.as_deref(),
+                    model.as_deref().filter(|_| candidate_id == &provider_id),
+                    None,
+                )
+                .await;
+
+                match result {
+                    Ok(()) => {
+                        // Emit failover decision if we retried
+                        if !attempts.is_empty() {
+                            let decision = crate::brain::FailoverDecision {
+                                original_provider_id: original_provider_id.clone(),
+                                final_provider_id: candidate_id.clone(),
+                                attempts: attempts.clone(),
+                                succeeded: true,
+                            };
+                            let _ = app_handle.emit("provider-failover", &decision);
+                        }
+                        return Ok(());
+                    }
+                    Err(e) => {
+                        let err_lower = e.to_lowercase();
+                        let reason =
+                            if err_lower.contains("429") || err_lower.contains("rate limit") {
+                                // Mark rate-limited with cooldown
+                                let policy = state
+                                    .failover_policy
+                                    .lock()
+                                    .map(|p| p.clone())
+                                    .unwrap_or_default();
+                                let mut rotator =
+                                    state.provider_rotator.lock().map_err(|er| er.to_string())?;
+                                rotator.record_rate_limit_with_cooldown(
+                                    candidate_id,
+                                    policy.min_cooldown_secs,
+                                );
+                                crate::brain::FailoverReason::RateLimit
+                            } else if err_lower.contains("context")
+                                || err_lower.contains("too long")
+                                || err_lower.contains("maximum")
+                            {
+                                crate::brain::FailoverReason::ContextOverflow {
+                                    estimated_tokens: 0,
+                                    provider_max: 0,
+                                }
+                            } else {
+                                // Generic unhealthy (timeout, network, 5xx)
+                                let mut rotator =
+                                    state.provider_rotator.lock().map_err(|er| er.to_string())?;
+                                if let Some(status) = rotator.providers.get_mut(candidate_id) {
+                                    status.is_healthy = false;
+                                }
+                                crate::brain::FailoverReason::Unhealthy
+                            };
+
+                        attempts.push(crate::brain::FailoverAttempt {
+                            provider_id: candidate_id.clone(),
+                            reason,
+                        });
+
+                        // Continue to next candidate
+                    }
+                }
+            }
+
+            // All candidates exhausted — emit final done signal
+            let _ = app_handle.emit(
+                "llm-chunk",
+                LlmChunk {
+                    text: String::new(),
+                    done: true,
+                },
+            );
+            let decision = crate::brain::FailoverDecision {
+                original_provider_id: original_provider_id.clone(),
+                final_provider_id: String::new(),
+                attempts: attempts.clone(),
+                succeeded: false,
+            };
+            let _ = app_handle.emit("provider-failover", &decision);
+            let _ = app_handle.emit("providers-exhausted", ());
+            Err(format!(
+                "All providers exhausted after {} attempts",
+                attempts.len()
+            ))
         }
         Some(BrainMode::PaidApi {
             provider: _,
@@ -570,21 +665,13 @@ async fn stream_openai_api<R: tauri::Runtime>(
             Ok(())
         }
         Err(e) => {
-            let _ = app_handle.emit(
-                "llm-chunk",
-                LlmChunk {
-                    text: String::new(),
-                    done: true,
-                },
-            );
+            // Don't emit done:true here — the caller (retry loop) decides
+            // whether to emit it after all attempts are exhausted.
             // Record rate limit if applicable
             let err_lower = e.to_string().to_lowercase();
             if err_lower.contains("429") || err_lower.contains("rate limit") {
                 let mut rotator = state.provider_rotator.lock().map_err(|er| er.to_string())?;
                 rotator.record_rate_limit(provider_id);
-                if rotator.all_exhausted() {
-                    let _ = app_handle.emit("providers-exhausted", ());
-                }
             }
             Err(format!("Free API error: {e}"))
         }

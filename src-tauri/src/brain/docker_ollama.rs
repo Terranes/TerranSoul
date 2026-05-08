@@ -617,6 +617,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires Docker Desktop; slow on CI (systemctl timeout)"]
     async fn stop_docker_desktop_does_not_panic() {
         // stop_docker_desktop may fail if Docker isn't running — that's OK.
         // We only verify it doesn't panic and returns a Result.

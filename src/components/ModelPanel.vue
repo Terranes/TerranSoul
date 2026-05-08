@@ -57,9 +57,10 @@
 
         <div class="import-section">
           <button
+            v-if="!showImportForm"
             class="import-btn"
             :disabled="isLoading"
-            @click="handleImport"
+            @click="showImportForm = true"
           >
             <svg
               width="18"
@@ -71,6 +72,74 @@
             </svg>
             {{ isLoading ? 'Loading…' : 'Import VRM Model' }}
           </button>
+
+          <!-- Import form with gender + persona selection -->
+          <div
+            v-if="showImportForm"
+            class="import-form"
+          >
+            <h4 class="import-form__title">
+              Import New Model
+            </h4>
+            <label class="import-form__label">
+              Name
+              <input
+                v-model="importName"
+                type="text"
+                class="import-form__input"
+                placeholder="Model name (optional)"
+              >
+            </label>
+            <label class="import-form__label">
+              Gender
+              <select
+                v-model="importGender"
+                class="import-form__select"
+              >
+                <option value="female">
+                  Female
+                </option>
+                <option value="male">
+                  Male
+                </option>
+              </select>
+            </label>
+            <label class="import-form__label">
+              Persona
+              <select
+                v-model="importPersona"
+                class="import-form__select"
+              >
+                <option value="">
+                  None (use active persona)
+                </option>
+                <option
+                  v-for="p in personaOptions"
+                  :key="p"
+                  :value="p"
+                >
+                  {{ p }}
+                </option>
+              </select>
+            </label>
+            <div class="import-form__actions">
+              <button
+                class="import-form__btn import-form__btn--primary"
+                :disabled="isLoading"
+                @click="handleImport"
+              >
+                {{ isLoading ? 'Importing…' : 'Choose File & Import' }}
+              </button>
+              <button
+                class="import-form__btn import-form__btn--cancel"
+                :disabled="isLoading"
+                @click="showImportForm = false"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+
           <p class="import-hint">
             Imported models are copied into your user data folder and persist
             across app updates.
@@ -117,16 +186,99 @@
             />
             <div class="model-info">
               <span class="model-name">{{ model.name }}</span>
-              <span class="model-author">Imported · {{ model.original_filename }}</span>
+              <span class="model-author">{{ model.gender === 'male' ? '🧑' : '👩' }} {{ model.gender }} · {{ model.original_filename }}</span>
+              <span
+                v-if="model.persona"
+                class="model-persona"
+              >🎭 {{ model.persona }}</span>
             </div>
-            <button
-              class="delete-btn"
-              :disabled="isLoading"
-              :aria-label="`Delete ${model.name}`"
-              @click.stop="handleDelete(model.id)"
-            >
-              &times;
-            </button>
+            <div class="model-actions">
+              <button
+                class="edit-btn"
+                :disabled="isLoading"
+                :aria-label="`Edit ${model.name}`"
+                title="Edit model"
+                @click.stop="openEditDialog(model)"
+              >
+                ✎
+              </button>
+              <button
+                class="delete-btn"
+                :disabled="isLoading"
+                :aria-label="`Delete ${model.name}`"
+                @click.stop="handleDelete(model.id)"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
+
+          <!-- Edit dialog for user models -->
+          <div
+            v-if="editingModel"
+            class="edit-dialog-backdrop"
+            @click.self="editingModel = null"
+          >
+            <div class="edit-dialog">
+              <h4 class="edit-dialog__title">
+                Edit Model
+              </h4>
+              <label class="import-form__label">
+                Name
+                <input
+                  v-model="editName"
+                  type="text"
+                  class="import-form__input"
+                >
+              </label>
+              <label class="import-form__label">
+                Gender
+                <select
+                  v-model="editGender"
+                  class="import-form__select"
+                >
+                  <option value="female">
+                    Female
+                  </option>
+                  <option value="male">
+                    Male
+                  </option>
+                </select>
+              </label>
+              <label class="import-form__label">
+                Persona
+                <select
+                  v-model="editPersona"
+                  class="import-form__select"
+                >
+                  <option value="">
+                    None (use active persona)
+                  </option>
+                  <option
+                    v-for="p in personaOptions"
+                    :key="p"
+                    :value="p"
+                  >
+                    {{ p }}
+                  </option>
+                </select>
+              </label>
+              <div class="import-form__actions">
+                <button
+                  class="import-form__btn import-form__btn--primary"
+                  :disabled="isLoading"
+                  @click="handleSaveEdit"
+                >
+                  {{ isLoading ? 'Saving…' : 'Save' }}
+                </button>
+                <button
+                  class="import-form__btn import-form__btn--cancel"
+                  @click="editingModel = null"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -142,15 +294,68 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import { useCharacterStore } from '../stores/character';
+import { computed, ref } from 'vue';
+import { useCharacterStore, type UserModel } from '../stores/character';
+import { usePersonaStore } from '../stores/persona';
+import type { ModelGender } from '../config/default-models';
 import VrmThumbnail from './VrmThumbnail.vue';
 import { preGenerateUserThumbnail } from '../composables/useVrmThumbnail';
 
 defineEmits<{ close: [] }>();
 
 const characterStore = useCharacterStore();
+const personaStore = usePersonaStore();
 const isLoading = ref(false);
+
+// ── Import form state ─────────────────────────────────────────────────────
+const showImportForm = ref(false);
+const importName = ref('');
+const importGender = ref<ModelGender>('female');
+const importPersona = ref('');
+
+// ── Edit dialog state ─────────────────────────────────────────────────────
+const editingModel = ref<UserModel | null>(null);
+const editName = ref('');
+const editGender = ref<ModelGender>('female');
+const editPersona = ref('');
+
+/** Persona options: the current active persona name + "Custom" for typed input. */
+const personaOptions = computed<string[]>(() => {
+  const names = new Set<string>();
+  if (personaStore.traits.name) {
+    names.add(personaStore.traits.name);
+  }
+  // Add any personas already assigned to user models
+  for (const m of characterStore.userModels) {
+    if (m.persona) names.add(m.persona);
+  }
+  return [...names].sort();
+});
+
+function openEditDialog(model: UserModel) {
+  editingModel.value = model;
+  editName.value = model.name;
+  editGender.value = model.gender;
+  editPersona.value = model.persona || '';
+}
+
+async function handleSaveEdit() {
+  if (!editingModel.value) return;
+  isLoading.value = true;
+  characterStore.setLoadError(undefined);
+  try {
+    await characterStore.updateUserModel(editingModel.value.id, {
+      name: editName.value || undefined,
+      gender: editGender.value,
+      persona: editPersona.value,
+    });
+    editingModel.value = null;
+  } catch (err) {
+    characterStore.setLoadError(`Update failed: ${err}`);
+  } finally {
+    isLoading.value = false;
+  }
+}
 
 async function handleModelChange(event: Event) {
   const target = event.target as HTMLSelectElement;
@@ -175,12 +380,8 @@ async function handleSelectModel(modelId: string) {
 
 /**
  * Prompt the user for a VRM file path and ask the Rust backend to copy it
- * into the per-user data directory. Once imported, immediately select it.
- *
- * Note: a future Tauri-dialog integration would replace `window.prompt`
- * with a native file picker, but the current backend command only needs
- * an absolute filesystem path so the prompt fallback keeps the panel
- * usable in browser-only dev mode too.
+ * into the per-user data directory with the chosen gender/persona.
+ * Once imported, immediately select it.
  */
 async function handleImport() {
   const path = window.prompt('Enter the absolute path to a .vrm file:');
@@ -188,10 +389,19 @@ async function handleImport() {
   isLoading.value = true;
   characterStore.setLoadError(undefined);
   try {
-    const entry = await characterStore.importUserModel(path.trim());
+    const entry = await characterStore.importUserModel(path.trim(), {
+      name: importName.value || undefined,
+      gender: importGender.value,
+      persona: importPersona.value || undefined,
+    });
     // Pre-generate thumbnail in background so it's cached for next open
     preGenerateUserThumbnail(entry.id).catch(() => { /* non-critical */ });
     await characterStore.selectModel(entry.id);
+    // Reset form
+    showImportForm.value = false;
+    importName.value = '';
+    importGender.value = 'female';
+    importPersona.value = '';
   } catch (err) {
     characterStore.setLoadError(`Import failed: ${err}`);
   } finally {
@@ -425,7 +635,6 @@ async function handleDelete(id: string) {
 }
 
 .delete-btn {
-  margin-left: auto;
   width: 24px;
   height: 24px;
   border: none;
@@ -450,6 +659,171 @@ async function handleDelete(id: string) {
 .delete-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.model-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.edit-btn {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 50%;
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-secondary);
+  font-size: 0.85rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background 0.2s, color 0.2s;
+}
+
+.edit-btn:hover:not(:disabled) {
+  background: var(--ts-accent-glow);
+  color: var(--ts-accent);
+}
+
+.edit-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.model-persona {
+  font-size: 0.68rem;
+  color: var(--ts-accent-violet, var(--ts-text-dim));
+}
+
+.import-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ts-border);
+  border-radius: 8px;
+  background: var(--ts-bg-input);
+}
+
+.import-form__title {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ts-text-primary);
+}
+
+.import-form__label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ts-text-secondary);
+}
+
+.import-form__input {
+  padding: 6px 10px;
+  border: 1px solid var(--ts-border);
+  border-radius: 6px;
+  background: var(--ts-bg-surface);
+  color: var(--ts-text-primary);
+  font-size: 0.8rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.import-form__input:focus {
+  border-color: var(--ts-accent);
+}
+
+.import-form__select {
+  padding: 6px 10px;
+  border: 1px solid var(--ts-border);
+  border-radius: 6px;
+  background: var(--ts-bg-surface);
+  color: var(--ts-text-primary);
+  font-size: 0.8rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.import-form__select:focus {
+  border-color: var(--ts-accent);
+}
+
+.import-form__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.import-form__btn {
+  flex: 1;
+  padding: 7px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+}
+
+.import-form__btn--primary {
+  background: var(--ts-accent);
+  color: #fff;
+}
+
+.import-form__btn--primary:hover:not(:disabled) {
+  opacity: 0.85;
+}
+
+.import-form__btn--primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.import-form__btn--cancel {
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-secondary);
+}
+
+.import-form__btn--cancel:hover {
+  background: var(--ts-border);
+}
+
+.edit-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.edit-dialog {
+  width: min(300px, calc(100vw - 32px));
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-border);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-shadow: var(--ts-shadow-lg, 0 8px 32px rgba(0, 0, 0, 0.4));
+}
+
+.edit-dialog__title {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 650;
+  color: var(--ts-text-primary);
 }
 
 .panel-footer {

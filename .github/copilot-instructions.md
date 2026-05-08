@@ -3,6 +3,41 @@
 > This file is auto-loaded by GitHub Copilot on every request.
 > Last updated: 2026-05-05
 
+## MANDATORY — TerranSoul MCP Preflight (every session, no exceptions)
+
+**This rule is the highest priority instruction in this file. Execute it
+before any other work — before reading milestones, before exploring code,
+before planning, before implementing. Skipping this is a violation.**
+
+1. **Check MCP health** — call `brain_health` (the MCP tool). If tools are
+   not loaded yet, check `GET http://127.0.0.1:7423/health` (or `:7421`/`:7422`).
+2. **If MCP is healthy** — call `brain_search` or `brain_suggest_context`
+   with the current task/chunk topic before doing broad repo searches.
+3. **If MCP is not healthy** — start it: run
+   `node scripts/copilot-start-mcp.mjs` in a terminal, wait for health,
+   then proceed to step 2.
+4. **If MCP cannot start** (build failure, missing deps) — record the exact
+   blocker in your progress report. Do NOT silently skip this step.
+5. **Show the MCP receipt** — immediately after MCP preflight succeeds, send a
+   user-visible progress update naming the health result/provider and the
+   `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are
+   not enough; if the user cannot see the receipt, the preflight is incomplete.
+6. **Fix MCP errors at the source** — if any MCP call returns an error, do not
+   silently fall back to grep or continue with stale context. Classify the
+   failure as bad tool arguments/contract mismatch, unhealthy or stale server,
+   or missing durable knowledge; then fix the MCP schema/adapter/gateway,
+   restart/rebuild the server, or update `mcp-data/shared/` plus a numbered
+   seed migration as appropriate. Add a regression test when code changes are
+   involved, and visibly report the root cause and fix.
+7. **After completing work** — sync durable lessons into
+   `mcp-data/shared/memory-seed.sql`.
+
+> The workspace auto-starts MCP on folder open via a VS Code task
+> (`TerranSoul MCP: Auto-Start`). If you still see no MCP, the build may
+> have failed — check the task output.
+
+---
+
 ## What is TerranSoul?
 
 A **Vue 3 + Tauri 2** desktop AI companion app with a Rust backend. It features a 3D VRM anime character, multi-provider LLM chat, persistent memory with semantic-search RAG, voice I/O, CRDT-based device sync, and a gamified skill tree quest system.
@@ -109,6 +144,9 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - No pretend/placeholder/TODO code — everything must compile and function
 - Do not name code, commands, files, UI labels, docs, milestones, or persisted paths after third-party creators, channels, projects, products, mascots, or branded demos unless required by an imported dependency/public API. Use neutral descriptive names and keep attribution/license notes only in dedicated research/licensing docs.
 - Always credit external authors, creators, channels/videos, open-source projects, papers, docs, datasets, tutorials, and reverse-engineered references in the top-level `CREDITS.md` whenever their work informs code, docs, roadmap, design/product insights, comparison matrices, prompt shapes, feature catalogues, or rejected decisions. No-code influence still counts: if TerranSoul learns from it, compares against it, or uses it to generate implementation insight, add or update a respectful `CREDITS.md` entry in the same PR (name, URL, license/terms when known, affected files/features, and what we learned/used). Keep rule text in `rules/coding-standards.md`; make `CREDITS.md` an appreciative public thanks page. Removing a referenced source removes its entry.
+- When reverse-engineering any GitHub project, check `https://deepwiki.org/<owner>/<repo>` first when reachable, then cross-check with the upstream repository and credit the source in `CREDITS.md`. If DeepWiki is unavailable, record that blocker and proceed with direct upstream research.
+- When a session learns a durable rule, convention, architecture fact, or reverse-engineering lesson, sync it into TerranSoul MCP self-improve knowledge in the same PR by updating `mcp-data/shared/memory-seed.sql` and, when MCP is running, using the brain tools to verify it is retrievable.
+- Do not use Markdown files as TerranSoul MCP memory. Markdown may describe rules/docs or serve as a human-readable projection, but any durable MCP knowledge contained in Markdown must be synced into the SQLite-backed default dataset (`mcp-data/shared/memory-seed.sql`) and connected through `memory_edges` so the knowledge graph/database remains the source of truth.
 - `snake_case` for Rust, `camelCase` for TypeScript
 - `#[derive(Debug, Serialize, Deserialize, Clone)]` on all public Rust types
 - Vue components use `<script setup lang="ts">` with scoped styles

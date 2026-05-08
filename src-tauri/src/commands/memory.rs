@@ -397,10 +397,17 @@ async fn run_edge_extraction(
         if new_edges.is_empty() {
             continue;
         }
+        // Collect endpoints for cache invalidation (Chunk 41.13).
+        let endpoints: Vec<i64> = new_edges
+            .iter()
+            .flat_map(|e| [e.src_id, e.dst_id])
+            .collect();
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         if let Ok(n) = store.add_edges_batch(&new_edges) {
             total_inserted += n;
         }
+        drop(store);
+        state.kg_cache.invalidate(&endpoints);
     }
     Ok(total_inserted)
 }
@@ -438,6 +445,75 @@ pub async fn summarize_session(state: State<'_, AppState>) -> Result<String, Str
     }
     let _ = enforce_configured_memory_limit(&state);
     Ok(summary)
+}
+
+/// Reflect on the current chat session, extracting facts and saving a
+/// provenance-linked summary memory.
+#[tauri::command]
+pub async fn reflect_on_session(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::reflection::SessionReflectionReport, String> {
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+
+    let history: Vec<(String, String)> = {
+        let conv = state.conversation.lock().map_err(|e| e.to_string())?;
+        conv.iter()
+            .map(|m| (m.role.clone(), m.content.clone()))
+            .collect()
+    };
+    if history.is_empty() {
+        return Err("Session is empty.".to_string());
+    }
+
+    let facts = if let Some(mode) = brain_mode.clone() {
+        let active_model = state
+            .active_brain
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        crate::memory::brain_memory::extract_facts_segmented_any_mode(
+            &mode,
+            active_model.as_deref(),
+            &history,
+            &state.provider_rotator,
+        )
+        .await
+    } else {
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::extract_facts(&model, &history).await
+    };
+
+    let summary = if let Some(mode) = brain_mode {
+        crate::memory::brain_memory::summarize_any_mode(&mode, &history, &state.provider_rotator)
+            .await
+    } else {
+        let model = state
+            .active_brain
+            .lock()
+            .map_err(|e| e.to_string())?
+            .clone()
+            .ok_or_else(|| "No brain configured. Set up a brain first.".to_string())?;
+        crate::memory::brain_memory::summarize(&model, &history).await
+    }
+    .ok_or_else(|| "Session is empty or brain is unreachable.".to_string())?;
+
+    let report = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        crate::memory::reflection::persist_session_reflection(&store, &history, &facts, &summary)?
+    };
+
+    if let Some(embedding) = embed(&state, &report.summary).await {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let _ = store.set_embedding(report.reflection_id, &embedding);
+    }
+
+    let _ = enforce_configured_memory_limit(&state);
+    Ok(report)
 }
 
 /// Walk historical session summaries and re-run fact extraction on each.
@@ -612,6 +688,50 @@ pub async fn backfill_embeddings(state: State<'_, AppState>) -> Result<usize, St
         }
     }
     Ok(count)
+}
+
+/// Backfill `embedding_model_id` on existing memories that have embeddings
+/// but no model metadata. Called after switching to V16 schema (Chunk 41.8).
+/// Optionally copies embeddings into the `memory_embeddings` side table.
+#[tauri::command]
+pub async fn backfill_embedding_model_id(
+    state: State<'_, AppState>,
+    model_id: String,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .backfill_embedding_model(&model_id)
+        .map_err(|e| e.to_string())
+}
+
+/// Rebuild the ANN index with a new quantization mode (Chunk 41.9).
+/// Valid modes: "f32" (default), "i8" (4× compression), "b1" (binary).
+/// Returns the number of vectors re-indexed.
+#[tauri::command]
+pub async fn set_ann_quantization(
+    state: State<'_, AppState>,
+    mode: String,
+) -> Result<usize, String> {
+    let quant = crate::memory::ann_index::EmbeddingQuantization::from_str_lossy(&mode);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.rebuild_ann_quantized(quant)
+}
+
+/// Compact the ANN index by rebuilding from live long-term memories (Chunk 41.11).
+///
+/// Removes tombstones from the HNSW graph. Only runs if fragmentation
+/// exceeds the threshold (20%). Returns the vector count after compaction,
+/// or 0 if compaction was not needed or no index exists.
+#[tauri::command]
+pub async fn compact_ann(
+    state: State<'_, AppState>,
+    force: Option<bool>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    if !force.unwrap_or(false) && !store.ann_needs_compaction() {
+        return Ok(0);
+    }
+    store.compact_ann()
 }
 
 /// Return the current database schema version and storage status.
@@ -869,13 +989,6 @@ pub async fn rerank_search_memories(
             .map_err(|e| e.to_string())?
     }; // release the store lock before any LLM await
 
-    // Stage 1.5 — Code-RAG fusion (Chunk 2.2). When the GitNexus sidecar
-    // is configured AND the user has granted the `code_intelligence`
-    // capability, also dispatch the user query to GitNexus and RRF-fuse
-    // its snippets into the candidate set. Failures are swallowed: code
-    // intelligence augments recall, it never gates it.
-    let candidates = code_rag_fuse(&query, candidates, candidates_k, &state).await;
-
     if candidates.is_empty() {
         return Ok(Vec::new());
     }
@@ -898,88 +1011,6 @@ pub async fn rerank_search_memories(
     ))
 }
 
-/// Code-RAG fusion helper for [`rerank_search_memories`] (Chunk 2.2).
-///
-/// Dispatches `query` to the GitNexus sidecar (when configured + capability
-/// granted), normalises the JSON response into pseudo-`MemoryEntry`
-/// records, and RRF-fuses them with the existing SQLite recall set. The
-/// fused list is truncated to `candidates_k` so the downstream rerank
-/// stage's LLM round-trip count stays bounded.
-///
-/// Failure modes — all silently fall back to returning `db_candidates`
-/// unchanged so the user always gets *some* answer:
-/// 1. Sidecar handle absent (user never spawned it).
-/// 2. Capability not granted (user revoked `code_intelligence`).
-/// 3. Sidecar errors (process died, RPC failure, JSON malformed).
-/// 4. GitNexus returned a shape we don't recognise (normaliser → empty).
-async fn code_rag_fuse(
-    query: &str,
-    db_candidates: Vec<MemoryEntry>,
-    candidates_k: usize,
-    state: &State<'_, AppState>,
-) -> Vec<MemoryEntry> {
-    use crate::commands::gitnexus::GITNEXUS_AGENT;
-    use crate::memory::code_rag::gitnexus_response_to_entries;
-    use crate::memory::fusion::{reciprocal_rank_fuse, DEFAULT_RRF_K};
-    use crate::sandbox::Capability;
-
-    // Cheap pre-check: only proceed when both consent AND a live sidecar
-    // exist. This avoids paying the lock + spawn cost when the feature
-    // is off (the common case).
-    let granted = {
-        let cap = state.capability_store.lock().await;
-        cap.has_capability(GITNEXUS_AGENT, &Capability::CodeIntelligence)
-    };
-    if !granted {
-        return db_candidates;
-    }
-    let sidecar = {
-        let guard = state.gitnexus_sidecar.lock().await;
-        guard.clone()
-    };
-    let Some(sidecar) = sidecar else {
-        return db_candidates;
-    };
-
-    // Make sure the bridge knows the capability is on (cheap idempotent).
-    sidecar.set_capability(true).await;
-
-    let code_entries = match sidecar.query(query).await {
-        Ok(value) => gitnexus_response_to_entries(&value, -1),
-        Err(e) => {
-            eprintln!("[code-rag] gitnexus query failed: {e}; serving DB-only recall");
-            return db_candidates;
-        }
-    };
-    if code_entries.is_empty() {
-        return db_candidates;
-    }
-
-    // RRF-fuse the two rankings. We RRF on ids only (which are unique
-    // across both lists thanks to negative pseudo-ids), then look the
-    // entries back up.
-    let db_ids: Vec<i64> = db_candidates.iter().map(|e| e.id).collect();
-    let code_ids: Vec<i64> = code_entries.iter().map(|e| e.id).collect();
-    let fused: Vec<(i64, f64)> =
-        reciprocal_rank_fuse(&[db_ids.as_slice(), code_ids.as_slice()], DEFAULT_RRF_K);
-
-    use std::collections::HashMap;
-    let mut by_id: HashMap<i64, MemoryEntry> =
-        HashMap::with_capacity(db_candidates.len() + code_entries.len());
-    for e in db_candidates {
-        by_id.insert(e.id, e);
-    }
-    for e in code_entries {
-        by_id.entry(e.id).or_insert(e);
-    }
-
-    fused
-        .into_iter()
-        .filter_map(|(id, _score)| by_id.remove(&id))
-        .take(candidates_k)
-        .collect()
-}
-
 /// Get memory statistics per tier.
 #[tauri::command]
 pub async fn get_memory_stats(
@@ -987,6 +1018,21 @@ pub async fn get_memory_stats(
 ) -> Result<crate::memory::MemoryStats, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.stats().map_err(|e| e.to_string())
+}
+
+/// Get per-operation latency metrics (p50/p95/p99) for all memory CRUD and
+/// retrieval operations (Phase 41.2). Returns a JSON object with one key per
+/// operation name.
+#[tauri::command]
+pub async fn get_memory_metrics() -> Result<serde_json::Value, String> {
+    let snap = crate::memory::metrics::METRICS.snapshot();
+    serde_json::to_value(snap).map_err(|e| e.to_string())
+}
+
+/// Return search cache statistics (hit rate, entries, generation).
+#[tauri::command]
+pub async fn get_search_cache_stats() -> Result<crate::memory::search_cache::CacheStats, String> {
+    Ok(crate::memory::search_cache::SEARCH_CACHE.stats())
 }
 
 /// Enforce the configured maximum memory/RAG storage cap immediately.
@@ -1297,7 +1343,11 @@ pub async fn add_memory_edge(
         edge_source: None,
     };
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.add_edge(edge).map_err(|e| e.to_string())
+    let result = store.add_edge(edge).map_err(|e| e.to_string())?;
+    drop(store);
+    // Invalidate KG cache for affected endpoints (Chunk 41.13).
+    state.kg_cache.invalidate(&[src_id, dst_id]);
+    Ok(result)
 }
 
 /// Close an edge's validity interval at the given Unix-ms timestamp.
@@ -1322,7 +1372,17 @@ pub async fn close_memory_edge(
 #[tauri::command]
 pub async fn delete_memory_edge(edge_id: i64, state: State<'_, AppState>) -> Result<(), String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.delete_edge(edge_id).map_err(|e| e.to_string())
+    // Look up endpoints before deletion for cache invalidation (Chunk 41.13).
+    let endpoints: Option<(i64, i64)> = store
+        .get_edge_by_id(edge_id)
+        .ok()
+        .map(|e| (e.src_id, e.dst_id));
+    store.delete_edge(edge_id).map_err(|e| e.to_string())?;
+    drop(store);
+    if let Some((src, dst)) = endpoints {
+        state.kg_cache.invalidate(&[src, dst]);
+    }
+    Ok(())
 }
 
 /// List all edges in the graph.
@@ -1478,7 +1538,12 @@ pub async fn export_to_obsidian(
     if !path.exists() {
         return Err(format!("Vault directory does not exist: {vault_dir}"));
     }
-    crate::memory::obsidian_export::export_to_vault(path, &entries)
+    let layout = state
+        .app_settings
+        .lock()
+        .map_err(|e| e.to_string())?
+        .obsidian_layout;
+    crate::memory::obsidian_export::export_to_vault_with_layout(path, &entries, layout)
 }
 
 // ── Bidirectional Obsidian sync (Chunk 17.7) ─────────────────────────
@@ -1620,6 +1685,88 @@ pub async fn temporal_query(
     })
 }
 
+// ── Daily brief quest (Chunk 33B.3) ──────────────────────────────────
+
+/// Result of the daily brief query.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct DailyBriefResult {
+    /// Memories matching the brief search (time-filtered + RRF-ranked).
+    pub memories: Vec<crate::memory::MemoryEntry>,
+    /// The time window used (last 24 h from now).
+    pub time_range: crate::memory::temporal::TimeRange,
+    /// Number of total memories in the time range before RRF filtering.
+    pub total_in_range: usize,
+}
+
+/// Run the daily brief quest query: retrieves memories from the last 24 h
+/// that match "overdue OR upcoming OR commitment" via hybrid_search_rrf,
+/// scoped to the temporal window. Returns up to `limit` results ranked by
+/// relevance within the recent window.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn daily_brief_query(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<DailyBriefResult, String> {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64;
+
+    let range = crate::memory::temporal::TimeRange {
+        start_ms: now_ms - 86_400_000, // 24 hours ago
+        end_ms: now_ms,
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+    // Get all memories in the last 24 h.
+    let all = store.get_all().map_err(|e| e.to_string())?;
+    let recent: Vec<crate::memory::MemoryEntry> = all
+        .into_iter()
+        .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+        .collect();
+
+    let total_in_range = recent.len();
+
+    if recent.is_empty() {
+        return Ok(DailyBriefResult {
+            memories: vec![],
+            time_range: range,
+            total_in_range: 0,
+        });
+    }
+
+    // Run hybrid_search_rrf for relevance ranking with the brief keywords.
+    let brief_query = "overdue OR upcoming OR commitment";
+    let lim = limit.unwrap_or(10).clamp(1, 50);
+
+    let ranked = store
+        .hybrid_search_rrf(brief_query, None, lim)
+        .map_err(|e| e.to_string())?;
+
+    // Intersect: only keep RRF results that are within the time range.
+    let in_range: Vec<crate::memory::MemoryEntry> = ranked
+        .into_iter()
+        .filter(|m| m.created_at >= range.start_ms && m.created_at < range.end_ms)
+        .collect();
+
+    // If no RRF results fall in range, return the most recent entries by recency.
+    let memories = if in_range.is_empty() {
+        let mut fallback = recent;
+        fallback.sort_by_key(|m| std::cmp::Reverse(m.created_at));
+        fallback.truncate(lim);
+        fallback
+    } else {
+        in_range
+    };
+
+    Ok(DailyBriefResult {
+        memories,
+        time_range: range,
+        total_in_range,
+    })
+}
+
 /// Get the full version history for a memory entry (chunk 16.12).
 ///
 /// Returns all previous snapshots ordered oldest-first. An empty list means
@@ -1631,6 +1778,19 @@ pub async fn get_memory_history(
 ) -> Result<Vec<crate::memory::versioning::MemoryVersion>, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     crate::memory::versioning::get_history(store.conn(), memory_id).map_err(|e| e.to_string())
+}
+
+/// Return the joined provenance tree for one memory entry (Chunk 33B.4).
+///
+/// Includes the current entry, version snapshots, and incident graph edges
+/// joined to compact neighboring memory summaries.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_memory_provenance(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::audit::MemoryProvenance, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::audit::get_memory_provenance(&store, memory_id).map_err(|e| e.to_string())
 }
 
 /// Delete **all** persisted data: memories, brain config, voice config,
@@ -1720,7 +1880,53 @@ pub async fn clear_all_data(state: State<'_, AppState>) -> Result<(), String> {
     Ok(())
 }
 
-#[cfg(test)]
+// ─── Judgment Rules Commands ────────────────────────────────────────────
+
+/// Add a new judgment rule. Auto-tags with `judgment` if missing.
+#[tauri::command]
+pub async fn judgment_add(
+    content: String,
+    tags: String,
+    importance: i64,
+    state: State<'_, AppState>,
+) -> Result<MemoryEntry, String> {
+    let entry = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        crate::memory::judgment::add_judgment(&store, &content, &tags, importance)?
+    };
+
+    // Best-effort embedding
+    if let Some(emb) = embed(&state, &content).await {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let _ = store.set_embedding(entry.id, &emb);
+    }
+
+    Ok(entry)
+}
+
+/// List all persisted judgment rules.
+#[tauri::command]
+pub async fn judgment_list(state: State<'_, AppState>) -> Result<Vec<MemoryEntry>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    Ok(crate::memory::judgment::list_judgments(&store))
+}
+
+/// Search for judgment rules relevant to a query and return top-N.
+#[tauri::command]
+pub async fn judgment_apply(
+    query: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    Ok(crate::memory::judgment::apply_judgments(
+        &store,
+        &query,
+        limit.unwrap_or(5),
+    ))
+}
+
+#[cfg(all(test, feature = "wasm-sandbox"))]
 mod tests {
     use super::*;
     use crate::package_manager::manifest::InstallMethod;

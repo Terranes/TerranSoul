@@ -4,6 +4,7 @@ pub mod cloud_embeddings;
 pub mod context_budget;
 pub mod doc_catalogue;
 pub mod docker_ollama;
+pub mod embedding_registry;
 pub mod free_api;
 pub mod intent_classifier;
 pub mod lm_studio;
@@ -14,6 +15,7 @@ pub mod model_recommender;
 pub mod ollama_agent;
 pub mod ollama_lifecycle;
 pub mod openai_client;
+pub mod provider_policy;
 pub mod provider_rotator;
 pub mod ram_budget;
 pub mod segmenter;
@@ -22,6 +24,7 @@ pub mod system_info;
 
 pub use brain_config::BrainMode;
 pub use brain_store::{clear as clear_brain, load as load_brain, save as save_brain};
+pub use cloud_embeddings::embed_batch_for_mode;
 pub use cloud_embeddings::embed_for_mode;
 pub use doc_catalogue::{
     fetch_online_catalogue, load_cached_catalogue, parse_catalogue, recommend_from_catalogue,
@@ -39,7 +42,14 @@ pub use ollama_agent::{
     OllamaStatus, PullProgress,
 };
 pub use openai_client::OpenAiClient;
-pub use provider_rotator::ProviderRotator;
+pub use provider_policy::{
+    resolve_for_agent_role, resolve_for_task, role_to_task_kind, AgentRouteConfig, AgentTier,
+    ProviderPolicy, ResolvedAgentProvider, ResolvedProvider, TaskKind, TaskOverride,
+};
+pub use provider_rotator::{
+    FailoverAttempt, FailoverDecision, FailoverPolicy, FailoverReason, FailoverSummary,
+    ProviderRotator, SelectionConstraints,
+};
 pub use selection::{
     AgentSelection, BrainSelection, EmbeddingSelection, MemorySelection, ProviderSelection,
     SearchMethod, SearchSelection, StorageSelection,

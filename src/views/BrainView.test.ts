@@ -11,8 +11,12 @@ import BrainView from './BrainView.vue';
 import type { MemoryEntry } from '../types';
 
 const mockInvoke = vi.fn();
+const mockListen = vi.fn((..._args: unknown[]) => Promise.resolve(() => {}));
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
+}));
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: (...args: unknown[]) => mockListen(...args),
 }));
 
 // Cytoscape needs some DOM APIs that JSDOM only partially provides — and it's
@@ -26,19 +30,19 @@ const sampleMemories: MemoryEntry[] = [
     id: 1, content: 'User prefers dark mode', tags: '', memory_type: 'preference',
     tier: 'long', importance: 5, decay_score: 1.0, access_count: 3,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 5,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
   {
     id: 2, content: 'Yesterday we shipped the v1.0 release', tags: '', memory_type: 'fact',
     tier: 'working', importance: 3, decay_score: 0.8, access_count: 1,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 7,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
   {
     id: 3, content: 'How to deploy: 1. build 2. tag 3. push', tags: '', memory_type: 'fact',
     tier: 'long', importance: 4, decay_score: 0.9, access_count: 5,
     created_at: Date.now(), last_accessed: Date.now(), token_count: 10,
-    session_id: null, parent_id: null,
+    session_id: null, parent_id: null, confidence: 1.0,
   },
 ];
 
@@ -91,7 +95,8 @@ function makeInvokeMock(opts: {
         version: 2, selected_model_id: 'shinra', camera_azimuth: 0,
         camera_distance: 2.8, bgm_enabled: false, bgm_volume: 0.15,
         bgm_track_id: 'prelude', bgm_custom_tracks: [], auto_tag: false,
-        contextual_retrieval: false, late_chunking: false,
+        contextual_retrieval: false, late_chunking: false, lan_enabled: false,
+        lan_auth_mode: 'token_required',
       });
       default:
         // Other unrelated commands — return a reasonable default.
@@ -103,6 +108,7 @@ function makeInvokeMock(opts: {
 beforeEach(() => {
   setActivePinia(createPinia());
   mockInvoke.mockReset();
+  mockListen.mockClear();
 });
 
 describe('BrainView', () => {
@@ -119,8 +125,21 @@ describe('BrainView', () => {
     expect(w.find('[data-testid="bv-card-memory"]').exists()).toBe(true);
     expect(w.find('[data-testid="bv-cognitive-breakdown"]').exists()).toBe(true);
     expect(w.find('[data-testid="bv-rag-capability"]').exists()).toBe(true);
+    expect(w.find('[data-testid="bv-lan-share-section"]').exists()).toBe(true);
     expect(w.find('[data-testid="brain-stat-sheet"]').exists()).toBe(true);
     expect(w.find('[data-testid="memory-graph-stub"]').exists()).toBe(true);
+  });
+
+  it('persists the LAN brain sharing opt-in toggle', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock());
+    const w = mount(BrainView);
+    await flushPromises();
+
+    await w.find('[data-testid="bv-lan-enabled-toggle"]').setValue(true);
+
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ lan_enabled: true }),
+    });
   });
 
   it('shows "No brain configured" when brainMode is null', async () => {
@@ -144,18 +163,28 @@ describe('BrainView', () => {
     expect(w.find('[data-testid="brain-avatar"]').classes()).toContain('mood-free');
   });
 
-  it('classifies memories into the three cognitive kinds', async () => {
+  it('classifies memories into the four cognitive kinds', async () => {
     mockInvoke.mockImplementation(makeInvokeMock({
       brainMode: { mode: 'free_api', provider_id: 'pollinations', api_key: null },
+      memories: [
+        ...sampleMemories,
+        {
+          id: 4, content: 'Prefer minimal patches before broad refactors', tags: 'judgment', memory_type: 'fact',
+          tier: 'long', importance: 4, decay_score: 0.95, access_count: 2,
+          created_at: Date.now(), last_accessed: Date.now(), token_count: 8,
+          session_id: null, parent_id: null, confidence: 1.0,
+        },
+      ],
     }));
     const w = mount(BrainView);
     await flushPromises();
 
     // Sample contains 1 preference (semantic), 1 episodic ("Yesterday…"),
-    // and 1 procedural (numbered "How to deploy").
+    // 1 procedural (numbered "How to deploy"), and 1 judgment tag.
     expect(w.find('[data-testid="bv-cog-episodic"]').text()).toContain('1');
     expect(w.find('[data-testid="bv-cog-semantic"]').text()).toContain('1');
     expect(w.find('[data-testid="bv-cog-procedural"]').text()).toContain('1');
+    expect(w.find('[data-testid="bv-cog-judgment"]').text()).toContain('1');
   });
 
   it('marks vector RAG signal off in cloud modes and on in local mode', async () => {

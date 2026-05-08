@@ -80,6 +80,7 @@ pub(super) fn build_budgeted_prompt(
     base_system: &str,
     history: &[(String, String)],
     relevant: &[crate::memory::MemoryEntry],
+    judgment_block: &str,
     config: &crate::brain::context_budget::BudgetConfig,
 ) -> (String, Vec<(String, String)>) {
     use crate::brain::context_budget::{fit, BudgetInputs, HistoryTurn, RetrievedChunk};
@@ -120,12 +121,91 @@ pub(super) fn build_budgeted_prompt(
         system.push_str(&crate::memory::format_retrieved_context_pack(&mem_block));
     }
 
+    if !judgment_block.is_empty() {
+        system.push_str(judgment_block);
+    }
+
     let trimmed_history: Vec<(String, String)> = result
         .history
         .into_iter()
         .map(|t| (t.role, t.content))
         .collect();
     (system, trimmed_history)
+}
+
+async fn retrieve_prompt_memories(
+    app_state: &AppState,
+    query: &str,
+    brain_mode: Option<&BrainMode>,
+    active_brain: Option<&str>,
+    limit: usize,
+) -> Vec<crate::memory::MemoryEntry> {
+    let query_emb = crate::brain::embed_for_mode(query, brain_mode, active_brain).await;
+    let rerank_threshold = app_state
+        .app_settings
+        .lock()
+        .map(|settings| {
+            settings
+                .relevance_threshold
+                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+        })
+        .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+    let should_rerank = active_brain.is_some();
+    let recall_limit = if should_rerank {
+        limit.clamp(20, 50)
+    } else {
+        limit
+    };
+
+    let candidates: Vec<crate::memory::MemoryEntry> = {
+        match app_state.memory_store.lock() {
+            Ok(store) => store
+                .hybrid_search_rrf(query, query_emb.as_deref(), recall_limit)
+                .unwrap_or_default(),
+            Err(_) => Vec::new(),
+        }
+    };
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let Some(model) = active_brain else {
+        return candidates.into_iter().take(limit).collect();
+    };
+
+    let agent = OllamaAgent::new(model);
+    let mut scores = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        scores.push(agent.rerank_score(query, &candidate.content).await);
+    }
+
+    let reranked = crate::memory::reranker::rerank_candidates_with_threshold(
+        candidates,
+        &scores,
+        limit,
+        rerank_threshold,
+    );
+
+    // Record reinforcement for entries that survived reranking (43.4).
+    if let Ok(store) = app_state.memory_store.lock() {
+        let session_id = format!("chat_{}", crate::memory::store::now_ms());
+        for (idx, entry) in reranked.iter().enumerate() {
+            let _ = store.record_reinforcement(entry.id, &session_id, idx as i64);
+        }
+    }
+
+    reranked
+}
+
+/// Retrieve relevant judgment rules for the current message and format
+/// them as a prompt injection block.
+fn retrieve_judgment_block(app_state: &AppState, query: &str) -> String {
+    let judgments = match app_state.memory_store.lock() {
+        Ok(store) => crate::memory::judgment::apply_judgments(&store, query, 5),
+        Err(_) => Vec::new(),
+    };
+    crate::memory::judgment::format_judgment_block(&judgments)
 }
 
 pub async fn process_message(
@@ -169,6 +249,7 @@ pub async fn process_message(
             .map_err(|e| e.to_string())?
             .clone()
     };
+    let brain_mode_for_retrieval = brain_mode.clone();
 
     // Build conversation history (needed for all LLM paths).
     let history: Vec<(String, String)> = {
@@ -207,17 +288,20 @@ pub async fn process_message(
                 .unwrap_or(&provider.model);
             let client = OpenAiClient::new(&provider.base_url, chat_model, api_key.as_deref());
 
-            // RAG: hybrid search (keyword + recency + importance + decay)
-            let relevant: Vec<crate::memory::MemoryEntry> = {
-                match app_state.memory_store.lock() {
-                    Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
-                    Err(_) => vec![],
-                }
-            };
+            let relevant = retrieve_prompt_memories(
+                app_state,
+                message,
+                brain_mode_for_retrieval.as_ref(),
+                model_opt.as_deref(),
+                5,
+            )
+            .await;
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_free_mode(),
             );
 
@@ -245,17 +329,20 @@ pub async fn process_message(
         }) => {
             let client = OpenAiClient::new(&base_url, &model, Some(&api_key));
 
-            // RAG: hybrid search (keyword + recency + importance + decay)
-            let relevant: Vec<crate::memory::MemoryEntry> = {
-                match app_state.memory_store.lock() {
-                    Ok(store) => store.hybrid_search(message, None, 5).unwrap_or_default(),
-                    Err(_) => vec![],
-                }
-            };
+            let relevant = retrieve_prompt_memories(
+                app_state,
+                message,
+                brain_mode_for_retrieval.as_ref(),
+                model_opt.as_deref(),
+                5,
+            )
+            .await;
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_paid_mode(),
             );
 
@@ -279,33 +366,24 @@ pub async fn process_message(
             model,
             base_url,
             api_key,
-            embedding_model,
+            embedding_model: _,
         }) => {
             let client = OpenAiClient::new(&base_url, &model, api_key.as_deref());
 
-            let query_emb = crate::brain::embed_for_mode(
+            let relevant = retrieve_prompt_memories(
+                app_state,
                 message,
-                Some(&BrainMode::LocalLmStudio {
-                    model: model.clone(),
-                    base_url: base_url.clone(),
-                    api_key: api_key.clone(),
-                    embedding_model: embedding_model.clone(),
-                }),
-                None,
+                brain_mode_for_retrieval.as_ref(),
+                model_opt.as_deref(),
+                5,
             )
             .await;
-            let relevant: Vec<crate::memory::MemoryEntry> = {
-                match app_state.memory_store.lock() {
-                    Ok(store) => store
-                        .hybrid_search(message, query_emb.as_deref(), 5)
-                        .unwrap_or_default(),
-                    Err(_) => vec![],
-                }
-            };
+            let jblock = retrieve_judgment_block(app_state, message);
             let (system, history) = build_budgeted_prompt(
                 SYSTEM_PROMPT_FOR_STREAMING,
                 &history,
                 &relevant,
+                &jblock,
                 &crate::brain::context_budget::BudgetConfig::for_local_mode(),
             );
 

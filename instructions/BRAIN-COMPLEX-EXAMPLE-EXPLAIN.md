@@ -2,7 +2,7 @@
 
 > **TerranSoul v0.1** · Last updated: 2026-04-23
 >
-> Walkthrough with screenshots: [`BRAIN-COMPLEX-EXAMPLE.md`](BRAIN-COMPLEX-EXAMPLE.md)
+> Walkthrough with screenshots: [`brain-rag-setup-tutorial.md`](../tutorials/brain-rag-setup-tutorial.md)
 > Architecture deep dive: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
 
 ---

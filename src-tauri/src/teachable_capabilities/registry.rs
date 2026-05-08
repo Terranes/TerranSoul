@@ -505,10 +505,7 @@ pub fn load_index(data_dir: &Path, now_ms: u64) -> Result<CapabilityIndex, Strin
     };
 
     for seed in seed_catalogue(now_ms) {
-        index
-            .capabilities
-            .entry(seed.id.clone())
-            .or_insert(seed);
+        index.capabilities.entry(seed.id.clone()).or_insert(seed);
     }
     if index.version == 0 {
         index.version = 1;
@@ -602,9 +599,17 @@ mod tests {
         ids.dedup();
         assert_eq!(before, ids.len(), "duplicate capability id");
         for cap in &seeds {
-            assert!(!cap.target_files.is_empty(), "{} has no target_files", cap.id);
+            assert!(
+                !cap.target_files.is_empty(),
+                "{} has no target_files",
+                cap.id
+            );
             assert!(!cap.summary.is_empty(), "{} missing summary", cap.id);
-            assert!(cap.config.is_object(), "{} config must be JSON object", cap.id);
+            assert!(
+                cap.config.is_object(),
+                "{} config must be JSON object",
+                cap.id
+            );
             assert!(cap.source_ref.starts_with("external_research:"));
         }
     }

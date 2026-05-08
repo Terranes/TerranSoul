@@ -130,6 +130,53 @@ pointers that:
   hard rule text here in `rules/coding-standards.md`; keep the credits file
   appreciative, concrete, and human.
 
+### DeepWiki First for GitHub Reverse Engineering
+
+- When reverse-engineering any GitHub repository, first check
+  `https://deepwiki.org/<owner>/<repo>` when network access allows. Use it as
+  the high-level map for architecture, module boundaries, and feature
+  inventory before reading upstream files directly.
+- Always cross-check DeepWiki observations against the upstream repository,
+  license, README, docs, and code before turning them into TerranSoul design
+  decisions. DeepWiki is an aid, not the source of truth.
+- If DeepWiki is unreachable or blocked, record the blocker in the session
+  report and continue with direct upstream research instead of silently
+  skipping the rule.
+- Any durable lesson from reverse-engineering must be credited in
+  `CREDITS.md` and synced into MCP self-improve knowledge in
+  `mcp-data/shared/**` so future agents can retrieve it with `brain_search`.
+
+### Deep Analysis Before Action
+
+- Every non-trivial decision (adopting an idea from another project, adding a
+  dependency, refactoring a subsystem, accepting or rejecting a research
+  finding) must complete the deep-analysis protocol in
+  [`rules/deep-analysis-rule.md`](deep-analysis-rule.md): MCP-prior-art
+  check, source-of-truth read, gap analysis, verdict, and a numbered SQL
+  migration written back under `mcp-data/shared/migrations/`.
+- No partial scans. Reading only a top-level README, searching only one MCP
+  keyword, or reading only one source file is a violation. If a required
+  step cannot complete, stop and report the blocker.
+- The cost of a deep analysis is paid once: the verdict goes into a
+  migration so future agents retrieve it via `brain_search` instead of
+  re-scanning the same upstream repo or the same TerranSoul subsystem.
+
+### MCP Markdown Memory Boundary
+
+- Do not treat Markdown as TerranSoul MCP memory. Markdown files may describe
+  instructions, design, lessons, and projections for humans, but the MCP
+  memory source of truth is the SQLite schema seeded from
+  `mcp-data/shared/memory-seed.sql` plus `memory_edges`.
+- If a PR adds or updates Markdown that contains durable project knowledge
+  meant for future agents, sync the same knowledge into
+  `mcp-data/shared/memory-seed.sql` in the same PR and connect it with
+  `memory_edges` where it has a relationship to existing rules, docs, or
+  architecture facts.
+- Markdown-only knowledge is incomplete for MCP self-improve. Future agents
+  must be able to retrieve the rule/fact through `brain_search` and traverse
+  its relationships through the knowledge graph, not by bulk-loading `.md`
+  files into context.
+
 ### No Mocks in Production
 
 > **It is either a chunk in `rules/milestones.md` OR a real working version with the highest QA — never a half-done mock shipped to users.**
@@ -404,6 +451,54 @@ blocker — they break the moment a font or padding changes.
 - TypeScript: JSDoc `/** */` on all exported interfaces and store actions
 - Architecture Decision Records (ADRs) in `docs/adr/` for significant decisions
 - Update `rules/milestones.md` after each chunk is completed
+
+---
+
+## Tutorial Screenshots (Mandatory)
+
+Every tutorial in `tutorials/` **must** have an accompanying screenshot for
+each numbered section. Screenshots are stored under
+`tutorials/screenshots/<tutorial-name>/NN-step-description.png`.
+
+### Rules
+
+1. **No placeholder references.** If a tutorial has an `![alt](screenshots/…)`
+   reference, the actual image file **must exist**. A tutorial with broken
+   image links is considered incomplete.
+2. **Agent-captured.** When an agent creates or updates a tutorial section, it
+   must also capture the screenshot itself using the browser tools
+   (`open_browser_page` → navigate to the relevant UI state →
+   `screenshot_page` → save the PNG to the correct path). Do NOT leave
+   screenshot capture for the user.
+3. **Capture workflow:**
+   - Start the dev server (`npm run dev` or the existing Vite terminal).
+   - Open `http://localhost:1420` in the integrated browser.
+   - Navigate to the relevant view/panel (e.g. `#/memory` for the graph,
+     `#/settings` for configuration panels, `#/chat` for chat UI).
+   - Use `screenshot_page` with an appropriate `selector` or full viewport.
+   - Save the captured image to `tutorials/screenshots/<name>/NN-step.png`.
+4. **Meaningful content.** Screenshots should show realistic UI states — not
+   empty/loading screens. If the app needs seed data (memories, personas,
+   etc.), use the MCP brain or Tauri commands to populate state first.
+5. **Consistent dimensions.** Target 1280×800 viewport. Crop to relevant
+   panels when a full-page shot is too wide.
+6. **Update on UI change.** When a PR modifies a UI component that appears in
+   a tutorial screenshot, re-capture the affected screenshots in the same PR.
+7. **Alt text.** The `![alt text]` must concisely describe what the screenshot
+   shows (for accessibility). No generic text like "screenshot" or "image".
+
+### Directory convention
+
+```
+tutorials/screenshots/
+  quick-start/
+    01-install.png
+    02-first-launch.png
+    ...
+  voice-setup/
+    01-settings-panel.png
+    ...
+```
 
 ---
 

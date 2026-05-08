@@ -242,6 +242,20 @@ export interface MemoryEntry {
   session_id: string | null;
   parent_id: number | null;
   token_count: number;
+  confidence: number;
+}
+
+/** A reinforcement provenance record (Chunk 43.4). */
+export interface ReinforcementRecord {
+  memory_id: number;
+  session_id: string;
+  message_index: number;
+  ts: number;
+}
+
+/** A memory entry enriched with reinforcement history. */
+export interface EntryDetail extends MemoryEntry {
+  reinforcements: ReinforcementRecord[];
 }
 
 export interface MemoryStats {
@@ -276,6 +290,44 @@ export interface MemoryEdge {
   confidence: number;
   source: EdgeSource;
   created_at: number;
+  valid_from?: number | null;
+  valid_to?: number | null;
+  edge_source?: string | null;
+}
+
+export interface MemoryVersion {
+  id: number;
+  memory_id: number;
+  version_num: number;
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: string;
+  created_at: number;
+}
+
+export interface MemoryAuditNeighbor {
+  id: number;
+  content: string;
+  tags: string;
+  importance: number;
+  memory_type: string;
+  tier: string;
+  created_at: number;
+}
+
+export interface MemoryAuditEdge {
+  edge: MemoryEdge;
+  direction: 'incoming' | 'outgoing';
+  neighbor: MemoryAuditNeighbor | null;
+}
+
+export interface MemoryProvenance {
+  entry: MemoryEntry;
+  versions: MemoryVersion[];
+  edges: MemoryAuditEdge[];
+  version_count: number;
+  edge_count: number;
 }
 
 export interface EdgeStats {
@@ -474,6 +526,152 @@ export interface SelfImproveRun {
   completion_tokens?: number | null;
   /** Estimated USD cost for the run, when token counts are available. */
   cost_usd?: number | null;
+}
+
+export interface SelfImproveWorkboardItem {
+  id: string;
+  title: string;
+  detail: string;
+  status: string;
+  source: string;
+  updated_at_ms: number;
+}
+
+export interface SelfImproveWorkboard {
+  generated_at_ms: number;
+  finished: SelfImproveWorkboardItem[];
+  working: SelfImproveWorkboardItem[];
+  backlog: SelfImproveWorkboardItem[];
+}
+
+// ---------------------------------------------------------------------------
+// Gate telemetry (Chunk 34.2)
+// ---------------------------------------------------------------------------
+
+/** Result of a single gate execution. */
+export type GateResult = 'pass' | 'partial' | 'fail';
+
+/** A single gate telemetry event (emitted at start and end of each gate). */
+export interface GateEvent {
+  ts: number;
+  gate: string;
+  session_id: string;
+  chunk_id: string;
+  event_type: 'start' | 'end';
+  result: GateResult | null;
+  duration_ms: number;
+  error: string | null;
+  meta: Record<string, string>;
+}
+
+/** Per-gate aggregate statistics. */
+export interface GateStats {
+  total: number;
+  pass: number;
+  partial: number;
+  fail: number;
+  pass_rate: number;
+  avg_duration_ms: number;
+  last_error: string | null;
+  last_run_at_ms: number;
+}
+
+/** Summary of all gates returned by `get_self_improve_gate_metrics`. */
+export interface GateMetricsSummary {
+  gates: Record<string, GateStats>;
+  active_gate: string | null;
+  last_successful_gate: string | null;
+  last_session_id: string | null;
+}
+
+/**
+ * Result of `promote_to_milestone_chunk` — a backlog item (failed run,
+ * research idea, deferred suggestion) was safely appended to
+ * `rules/milestones.md` as a new chunk row.
+ */
+export interface PromoteToChunkResult {
+  chunk_id: string;
+  phase_id: number;
+  title: string;
+}
+
+// ---------------------------------------------------------------------------
+// Provider Policy Registry (Chunk 35.1)
+// ---------------------------------------------------------------------------
+
+/** Task kinds that can each have per-task provider overrides. */
+export type TaskKind =
+  | 'chat'
+  | 'embeddings'
+  | 'rerank'
+  | 'summarise'
+  | 'code_review'
+  | 'long_context';
+
+/** Per-task provider override configuration. */
+export interface TaskOverride {
+  kind: TaskKind;
+  provider_id?: string | null;
+  model?: string | null;
+  base_url?: string | null;
+  api_key?: string | null;
+  max_tokens?: number | null;
+  enabled: boolean;
+}
+
+/** App-wide provider policy (map of per-task overrides). */
+export interface ProviderPolicy {
+  version: number;
+  overrides: Record<string, TaskOverride>;
+}
+
+/** Resolved provider selection for a single task invocation. */
+export interface ResolvedProvider {
+  source: string;
+  provider_id: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  max_tokens?: number | null;
+}
+
+// ---------------------------------------------------------------------------
+// Agent-Role Routing (Chunk 35.3)
+// ---------------------------------------------------------------------------
+
+/** Agent roles in the multi-agent workflow system. */
+export type AgentRole =
+  | 'planner'
+  | 'coder'
+  | 'reviewer'
+  | 'tester'
+  | 'researcher'
+  | 'orchestrator';
+
+/** Agent quality/speed tier for model selection. */
+export type AgentTier = 'fast' | 'balanced' | 'premium';
+
+/** Per-agent-role routing configuration. */
+export interface AgentRouteConfig {
+  role: AgentRole;
+  preferred_tier: AgentTier;
+  preferred_provider?: string | null;
+  preferred_model?: string | null;
+  fallback_providers: string[];
+  max_tokens?: number | null;
+  enabled: boolean;
+}
+
+/** Resolved provider for an agent role (includes fallback info). */
+export interface ResolvedAgentProvider {
+  role: AgentRole;
+  source: string;
+  provider_id: string;
+  model: string;
+  base_url: string;
+  api_key: string;
+  max_tokens?: number | null;
+  fallback_from?: string | null;
 }
 
 /**

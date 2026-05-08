@@ -102,15 +102,13 @@ pub fn write_wiki_pages(
     };
 
     // Write index page
-    let mut index_md = String::from("# Code Wiki\n\nGenerated from the TerranSoul symbol graph.\n\n");
+    let mut index_md =
+        String::from("# Code Wiki\n\nGenerated from the TerranSoul symbol graph.\n\n");
     index_md.push_str("| Cluster | Symbols | Description |\n");
     index_md.push_str("|---------|---------|-------------|\n");
 
     for (i, cluster) in clusters.iter().enumerate() {
-        let summary_text = summaries
-            .get(i)
-            .and_then(|s| s.as_deref())
-            .unwrap_or("—");
+        let summary_text = summaries.get(i).and_then(|s| s.as_deref()).unwrap_or("—");
         let filename = cluster_filename(cluster);
         index_md.push_str(&format!(
             "| [{}]({}) | {} | {} |\n",
@@ -154,7 +152,10 @@ pub fn build_cluster_description(cluster: &Cluster, syms: &[SymInfo]) -> String 
         cluster.label, cluster.size
     );
     for sym in syms.iter().take(50) {
-        desc.push_str(&format!("- {} {} ({}:{})\n", sym.kind, sym.name, sym.file, sym.line));
+        desc.push_str(&format!(
+            "- {} {} ({}:{})\n",
+            sym.kind, sym.name, sym.file, sym.line
+        ));
     }
     if syms.len() > 50 {
         desc.push_str(&format!("... and {} more symbols\n", syms.len() - 50));
@@ -168,7 +169,13 @@ fn cluster_filename(cluster: &Cluster) -> String {
     let sanitized: String = cluster
         .label
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect();
     format!("{:03}-{}.md", cluster.id, sanitized)
 }
@@ -178,9 +185,8 @@ fn load_cluster_symbols(conn: &Connection, symbol_ids: &[i64]) -> Result<Vec<Sym
         return Ok(Vec::new());
     }
     let placeholders: String = symbol_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-    let sql = format!(
-        "SELECT id, name, kind, file, line FROM code_symbols WHERE id IN ({placeholders})"
-    );
+    let sql =
+        format!("SELECT id, name, kind, file, line FROM code_symbols WHERE id IN ({placeholders})");
     let mut stmt = conn.prepare(&sql)?;
     let params: Vec<&dyn rusqlite::types::ToSql> = symbol_ids
         .iter()
@@ -264,7 +270,10 @@ fn render_cluster_page(
             }
         }
         if edges.len() > 100 {
-            page.push_str(&format!("    %% ... and {} more edges\n", edges.len() - 100));
+            page.push_str(&format!(
+                "    %% ... and {} more edges\n",
+                edges.len() - 100
+            ));
         }
         page.push_str("```\n\n");
     }
@@ -286,7 +295,13 @@ fn render_cluster_page(
 
 fn mermaid_safe(name: &str) -> String {
     name.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -340,11 +355,31 @@ mod tests {
             size: 2,
         };
         let syms = vec![
-            SymInfo { id: 1, name: "main".to_string(), kind: "function".to_string(), file: "src/main.rs".to_string(), line: 1 },
-            SymInfo { id: 2, name: "run".to_string(), kind: "function".to_string(), file: "src/main.rs".to_string(), line: 10 },
+            SymInfo {
+                id: 1,
+                name: "main".to_string(),
+                kind: "function".to_string(),
+                file: "src/main.rs".to_string(),
+                line: 1,
+            },
+            SymInfo {
+                id: 2,
+                name: "run".to_string(),
+                kind: "function".to_string(),
+                file: "src/main.rs".to_string(),
+                line: 10,
+            },
         ];
-        let edges = vec![IntraEdge { from_id: 1, to_id: 2 }];
-        let page = render_cluster_page(&cluster, &syms, &edges, Some("Core application entry point."));
+        let edges = vec![IntraEdge {
+            from_id: 1,
+            to_id: 2,
+        }];
+        let page = render_cluster_page(
+            &cluster,
+            &syms,
+            &edges,
+            Some("Core application entry point."),
+        );
 
         assert!(page.contains("# Cluster: core"));
         assert!(page.contains("Core application entry point."));
@@ -361,9 +396,13 @@ mod tests {
             symbol_ids: vec![3],
             size: 1,
         };
-        let syms = vec![
-            SymInfo { id: 3, name: "helper".to_string(), kind: "function".to_string(), file: "src/utils.rs".to_string(), line: 5 },
-        ];
+        let syms = vec![SymInfo {
+            id: 3,
+            name: "helper".to_string(),
+            kind: "function".to_string(),
+            file: "src/utils.rs".to_string(),
+            line: 5,
+        }];
         let page = render_cluster_page(&cluster, &syms, &[], None);
 
         assert!(page.contains("# Cluster: utils"));
@@ -380,8 +419,20 @@ mod tests {
             size: 2,
         };
         let syms = vec![
-            SymInfo { id: 1, name: "foo".to_string(), kind: "function".to_string(), file: "a.rs".to_string(), line: 1 },
-            SymInfo { id: 2, name: "bar".to_string(), kind: "struct".to_string(), file: "b.rs".to_string(), line: 10 },
+            SymInfo {
+                id: 1,
+                name: "foo".to_string(),
+                kind: "function".to_string(),
+                file: "a.rs".to_string(),
+                line: 1,
+            },
+            SymInfo {
+                id: 2,
+                name: "bar".to_string(),
+                kind: "struct".to_string(),
+                file: "b.rs".to_string(),
+                line: 10,
+            },
         ];
         let desc = build_cluster_description(&cluster, &syms);
         assert!(desc.contains("test-cluster"));

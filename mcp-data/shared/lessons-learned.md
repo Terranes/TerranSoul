@@ -78,12 +78,12 @@
 ## MCP / agent integration
 
 - Three MCP profiles in `.vscode/mcp.json`: `terransoul-brain` (release,
-  7421), `terransoul-brain-dev` (dev, 7422), `terransoul-brain-mcp`
-  (headless, 7423). Coding agents should use the headless profile so they
-  do not collide with a running app's data.
+  7421), `terransoul-brain-dev` (dev, 7422), and `terransoul-brain-mcp`
+  (MCP tray/coding-agent runtime, 7423). Coding agents should use the MCP
+  profile unless a running release/dev app is already serving MCP.
 - Bearer token is regenerated when missing; it is written to both
   `mcp-data/mcp-token.txt` and `.vscode/.mcp-token`. Set
-  `TERRANSOUL_MCP_TOKEN_MCP` from the file for the headless profile.
+  `TERRANSOUL_MCP_TOKEN_MCP` from the file for the MCP profile.
 - Verify MCP with `GET /health` (no auth required) before calling `brain_health`.
 
 ## Self-improve
@@ -102,6 +102,18 @@
 - Self-improve sessions append durable knowledge to
   `mcp-data/shared/memory-seed.sql`, `project-index.md`, and this file
   whenever a learning generalizes beyond the current chunk.
+- MCP-mode self-improve runtime logs stay under `mcp-data/` and are bounded:
+  `self_improve_runs.jsonl`, `self_improve_gates.jsonl`, and
+  `self_improve_mcp.jsonl` keep only the current file plus `.001`, capped at
+  1 MiB per file. Durable lessons must still be mirrored into shared seed SQL.
+- MCP startup on `7423` must enforce target freshness: when
+  `target-mcp/release/terransoul(.exe)` is older than `src-tauri` source/config,
+  do not reuse the running process. Required flow is terminate, rebuild,
+  relaunch, then `/health` check; if termination fails, report a blocker.
+- Shared seed bootstrap must resolve in this order across release/dev/MCP:
+  `TERRANSOUL_MCP_SHARED_DIR` -> `<data_dir>/shared` -> `<cwd>/mcp-data/shared`
+  -> compiled SQL fallback. This prevents dev/release drift when runtime data
+  directories do not contain a `shared/` folder but the repo dataset exists.
 - Per the brain documentation sync rule, any change to brain surface
   (LLM providers, memory store, RAG pipeline, ingestion, embeddings,
   cognitive-kind classification, knowledge graph, decay/GC, brain-gating
@@ -111,6 +123,27 @@
   `rules/`, add a concise high-importance row to
   `mcp-data/shared/memory-seed.sql` plus a short note in `project-index.md` or
   this file so future `brain_search` retrieves it.
+- **DeepWiki-first reverse engineering**: when studying any GitHub project,
+  check `https://deepwiki.org/<owner>/<repo>` first when reachable, then
+  cross-check against the upstream repository and license. If DeepWiki is
+  blocked, record the blocker. Credit any learned source in `CREDITS.md` and
+  sync durable lessons into `mcp-data/shared/**` so MCP self-improve can recall
+  them.
+- **MCP self-learning is reviewable source, not chat memory**: when a user adds
+  a durable rule or an agent learns a reusable convention, update
+  `mcp-data/shared/memory-seed.sql`, `lessons-learned.md`, or
+  `project-index.md` in the same PR. Runtime `memory.db` may be refreshed by
+  MCP tools, but tracked shared files are the durable default dataset.
+- **MCP use must be visible**: after `brain_health` and the relevant
+  `brain_search` / `brain_suggest_context`, agents must show a short receipt
+  naming the health/provider result and query topic. Hidden tool calls alone do
+  not complete preflight.
+- **Markdown is not MCP memory**: rules/docs/lessons Markdown can describe
+  knowledge for humans, but durable MCP knowledge must also be synced into
+  `mcp-data/shared/memory-seed.sql` and connected with `memory_edges`.
+  Markdown-only rule or architecture knowledge is incomplete because future
+  agents must retrieve it through SQLite/FTS/RRF/KG, not by loading `.md`
+  files as memory.
 
 ## CI / GitHub
 
@@ -168,7 +201,7 @@
   logger.
 - **Don't propose "store memories as `.md` / Obsidian as the source of
   truth"**. See `mcp-data/shared/memory-philosophy.md` — markdown is
-  for instructions; SQLite + HNSW + `memory_edges` is the source of
+  for instructions; SQLite + vector search + `memory_edges` is the source of
   truth; `obsidian_export.rs` is a one-way projection. This is a
   non-negotiable architectural rule absorbed from Jonathan Edwards'
   "Stop Calling It Memory" essay.

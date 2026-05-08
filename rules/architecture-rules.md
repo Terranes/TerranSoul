@@ -136,7 +136,7 @@
   `docs/brain-advanced-design.md` § 3.5 for the design rationale.
 - Rust `agent/openclaw_agent.rs` — legacy OpenClaw parser/provider support.
   New OpenClaw-facing UX and command dispatch belongs to the PluginHost
-  `openclaw-bridge` plugin. See `instructions/OPENCLAW-EXAMPLE.md`.
+  `openclaw-bridge` plugin. See `tutorials/openclaw-plugin-tutorial.md`.
 - Rust `registry_server/catalog_registry.rs` — in-process default
   `RegistrySource` so the Marketplace browse tab is populated without
   starting the registry HTTP server. The HTTP server remains optional and is

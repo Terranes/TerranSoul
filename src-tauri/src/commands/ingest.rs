@@ -26,6 +26,20 @@ struct IngestChunk {
     char_span: Option<CharSpan>,
 }
 
+#[derive(Clone)]
+enum IngestProgressEmitter {
+    Tauri(AppHandle),
+    Silent,
+}
+
+impl IngestProgressEmitter {
+    fn emit(&self, event: TaskProgressEvent) {
+        if let Self::Tauri(app) = self {
+            let _ = app.emit("task-progress", event);
+        }
+    }
+}
+
 /// Ingest a document from a local file path, URL, or web crawl.
 /// Runs as a background task with progress events.
 #[tauri::command]
@@ -35,6 +49,35 @@ pub async fn ingest_document(
     importance: Option<i64>,
     app_handle: AppHandle,
     state: State<'_, AppState>,
+) -> Result<IngestStartResult, String> {
+    start_ingest(
+        source,
+        tags,
+        importance,
+        Some(app_handle),
+        state.inner().clone(),
+    )
+    .await
+}
+
+/// Start ingestion without a Tauri [`AppHandle`]. Used by MCP stdio, where
+/// there is no WebView event channel but the same persistent AppState is
+/// available.
+pub async fn ingest_document_silent(
+    source: String,
+    tags: Option<String>,
+    importance: Option<i64>,
+    state: AppState,
+) -> Result<IngestStartResult, String> {
+    start_ingest(source, tags, importance, None, state).await
+}
+
+async fn start_ingest(
+    source: String,
+    tags: Option<String>,
+    importance: Option<i64>,
+    app_handle: Option<AppHandle>,
+    state: AppState,
 ) -> Result<IngestStartResult, String> {
     let tags = tags.unwrap_or_else(|| "imported".to_string());
     let importance = importance.unwrap_or(4).clamp(1, 5);
@@ -76,19 +119,19 @@ pub async fn ingest_document(
         mgr.create_task(kind.clone(), &description, &source_trimmed)
     };
 
-    let _ = app_handle.emit(
-        "task-progress",
-        TaskProgressEvent {
-            id: task_id.clone(),
-            kind: kind.clone(),
-            status: TaskStatus::Running,
-            progress: 0,
-            description: description.clone(),
-            processed_items: 0,
-            total_items: 0,
-            error: None,
-        },
-    );
+    let emitter = app_handle
+        .map(IngestProgressEmitter::Tauri)
+        .unwrap_or(IngestProgressEmitter::Silent);
+    emitter.emit(TaskProgressEvent {
+        id: task_id.clone(),
+        kind: kind.clone(),
+        status: TaskStatus::Running,
+        progress: 0,
+        description: description.clone(),
+        processed_items: 0,
+        total_items: 0,
+        error: None,
+    });
 
     let cancel_flag = {
         let mgr = state.task_manager.lock().await;
@@ -99,38 +142,40 @@ pub async fn ingest_document(
     let task_id_clone = task_id.clone();
     let source_clone = source_trimmed.clone();
     let kind_clone = kind.clone();
-    let app = app_handle.clone();
+    let emitter_clone = emitter.clone();
+    let state_clone = state.clone();
 
+    // Acquire a concurrency permit so at most N ingest tasks run their
+    // embedding phase simultaneously. This prevents stampeding Ollama when
+    // many files are ingested at once (e.g. doc-sync of 56 files).
+    let semaphore = state.ingest_semaphore.clone();
     tokio::spawn(async move {
-        let app_state = app.state::<AppState>();
+        let _permit = semaphore.acquire().await;
         let result = run_ingest_task(
             &task_id_clone,
             &source_clone,
             &tags,
             importance,
             &cancel_flag,
-            &app,
-            &app_state,
+            &emitter_clone,
+            &state_clone,
         )
         .await;
 
-        let mut mgr = app_state.task_manager.lock().await;
+        let mut mgr = state_clone.task_manager.lock().await;
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit(
-                    "task-progress",
-                    TaskProgressEvent {
-                        id: task_id_clone,
-                        kind: kind_clone,
-                        status: TaskStatus::Completed,
-                        progress: 100,
-                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                        processed_items: chunks,
-                        total_items: chunks,
-                        error: None,
-                    },
-                );
+                emitter_clone.emit(TaskProgressEvent {
+                    id: task_id_clone,
+                    kind: kind_clone,
+                    status: TaskStatus::Completed,
+                    progress: 100,
+                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                    processed_items: chunks,
+                    total_items: chunks,
+                    error: None,
+                });
             }
             Err(e) => {
                 if e.contains("cancelled") {
@@ -141,35 +186,28 @@ pub async fn ingest_document(
                         .get_task(&task_id_clone)
                         .map(|t| t.progress)
                         .unwrap_or(0);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Paused,
-                            progress: prog,
-                            description: "Paused — exceeded 30 min. Resume to continue."
-                                .to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter_clone.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Paused,
+                        progress: prog,
+                        description: "Paused — exceeded 30 min. Resume to continue.".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 } else {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Failed,
-                            progress: 0,
-                            description: "Failed".to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter_clone.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Failed,
+                        progress: 0,
+                        description: "Failed".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 }
             }
         }
@@ -224,14 +262,15 @@ pub async fn resume_ingest_task(
     let app = app_handle.clone();
 
     tokio::spawn(async move {
-        let app_state = app.state::<AppState>();
+        let app_state = app.state::<AppState>().inner().clone();
+        let emitter = IngestProgressEmitter::Tauri(app.clone());
         let result = run_ingest_task(
             &task_id_clone,
             &source,
             "imported",
             4,
             &cancel_flag,
-            &app,
+            &emitter,
             &app_state,
         )
         .await;
@@ -240,36 +279,30 @@ pub async fn resume_ingest_task(
         match result {
             Ok((chunks, total_chars)) => {
                 mgr.complete_task(&task_id_clone);
-                let _ = app.emit(
-                    "task-progress",
-                    TaskProgressEvent {
-                        id: task_id_clone,
-                        kind: kind_clone,
-                        status: TaskStatus::Completed,
-                        progress: 100,
-                        description: format!("Done! {} chunks from {} chars", chunks, total_chars),
-                        processed_items: chunks,
-                        total_items: chunks,
-                        error: None,
-                    },
-                );
+                emitter.emit(TaskProgressEvent {
+                    id: task_id_clone,
+                    kind: kind_clone,
+                    status: TaskStatus::Completed,
+                    progress: 100,
+                    description: format!("Done! {} chunks from {} chars", chunks, total_chars),
+                    processed_items: chunks,
+                    total_items: chunks,
+                    error: None,
+                });
             }
             Err(e) => {
                 if !e.contains("cancelled") {
                     mgr.fail_task(&task_id_clone, &e);
-                    let _ = app.emit(
-                        "task-progress",
-                        TaskProgressEvent {
-                            id: task_id_clone,
-                            kind: kind_clone,
-                            status: TaskStatus::Failed,
-                            progress: 0,
-                            description: "Failed".to_string(),
-                            processed_items: 0,
-                            total_items: 0,
-                            error: Some(e),
-                        },
-                    );
+                    emitter.emit(TaskProgressEvent {
+                        id: task_id_clone,
+                        kind: kind_clone,
+                        status: TaskStatus::Failed,
+                        progress: 0,
+                        description: "Failed".to_string(),
+                        processed_items: 0,
+                        total_items: 0,
+                        error: Some(e),
+                    });
                 }
             }
         }
@@ -295,10 +328,10 @@ async fn run_ingest_task(
     tags: &str,
     importance: i64,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle,
-    state: &State<'_, AppState>,
+    emitter: &IngestProgressEmitter,
+    state: &AppState,
 ) -> Result<(usize, usize), String> {
-    emit_progress(app, task_id, 5, "Fetching content…", 0, 0);
+    emit_progress(emitter, task_id, 5, "Fetching content…", 0, 0);
 
     if cancel_flag.load(Ordering::Relaxed) {
         return Err("Task cancelled".to_string());
@@ -307,7 +340,7 @@ async fn run_ingest_task(
     let (text, source_url) = if source.starts_with("crawl:") {
         let url = source.strip_prefix("crawl:").unwrap().trim();
         let crawled =
-            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, app, state).await?;
+            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, emitter, state).await?;
         (crawled, url.to_string())
     } else if source.starts_with("http://") || source.starts_with("https://") {
         let text = fetch_url(source, state).await?;
@@ -333,7 +366,7 @@ async fn run_ingest_task(
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         if let Ok(Some(existing)) = store.find_by_source_hash(&source_hash) {
             // Content unchanged — skip re-ingest.
-            emit_progress(app, task_id, 100, "Content unchanged — skipped", 0, 0);
+            emit_progress(emitter, task_id, 100, "Content unchanged — skipped", 0, 0);
             return Ok((0, existing.token_count as usize));
         }
         // Content changed or new — delete any stale entries from the same source URL.
@@ -364,7 +397,7 @@ async fn run_ingest_task(
     let chunks = build_ingest_chunks(&text, semantic_chunks);
 
     emit_progress(
-        app,
+        emitter,
         task_id,
         30,
         &format!("Chunked into {} pieces", chunk_count),
@@ -392,7 +425,7 @@ async fn run_ingest_task(
     let doc_summary = if contextual_retrieval_enabled {
         if let Some(mode) = brain_mode.clone() {
             emit_progress(
-                app,
+                emitter,
                 task_id,
                 32,
                 "Generating document summary for contextual retrieval…",
@@ -412,7 +445,7 @@ async fn run_ingest_task(
             local_ollama_model_hint(brain_mode.as_ref(), active_brain.as_deref())
         {
             emit_progress(
-                app,
+                emitter,
                 task_id,
                 34,
                 "Generating whole-document token embeddings for late chunking…",
@@ -521,7 +554,7 @@ async fn run_ingest_task(
 
         let progress = (30 + ((i + 1) * 50 / chunk_count.max(1))) as u8;
         emit_progress(
-            app,
+            emitter,
             task_id,
             progress,
             &format!("Stored {}/{} chunks", i + 1, chunk_count),
@@ -552,7 +585,7 @@ async fn run_ingest_task(
 
     // Embed (best effort)
     emit_progress(
-        app,
+        emitter,
         task_id,
         85,
         "Generating embeddings…",
@@ -566,31 +599,129 @@ async fn run_ingest_task(
             .filter(|(_, _, embedded)| !*embedded)
             .map(|(id, content, _)| (*id, content.clone()))
             .collect();
-        for (i, (entry_id, content)) in pending_embeddings.iter().enumerate() {
+
+        // Batch embed in groups of 32 (Ollama /api/embed + OpenAI both
+        // support array input). This is ≥10× faster than sequential
+        // single-text calls because it amortises TCP/TLS overhead and
+        // lets the model batch GPU work.
+        let texts: Vec<&str> = pending_embeddings.iter().map(|(_, c)| c.as_str()).collect();
+
+        let embeddings = crate::brain::embed_batch_for_mode(
+            &texts,
+            brain_mode.as_ref(),
+            active_brain.as_deref(),
+            None, // default batch_size = 32
+        )
+        .await;
+
+        let mut embedded_count = 0usize;
+        let mut failed_ids: Vec<i64> = Vec::new();
+        for (i, emb_opt) in embeddings.into_iter().enumerate() {
             if cancel_flag.load(Ordering::Relaxed) {
                 break;
             }
-            if let Some(emb) =
-                crate::brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref())
-                    .await
-            {
+            if let Some(emb) = emb_opt {
                 if let Ok(s) = state.memory_store.lock() {
-                    let _ = s.set_embedding(*entry_id, &emb);
+                    let _ = s.set_embedding(pending_embeddings[i].0, &emb);
+                    embedded_count += 1;
                 }
+            } else {
+                // Embedding failed — enqueue for retry by the
+                // self-healing background worker (Chunk 38.2).
+                failed_ids.push(pending_embeddings[i].0);
             }
-            let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
-            emit_progress(
-                app,
-                task_id,
-                progress,
-                &format!("Embedded {}/{}", i + 1, pending_embeddings.len()),
-                i + 1,
-                pending_embeddings.len(),
-            );
+            // Emit progress every 32 items or on last item.
+            if (i + 1) % 32 == 0 || i + 1 == pending_embeddings.len() {
+                let progress = (85 + ((i + 1) * 15 / pending_embeddings.len().max(1))) as u8;
+                emit_progress(
+                    emitter,
+                    task_id,
+                    progress,
+                    &format!("Embedded {}/{}", embedded_count, pending_embeddings.len()),
+                    i + 1,
+                    pending_embeddings.len(),
+                );
+            }
+        }
+
+        // Enqueue all failed embeddings for retry. The background worker
+        // will pick them up on its next 10-s tick.
+        if !failed_ids.is_empty() {
+            if let Ok(s) = state.memory_store.lock() {
+                let _ = crate::memory::embedding_queue::enqueue_many(s.conn(), &failed_ids);
+            }
         }
     }
 
+    if let Some(model) = auto_edge_extraction_model(
+        state
+            .app_settings
+            .lock()
+            .map(|settings| settings.auto_extract_edges)
+            .unwrap_or(true),
+        active_brain.as_deref(),
+        created_entries.len(),
+    ) {
+        emit_progress(
+            emitter,
+            task_id,
+            99,
+            "Extracting memory graph edges…",
+            created_entries.len(),
+            created_entries.len(),
+        );
+        let _ = run_ingest_edge_extraction(state, &model, 25).await;
+    }
+
     Ok((created, total_chars))
+}
+
+fn auto_edge_extraction_model(
+    auto_extract_edges: bool,
+    active_brain: Option<&str>,
+    created_entries: usize,
+) -> Option<String> {
+    if !auto_extract_edges || created_entries == 0 {
+        return None;
+    }
+    active_brain.map(str::to_string)
+}
+
+async fn run_ingest_edge_extraction(
+    state: &AppState,
+    model: &str,
+    chunk_size: usize,
+) -> Result<usize, String> {
+    let entries: Vec<crate::memory::MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.get_all().map_err(|e| e.to_string())?
+    };
+    if entries.len() < 2 {
+        return Ok(0);
+    }
+
+    let known_ids: HashSet<i64> = entries.iter().map(|entry| entry.id).collect();
+    let agent = crate::brain::OllamaAgent::new(model);
+    let chunk_size = chunk_size.clamp(2, 50);
+    let mut total_inserted = 0usize;
+
+    for window in entries.chunks(chunk_size) {
+        let block = crate::memory::format_memories_for_extraction(window);
+        let reply = agent.propose_edges(&block).await;
+        if reply.trim().eq_ignore_ascii_case("NONE") {
+            continue;
+        }
+        let new_edges = crate::memory::parse_llm_edges(&reply, &known_ids);
+        if new_edges.is_empty() {
+            continue;
+        }
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        if let Ok(inserted) = store.add_edges_batch(&new_edges) {
+            total_inserted += inserted;
+        }
+    }
+
+    Ok(total_inserted)
 }
 
 fn build_ingest_chunks(
@@ -854,7 +985,7 @@ fn local_ollama_model_hint(
 }
 
 async fn save_ingest_checkpoint(
-    state: &State<'_, AppState>,
+    state: &AppState,
     task_id: &str,
     source: &str,
     tags: &str,
@@ -875,26 +1006,23 @@ async fn save_ingest_checkpoint(
 }
 
 fn emit_progress(
-    app: &AppHandle,
+    emitter: &IngestProgressEmitter,
     task_id: &str,
     progress: u8,
     desc: &str,
     processed: usize,
     total: usize,
 ) {
-    let _ = app.emit(
-        "task-progress",
-        TaskProgressEvent {
-            id: task_id.to_string(),
-            kind: TaskKind::Ingest,
-            status: TaskStatus::Running,
-            progress,
-            description: desc.to_string(),
-            processed_items: processed,
-            total_items: total,
-            error: None,
-        },
-    );
+    emitter.emit(TaskProgressEvent {
+        id: task_id.to_string(),
+        kind: TaskKind::Ingest,
+        status: TaskStatus::Running,
+        progress,
+        description: desc.to_string(),
+        processed_items: processed,
+        total_items: total,
+        error: None,
+    });
 }
 
 // ── File reading ───────────────────────────────────────────────────────────────
@@ -950,7 +1078,7 @@ fn extract_pdf_text(path: &std::path::Path) -> Result<String, String> {
 
 // ── URL fetching ───────────────────────────────────────────────────────────────
 
-async fn fetch_url(url: &str, state: &State<'_, AppState>) -> Result<String, String> {
+async fn fetch_url(url: &str, state: &AppState) -> Result<String, String> {
     validate_url(url)?;
     let response = state
         .ollama_client
@@ -1049,8 +1177,8 @@ async fn crawl_website_with_progress(
     max_pages: usize,
     task_id: &str,
     cancel_flag: &Arc<std::sync::atomic::AtomicBool>,
-    app: &AppHandle,
-    state: &State<'_, AppState>,
+    emitter: &IngestProgressEmitter,
+    state: &AppState,
 ) -> Result<String, String> {
     use scraper::{Html, Selector};
     use std::collections::VecDeque;
@@ -1115,7 +1243,7 @@ async fn crawl_website_with_progress(
         visited.insert(url.clone());
 
         emit_progress(
-            app,
+            emitter,
             task_id,
             ((visited.len() * 25) / max_pages.max(1)) as u8,
             &format!(
@@ -1172,7 +1300,7 @@ async fn crawl_website_with_progress(
 
 #[allow(clippy::too_many_arguments)]
 async fn save_crawl_checkpoint(
-    state: &State<'_, AppState>,
+    state: &AppState,
     task_id: &str,
     visited: &HashSet<String>,
     queue: &std::collections::VecDeque<(String, usize)>,
@@ -1457,5 +1585,19 @@ mod tests {
             local_ollama_model_hint(None, Some("legacy-model")),
             Some("legacy-model".to_string())
         );
+    }
+
+    #[test]
+    fn auto_edge_extraction_model_requires_setting_model_and_created_entries() {
+        assert_eq!(
+            auto_edge_extraction_model(true, Some("gemma3:4b"), 2),
+            Some("gemma3:4b".to_string())
+        );
+        assert_eq!(
+            auto_edge_extraction_model(false, Some("gemma3:4b"), 2),
+            None
+        );
+        assert_eq!(auto_edge_extraction_model(true, None, 2), None);
+        assert_eq!(auto_edge_extraction_model(true, Some("gemma3:4b"), 0), None);
     }
 }

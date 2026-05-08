@@ -16,12 +16,13 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex};
 
 use crate::ai_integrations::gateway::*;
 use crate::AppState;
 
 use super::activity::McpActivityReporter;
+use super::compliance_gate::{self, ComplianceState};
 use super::hooks::IndexStalenessTracker;
 use super::tools;
 
@@ -32,13 +33,20 @@ pub struct McpRouterState {
     pub gw: Arc<dyn BrainGateway>,
     pub caps: GatewayCaps,
     pub token: String,
+    pub lan_public_read_only: bool,
     pub port: u16,
     pub seed_loaded: bool,
     pub activity: Option<McpActivityReporter>,
-    /// Full app state for code-intelligence tools that need the GitNexus sidecar.
+    /// Full app state for native code-intelligence tools that need the code index.
     pub app_state: Option<AppState>,
     /// Tracks git HEAD for staleness detection on post-tool-use hooks.
     pub staleness_tracker: Arc<Mutex<IndexStalenessTracker>>,
+    /// Per-session compliance tracking — enforces MCP preflight + milestone hygiene.
+    pub compliance: ComplianceState,
+    /// Shutdown sender — when set, allows `POST /shutdown` to gracefully stop the server.
+    pub shutdown_tx: Option<watch::Sender<bool>>,
+    /// Tauri app handle for graceful process exit (tray icon cleanup).
+    pub tauri_app_handle: Option<tauri::AppHandle>,
 }
 
 // ─── JSON-RPC 2.0 types ────────────────────────────────────────────────────
@@ -222,6 +230,7 @@ pub fn build(state: McpRouterState) -> Router {
         .route("/hooks/pre_tool", post(handle_pre_tool_hook))
         .route("/hooks/post_tool", post(handle_post_tool_hook))
         .route("/status", get(handle_status))
+        .route("/shutdown", post(handle_shutdown))
         .with_state(state)
 }
 
@@ -243,8 +252,12 @@ async fn handle_request(
 
     let response_id = req.id.clone().unwrap_or(Value::Null);
 
-    // Bearer-token authentication. Enforce before notification dispatch too.
-    if !validate_auth(&headers, &state.token) {
+    let authed = validate_auth(&headers, &state.token);
+    let public_allowed = state.lan_public_read_only && is_public_read_only_request(&req);
+
+    // Bearer-token authentication. Public LAN mode may expose a restricted,
+    // read-only subset without the token.
+    if !authed && !public_allowed {
         let resp = JsonRpcResponse::err(response_id, -32000, "unauthorized".into());
         return (StatusCode::UNAUTHORIZED, Json(resp)).into_response();
     }
@@ -252,6 +265,19 @@ async fn handle_request(
     // Notifications (no id) — dispatch to hook handlers, then acknowledge.
     if req.id.is_none() {
         let params = req.params.unwrap_or(Value::Null);
+
+        // Handle compliance signals before general notifications.
+        if req.method == "compliance/signal" {
+            if let Some(signal) = params.get("signal").and_then(|v| v.as_str()) {
+                let compliance = state.compliance.clone();
+                let signal_owned = signal.to_string();
+                tokio::spawn(async move {
+                    compliance_gate::on_compliance_signal(&compliance, &signal_owned).await;
+                });
+            }
+            return StatusCode::ACCEPTED.into_response();
+        }
+
         // Fire-and-forget notification handling
         super::hooks::handle_notification(
             &req.method,
@@ -275,7 +301,7 @@ async fn handle_request(
             if let Some(activity) = &state.activity {
                 activity.tool_started(&tool_name, &args);
             }
-            Some((tool_name, state.activity.clone()))
+            Some((tool_name, args, state.activity.clone()))
         } else {
             None
         }
@@ -283,9 +309,15 @@ async fn handle_request(
         None
     };
 
-    let resp = dispatch_method_with_state(
+    let effective_caps = if authed {
+        state.caps
+    } else {
+        GatewayCaps::default()
+    };
+
+    let mut resp = dispatch_method_with_state(
         state.gw.as_ref(),
-        &state.caps,
+        &effective_caps,
         &req.method,
         params,
         id,
@@ -293,7 +325,46 @@ async fn handle_request(
     )
     .await;
 
-    if let Some((tool_name, Some(activity))) = tool_activity {
+    // ─── Compliance gate: track tool calls + annotate responses ──────────
+    if let Some((ref tool_name, ref args, _)) = tool_activity {
+        // Handle signal param on brain_session_checklist
+        if tool_name == "brain_session_checklist" {
+            if let Some(signal) = args.get("signal").and_then(|v| v.as_str()) {
+                compliance_gate::on_compliance_signal(&state.compliance, signal).await;
+            }
+            // Always replace the response with the full checklist
+            let checklist = compliance_gate::get_checklist(&state.compliance).await;
+            resp = JsonRpcResponse::ok(
+                resp.id.clone(),
+                json!({
+                    "content": [{ "type": "text", "text": checklist }]
+                }),
+            );
+        } else {
+            compliance_gate::on_tool_called(&state.compliance, tool_name, args).await;
+
+            // Annotate successful tool responses with compliance reminders
+            if resp.error.is_none() {
+                if let Some(annotation) =
+                    compliance_gate::get_response_annotation(&state.compliance).await
+                {
+                    // Append compliance reminder to the text content of the tool result
+                    if let Some(result) = resp.result.as_mut() {
+                        if let Some(content) = result.get_mut("content") {
+                            if let Some(arr) = content.as_array_mut() {
+                                arr.push(json!({
+                                    "type": "text",
+                                    "text": annotation
+                                }));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if let Some((tool_name, _args, Some(activity))) = tool_activity {
         let is_error = resp
             .result
             .as_ref()
@@ -324,16 +395,39 @@ async fn handle_request(
 
 /// Unauthenticated health check for agent auto-discovery.
 ///
-/// Returns `200 OK` with `{"status":"ok","port":N}` so agents
-/// can verify the server is running without needing the bearer token first.
-/// No sensitive data is exposed.
+/// Returns `200 OK` with basic brain status so agents (and the tray
+/// status page) can verify the server is running without needing the
+/// bearer token first. No API keys or sensitive data are exposed.
+///
+/// Includes `Access-Control-Allow-Origin: *` so the built-in tray status
+/// page (served from `about:blank`, origin `null`) can fetch it.
 async fn handle_health(State(state): State<McpRouterState>) -> Response {
-    let body = json!({
-        "status": "ok",
-        "port": state.port,
-    });
+    let metrics = crate::memory::metrics::METRICS.snapshot();
+    let body = match state.gw.health(&state.caps).await {
+        Ok(h) => json!({
+            "status": "ok",
+            "port": state.port,
+            "brain_provider": h.brain_provider,
+            "brain_model": h.brain_model,
+            "rag_quality_pct": h.rag_quality_pct,
+            "memory_total": h.memory_total,
+            "rag_quality": h.rag_quality,
+            "memory": h.memory,
+            "descriptions": h.descriptions,
+            "metrics": metrics,
+        }),
+        Err(_) => json!({
+            "status": "ok",
+            "port": state.port,
+        }),
+    };
 
-    (StatusCode::OK, Json(body)).into_response()
+    (
+        StatusCode::OK,
+        [(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")],
+        Json(body),
+    )
+        .into_response()
 }
 
 // ─── Status endpoint (auth required) ────────────────────────────────────────
@@ -361,6 +455,9 @@ async fn handle_status(State(state): State<McpRouterState>, headers: HeaderMap) 
             "brain_model": h.brain_model,
             "rag_quality_pct": h.rag_quality_pct,
             "memory_total": h.memory_total,
+            "rag_quality": h.rag_quality,
+            "memory": h.memory,
+            "descriptions": h.descriptions,
         }),
         Err(e) => json!({ "error": e.to_string() }),
     };
@@ -405,6 +502,44 @@ async fn handle_post_tool_hook(
     (StatusCode::OK, Json(json!(resp))).into_response()
 }
 
+// ─── Shutdown endpoint (auth required) ──────────────────────────────────────
+
+/// `POST /shutdown` — bearer-authenticated graceful shutdown.
+///
+/// Signals the MCP server to stop, allowing Tauri to clean up resources
+/// (including the system tray icon) before the process exits. Used by
+/// the app (dev/release) to kill the headless MCP service cleanly when
+/// it starts up.
+async fn handle_shutdown(State(state): State<McpRouterState>, headers: HeaderMap) -> Response {
+    if !validate_auth(&headers, &state.token) {
+        return (StatusCode::UNAUTHORIZED, "unauthorized").into_response();
+    }
+
+    if let Some(ref tx) = state.shutdown_tx {
+        let _ = tx.send(true);
+        eprintln!("[mcp] graceful shutdown requested via POST /shutdown");
+
+        // If we have access to the Tauri app handle, exit the process
+        // cleanly so the tray icon is removed by the OS.
+        if let Some(ref handle) = state.tauri_app_handle {
+            let handle = handle.clone();
+            // Spawn so the HTTP response can be sent before exit.
+            tokio::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                handle.exit(0);
+            });
+        } else {
+            // No Tauri handle — force process exit after response is sent.
+            tokio::spawn(async {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                std::process::exit(0);
+            });
+        }
+    }
+
+    (StatusCode::OK, Json(json!({"status": "shutting_down"}))).into_response()
+}
+
 /// Validate the `Authorization: Bearer <token>` header.
 fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {
     headers
@@ -412,6 +547,38 @@ fn validate_auth(headers: &HeaderMap, expected: &str) -> bool {
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.strip_prefix("Bearer "))
         .is_some_and(|t| t == expected)
+}
+
+fn is_public_read_only_request(req: &JsonRpcRequest) -> bool {
+    match req.method.as_str() {
+        "initialize" | "ping" => true,
+        "tools/list" => true,
+        "tools/call" => req
+            .params
+            .as_ref()
+            .and_then(|params| params.get("name"))
+            .and_then(Value::as_str)
+            .is_some_and(is_public_tool_name),
+        _ => false,
+    }
+}
+
+fn is_public_tool_name(name: &str) -> bool {
+    matches!(
+        name,
+        "brain_search"
+            | "brain_get_entry"
+            | "brain_list_recent"
+            | "brain_kg_neighbors"
+            | "brain_summarize"
+            | "brain_suggest_context"
+            | "brain_health"
+            | "brain_failover_status"
+            | "brain_wiki_audit"
+            | "brain_wiki_spotlight"
+            | "brain_wiki_serendipity"
+            | "brain_wiki_revisit"
+    )
 }
 
 #[cfg(test)]
@@ -443,6 +610,55 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("authorization", "Basic abc123".parse().unwrap());
         assert!(!validate_auth(&headers, "abc123"));
+    }
+
+    #[test]
+    fn public_read_only_request_allows_brain_search() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({ "name": "brain_search", "arguments": { "query": "hello" } })),
+        };
+        assert!(is_public_read_only_request(&req));
+    }
+
+    #[test]
+    fn public_read_only_request_allows_brain_wiki_audit() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({ "name": "brain_wiki_audit", "arguments": { "limit": 10 } })),
+        };
+        assert!(is_public_read_only_request(&req));
+    }
+
+    #[test]
+    fn public_read_only_request_denies_ingest() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(
+                json!({ "name": "brain_ingest_url", "arguments": { "url": "https://example.com" } }),
+            ),
+        };
+        assert!(!is_public_read_only_request(&req));
+    }
+
+    #[test]
+    fn public_read_only_request_denies_brain_wiki_digest_text() {
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".into(),
+            id: Some(Value::from(1)),
+            method: "tools/call".into(),
+            params: Some(json!({
+                "name": "brain_wiki_digest_text",
+                "arguments": { "content": "private note" }
+            })),
+        };
+        assert!(!is_public_read_only_request(&req));
     }
 
     #[test]

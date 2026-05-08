@@ -24,6 +24,7 @@ import type {
   EdgeDirection,
   EdgeStats,
   MemoryEdge,
+  MemoryProvenance,
   MemoryEntry,
   MemoryStats,
   MemoryTier,
@@ -393,6 +394,16 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  /** Get the joined provenance tree for a memory (chunk 33B.4). */
+  async function getMemoryProvenance(memoryId: number): Promise<MemoryProvenance | null> {
+    try {
+      return await invoke<MemoryProvenance>('get_memory_provenance', { memoryId });
+    } catch (e) {
+      error.value = String(e);
+      return null;
+    }
+  }
+
   /** Auto-adjust importance based on access patterns (chunk 17.4). */
   async function adjustImportance(
     hotThreshold?: number,
@@ -426,6 +437,28 @@ export const useMemoryStore = defineStore('memory', () => {
   /** Count open (unresolved) conflicts. */
   async function countConflicts(): Promise<number> {
     return await invoke('count_memory_conflicts');
+  }
+
+  // ─── Judgment Rules (Chunk 33B.1) ─────────────────────────────────────
+
+  /** Add a new judgment rule. */
+  async function addJudgment(content: string, tags: string, importance: number): Promise<MemoryEntry> {
+    return await invoke('judgment_add', { content, tags, importance });
+  }
+
+  /** List all persisted judgment rules. */
+  async function listJudgments(): Promise<MemoryEntry[]> {
+    return await invoke('judgment_list');
+  }
+
+  /** Search judgment rules relevant to a query. */
+  async function applyJudgments(query: string, limit?: number): Promise<MemoryEntry[]> {
+    return await invoke('judgment_apply', { query, limit });
+  }
+
+  /** Backfill embeddings for memories that don't have them yet. */
+  async function backfillEmbeddings(): Promise<number> {
+    return await invoke<number>('backfill_embeddings');
   }
 
   return {
@@ -462,6 +495,7 @@ export const useMemoryStore = defineStore('memory', () => {
     multiHopSearch,
     exportToObsidian,
     getMemoryHistory,
+    getMemoryProvenance,
     adjustImportance,
     exportBrowserSyncPayload,
     importBrowserSyncPayload,
@@ -470,5 +504,11 @@ export const useMemoryStore = defineStore('memory', () => {
     resolveConflict,
     dismissConflict,
     countConflicts,
+    // Judgment rules (Chunk 33B.1)
+    addJudgment,
+    listJudgments,
+    applyJudgments,
+    // Embedding management (Chunk 44.2)
+    backfillEmbeddings,
   };
 });

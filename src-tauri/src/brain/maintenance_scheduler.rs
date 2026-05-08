@@ -38,16 +38,25 @@ pub enum MaintenanceJob {
     PromoteTier,
     /// `extract_edges_via_brain` — LLM call, the only expensive job.
     EdgeExtract,
+    /// One-way export of all long-tier memories to an Obsidian vault.
+    /// Pure I/O (no LLM). Vault path read from `AppSettings` or
+    /// defaults to `<data_dir>/wiki/`.
+    ObsidianExport,
+    /// Compact the ANN index by rebuilding from live data (Chunk 41.11).
+    /// Pure CPU + I/O, no LLM. Only acts when fragmentation > 20%.
+    AnnCompact,
 }
 
 impl MaintenanceJob {
     /// Canonical execution order (cheap → expensive). The scheduler
     /// uses this to make sure pure SQL jobs run before LLM jobs.
-    pub const ORDER: [MaintenanceJob; 4] = [
+    pub const ORDER: [MaintenanceJob; 6] = [
         MaintenanceJob::Decay,
         MaintenanceJob::GarbageCollect,
         MaintenanceJob::PromoteTier,
+        MaintenanceJob::AnnCompact,
         MaintenanceJob::EdgeExtract,
+        MaintenanceJob::ObsidianExport,
     ];
 
     /// Stable string identifier — useful for logging and persistence
@@ -58,6 +67,8 @@ impl MaintenanceJob {
             MaintenanceJob::GarbageCollect => "garbage_collect",
             MaintenanceJob::PromoteTier => "promote_tier",
             MaintenanceJob::EdgeExtract => "edge_extract",
+            MaintenanceJob::ObsidianExport => "obsidian_export",
+            MaintenanceJob::AnnCompact => "ann_compact",
         }
     }
 }
@@ -72,6 +83,9 @@ pub struct MaintenanceConfig {
     pub garbage_collect_cooldown_ms: u64,
     pub promote_tier_cooldown_ms: u64,
     pub edge_extract_cooldown_ms: u64,
+    pub obsidian_export_cooldown_ms: u64,
+    #[serde(default = "MaintenanceConfig::default_ann_compact_cooldown")]
+    pub ann_compact_cooldown_ms: u64,
 }
 
 impl Default for MaintenanceConfig {
@@ -82,17 +96,25 @@ impl Default for MaintenanceConfig {
             garbage_collect_cooldown_ms: day_minus_one_h,
             promote_tier_cooldown_ms: day_minus_one_h,
             edge_extract_cooldown_ms: day_minus_one_h,
+            obsidian_export_cooldown_ms: day_minus_one_h,
+            ann_compact_cooldown_ms: day_minus_one_h,
         }
     }
 }
 
 impl MaintenanceConfig {
+    fn default_ann_compact_cooldown() -> u64 {
+        23 * 60 * 60 * 1000
+    }
+
     pub fn cooldown_for(&self, job: MaintenanceJob) -> u64 {
         match job {
             MaintenanceJob::Decay => self.decay_cooldown_ms,
             MaintenanceJob::GarbageCollect => self.garbage_collect_cooldown_ms,
             MaintenanceJob::PromoteTier => self.promote_tier_cooldown_ms,
             MaintenanceJob::EdgeExtract => self.edge_extract_cooldown_ms,
+            MaintenanceJob::ObsidianExport => self.obsidian_export_cooldown_ms,
+            MaintenanceJob::AnnCompact => self.ann_compact_cooldown_ms,
         }
     }
 }
@@ -106,6 +128,10 @@ pub struct MaintenanceState {
     pub last_garbage_collect_ms: u64,
     pub last_promote_tier_ms: u64,
     pub last_edge_extract_ms: u64,
+    #[serde(default)]
+    pub last_obsidian_export_ms: u64,
+    #[serde(default)]
+    pub last_ann_compact_ms: u64,
 }
 
 impl MaintenanceState {
@@ -115,6 +141,8 @@ impl MaintenanceState {
             MaintenanceJob::GarbageCollect => self.last_garbage_collect_ms,
             MaintenanceJob::PromoteTier => self.last_promote_tier_ms,
             MaintenanceJob::EdgeExtract => self.last_edge_extract_ms,
+            MaintenanceJob::ObsidianExport => self.last_obsidian_export_ms,
+            MaintenanceJob::AnnCompact => self.last_ann_compact_ms,
         }
     }
 
@@ -126,6 +154,8 @@ impl MaintenanceState {
             MaintenanceJob::GarbageCollect => self.last_garbage_collect_ms = finished_at_ms,
             MaintenanceJob::PromoteTier => self.last_promote_tier_ms = finished_at_ms,
             MaintenanceJob::EdgeExtract => self.last_edge_extract_ms = finished_at_ms,
+            MaintenanceJob::ObsidianExport => self.last_obsidian_export_ms = finished_at_ms,
+            MaintenanceJob::AnnCompact => self.last_ann_compact_ms = finished_at_ms,
         }
     }
 }
@@ -197,10 +227,10 @@ mod tests {
     #[test]
     fn job_order_is_cheap_to_expensive() {
         // Edge extraction is the only LLM-expensive job; it must be
-        // last.
+        // near the end.
         let order = MaintenanceJob::ORDER;
         assert_eq!(order[0], MaintenanceJob::Decay);
-        assert_eq!(order[3], MaintenanceJob::EdgeExtract);
+        assert_eq!(order[4], MaintenanceJob::EdgeExtract);
     }
 
     #[test]
@@ -212,6 +242,8 @@ mod tests {
         assert_eq!(MaintenanceJob::GarbageCollect.as_str(), "garbage_collect");
         assert_eq!(MaintenanceJob::PromoteTier.as_str(), "promote_tier");
         assert_eq!(MaintenanceJob::EdgeExtract.as_str(), "edge_extract");
+        assert_eq!(MaintenanceJob::ObsidianExport.as_str(), "obsidian_export");
+        assert_eq!(MaintenanceJob::AnnCompact.as_str(), "ann_compact");
     }
 
     #[test]
@@ -219,7 +251,7 @@ mod tests {
         let state = MaintenanceState::default(); // all zeros
         let cfg = MaintenanceConfig::default();
         let due = jobs_due(&state, &cfg, 1_000_000);
-        assert_eq!(due.len(), 4);
+        assert_eq!(due.len(), 6);
         assert_eq!(due, MaintenanceJob::ORDER.to_vec());
     }
 
@@ -234,8 +266,8 @@ mod tests {
         };
         let due = jobs_due(&state, &cfg, now);
         assert!(!due.contains(&MaintenanceJob::Decay));
-        // The other three (never run) should still fire.
-        assert_eq!(due.len(), 3);
+        // The other five (never run) should still fire.
+        assert_eq!(due.len(), 5);
     }
 
     #[test]
@@ -269,6 +301,7 @@ mod tests {
         assert_eq!(state.last_garbage_collect_ms, 0);
         assert_eq!(state.last_promote_tier_ms, 0);
         assert_eq!(state.last_edge_extract_ms, 0);
+        assert_eq!(state.last_obsidian_export_ms, 0);
     }
 
     #[test]
@@ -288,7 +321,9 @@ mod tests {
             vec![
                 MaintenanceJob::GarbageCollect,
                 MaintenanceJob::PromoteTier,
-                MaintenanceJob::EdgeExtract
+                MaintenanceJob::AnnCompact,
+                MaintenanceJob::EdgeExtract,
+                MaintenanceJob::ObsidianExport,
             ]
         );
     }
@@ -313,8 +348,8 @@ mod tests {
         let cfg = MaintenanceConfig::default();
         let state = MaintenanceState::default();
         let due = jobs_due(&state, &cfg, 0);
-        // All four are never-run, so all should fire.
-        assert_eq!(due.len(), 4);
+        // All six are never-run, so all should fire.
+        assert_eq!(due.len(), 6);
     }
 
     #[test]
@@ -354,6 +389,8 @@ mod tests {
             last_garbage_collect_ms: 2,
             last_promote_tier_ms: 3,
             last_edge_extract_ms: 4,
+            last_obsidian_export_ms: 5,
+            last_ann_compact_ms: 6,
         };
         let json = serde_json::to_string(&s).unwrap();
         let back: MaintenanceState = serde_json::from_str(&json).unwrap();

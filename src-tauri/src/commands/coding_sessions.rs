@@ -234,6 +234,90 @@ pub async fn coding_session_purge(
     purge_session(&state.data_dir, &session_id)
 }
 
+/// Resume result returned by [`coding_session_resume`].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodingSessionResumeResult {
+    /// The resolved session entry (handoff + chat summary).
+    pub entry: CodingSessionEntry,
+    /// The last N chat messages for immediate context.
+    pub messages: Vec<ChatMessage>,
+}
+
+/// Resolve a memorable name (or session ID) and return the session entry
+/// plus the last N messages for context. This is the primary entry point
+/// for `--resume <name>` in the headless runner and for frontend
+/// "resume session" UX.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn coding_session_resume(
+    name: String,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<CodingSessionResumeResult, String> {
+    resume_session_inner(&state.data_dir, &name, limit)
+}
+
+/// Core logic for session resume, testable without AppHandle.
+fn resume_session_inner(
+    data_dir: &std::path::Path,
+    name: &str,
+    limit: Option<usize>,
+) -> Result<CodingSessionResumeResult, String> {
+    let message_limit = limit.unwrap_or(50);
+
+    // Try resolving as a memorable name first, then fall back to using
+    // the name as a literal session ID.
+    let session_id = if let Ok(Some(entry)) =
+        coding::session_registry::resolve(data_dir, name)
+    {
+        entry.session_id
+    } else {
+        // Check if it's a valid direct session ID (handoff or chat exists).
+        let has_handoff = coding::load_handoff(data_dir, name)
+            .ok()
+            .flatten()
+            .is_some();
+        let has_chat = coding::session_chat_summary(data_dir, name)
+            .map(|s| s.message_count > 0)
+            .unwrap_or(false);
+        if has_handoff || has_chat {
+            name.to_string()
+        } else {
+            return Err(format!(
+                "session '{}' not found (checked registry and direct ID)",
+                name
+            ));
+        }
+    };
+
+    let handoff = coding::load_handoff(data_dir, &session_id)?
+        .map(|h| HandoffSummary {
+            session_id: h.session_id.clone(),
+            chunk_id: h.chunk_id.clone(),
+            last_action: h.last_action.clone(),
+            created_at: h.created_at,
+            modified_at: h.created_at,
+            bytes: 0,
+        })
+        .unwrap_or_else(|| HandoffSummary {
+            session_id: session_id.clone(),
+            chunk_id: String::new(),
+            last_action: String::new(),
+            created_at: 0,
+            modified_at: 0,
+            bytes: 0,
+        });
+
+    let chat = coding::session_chat_summary(data_dir, &session_id).unwrap_or_default();
+    let messages = coding::session_chat_load(data_dir, &session_id, Some(message_limit))
+        .unwrap_or_default();
+
+    Ok(CodingSessionResumeResult {
+        entry: CodingSessionEntry { handoff, chat },
+        messages,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -356,5 +440,55 @@ mod tests {
             .is_empty());
         // Idempotent.
         assert!(!purge_session(&dir, "doomed").unwrap());
+    }
+
+    #[test]
+    fn resume_resolves_memorable_name() {
+        let dir = tmp_dir("resume");
+        // Create a session with a handoff + chat
+        coding::save_handoff(&dir, &sample_handoff("sess-abc")).unwrap();
+        coding::session_chat_append(&dir, "sess-abc", &ChatMessage::now("user", "hello"))
+            .unwrap();
+        coding::session_chat_append(
+            &dir,
+            "sess-abc",
+            &ChatMessage::now("assistant", "world"),
+        )
+        .unwrap();
+
+        // Register a memorable name
+        let mut reg = crate::coding::session_registry::load(&dir).unwrap();
+        reg.sessions.insert(
+            crate::coding::session_names::normalize("swift-tiger"),
+            crate::coding::session_registry::SessionEntry {
+                session_id: "sess-abc".to_string(),
+                created_at: 1,
+            },
+        );
+        crate::coding::session_registry::save(&dir, &reg).unwrap();
+
+        // Resume by memorable name
+        let result = resume_session_inner(&dir, "swift-tiger", Some(50)).unwrap();
+        assert_eq!(result.entry.handoff.session_id, "sess-abc");
+        assert_eq!(result.messages.len(), 2);
+    }
+
+    #[test]
+    fn resume_falls_back_to_direct_session_id() {
+        let dir = tmp_dir("resume-direct");
+        coding::save_handoff(&dir, &sample_handoff("direct-id")).unwrap();
+        coding::session_chat_append(&dir, "direct-id", &ChatMessage::now("user", "test"))
+            .unwrap();
+
+        let result = resume_session_inner(&dir, "direct-id", None).unwrap();
+        assert_eq!(result.entry.handoff.session_id, "direct-id");
+        assert_eq!(result.messages.len(), 1);
+    }
+
+    #[test]
+    fn resume_unknown_name_errors() {
+        let dir = tmp_dir("resume-unknown");
+        let err = resume_session_inner(&dir, "nonexistent", None).unwrap_err();
+        assert!(err.contains("nonexistent"));
     }
 }

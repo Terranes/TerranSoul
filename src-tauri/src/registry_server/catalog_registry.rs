@@ -105,9 +105,9 @@ mod tests {
     #[tokio::test]
     async fn query_filters_by_name() {
         let reg = CatalogRegistry::new();
-        let results = reg.search("gitnexus").await.unwrap();
+        let results = reg.search("stub").await.unwrap();
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].name, "gitnexus-sidecar");
+        assert_eq!(results[0].name, "stub-agent");
     }
 
     #[tokio::test]

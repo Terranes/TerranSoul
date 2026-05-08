@@ -24,6 +24,20 @@
 | `.github/workflows/` | CI: `terransoul-ci.yml`, `codeql.yml`, `copilot-setup-steps.yml` |
 | `.vscode/` | Workspace settings + `mcp.json` for the three MCP profiles (release/dev/headless) |
 
+## Durable agent rules to retrieve via MCP
+
+- Reverse-engineering GitHub projects is DeepWiki-first: check
+  `https://deepwiki.org/<owner>/<repo>` when reachable, cross-check upstream,
+  credit the source in `CREDITS.md`, and sync durable lessons into
+  `mcp-data/shared/**`.
+- MCP self-improve knowledge lives in tracked shared files. When a session
+  learns a durable project rule, update `memory-seed.sql`,
+  `lessons-learned.md`, or this index in the same PR so future agents retrieve
+  it without rescanning chat history.
+- Markdown is not MCP memory: if durable knowledge is written in any `.md`,
+  mirror it into `memory-seed.sql` and wire relationships with `memory_edges`
+  so SQLite + the knowledge graph stays authoritative for MCP retrieval.
+
 ## Rust modules (`src-tauri/src/`)
 
 ### `brain/` — LLM provider management & RAG glue
@@ -39,7 +53,7 @@
 | `free_api.rs` | Pollinations / OpenRouter free-tier provider |
 | `intent_classifier.rs` | Lightweight intent classifier for query routing |
 | `lm_studio.rs` | LM Studio provider adapter |
-| `maintenance_runtime.rs`, `maintenance_scheduler.rs` | Brain background maintenance (decay, GC, summarization) |
+| `maintenance_runtime.rs`, `maintenance_scheduler.rs` | Shared GUI/headless MCP background maintenance (decay, GC, tier promotion, edge extraction) |
 | `mcp_auto_config.rs` | Auto-configures the brain when running headless MCP |
 | `model_recommender.rs` | RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6, etc.) |
 | `ollama_agent.rs` | Local Ollama provider; `embed_text`, `hyde_complete`, `rerank_score` |
@@ -55,7 +69,7 @@
 | File | Purpose |
 |---|---|
 | `mod.rs` | Module root; `StorageBackend` trait |
-| `schema.rs` | Canonical SQLite schema (V13) — `memories`, `memory_edges`, FTS5, etc. |
+| `schema.rs` | Canonical SQLite schema (V15) — `memories`, `memory_edges`, FTS5, `pending_embeddings`, protected eviction, etc. |
 | `store.rs` | Default SQLite memory store; `hybrid_search`, `hybrid_search_rrf`, ANN bridge |
 | `ann_index.rs` | HNSW ANN via `usearch` 2.x |
 | `auto_learn.rs`, `auto_tag.rs` | Automatic ingestion + tagging |
@@ -79,7 +93,7 @@
 | `obsidian_export.rs`, `obsidian_sync.rs` | One-way + bidirectional Obsidian vault integration |
 | `query_intent.rs` | Query-intent classifier wiring into hybrid search |
 | `replay.rs` | Replayable session memory |
-| `reranker.rs` | LLM-as-judge cross-encoder reranker |
+| `reranker.rs` | LLM-as-judge cross-encoder reranker with default 0.55 threshold pruning for RRF/HyDE |
 | `tag_vocabulary.rs` | Controlled tag vocabulary |
 | `temporal.rs` | Natural-language time-range queries |
 | `versioning.rs` | Non-destructive memory edit history (V8) |
@@ -116,7 +130,7 @@
 | `brain.rs`, `chat.rs`, `streaming.rs` | Chat + streaming pipeline |
 | `character.rs`, `emotion.rs`, `vision.rs` | Character + emotion + vision |
 | `charisma.rs`, `persona.rs` | Persona/charisma surface |
-| `coding.rs`, `coding_sessions.rs` | Self-improve coding workflow |
+| `coding.rs`, `coding_sessions.rs` | Self-improve coding workflow, persisted workboard, and session transcripts |
 | `consolidation.rs`, `crag.rs`, `gitnexus.rs`, `ingest.rs`, `memory.rs` | Memory operations |
 | `docker.rs`, `lan.rs`, `link.rs`, `routing.rs` | Networking, container, sync |
 | `github_auth.rs` | GitHub OAuth device flow for self-improve PRs |
@@ -140,7 +154,7 @@
 | `autostart.rs`, `client.rs`, `engine.rs`, `workflow.rs` | Self-improve engine + autostart |
 | `context_budget.rs`, `context_engineering.rs`, `prompting.rs` | Prompt assembly |
 | `conversation_learning.rs`, `session_chat.rs`, `task_queue.rs` | Session learning + queues |
-| `cost.rs`, `metrics.rs` | Cost + metrics |
+| `cost.rs`, `metrics.rs`, `gate_telemetry.rs`, `rolling_log.rs` | Cost, metrics, gate telemetry, and bounded runtime JSONL rotation |
 | `dag_runner.rs`, `multi_agent.rs`, `resolver.rs`, `reviewer.rs`, `processes.rs` | DAG orchestration + reviewers |
 | `github.rs`, `handoff.rs`, `handoff_store.rs`, `milestones.rs`, `promotion_plan.rs` | GitHub PR flow + handoff |
 | `repo.rs`, `rename.rs`, `symbol_index.rs`, `wiki.rs`, `test_runner.rs` | Repo helpers, symbol index, test runner |
@@ -238,14 +252,14 @@
 |---|---|
 | `AI-coding-integrations.md` | How MCP/gRPC integrates with VS Code Copilot, Cursor, Codex, Claude Code |
 | `brain-advanced-design.md` | Brain architecture, schema, RAG pipeline, roadmap (kept in sync with code) |
-| `charisma-teaching-tutorial.md` | Charisma teaching workflow |
+| `tutorials/charisma-teaching-tutorial.md` | Charisma teaching workflow |
 | `coding-workflow-design.md` | Self-improve coding workflow |
 | `gitnexus-capability-matrix.md` | GitNexus tool capability matrix |
 | `licensing-audit.md` | Dependency license audit |
 | `llm-animation-research.md` | LLM-driven animation research |
 | `momask-full-body-retarget-research.md` | MoMask retarget research |
 | `motion-model-inference-evaluation.md` | MotionGPT/T2M-GPT eval |
-| `multi-agent-workflows-tutorial.md` | Multi-agent workflows |
+| `tutorials/multi-agent-workflows-tutorial.md` | Multi-agent workflows |
 | `neural-audio-to-face-evaluation.md` | Audio-to-face eval |
 | `offline-motion-polish-research.md` | Offline motion polish research |
 | `persona-design.md`, `persona-pack-schema.md` | Persona system + pack schema |
@@ -318,6 +332,7 @@ On Linux, install Tauri system deps before Rust checks:
 - Ports: `7421` (release app), `7422` (dev app), `7423` (headless `npm run mcp`).
 - Bearer-token auth (token written to `mcp-data/mcp-token.txt` and `.vscode/.mcp-token`).
 - Endpoints: `GET /health`, `GET /status`, `POST /mcp` (JSON-RPC 2.0).
-- Tools: `brain_health`, `brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `code_query`, `code_context`, `code_impact`, `code_rename`, GitNexus tools.
+- Health JSON is self-describing: `rag_quality_pct` means embedded long-term memories divided by long-term memories, and responses include `rag_quality`, `memory`, and `descriptions` objects with raw counts and plain-English explanations.
+- Tools: `brain_health`, `brain_search`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, query-backed `brain_summarize`, `brain_suggest_context`, `brain_ingest_url`, `brain_failover_status`, `code_query`, `code_context`, `code_impact`, `code_rename`.
 - Seed: on first run with no `memory.db`, applies `mcp-data/shared/memory-seed.sql`.
 - Configs: `mcp-data/shared/brain_config.json` and `mcp-data/shared/app_settings.json` are copied to the runtime root if missing.

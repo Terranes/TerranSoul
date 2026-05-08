@@ -712,10 +712,10 @@ defineExpose({
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.pv-pill-active   { background: rgba(80,200,120,0.15); color: #5dd187; }
-.pv-pill-installed{ background: rgba(150,150,150,0.15); color: #999; }
-.pv-pill-disabled { background: rgba(150,150,150,0.15); color: #777; }
-.pv-pill-error    { background: rgba(255,80,80,0.15); color: #ff8888; }
+.pv-pill-active   { background: var(--ts-success-bg); color: var(--ts-success); }
+  .pv-pill-installed{ background: rgba(150,150,150,0.15); color: var(--ts-text-muted); }
+  .pv-pill-disabled { background: rgba(150,150,150,0.15); color: var(--ts-text-dim); }
+  .pv-pill-error    { background: rgba(255,80,80,0.15); color: var(--ts-error); }
 
 .pv-caps {
   margin-top: 10px;

@@ -100,6 +100,9 @@ pub struct GatewayCaps {
     pub brain_write: bool,
     /// Reserved for future code-introspection ops; not consulted in 15.3.
     pub code_read: bool,
+    /// Write to the code graph overlays (branch sync, index commit).
+    #[serde(default)]
+    pub code_write: bool,
 }
 
 impl Default for GatewayCaps {
@@ -110,6 +113,7 @@ impl Default for GatewayCaps {
             brain_read: true,
             brain_write: false,
             code_read: false,
+            code_write: false,
         }
     }
 }
@@ -120,6 +124,7 @@ impl GatewayCaps {
         brain_read: false,
         brain_write: false,
         code_read: false,
+        code_write: false,
     };
 
     /// Convenience constant for tests + auto-setup: read + write enabled.
@@ -127,6 +132,7 @@ impl GatewayCaps {
         brain_read: true,
         brain_write: true,
         code_read: true,
+        code_write: true,
     };
 }
 
@@ -155,6 +161,20 @@ pub struct SearchRequest {
     pub limit: Option<usize>,
     #[serde(default)]
     pub mode: SearchMode,
+    /// Run LLM-as-judge rerank after RRF/HyDE recall. Defaults on for RRF.
+    #[serde(default = "default_search_rerank")]
+    pub rerank: bool,
+    /// Normalised 0.0–1.0 rerank score threshold. Defaults to 0.55.
+    #[serde(default = "default_search_rerank_threshold")]
+    pub rerank_threshold: f64,
+}
+
+fn default_search_rerank() -> bool {
+    true
+}
+
+fn default_search_rerank_threshold() -> f64 {
+    crate::settings::DEFAULT_RERANK_THRESHOLD
 }
 
 /// A single search result. Keep this **strictly** flatter than
@@ -190,6 +210,14 @@ impl From<MemoryEntry> for SearchHit {
             tier: e.tier.as_str().to_string(),
         }
     }
+}
+
+/// A memory entry enriched with its reinforcement history (Chunk 43.4).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntryDetail {
+    #[serde(flatten)]
+    pub entry: MemoryEntry,
+    pub reinforcements: Vec<crate::memory::store::ReinforcementRecord>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -250,12 +278,21 @@ pub struct KgNeighborhood {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummarizeRequest {
-    /// Either `text` or `memory_ids` must be supplied. When both are
-    /// present, the resolved memory contents are appended to `text`.
+    /// Either `text`, `memory_ids`, or `query` must be supplied. When
+    /// more than one is present, resolved memory/search contents are
+    /// appended to `text`.
     #[serde(default)]
     pub text: Option<String>,
     #[serde(default)]
     pub memory_ids: Option<Vec<i64>>,
+    /// Optional search query. When supplied, the gateway first runs the
+    /// normal RRF memory search and summarizes the resulting hits.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Top-k memories to resolve when `query` is supplied. Bounded
+    /// `1..=20`; defaults to 5.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -331,10 +368,49 @@ pub struct HealthResponse {
     /// `"none"` when no brain is configured).
     pub brain_provider: String,
     pub brain_model: Option<String>,
-    /// 0–100 — copy of [`crate::brain::BrainSelection::rag_quality_pct`].
+    /// 0-100 embedding coverage for long-term memories.
     pub rag_quality_pct: u8,
     /// Cumulative memory count across all tiers.
     pub memory_total: i64,
+    /// Human-readable interpretation and raw counts for `rag_quality_pct`.
+    pub rag_quality: RagQualityHealth,
+    /// Memory tier totals that explain `memory_total`.
+    pub memory: MemoryHealth,
+    /// Embedding worker status (rate-limit pauses, hard failures, throughput).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub embed_worker: Option<crate::memory::embedding_queue::WorkerStatus>,
+    /// Field-level descriptions for clients rendering raw JSON.
+    pub descriptions: HealthDescriptions,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RagQualityHealth {
+    pub label: String,
+    pub description: String,
+    pub formula: String,
+    pub embedded_long_memory_count: i64,
+    pub long_memory_count: i64,
+    pub pending_embedding_count: u64,
+    pub failing_embedding_count: u64,
+    pub next_embedding_retry_at: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MemoryHealth {
+    pub total: i64,
+    pub short_count: i64,
+    pub working_count: i64,
+    pub long_count: i64,
+    pub embedded_total: i64,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HealthDescriptions {
+    pub brain_provider: String,
+    pub brain_model: String,
+    pub rag_quality_pct: String,
+    pub memory_total: String,
 }
 
 // ─── Pluggable ingest sink ──────────────────────────────────────────────────
@@ -370,6 +446,13 @@ pub trait BrainGateway: Send + Sync {
 
     /// `brain.get_entry` — full memory entry by id.
     async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError>;
+
+    /// `brain.get_entry` with reinforcement provenance (Chunk 43.4).
+    async fn get_entry_detail(
+        &self,
+        caps: &GatewayCaps,
+        id: i64,
+    ) -> Result<EntryDetail, GatewayError>;
 
     /// `brain.list_recent` — last N memories with optional filters.
     async fn list_recent(
@@ -547,23 +630,93 @@ impl BrainGateway for AppStateGateway {
             .await;
 
         // Step 2: dispatch to the right store method.
-        let store = self
-            .state
-            .memory_store
-            .lock()
-            .map_err(GatewayError::from_lock)?;
-        let entries = match req.mode {
-            SearchMode::Hybrid => store
-                .hybrid_search(&req.query, query_emb.as_deref(), limit)
-                .map_err(|e| GatewayError::Storage(e.to_string()))?,
-            SearchMode::Rrf | SearchMode::Hyde => store
-                .hybrid_search_rrf(&req.query, query_emb.as_deref(), limit)
-                .map_err(|e| GatewayError::Storage(e.to_string()))?,
+        let recall_limit = if matches!(req.mode, SearchMode::Rrf | SearchMode::Hyde)
+            && req.rerank
+            && model_opt.is_some()
+        {
+            limit.clamp(20, 50)
+        } else {
+            limit
+        };
+        let entries = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            match req.mode {
+                SearchMode::Hybrid => store
+                    .hybrid_search(&req.query, query_emb.as_deref(), recall_limit)
+                    .map_err(|e| GatewayError::Storage(e.to_string()))?,
+                SearchMode::Rrf | SearchMode::Hyde => store
+                    .hybrid_search_rrf(&req.query, query_emb.as_deref(), recall_limit)
+                    .map_err(|e| GatewayError::Storage(e.to_string()))?,
+            }
+        };
+
+        let entries = if matches!(req.mode, SearchMode::Rrf | SearchMode::Hyde) && req.rerank {
+            if let Some(model) = model_opt {
+                let agent = OllamaAgent::new(&model);
+                let mut scores = Vec::with_capacity(entries.len());
+                for entry in &entries {
+                    scores.push(agent.rerank_score(&req.query, &entry.content).await);
+                }
+
+                // Build verdicts before threshold filtering (43.6).
+                let threshold_norm = req.rerank_threshold.clamp(0.0, 1.0);
+                let verdicts: Vec<(i64, crate::memory::post_retrieval::RetrievalVerdict)> = entries
+                    .iter()
+                    .zip(scores.iter())
+                    .map(|(e, s)| {
+                        let verdict = if s.is_some_and(|v| (v as f64 / 10.0) >= threshold_norm) {
+                            crate::memory::post_retrieval::RetrievalVerdict::Verified
+                        } else {
+                            crate::memory::post_retrieval::RetrievalVerdict::Rejected
+                        };
+                        (e.id, verdict)
+                    })
+                    .collect();
+
+                let reranked = crate::memory::reranker::rerank_candidates_with_threshold(
+                    entries,
+                    &scores,
+                    limit,
+                    req.rerank_threshold,
+                );
+
+                // Record reinforcement for entries that survived reranking (43.4).
+                if let Ok(store) = self.state.memory_store.lock() {
+                    let session_id = format!("brain_search_{}", crate::memory::store::now_ms());
+                    for (idx, entry) in reranked.iter().enumerate() {
+                        let _ = store.record_reinforcement(
+                            entry.id,
+                            &session_id,
+                            idx as i64,
+                        );
+                    }
+                }
+
+                // Spawn async post-retrieval maintenance (43.6).
+                if let Ok(store) = self.state.memory_store.lock() {
+                    crate::memory::post_retrieval::run_maintenance(
+                        &store,
+                        &verdicts,
+                        &req.query,
+                        &crate::memory::post_retrieval::PostRetrievalConfig::default(),
+                    );
+                }
+
+                reranked
+            } else {
+                entries.into_iter().take(limit).collect()
+            }
+        } else {
+            entries.into_iter().take(limit).collect()
         };
 
         // Step 3: stamp positional scores so clients can sort / threshold.
         let total = entries.len() as f64;
-        Ok(entries
+        let scored: Vec<SearchHit> = entries
             .into_iter()
             .enumerate()
             .map(|(idx, e)| {
@@ -576,7 +729,22 @@ impl BrainGateway for AppStateGateway {
                 };
                 hit
             })
-            .collect())
+            .collect();
+
+        // Step 4: Gap detection (43.8) — record blind spots.
+        let top_score = scored.first().map(|h| h.score).unwrap_or(0.0);
+        if let Ok(store) = self.state.memory_store.lock() {
+            let _ = crate::memory::gap_detection::detect_and_record_gap(
+                &store,
+                top_score,
+                query_emb.as_deref(),
+                &req.query,
+                None,
+                &crate::memory::gap_detection::GapDetectionConfig::default(),
+            );
+        }
+
+        Ok(scored)
     }
 
     async fn get_entry(&self, caps: &GatewayCaps, id: i64) -> Result<MemoryEntry, GatewayError> {
@@ -591,6 +759,32 @@ impl BrainGateway for AppStateGateway {
                 GatewayError::NotFound(format!("memory id {id}"))
             }
             other => GatewayError::Storage(other.to_string()),
+        })
+    }
+
+    async fn get_entry_detail(
+        &self,
+        caps: &GatewayCaps,
+        id: i64,
+    ) -> Result<EntryDetail, GatewayError> {
+        require_read(caps)?;
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+        let entry = store.get_by_id(id).map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => {
+                GatewayError::NotFound(format!("memory id {id}"))
+            }
+            other => GatewayError::Storage(other.to_string()),
+        })?;
+        let reinforcements = store
+            .get_reinforcements(id, 10)
+            .map_err(|e| GatewayError::Storage(e.to_string()))?;
+        Ok(EntryDetail {
+            entry,
+            reinforcements,
         })
     }
 
@@ -665,6 +859,39 @@ impl BrainGateway for AppStateGateway {
             _ => EdgeDirection::Both,
         };
 
+        // Check LRU cache first (Chunk 41.13).
+        let cache_key = crate::memory::kg_cache::KgCacheKey {
+            seed_id: req.id,
+            depth: req.depth,
+            direction: dir,
+        };
+        let traversal = if let Some(cached) = self.state.kg_cache.get(&cache_key) {
+            cached
+        } else {
+            // Perform bounded BFS.
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            let traversal = crate::memory::kg_cache::bounded_bfs(
+                req.id,
+                req.depth,
+                dir,
+                |node_id, direction| {
+                    store
+                        .get_edges_for(node_id, direction)
+                        .unwrap_or_default()
+                },
+            );
+            drop(store);
+            // Cache the result.
+            self.state
+                .kg_cache
+                .insert(cache_key, traversal.clone());
+            traversal
+        };
+
         let store = self
             .state
             .memory_store
@@ -677,12 +904,11 @@ impl BrainGateway for AppStateGateway {
             other => GatewayError::Storage(other.to_string()),
         })?;
 
-        let edges = store
-            .get_edges_for(req.id, dir)
-            .map_err(|e| GatewayError::Storage(e.to_string()))?;
-
-        let neighbors = edges
-            .into_iter()
+        // Flatten all edges across hops into neighbors.
+        let neighbors = traversal
+            .hops
+            .iter()
+            .flat_map(|hop| hop.edges.iter())
             .map(|edge| {
                 let other_id = if edge.src_id == req.id {
                     edge.dst_id
@@ -690,16 +916,17 @@ impl BrainGateway for AppStateGateway {
                     edge.src_id
                 };
                 let entry = store.get_by_id(other_id).ok();
-                KgNeighbor { edge, entry }
+                KgNeighbor {
+                    edge: edge.clone(),
+                    entry,
+                }
             })
             .collect();
 
         Ok(KgNeighborhood {
             center,
             neighbors,
-            // Depth >1 reserved for a future BFS impl. Always report
-            // truncation honestly rather than silently capping at 1.
-            truncated: req.depth > 1,
+            truncated: traversal.truncated,
         })
     }
 
@@ -712,6 +939,7 @@ impl BrainGateway for AppStateGateway {
         // Resolve memory ids first (drops the lock before .await).
         let ids = req.memory_ids.clone().unwrap_or_default();
         let mut resolved = Vec::with_capacity(ids.len());
+        let mut seen_ids = Vec::with_capacity(ids.len());
         if !ids.is_empty() {
             let store = self
                 .state
@@ -720,8 +948,39 @@ impl BrainGateway for AppStateGateway {
                 .map_err(GatewayError::from_lock)?;
             for id in &ids {
                 if let Ok(entry) = store.get_by_id(*id) {
+                    if seen_ids.contains(id) {
+                        continue;
+                    }
+                    seen_ids.push(*id);
                     resolved.push(entry.content);
                 }
+            }
+        }
+
+        if let Some(query) = req
+            .query
+            .as_deref()
+            .map(str::trim)
+            .filter(|q| !q.is_empty())
+        {
+            let hits = self
+                .search(
+                    caps,
+                    SearchRequest {
+                        query: query.to_string(),
+                        limit: Some(req.limit.unwrap_or(5).clamp(1, 20)),
+                        mode: SearchMode::Rrf,
+                        rerank: default_search_rerank(),
+                        rerank_threshold: default_search_rerank_threshold(),
+                    },
+                )
+                .await?;
+            for hit in hits {
+                if seen_ids.contains(&hit.id) {
+                    continue;
+                }
+                seen_ids.push(hit.id);
+                resolved.push(hit.content);
             }
         }
         let resolved_count = resolved.len();
@@ -736,7 +995,7 @@ impl BrainGateway for AppStateGateway {
         }
         if input.trim().is_empty() {
             return Err(GatewayError::InvalidArgument(
-                "either `text` or `memory_ids` must yield non-empty content".into(),
+                "either `text`, `memory_ids`, or `query` must yield non-empty content".into(),
             ));
         }
 
@@ -781,9 +1040,53 @@ impl BrainGateway for AppStateGateway {
                     query: req.query.clone(),
                     limit: Some(limit),
                     mode,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await?;
+
+        // Step 1b: Cascade retrieval through memory_edges (43.5).
+        // Expand the top-K via BFS depth ≤ 2 with edge-weighted decay.
+        let hits = if !hits.is_empty() {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+
+            // Build seed scores: linearly decreasing from 1.0
+            let total = hits.len() as f64;
+            let seeds: Vec<(i64, f64)> = hits
+                .iter()
+                .enumerate()
+                .map(|(i, h)| {
+                    let score = if total > 0.0 { 1.0 - (i as f64 / total) } else { 0.0 };
+                    (h.id, score)
+                })
+                .collect();
+
+            let expanded = crate::memory::cascade::cascade_expand(&store.conn, &seeds, None)
+                .unwrap_or(seeds);
+
+            // Materialize expanded entries as SearchHits.
+            let expanded_total = expanded.len() as f64;
+            let mut expanded_hits: Vec<SearchHit> = Vec::with_capacity(expanded.len().min(limit));
+            for (idx, (id, _)) in expanded.iter().enumerate().take(limit) {
+                if let Ok(entry) = store.get_by_id(*id) {
+                    let mut hit: SearchHit = entry.into();
+                    hit.score = if expanded_total > 0.0 {
+                        1.0 - (idx as f64 / expanded_total)
+                    } else {
+                        0.0
+                    };
+                    expanded_hits.push(hit);
+                }
+            }
+            expanded_hits
+        } else {
+            hits
+        };
 
         // Step 2: KG one-hop around the top hit (if any).
         let kg = if let Some(top) = hits.first() {
@@ -808,6 +1111,8 @@ impl BrainGateway for AppStateGateway {
                 SummarizeRequest {
                     text: Some(req.query.clone()),
                     memory_ids: Some(hits.iter().map(|h| h.id).collect()),
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -863,7 +1168,7 @@ impl BrainGateway for AppStateGateway {
             (None, None) => "none",
         };
 
-        let (memory_total, rag_quality_pct) = {
+        let (stats, embedded_long_count, queue_status) = {
             let store = self
                 .state
                 .memory_store
@@ -872,31 +1177,131 @@ impl BrainGateway for AppStateGateway {
             let stats = store
                 .stats()
                 .map_err(|e| GatewayError::Storage(e.to_string()))?;
-            // RAG quality heuristic: ratio of embedded long-tier memories
-            // to long-tier total — matches what BrainSelection surfaces
-            // to the UI but cheaper (no hardware probe). 100 % when
-            // there are no long-tier memories yet (no negative signal).
-            let pct = if stats.long > 0 {
-                ((stats.embedded as f64 / stats.long as f64) * 100.0)
-                    .round()
-                    .clamp(0.0, 100.0) as u8
-            } else {
-                100
-            };
-            (stats.total, pct)
+            let embedded_long_count = store
+                .embedded_long_count()
+                .map_err(|e| GatewayError::Storage(e.to_string()))?;
+            let queue_status = crate::memory::embedding_queue::queue_status(store.conn())
+                .unwrap_or(crate::memory::embedding_queue::EmbeddingQueueStatus {
+                    pending: 0,
+                    failing: 0,
+                    next_retry_at: None,
+                });
+            (stats, embedded_long_count, queue_status)
         };
+
+        let rag_quality_pct = if stats.long > 0 {
+            ((embedded_long_count as f64 / stats.long as f64) * 100.0)
+                .round()
+                .clamp(0.0, 100.0) as u8
+        } else {
+            100
+        };
+
+        let rag_quality = RagQualityHealth {
+            label: rag_quality_label(rag_quality_pct, stats.long).to_string(),
+            description: rag_quality_description(
+                rag_quality_pct,
+                embedded_long_count,
+                stats.long,
+                queue_status.pending,
+            ),
+            formula: "embedded_long_memory_count / long_memory_count * 100".into(),
+            embedded_long_memory_count: embedded_long_count,
+            long_memory_count: stats.long,
+            pending_embedding_count: queue_status.pending,
+            failing_embedding_count: queue_status.failing,
+            next_embedding_retry_at: queue_status.next_retry_at,
+        };
+
+        let memory = MemoryHealth {
+            total: stats.total,
+            short_count: stats.short,
+            working_count: stats.working,
+            long_count: stats.long,
+            embedded_total: stats.embedded,
+            description: memory_health_description(
+                stats.total,
+                stats.short,
+                stats.working,
+                stats.long,
+                stats.embedded,
+            ),
+        };
+
+        let descriptions = HealthDescriptions {
+            brain_provider: "Active LLM or embedding backend used by brain tools.".into(),
+            brain_model: "Selected model id when the provider reports one; null means no model id is active.".into(),
+            rag_quality_pct: "RAG means retrieval-augmented generation. This percentage is long-term memory vector coverage: embedded_long_memory_count / long_memory_count * 100. Higher means semantic/vector recall can use more memories.".into(),
+            memory_total: "All memories stored across short, working, and long tiers.".into(),
+        };
+
+        let embed_worker = Some(self.state.embed_worker_metrics.snapshot());
 
         Ok(HealthResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
             brain_provider: provider.to_string(),
             brain_model: model_opt,
             rag_quality_pct,
-            memory_total,
+            memory_total: stats.total,
+            rag_quality,
+            memory,
+            embed_worker,
+            descriptions,
         })
     }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
+
+fn rag_quality_label(pct: u8, long_memory_count: i64) -> &'static str {
+    if long_memory_count == 0 {
+        return "no_long_term_memories";
+    }
+    match pct {
+        90..=100 => "ready",
+        70..=89 => "mostly_ready",
+        40..=69 => "partial_vector_coverage",
+        1..=39 => "low_vector_coverage",
+        _ => "no_vector_coverage",
+    }
+}
+
+fn rag_quality_description(
+    pct: u8,
+    embedded_long_count: i64,
+    long_memory_count: i64,
+    pending_embedding_count: u64,
+) -> String {
+    if long_memory_count == 0 {
+        return "No long-term memories exist yet, so RAG quality is neutral rather than bad. Add or ingest memories to make this signal meaningful.".into();
+    }
+
+    let mut description = format!(
+        "{pct}% means {embedded_long_count} of {long_memory_count} long-term memories currently have vector embeddings. Keyword search and graph lookup still work, but semantic RAG recall is limited until more memories are embedded."
+    );
+    if pending_embedding_count > 0 {
+        description.push_str(&format!(
+            " {pending_embedding_count} embedding jobs are queued for retry/backfill."
+        ));
+    } else if pct < 100 {
+        description.push_str(
+            " No embedding jobs are currently queued, so configure or restart the embedding provider/worker if this stays low.",
+        );
+    }
+    description
+}
+
+fn memory_health_description(
+    total: i64,
+    short: i64,
+    working: i64,
+    long: i64,
+    embedded: i64,
+) -> String {
+    format!(
+        "{total} memories total: {short} short, {working} working, {long} long. {embedded} memories across all tiers have vector embeddings."
+    )
+}
 
 fn require_read(caps: &GatewayCaps) -> Result<(), GatewayError> {
     if caps.brain_read {
@@ -1026,6 +1431,8 @@ mod tests {
                     query: "rust".into(),
                     limit: None,
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await
@@ -1112,6 +1519,8 @@ mod tests {
                     query: "   ".into(),
                     limit: None,
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await
@@ -1119,6 +1528,21 @@ mod tests {
         assert!(
             matches!(err, GatewayError::InvalidArgument(_)),
             "got {err:?}"
+        );
+    }
+
+    #[test]
+    fn search_request_defaults_rerank_for_rrf() {
+        let req: SearchRequest = serde_json::from_value(serde_json::json!({
+            "query": "memory"
+        }))
+        .expect("minimal search request should deserialize");
+
+        assert_eq!(req.mode, SearchMode::Rrf);
+        assert!(req.rerank);
+        assert_eq!(
+            req.rerank_threshold,
+            crate::settings::DEFAULT_RERANK_THRESHOLD
         );
     }
 
@@ -1132,6 +1556,8 @@ mod tests {
                     query: "rust".into(),
                     limit: Some(5),
                     mode: SearchMode::Rrf,
+                    rerank: true,
+                    rerank_threshold: crate::settings::DEFAULT_RERANK_THRESHOLD,
                 },
             )
             .await
@@ -1202,14 +1628,14 @@ mod tests {
                 &GatewayCaps::default(),
                 KgRequest {
                     id,
-                    depth: 3,
+                    depth: 4, // exceeds MAX_DEPTH (3), triggers truncation
                     direction: "both".into(),
                 },
             )
             .await
             .unwrap();
         assert_eq!(nb.center.id, id);
-        assert!(nb.truncated, "depth > 1 must report truncation");
+        assert!(nb.truncated, "depth > MAX_DEPTH must report truncation");
     }
 
     #[tokio::test]
@@ -1218,7 +1644,7 @@ mod tests {
         let lesson_id = memory_id_containing(&state, "LESSON: The MCP seed");
         let lessons_hub_id = memory_id_containing(
             &state,
-            "mcp-data/shared/lessons-learned.md captures durable",
+            "Durable gotchas, decisions, and lessons learned from past agent sessions",
         );
         let stack_anchor_id =
             memory_id_containing(&state, "STACK COVERAGE: the mcp-data seed exercises");
@@ -1264,7 +1690,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn summarize_requires_text_or_memory_ids() {
+    async fn summarize_requires_text_memory_ids_or_query() {
         let gw = AppStateGateway::new(seed_state());
         let err = gw
             .summarize(
@@ -1272,6 +1698,8 @@ mod tests {
                 SummarizeRequest {
                     text: None,
                     memory_ids: None,
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -1296,6 +1724,8 @@ mod tests {
                 SummarizeRequest {
                     text: None,
                     memory_ids: Some(ids.clone()),
+                    query: None,
+                    limit: None,
                 },
             )
             .await
@@ -1303,6 +1733,27 @@ mod tests {
         assert_eq!(resp.resolved_count, ids.len());
         // No brain configured ⇒ summary is None. Test asserts the
         // graceful-degradation contract — never an error in this path.
+        assert!(resp.summary.is_none());
+    }
+
+    #[tokio::test]
+    async fn summarize_query_resolves_search_hits() {
+        let gw = AppStateGateway::new(seed_state());
+        let resp = gw
+            .summarize(
+                &GatewayCaps::default(),
+                SummarizeRequest {
+                    text: None,
+                    memory_ids: None,
+                    query: Some("rust ownership".into()),
+                    limit: Some(3),
+                },
+            )
+            .await
+            .unwrap();
+        assert!(resp.resolved_count >= 1);
+        // No brain configured in seed_state(), so this verifies the
+        // search-backed resolution path without requiring Ollama.
         assert!(resp.summary.is_none());
     }
 
@@ -1375,6 +1826,16 @@ mod tests {
         // documented behaviour: it tells the editor "you've got memories
         // but they aren't searchable by vector yet — configure a brain."
         assert_eq!(h.rag_quality_pct, 0);
+        assert_eq!(h.rag_quality.label, "no_vector_coverage");
+        assert_eq!(h.rag_quality.embedded_long_memory_count, 0);
+        assert_eq!(h.rag_quality.long_memory_count, 2);
+        assert!(h.rag_quality.description.contains("0% means 0 of 2"));
+        assert_eq!(h.memory.total, 2);
+        assert_eq!(h.memory.long_count, 2);
+        assert!(h
+            .descriptions
+            .rag_quality_pct
+            .contains("retrieval-augmented generation"));
     }
 
     #[test]

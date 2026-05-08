@@ -34,6 +34,7 @@ pub enum TaskKind {
     Crawl,
     Quest,
     Extract,
+    ModelPull,
     Custom,
 }
 

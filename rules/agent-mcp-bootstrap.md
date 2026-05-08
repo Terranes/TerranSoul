@@ -34,6 +34,26 @@ dir** and a **separate port** so it never collides with:
 | Dev build (`cargo tauri dev`) | 7422 | OS app-data dir / `dev` |
 | **`npm run mcp` (headless)** | **7423** | **`<repo>/mcp-data/`** |
 
+### Error handling rule
+
+If an MCP tool returns an error, fix the MCP surface instead of treating
+the error as permission to bypass MCP. Use this triage order:
+
+1. **Tool contract mismatch.** If the server rejected natural agent input
+   (for example `brain_summarize` got a search-style query), update the
+   tool definition, wire adapter, and `BrainGateway` behavior so the call
+   works or returns a specific repair instruction. Add a regression test.
+2. **Server health / stale binary.** Run `brain_health`. If unhealthy,
+   start or restart with `node scripts/copilot-start-mcp.mjs`; if the
+   managed binary is stale, rebuild and relaunch instead of reusing it.
+3. **Knowledge drift.** If the error is caused by missing/stale seed
+   knowledge, update `mcp-data/shared/memory-seed.sql` and add a numbered
+   migration under `mcp-data/shared/migrations/` for existing DBs.
+
+Always report the original MCP error, the diagnosed root cause, the fix,
+and any remaining blocker. A grep/file-search fallback can be used for
+emergency context, but it does not close the MCP error.
+
 ### Priority — release > dev > mcp
 
 Both the headless (`--mcp-http`) and pet-mode stdio
@@ -126,8 +146,8 @@ that the app uses.
 
 If Ollama is not installed or not reachable, provider-specific LLM calls
 degrade gracefully and the headless runner uses the deterministic
-in-process embedder for seed/query vectors. This keeps the SQLite + HNSW +
-RRF vector signal live with zero network while still reporting the selected
+in-process embedder for seed/query vectors. This keeps the SQLite + vector +
+RRF signal live with zero network while still reporting the selected
 provider honestly in `/status` — it does NOT silently switch providers and
 does NOT upload prompts anywhere.
 
@@ -155,13 +175,19 @@ project memory layer:
    `libglib2.0-dev libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev
    librsvg2-dev patchelf libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
    pkg-config`.
-3. **During self-improve work**, ingest durable lessons back into the MCP
-    seed surface: update `mcp-data/shared/memory-seed.sql`,
-    `project-index.md`, `lessons-learned.md`, or this rules file when the
-   session discovers knowledge that future agents must retain. Do not
+3. **Show a visible MCP receipt.** Immediately after preflight succeeds, send
+   a short user-visible progress update with the health/provider result and the
+   `brain_search` / `brain_suggest_context` topic used. Tool calls alone are
+   not enough; if the user cannot see the receipt, the MCP preflight is
+   incomplete.
+4. **During self-improve work**, ingest durable lessons back into the MCP
+    seed surface: update `mcp-data/shared/memory-seed.sql` when the
+   session discovers knowledge that future agents must retain. The
+   Obsidian vault at `mcp-data/wiki/` is auto-generated from the brain
+   by the maintenance scheduler — do not edit it by hand. Do not
    commit ignored runtime files (`memory.db*`, token, vector indexes,
    logs, locks, sessions, worktrees).
-4. **After completing a chunk**, archive it in
+5. **After completing a chunk**, archive it in
    `rules/completion-log.md`, remove it from `rules/milestones.md`, and
    if the chunk changed MCP/brain behaviour, update the shared seed/docs
    so the next `npm run mcp` session can recover the decision without
@@ -190,7 +216,8 @@ Every AI coding agent in this repo follows the same startup procedure:
    project-knowledge (e.g. "how does the RAG fallback work?",
    "what does Chunk 30.7 do?"): use `brain_search`, `brain_ingest`,
    `brain_health`, `brain_get`, `brain_list_recent`,
-   `brain_kg_neighbors`, `brain_summarize`, `brain_suggest_context`
+   `brain_kg_neighbors`, query-backed `brain_summarize`,
+   `brain_suggest_context`, `brain_failover_status`
    from the MCP tool list before falling back to manual
    `grep_search`/`file_search`/`read_file`.
 6. **Commit only shared MCP data.** It is valid to update
@@ -198,6 +225,22 @@ Every AI coding agent in this repo follows the same startup procedure:
    future MCP sessions. Never force-add ignored runtime files such as
    `mcp-token.txt`, `memory.db*`, indexes, logs, locks, sessions, or
    worktrees.
+
+### target-mcp freshness rule (mandatory)
+
+If `target-mcp/release/terransoul(.exe)` is older than MCP Rust sources or
+config (`src-tauri/src/**`, `src-tauri/Cargo*.toml`, `src-tauri/build.rs`,
+`src-tauri/tauri.conf.json`), agents must treat it as stale and must not reuse
+an already-healthy `7423` process.
+
+Required behavior:
+
+1. Terminate the managed MCP `7423` process.
+2. Rebuild `target-mcp`.
+3. Relaunch MCP and wait for `/health`.
+
+If termination fails, exit with a blocker message instead of silently
+continuing on stale binaries.
 
 ## 6. Seed data — pre-populated brain on first run
 
@@ -221,8 +264,8 @@ only Git-tracked part of `mcp-data/`:
 4. After brain config is applied, a first-run-only best-effort
    `mcp-seed-embedded` pass backfills vectors for seed rows. Provider
    embeddings are preferred; when unavailable, the deterministic offline
-   embedder hashes token features into 256-dimensional vectors so HNSW + RRF
-   still exercise a vector signal before the first agent query.
+   embedder hashes token features into 256-dimensional vectors so vector search
+   + RRF still exercise a retrieval signal before the first agent query.
 5. If `mcp-data/memory.db` already exists (from a previous session),
    nothing is overwritten — incremental knowledge stays intact.
 
@@ -252,7 +295,29 @@ Two endpoints exist for live monitoring without speaking JSON-RPC:
       "brain_provider": "ollama",
       "brain_model": "llama3.1:8b",
       "rag_quality_pct": 80,
-      "memory_total": 123
+         "memory_total": 123,
+         "rag_quality": {
+            "label": "mostly_ready",
+            "description": "80% means 98 of 123 long-term memories currently have vector embeddings...",
+            "formula": "embedded_long_memory_count / long_memory_count * 100",
+            "embedded_long_memory_count": 98,
+            "long_memory_count": 123,
+            "pending_embedding_count": 25,
+            "failing_embedding_count": 0,
+            "next_embedding_retry_at": 1778070000000
+         },
+         "memory": {
+            "total": 123,
+            "short_count": 0,
+            "working_count": 0,
+            "long_count": 123,
+            "embedded_total": 98,
+            "description": "123 memories total: 0 short, 0 working, 123 long. 98 memories across all tiers have vector embeddings."
+         },
+         "descriptions": {
+            "rag_quality_pct": "RAG means retrieval-augmented generation. This percentage is long-term memory vector coverage: embedded_long_memory_count / long_memory_count * 100...",
+            "memory_total": "All memories stored across short, working, and long tiers."
+         }
     }
   }
   ```

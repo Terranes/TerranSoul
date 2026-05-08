@@ -1,7 +1,7 @@
-# TerranSoul MCP Mode — Containerized Headless Brain Server
+# TerranSoul MCP Mode — Containerized Brain Server
 #
-# Builds the Rust release binary (headless, no GUI) and runs it with
-# --mcp-http so AI coding agents can connect on port 7423.
+# Builds the Rust release binary and runs it with
+# --mcp-tray so AI coding agents can connect on port 7423.
 #
 # Usage:
 #   docker compose -f docker-compose.mcp.yml up --build
@@ -71,4 +71,4 @@ ENV TERRANSOUL_MCP_DATA_DIR=/home/terransoul/mcp-data
 ENV RUST_LOG=info
 
 # Run the headless MCP server
-ENTRYPOINT ["./terransoul", "--mcp-http"]
+ENTRYPOINT ["./terransoul", "--mcp-tray"]

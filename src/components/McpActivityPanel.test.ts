@@ -89,4 +89,37 @@ describe('McpActivityPanel', () => {
     wrapper.unmount();
     expect(mocks.unlisten).toHaveBeenCalledOnce();
   });
+
+  it('collapse toggle hides message and model, expand shows them', async () => {
+    mocks.invoke.mockResolvedValueOnce(snapshot({ status: 'idle', speak: false }));
+
+    const wrapper = mount(McpActivityPanel);
+    await flushPromises();
+
+    mocks.eventHandler?.({ payload: snapshot({ updatedAtMs: 1, speak: false }) });
+    await flushPromises();
+
+    // Initially expanded — message visible
+    expect(wrapper.find('.mcp-activity__message').exists()).toBe(true);
+    expect(wrapper.find('.mcp-activity__model').exists()).toBe(true);
+
+    // Click toggle to collapse
+    const toggle = wrapper.find('[data-testid="mcp-activity-toggle"]');
+    expect(toggle.exists()).toBe(true);
+    await toggle.trigger('click');
+
+    // Message and model should be hidden
+    expect(wrapper.find('.mcp-activity__message').exists()).toBe(false);
+    expect(wrapper.find('.mcp-activity__model').exists()).toBe(false);
+
+    // Panel itself still rendered
+    expect(wrapper.find('[data-testid="mcp-activity-panel"]').exists()).toBe(true);
+
+    // Click again to expand
+    await toggle.trigger('click');
+    expect(wrapper.find('.mcp-activity__message').exists()).toBe(true);
+    expect(wrapper.find('.mcp-activity__model').exists()).toBe(true);
+
+    wrapper.unmount();
+  });
 });

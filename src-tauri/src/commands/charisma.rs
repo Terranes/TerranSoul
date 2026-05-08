@@ -13,8 +13,8 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use crate::persona::charisma::{
-    build_promotion_plan, load_index, save_index, CharismaAssetKind, CharismaStat,
-    CharismaSummary, Maturity,
+    build_promotion_plan, load_index, save_index, CharismaAssetKind, CharismaStat, CharismaSummary,
+    Maturity,
 };
 use crate::AppState;
 
@@ -422,8 +422,8 @@ mod tests {
         .unwrap();
         assert!(!resp.plan_id.is_empty());
         assert!(resp.stat.promoted_at.is_some());
-        let plan_path = crate::coding::multi_agent::plans_dir(d.path())
-            .join(format!("{}.yaml", resp.plan_id));
+        let plan_path =
+            crate::coding::multi_agent::plans_dir(d.path()).join(format!("{}.yaml", resp.plan_id));
         assert!(plan_path.exists(), "promotion plan YAML missing");
     }
 

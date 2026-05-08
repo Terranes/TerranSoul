@@ -8,6 +8,12 @@ interface ImportMetaEnv {
    * helpers expect (waitForAppReady looks for .chat-view).
    */
   readonly VITE_E2E?: string;
+  /**
+   * Set to '1' to simulate MCP mode in the browser/E2E without Tauri.
+   * Causes the window store to report isMcpMode=true and shows the
+   * McpActivityPanel + full tabbed UI.
+   */
+  readonly VITE_MCP_MODE?: string;
 }
 
 interface ImportMeta {

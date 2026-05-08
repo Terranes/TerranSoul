@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { parseSlashCommand, SLASH_HELP_TEXT } from './slash-commands';
+import {
+  BRAIN_WIKI_HELP_TEXT,
+  parseBrainWikiSlashCommand,
+  parseSlashCommand,
+  SLASH_HELP_TEXT,
+} from './slash-commands';
 
 describe('parseSlashCommand', () => {
   it('treats plain text as a chat message', () => {
@@ -48,5 +53,40 @@ describe('parseSlashCommand', () => {
     expect(SLASH_HELP_TEXT).toContain('/rename');
     expect(SLASH_HELP_TEXT).toContain('/fork');
     expect(SLASH_HELP_TEXT).toContain('/resume');
+  });
+});
+
+describe('parseBrainWikiSlashCommand', () => {
+  it('ignores plain chat', () => {
+    expect(parseBrainWikiSlashCommand('tell me about memory')).toBeNull();
+  });
+
+  it('parses supported wiki commands case-insensitively', () => {
+    const out = parseBrainWikiSlashCommand(' /SPOTLIGHT ');
+    expect(out?.kind).toBe('spotlight');
+    expect(out?.arg).toBe('');
+  });
+
+  it('preserves digest text as a single argument', () => {
+    const out = parseBrainWikiSlashCommand('/digest The brain should remember this source note.');
+    expect(out?.kind).toBe('digest');
+    expect(out?.arg).toBe('The brain should remember this source note.');
+  });
+
+  it('parses path-style trace arguments', () => {
+    const out = parseBrainWikiSlashCommand('/trace 12 42');
+    expect(out?.kind).toBe('trace');
+    expect(out?.arg).toBe('12 42');
+  });
+
+  it('does not claim plugin or self-improve commands', () => {
+    expect(parseBrainWikiSlashCommand('/clear')).toBeNull();
+    expect(parseBrainWikiSlashCommand('/plugin-command args')).toBeNull();
+  });
+
+  it('documents the active and planned wiki verbs', () => {
+    expect(BRAIN_WIKI_HELP_TEXT).toContain('/ponder');
+    expect(BRAIN_WIKI_HELP_TEXT).toContain('/spotlight');
+    expect(BRAIN_WIKI_HELP_TEXT).toContain('/weave');
   });
 });

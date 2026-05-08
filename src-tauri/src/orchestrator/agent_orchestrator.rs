@@ -62,6 +62,34 @@ impl AgentOrchestrator {
     pub fn list_agents(&self) -> Vec<String> {
         self.agents.keys().cloned().collect()
     }
+
+    /// Find agents whose capability tags contain **all** of the `required` tags.
+    /// Returns agent IDs in arbitrary order. If no agent matches, the list is empty.
+    pub fn agents_with_capabilities(&self, required: &[&str]) -> Vec<String> {
+        self.agents
+            .iter()
+            .filter(|(_, agent)| {
+                let caps = agent.capabilities();
+                required.iter().all(|req| caps.iter().any(|c| c == req))
+            })
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
+    /// Dispatch a message to the first agent that satisfies the `required` capability tags.
+    /// Falls back to the default agent if none match.
+    pub async fn dispatch_by_capability(
+        &self,
+        required: &[&str],
+        message: &str,
+    ) -> Result<(String, String), String> {
+        let matching = self.agents_with_capabilities(required);
+        let agent_id = matching
+            .first()
+            .map(|s| s.as_str())
+            .unwrap_or(&self.default_agent_id);
+        self.dispatch(agent_id, message).await
+    }
 }
 
 impl Default for AgentOrchestrator {
@@ -81,6 +109,7 @@ mod tests {
         agent_name: String,
         response: String,
         healthy: bool,
+        caps: Vec<String>,
     }
 
     #[async_trait]
@@ -90,6 +119,9 @@ mod tests {
         }
         fn name(&self) -> &str {
             &self.agent_name
+        }
+        fn capabilities(&self) -> &[String] {
+            &self.caps
         }
         async fn respond(&self, _message: &str) -> (String, Sentiment) {
             (self.response.clone(), Sentiment::Neutral)
@@ -125,6 +157,7 @@ mod tests {
             agent_name: "MockBot".to_string(),
             response: "Mock response".to_string(),
             healthy: true,
+            caps: vec![],
         }));
         let result = orchestrator.dispatch("mock", "test").await;
         assert!(result.is_ok());
@@ -141,6 +174,7 @@ mod tests {
             agent_name: "Healthy".to_string(),
             response: String::new(),
             healthy: true,
+            caps: vec![],
         }));
         let result = orchestrator.health_check("healthy").await;
         assert!(result.is_ok());
@@ -155,6 +189,7 @@ mod tests {
             agent_name: "Unhealthy".to_string(),
             response: String::new(),
             healthy: false,
+            caps: vec![],
         }));
         let result = orchestrator.health_check("unhealthy").await;
         assert!(result.is_ok());
@@ -183,9 +218,73 @@ mod tests {
             agent_name: "Custom".to_string(),
             response: String::new(),
             healthy: true,
+            caps: vec![],
         }));
         let agents = orchestrator.list_agents();
         assert!(agents.contains(&"stub".to_string()));
         assert!(agents.contains(&"custom".to_string()));
+    }
+
+    #[test]
+    fn agents_with_capabilities_empty_when_no_match() {
+        let orchestrator = AgentOrchestrator::new();
+        let result = orchestrator.agents_with_capabilities(&["code", "plan"]);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn agents_with_capabilities_finds_matching_agent() {
+        let mut orchestrator = AgentOrchestrator::new();
+        orchestrator.register(Arc::new(MockAgent {
+            agent_id: "coder".to_string(),
+            agent_name: "Coder".to_string(),
+            response: String::new(),
+            healthy: true,
+            caps: vec!["code".into(), "plan".into(), "implement".into()],
+        }));
+        let result = orchestrator.agents_with_capabilities(&["code", "plan"]);
+        assert_eq!(result, vec!["coder"]);
+    }
+
+    #[test]
+    fn agents_with_capabilities_requires_all_tags() {
+        let mut orchestrator = AgentOrchestrator::new();
+        orchestrator.register(Arc::new(MockAgent {
+            agent_id: "partial".to_string(),
+            agent_name: "Partial".to_string(),
+            response: String::new(),
+            healthy: true,
+            caps: vec!["code".into()], // missing "review"
+        }));
+        let result = orchestrator.agents_with_capabilities(&["code", "review"]);
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dispatch_by_capability_uses_matching_agent() {
+        let mut orchestrator = AgentOrchestrator::new();
+        orchestrator.register(Arc::new(MockAgent {
+            agent_id: "reviewer".to_string(),
+            agent_name: "Reviewer".to_string(),
+            response: "review done".to_string(),
+            healthy: true,
+            caps: vec!["code".into(), "review".into()],
+        }));
+        let (name, content) = orchestrator
+            .dispatch_by_capability(&["code", "review"], "check this")
+            .await
+            .unwrap();
+        assert_eq!(name, "Reviewer");
+        assert_eq!(content, "review done");
+    }
+
+    #[tokio::test]
+    async fn dispatch_by_capability_falls_back_to_default() {
+        let orchestrator = AgentOrchestrator::new();
+        let (name, _) = orchestrator
+            .dispatch_by_capability(&["nonexistent"], "hello")
+            .await
+            .unwrap();
+        assert_eq!(name, "TerranSoul");
     }
 }

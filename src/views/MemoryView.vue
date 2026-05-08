@@ -176,6 +176,14 @@
               <option value="both">Both</option>
             </select>
           </label>
+          <label class="mv-graph-toggle">
+            <input
+              v-model="graph3d"
+              type="checkbox"
+              data-testid="mv-graph-3d-toggle"
+            >
+            <span>3-D</span>
+          </label>
           <button
             class="btn-secondary"
             :disabled="isActing || store.memories.length < 2"
@@ -192,7 +200,14 @@
             · {{ store.edgeStats.connected_memories }} connected
           </span>
         </div>
+        <BrainGraphViewport
+          v-if="graph3d"
+          :memories="store.memories"
+          :edges="store.edges"
+          @select="onNodeSelect"
+        />
         <MemoryGraph
+          v-else
           :memories="store.memories"
           :edges="store.edges"
           :edge-mode="edgeMode"
@@ -411,7 +426,7 @@
 
     <!-- ── Session tab ── -->
     <div
-      v-else
+      v-else-if="activeTab === 'Session'"
       class="mv-session-panel"
     >
       <p class="mv-session-hint">
@@ -437,6 +452,175 @@
           <span>{{ msg.content }}</span>
         </li>
       </ul>
+    </div>
+
+    <!-- ── Audit tab (chunk 33B.4) ── -->
+    <div
+      v-else-if="activeTab === 'Audit'"
+      class="mv-audit-panel"
+      data-testid="mv-audit-panel"
+    >
+      <p class="mv-audit-hint">
+        Provenance view — pick a memory entry to see its full edit history and the typed edges
+        that connect it to other memories. Edges are colour-coded by source: solid =
+        user-curated, dashed = LLM-inferred, faded = auto-detected.
+      </p>
+      <div class="mv-audit-toolbar">
+        <input
+          v-model="auditSearch"
+          class="mv-audit-search"
+          type="search"
+          placeholder="Filter memories…"
+          data-testid="mv-audit-search"
+        >
+        <span class="mv-audit-count">{{ auditCandidates.length }} entries</span>
+      </div>
+      <div class="mv-audit-body">
+        <ul
+          class="mv-audit-list"
+          data-testid="mv-audit-list"
+        >
+          <li
+            v-if="auditCandidates.length === 0"
+            class="mv-status"
+          >
+            No memories match.
+          </li>
+          <li
+            v-for="entry in auditCandidates"
+            :key="entry.id"
+            :class="['mv-audit-list-item', { active: auditSelectedId === entry.id }]"
+            data-testid="mv-audit-list-item"
+            @click="selectAuditMemory(entry.id)"
+          >
+            <span class="mv-audit-list-title">{{ truncate(entry.content, 80) }}</span>
+            <span class="mv-audit-list-meta">
+              <span class="mv-audit-list-tier">{{ entry.tier }}</span>
+              <span>·</span>
+              <span>{{ formatDate(entry.created_at) }}</span>
+            </span>
+          </li>
+        </ul>
+        <section
+          class="mv-audit-detail"
+          data-testid="mv-audit-detail"
+        >
+          <p
+            v-if="!auditSelected"
+            class="mv-status"
+          >
+            Select a memory on the left to view its provenance.
+          </p>
+          <template v-else>
+            <header class="mv-audit-header">
+              <h3>Memory #{{ auditSelected.id }}</h3>
+              <p class="mv-audit-current">
+                {{ auditSelected.content }}
+              </p>
+              <ul class="mv-audit-meta">
+                <li><strong>Type:</strong> {{ auditSelected.memory_type }}</li>
+                <li><strong>Tier:</strong> {{ auditSelected.tier }}</li>
+                <li><strong>Importance:</strong> {{ auditSelected.importance }}</li>
+                <li><strong>Created:</strong> {{ formatDate(auditSelected.created_at) }}</li>
+              </ul>
+            </header>
+
+            <section class="mv-audit-section">
+              <h4>📜 Version history</h4>
+              <p
+                v-if="auditLoading"
+                class="mv-status"
+              >
+                Loading…
+              </p>
+              <p
+                v-else-if="auditHistory.length === 0"
+                class="mv-status"
+                data-testid="mv-audit-no-history"
+              >
+                No prior versions — this memory has not been edited.
+              </p>
+              <ol
+                v-else
+                class="mv-audit-timeline"
+                data-testid="mv-audit-timeline"
+              >
+                <li
+                  v-for="ver in auditHistoryReversed"
+                  :key="ver.id"
+                  class="mv-audit-version"
+                >
+                  <div class="mv-audit-version-head">
+                    <span class="mv-audit-version-num">v{{ ver.version_num }}</span>
+                    <span class="mv-audit-version-date">{{ formatDate(ver.created_at) }}</span>
+                    <span class="mv-audit-version-type">{{ ver.memory_type }}</span>
+                  </div>
+                  <p class="mv-audit-version-content">{{ ver.content }}</p>
+                  <p
+                    v-if="ver.tags"
+                    class="mv-audit-version-tags"
+                  >
+                    🏷 {{ ver.tags }}
+                  </p>
+                </li>
+                <li class="mv-audit-version current">
+                  <div class="mv-audit-version-head">
+                    <span class="mv-audit-version-num">current</span>
+                    <span class="mv-audit-version-date">{{ formatDate(auditSelected.created_at) }}</span>
+                    <span class="mv-audit-version-type">{{ auditSelected.memory_type }}</span>
+                  </div>
+                  <p class="mv-audit-version-content">{{ auditSelected.content }}</p>
+                  <p
+                    v-if="auditSelected.tags"
+                    class="mv-audit-version-tags"
+                  >
+                    🏷 {{ auditSelected.tags }}
+                  </p>
+                </li>
+              </ol>
+            </section>
+
+            <section class="mv-audit-section">
+              <h4>🕸 Edges ({{ auditEdges.length }})</h4>
+              <p
+                v-if="auditLoading"
+                class="mv-status"
+              >
+                Loading…
+              </p>
+              <p
+                v-else-if="auditEdges.length === 0"
+                class="mv-status"
+                data-testid="mv-audit-no-edges"
+              >
+                No edges connect this memory yet.
+              </p>
+              <ul
+                v-else
+                class="mv-audit-edges"
+                data-testid="mv-audit-edges"
+              >
+                <li
+                  v-for="edge in auditEdges"
+                  :key="edge.edge.id"
+                  :class="['mv-audit-edge', `source-${edge.edge.source}`]"
+                >
+                  <span class="mv-audit-edge-arrow">{{ edge.direction === 'outgoing' ? '→' : '←' }}</span>
+                  <span class="mv-audit-edge-target">
+                    #{{ edge.neighbor?.id ?? (edge.direction === 'outgoing' ? edge.edge.dst_id : edge.edge.src_id) }}
+                  </span>
+                  <span class="mv-audit-edge-rel">
+                    <strong>{{ edge.edge.rel_type }}</strong>
+                    <small v-if="edge.neighbor">{{ truncate(edge.neighbor.content, 96) }}</small>
+                  </span>
+                  <span class="mv-audit-edge-source">{{ edge.edge.source }}</span>
+                  <span class="mv-audit-edge-conf">{{ (edge.edge.confidence * 100).toFixed(0) }}%</span>
+                </li>
+              </ul>
+            </section>
+          </template>
+        </section>
+      </div>
     </div>
 
     <!-- Add / Edit modal -->
@@ -549,15 +733,60 @@ import { ref, computed, onMounted } from 'vue';
 import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';
-import type { MemoryEntry, MemoryType, MemoryTier } from '../types';
+import BrainGraphViewport from '../components/BrainGraphViewport.vue';
+import type { MemoryEntry, MemoryType, MemoryTier, MemoryProvenance } from '../types';
 
 const store = useMemoryStore();
 const settingsStore = useSettingsStore();
 
-const activeTab = ref<'Graph' | 'List' | 'Session'>('List');
-const tabs: Array<'Graph' | 'List' | 'Session'> = ['List', 'Graph', 'Session'];
+type MvTab = 'Graph' | 'List' | 'Session' | 'Audit';
+const activeTab = ref<MvTab>('List');
+const tabs: MvTab[] = ['List', 'Graph', 'Session', 'Audit'];
 const allTypes: MemoryType[] = ['fact', 'preference', 'context', 'summary'];
 const allTiers: MemoryTier[] = ['short', 'working', 'long'];
+
+// ── Audit tab (chunk 33B.4) ──────────────────────────────────────────────
+const auditSearch = ref('');
+const auditSelectedId = ref<number | null>(null);
+const auditProvenance = ref<MemoryProvenance | null>(null);
+const auditLoading = ref(false);
+
+const auditCandidates = computed(() => {
+  const q = auditSearch.value.trim().toLowerCase();
+  const list = q.length === 0
+    ? store.memories
+    : store.memories.filter((m) =>
+        m.content.toLowerCase().includes(q) ||
+        (m.tags ?? '').toLowerCase().includes(q),
+      );
+  // Most-recently-created first to surface fresh evidence quickly.
+  return [...list].sort((a, b) => b.created_at - a.created_at).slice(0, 200);
+});
+
+const auditSelected = computed<MemoryEntry | null>(() => {
+  const id = auditSelectedId.value;
+  if (id == null) return null;
+  return store.memories.find((m) => m.id === id) ?? null;
+});
+
+/** Versions oldest → newest (Rust returns oldest-first; render in that order). */
+const auditHistory = computed(() => auditProvenance.value?.versions ?? []);
+const auditHistoryReversed = computed(() => auditHistory.value);
+const auditEdges = computed(() => auditProvenance.value?.edges ?? []);
+
+async function selectAuditMemory(id: number) {
+  auditSelectedId.value = id;
+  auditLoading.value = true;
+  auditProvenance.value = null;
+  try {
+    auditProvenance.value = await store.getMemoryProvenance(id);
+  } catch (e) {
+    console.error('[audit] failed to load provenance:', e);
+  } finally {
+    auditLoading.value = false;
+  }
+}
+
 const maxMemoryGb = ref(10);
 const maxMemoryMb = ref(10);
 const memoryStorageBytes = computed(() => store.stats?.storage_bytes ?? 0);
@@ -641,6 +870,7 @@ async function loadShortTerm() {
 // Graph node selection
 const selectedEntry = ref<MemoryEntry | null>(null);
 const edgeMode = ref<'typed' | 'tag' | 'both'>('typed');
+const graph3d = ref(false);
 
 const selectedEdges = computed(() => {
   if (!selectedEntry.value) return [];
@@ -760,6 +990,11 @@ async function handleGC() {
 
 function formatDate(ts: number) {
   return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function truncate(text: string, max: number): string {
+  if (!text) return '';
+  return text.length <= max ? text : text.slice(0, max - 1) + '…';
 }
 
 function formatTokens(n: number) {

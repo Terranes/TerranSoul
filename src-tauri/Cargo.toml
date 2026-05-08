@@ -3,10 +3,15 @@ name = "terransoul"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
+default-run = "terransoul"
 
 [lib]
 name = "terransoul_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "terransoul-scheduler"
+path = "src/bin/scheduler.rs"
 
 [build-dependencies]
 protoc-bin-vendored = "3.2.0"
@@ -35,7 +40,7 @@ rcgen = "0.14"
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-webpki-roots"] }
 sysinfo = "0.32"
 notify = { version = "7", default-features = false, features = ["macos_fsevent"] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "multipart", "rustls-tls", "blocking"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 scraper = "0.22"
 url = "2"
@@ -45,7 +50,7 @@ sha2 = "0.10"
 hex = "0.4"
 glob = "0.3.3"
 axum = { version = "0.8.4", features = [] }
-wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"] }
+wasmtime = { version = "36.0.7", default-features = false, features = ["cranelift", "runtime"], optional = true }
 thiserror = "2"
 text-splitter = { version = "0.30", features = ["markdown"] }
 backon = "1"
@@ -57,7 +62,7 @@ sqlx = { version = "0.8", features = ["runtime-tokio", "postgres"], optional = t
 # winauth 0.0.4 → rand 0.7.3). We only need TDS 7.3 protocol; NTLM auth is not used.
 # GHSA advisory: rand 0.7.3 unsoundness (RUSTSEC-2021-0145) — fixed by removing winauth dep.
 tiberius = { version = "0.12", features = ["tds73"], default-features = false, optional = true }
-tokio-util = { version = "0.7", features = ["compat"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"] }
 scylla = { version = "0.14", optional = true }
 # ── Security notes ──────────────────────────────────────────────────────────────────────────
 # glib 0.18.5 (GHSA-cf7g-cm7q-rq7q): VariantStrIter unsoundness fixed in glib 0.20.0.
@@ -69,23 +74,42 @@ scylla = { version = "0.14", optional = true }
 # glib and would not remove the vulnerable transitive gtk3 path, so this remains
 # BLOCKED BY UPSTREAM.
 # ────────────────────────────────────────────────────────────────────────────────────────────
-usearch = "2"
+usearch = { version = "2", optional = true }
 serde_yaml = "0.9"
 tree-sitter = "0.24"
 tree-sitter-rust = "0.23"
 tree-sitter-typescript = "0.23"
+tree-sitter-python = { version = "0.23", optional = true }
+tree-sitter-go = { version = "0.23", optional = true }
+tree-sitter-java = { version = "0.23", optional = true }
+tree-sitter-c = { version = "0.23", optional = true }
+tree-sitter-cpp = { version = "0.23", optional = true }
 petgraph = "0.7"
 tonic = { version = "0.14.5", features = ["transport", "tls-ring"] }
 tonic-prost = "0.14.5"
 prost = "0.14.3"
 tonic-web = "0.14.5"
+mdns-sd = { version = "0.19", optional = true }
 
 [features]
-default = []
+default = ["desktop"]
+desktop = ["native-ann"]
+mobile = []
+headless-mcp = []
+wasm-sandbox = ["dep:wasmtime"]
+native-ann = ["dep:usearch"]
+lan-share-mdns = ["dep:mdns-sd"]
 postgres = ["dep:sqlx"]
-mssql = ["dep:tiberius", "dep:tokio-util"]
+mssql = ["dep:tiberius"]
 cassandra = ["dep:scylla", "dep:rand"]
 motion-research = []
+time-shards = []
+parser-python = ["dep:tree-sitter-python"]
+parser-go = ["dep:tree-sitter-go"]
+parser-java = ["dep:tree-sitter-java"]
+parser-c = ["dep:tree-sitter-c", "dep:tree-sitter-cpp"]
+all-parsers = ["parser-python", "parser-go", "parser-java", "parser-c"]
+bench-million = ["native-ann"]
 
 [profile.dev.package.scrypt]
 opt-level = 3
@@ -93,7 +117,15 @@ opt-level = 3
 [dev-dependencies]
 tempfile = "3"
 wasm-encoder = "0.244.0"
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.9"
+rand_xoshiro = "0.7"
 # Enables tauri::test::{mock_app, MockRuntime} for headless integration tests.
 # Resolver=2 (default for edition=2021) keeps this dev-only feature out of the
 # production binary.
 tauri = { version = "2", features = ["tray-icon", "test"] }
+
+[[bench]]
+name = "million_memory"
+harness = false
+required-features = ["native-ann"]

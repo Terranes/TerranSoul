@@ -122,12 +122,32 @@ export interface QuestTrackerData {
   seenComboKeys: string[];
   /** Last activation timestamp the user has seen a reward ceremony for (Chunk 132). */
   lastSeenActivationTimestamp: number;
+  /** Daily brief quest: cached brief result with ISO date. */
+  dailyBrief: DailyBriefCache | null;
 }
 
 export interface DailySuggestion {
   node: SkillNode;
   status: SkillStatus;
   reason: string | null;
+}
+
+/** Cached daily brief result (one per day). */
+export interface DailyBriefCache {
+  /** ISO date of when this brief was fetched (e.g. '2026-05-06'). */
+  date: string;
+  /** Memory items surfaced in the brief. */
+  items: DailyBriefItem[];
+  /** Total memories found in the time range before filtering. */
+  totalInRange: number;
+}
+
+export interface DailyBriefItem {
+  id: number;
+  content: string;
+  tags: string;
+  importance: number;
+  createdAt: number;
 }
 
 const CURRENT_VERSION = 1;
@@ -144,6 +164,7 @@ function freshTracker(): QuestTrackerData {
     manuallyCompletedIds: [],
     seenComboKeys: [],
     lastSeenActivationTimestamp: 0,
+    dailyBrief: null,
   };
 }
 
@@ -177,6 +198,8 @@ function migrateTracker(raw: unknown): QuestTrackerData {
     base.seenComboKeys = obj.seenComboKeys.filter((id): id is string => typeof id === 'string');
   if (typeof obj.lastSeenActivationTimestamp === 'number')
     base.lastSeenActivationTimestamp = obj.lastSeenActivationTimestamp;
+  if (obj.dailyBrief && typeof obj.dailyBrief === 'object')
+    base.dailyBrief = obj.dailyBrief as DailyBriefCache;
   return base;
 }
 
@@ -208,6 +231,14 @@ function mergeTrackers(a: QuestTrackerData, b: QuestTrackerData): QuestTrackerDa
     const ta = a.activationTimestamps[key] ?? Infinity;
     const tb = b.activationTimestamps[key] ?? Infinity;
     merged.activationTimestamps[key] = Math.min(ta, tb);
+  }
+  // Keep the most recent daily brief
+  const briefA = a.dailyBrief;
+  const briefB = b.dailyBrief;
+  if (briefA && briefB) {
+    merged.dailyBrief = (briefA.date >= briefB.date) ? briefA : briefB;
+  } else {
+    merged.dailyBrief = briefA ?? briefB ?? null;
   }
   return merged;
 }
@@ -842,6 +873,32 @@ const SKILL_NODES: SkillNode[] = [
         name: 'Master Scholar',
         description: 'Scholar\'s Quest + premium brain = research-grade deep dives with citations.',
         icon: '🎓',
+      },
+    ],
+  },
+  {
+    id: 'quest-daily-brief',
+    name: 'Morning Report',
+    tagline: 'Daily memory digest of commitments and deadlines',
+    description: 'Once per day, your companion searches recent memories for overdue tasks, upcoming events, and commitments you\'ve made. The brief surfaces in the skill-tree UI so you never lose track of what matters.',
+    icon: '📋',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: ['Daily commitment reminder', 'Overdue task surfacing', 'Upcoming event digest', 'Temporal memory awareness'],
+    rewardIcons: ['⏰', '⚠️', '📅', '🧠'],
+    questSteps: [
+      { label: 'Ensure brain and memories are configured', action: 'info' },
+      { label: 'Add at least one memory containing a commitment or deadline', action: 'navigate', target: 'memory' },
+      { label: 'Open the Skill Tree and check the Daily Brief card', action: 'navigate', target: 'quest' },
+    ],
+    category: 'brain',
+    recommended: true,
+    combos: [
+      {
+        withSkills: ['tts'],
+        name: 'Voice Briefing',
+        description: 'Daily Brief + TTS = your companion reads your morning report aloud.',
+        icon: '🎙️',
       },
     ],
   },
@@ -1488,6 +1545,11 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       }
       case 'scholar-quest':
         return false; // Chain quest — manually completed via KnowledgeQuestDialog
+      case 'quest-daily-brief': {
+        // Auto-active when: brain configured + at least one memory exists
+        const memStoreForBrief = useMemoryStore();
+        return brain.brainMode !== null && memStoreForBrief.memories.length > 0;
+      }
       case 'presence':
         return brain.hasBrain && voice.config.tts_provider !== null;
       case 'device-link':
@@ -1776,6 +1838,65 @@ Respond with ONLY valid JSON (no markdown):
     tracker.value.lastSuggestionDate = todayString();
     saveTracker();
     isLoadingSuggestions.value = false;
+  }
+
+  // ── Daily brief quest (Chunk 33B.3) ───────────────────────────────────────
+
+  const dailyBrief = computed<DailyBriefCache | null>(() => {
+    const cached = tracker.value.dailyBrief;
+    if (!cached) return null;
+    // Only return if still from today
+    return cached.date === todayString() ? cached : null;
+  });
+
+  const dailyBriefNeedsRefresh = computed<boolean>(() => {
+    return !dailyBrief.value;
+  });
+
+  /**
+   * Fetch the daily brief via the backend command. Caches the result
+   * in the tracker so subsequent reads within the same day are instant.
+   * Idempotent: skips if already fetched today.
+   */
+  async function fetchDailyBrief(force = false): Promise<DailyBriefCache | null> {
+    const today = todayString();
+    if (!force && tracker.value.dailyBrief?.date === today) {
+      return tracker.value.dailyBrief;
+    }
+
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      const result = await invoke<{
+        memories: Array<{
+          id: number;
+          content: string;
+          tags: string;
+          importance: number;
+          created_at: number;
+        }>;
+        time_range: { start_ms: number; end_ms: number };
+        total_in_range: number;
+      }>('daily_brief_query', { limit: 10 });
+
+      const brief: DailyBriefCache = {
+        date: today,
+        items: result.memories.map(m => ({
+          id: m.id,
+          content: m.content,
+          tags: m.tags,
+          importance: m.importance,
+          createdAt: m.created_at,
+        })),
+        totalInRange: result.total_in_range,
+      };
+
+      tracker.value.dailyBrief = brief;
+      saveTracker();
+      return brief;
+    } catch {
+      // If the backend isn't available (web mode), return null gracefully.
+      return null;
+    }
   }
 
   // ── Quest actions ─────────────────────────────────────────────────────────
@@ -2121,6 +2242,10 @@ Respond with ONLY valid JSON (no markdown):
     needsRefresh,
     refreshDailySuggestions,
     generateLocalSuggestions,
+    // Daily brief quest
+    dailyBrief,
+    dailyBriefNeedsRefresh,
+    fetchDailyBrief,
     // Persistence
     loadTracker,
     saveTracker,

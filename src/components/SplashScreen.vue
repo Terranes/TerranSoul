@@ -704,7 +704,7 @@
   align-items: center;
   justify-content: center;
   z-index: 9999;
-  background: #0b1120;
+  background: var(--ts-bg-base);
   gap: 1.5rem;
   overflow: hidden;
 }

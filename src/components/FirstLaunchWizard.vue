@@ -289,6 +289,7 @@
 /* eslint-disable max-lines */
 import { ref, computed, nextTick, onUnmounted } from 'vue';
 import { useBrainStore } from '../stores/brain';
+import { useMemoryStore } from '../stores/memory';
 import { useVoiceStore } from '../stores/voice';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useSettingsStore } from '../stores/settings';
@@ -299,6 +300,7 @@ const emit = defineEmits<{ done: [] }>();
 defineProps<{ visible: boolean }>();
 
 const brain = useBrainStore();
+const memory = useMemoryStore();
 const voice = useVoiceStore();
 const skillTree = useSkillTreeStore();
 const settingsStore = useSettingsStore();
@@ -643,6 +645,25 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
     }
   } catch {
     // Non-critical — skip cleanup reporting.
+  }
+
+  // ── Phase 1b: Embedding warmup (non-blocking) ──────────────────────
+  if (brain.hasBrain) {
+    setupProgress.value = 35;
+    logDebug('Phase 1b: Embedding warmup (background)');
+
+    // Fire-and-forget: don't block the wizard on vector indexing.
+    memory.backfillEmbeddings().then((embedded) => {
+      if (embedded > 0) {
+        items.push({ icon: '🔍', label: `Vector search ready (${embedded} memories indexed)` });
+        logDebug(`Embedded ${embedded} memories`);
+      } else {
+        logDebug('No unembedded memories to process');
+      }
+    }).catch((err) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logDebug(`Embedding warmup skipped: ${msg}`, 'warn');
+    });
   }
 
   // ── Phase 2: Voice (TTS) ────────────────────────────────────────────

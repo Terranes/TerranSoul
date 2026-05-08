@@ -100,7 +100,7 @@ pub trait AgentProvider: Send + Sync {
 > [`src-tauri/src/plugins/host.rs`](../src-tauri/src/plugins/host.rs); its
 > legacy parser support remains in
 > [`src-tauri/src/agent/openclaw_agent.rs`](../src-tauri/src/agent/openclaw_agent.rs).
-> Walkthrough in [`OPENCLAW-EXAMPLE.md`](./OPENCLAW-EXAMPLE.md).
+> Walkthrough in [`openclaw-plugin-tutorial.md`](../tutorials/openclaw-plugin-tutorial.md).
 
 > **Local LLMs are agents too.** The Marketplace surfaces local Ollama models
 > as virtual agents (capability `local_llm`) — installing one runs the same

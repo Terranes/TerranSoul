@@ -290,6 +290,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       manuallyCompletedIds: [],
       seenComboKeys: [],
       lastSeenActivationTimestamp: 0,
+      dailyBrief: null,
     };
     localStorageData['terransoul-quest-tracker'] = JSON.stringify(data);
 
@@ -332,6 +333,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       manuallyCompletedIds: [],
       seenComboKeys: [],
       lastSeenActivationTimestamp: 0,
+      dailyBrief: null,
     };
     mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
     localStorageData['terransoul-quest-tracker'] = JSON.stringify({
@@ -345,6 +347,7 @@ describe('useSkillTreeStore — quest tracker persistence', () => {
       manuallyCompletedIds: [],
       seenComboKeys: [],
       lastSeenActivationTimestamp: 0,
+      dailyBrief: null,
     } as QuestTrackerData);
 
     const store = useSkillTreeStore();
@@ -803,6 +806,7 @@ describe('useSkillTreeStore — manual completion', () => {
       manuallyCompletedIds: ['bgm'],
       seenComboKeys: [],
       lastSeenActivationTimestamp: 0,
+      dailyBrief: null,
     };
     mockInvoke.mockResolvedValue(JSON.stringify(tauriData));
     localStorageData['terransoul-quest-tracker'] = JSON.stringify({
@@ -836,5 +840,72 @@ describe('useSkillTreeStore — manual completion', () => {
     await store.loadTracker();
     expect(Array.isArray(store.tracker.manuallyCompletedIds)).toBe(true);
     expect(store.tracker.manuallyCompletedIds).toEqual([]);
+  });
+
+  it('dailyBrief is null by default and after stale cache', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    localStorageData['terransoul-quest-tracker'] = JSON.stringify({
+      version: 1,
+      dismissedQuestIds: [],
+      pinnedQuestIds: [],
+      dailyBrief: { date: '2000-01-01', items: [{ id: 1, content: 'old', tags: '', importance: 3, createdAt: 0 }], totalInRange: 1 },
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    // Stale brief (not today) should be treated as needing refresh
+    expect(store.dailyBrief).toBeNull();
+    expect(store.dailyBriefNeedsRefresh).toBe(true);
+  });
+
+  it('dailyBrief returns cached value when date matches today', async () => {
+    mockInvoke.mockRejectedValue(new Error('Tauri unavailable'));
+    const today = new Date().toISOString().slice(0, 10);
+    localStorageData['terransoul-quest-tracker'] = JSON.stringify({
+      version: 1,
+      dismissedQuestIds: [],
+      pinnedQuestIds: [],
+      dailyBrief: { date: today, items: [{ id: 42, content: 'test brief', tags: 'commitment', importance: 4, createdAt: Date.now() }], totalInRange: 5 },
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    expect(store.dailyBrief).not.toBeNull();
+    expect(store.dailyBrief!.items).toHaveLength(1);
+    expect(store.dailyBrief!.items[0].content).toBe('test brief');
+    expect(store.dailyBriefNeedsRefresh).toBe(false);
+  });
+
+  it('fetchDailyBrief calls invoke and caches result', async () => {
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'get_quest_tracker') throw new Error('Tauri unavailable');
+      if (cmd === 'daily_brief_query') {
+        return {
+          memories: [
+            { id: 1, content: 'deadline tomorrow', tags: 'commitment', importance: 5, created_at: Date.now() },
+          ],
+          time_range: { start_ms: Date.now() - 86400000, end_ms: Date.now() },
+          total_in_range: 3,
+        };
+      }
+      throw new Error(`unexpected command: ${cmd}`);
+    });
+
+    const store = useSkillTreeStore();
+    await store.loadTracker();
+    const brief = await store.fetchDailyBrief();
+    expect(brief).not.toBeNull();
+    expect(brief!.items).toHaveLength(1);
+    expect(brief!.items[0].content).toBe('deadline tomorrow');
+    expect(store.tracker.dailyBrief).not.toBeNull();
+  });
+
+  it('quest-daily-brief skill node exists in the catalogue', () => {
+    const store = useSkillTreeStore();
+    const node = store.nodes.find(n => n.id === 'quest-daily-brief');
+    expect(node).toBeDefined();
+    expect(node!.category).toBe('brain');
+    expect(node!.tier).toBe('advanced');
+    expect(node!.requires).toContain('rag-knowledge');
   });
 });

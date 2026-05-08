@@ -496,6 +496,7 @@ import { onMounted } from 'vue';
 import { onUnmounted } from 'vue';
 import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { loadBrowserLanHost } from '../utils/browser-lan';
@@ -512,14 +513,18 @@ import { useAsrManager } from '../composables/useAsrManager';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
 import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
+import type { MemoryEdge, MemoryEntry } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
+import { BRAIN_WIKI_HELP_TEXT, parseBrainWikiSlashCommand } from '../utils/slash-commands';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useTaskStore } from '../stores/tasks';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { usePluginSlashDispatch } from '../composables/usePluginSlashDispatch';
+import { usePromptCommandDispatch } from '../composables/usePromptCommandDispatch';
+import { usePromptCommandsStore } from '../stores/prompt-commands';
 import CharacterViewport from '../components/CharacterViewport.vue';
 import ChatMessageList from '../components/ChatMessageList.vue';
 import ChatInput from '../components/ChatInput.vue';
@@ -544,6 +549,8 @@ const { muted: audioMuted } = storeToRefs(audioStore);
 const skillTree = useSkillTreeStore();
 const { chatDrawerExpanded, toggleChatDrawer, setChatDrawerExpanded } = useChatExpansion();
 const { tryDispatchSlashCommand } = usePluginSlashDispatch();
+const { tryDispatchPromptCommand } = usePromptCommandDispatch();
+const promptCommandsStore = usePromptCommandsStore();
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
   getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
@@ -558,6 +565,53 @@ const showBrowserLlmConfig = ref(false);
 const showBrowserLlmPrompt = computed(() =>
   browserRuntime.value && !usesRemoteConversation && (!brain.hasBrain || showBrowserLlmConfig.value),
 );
+
+interface SessionReflectionReport {
+  facts_saved: number;
+  summary: string;
+  reflection_id: number;
+  source_turn_count: number;
+  derived_edge_count: number;
+}
+
+interface SourceDedupResult {
+  kind: 'skipped' | 'ingested';
+  existing_id?: number;
+  entry_id?: number;
+}
+
+interface IngestStartResult {
+  task_id: string;
+  source: string;
+  source_type: string;
+}
+
+interface BrainWikiAuditReport {
+  open_conflicts: unknown[];
+  orphan_ids: number[];
+  stale_ids: number[];
+  pending_embeddings: number;
+  total_memories: number;
+  total_edges: number;
+  generated_at: number;
+}
+
+interface BrainWikiGodNode {
+  entry: MemoryEntry;
+  degree: number;
+}
+
+interface BrainWikiSurprisingConnection {
+  edge: MemoryEdge;
+  src: MemoryEntry;
+  dst: MemoryEntry;
+  label: string;
+}
+
+interface BrainWikiReviewItem {
+  entry: MemoryEntry;
+  gravity: number;
+}
 /** Pre-detected emotion from user input, used during streaming for immediate feedback. */
 const pendingEmotion = ref<CharacterState>('idle');
 let unlistenLlmChunk: (() => void) | null = null;
@@ -944,6 +998,147 @@ function generateMessageId(): string {
   return crypto.randomUUID();
 }
 
+function addUserChatMessage(content: string): void {
+  conversationStore.addMessage({
+    id: generateMessageId(),
+    role: 'user',
+    content,
+    timestamp: Date.now(),
+  });
+}
+
+function addTerranSoulChatMessage(content: string, sentiment: 'neutral' | 'sad' = 'neutral'): void {
+  conversationStore.addMessage({
+    id: generateMessageId(),
+    role: 'assistant',
+    content,
+    agentName: 'TerranSoul',
+    sentiment,
+    timestamp: Date.now(),
+  });
+}
+
+function compactMemory(entry: MemoryEntry, max = 120): string {
+  const text = entry.content.replace(/\s+/g, ' ').trim();
+  return text.length > max ? `${text.slice(0, max - 1)}...` : text;
+}
+
+function formatGodNodes(nodes: BrainWikiGodNode[]): string {
+  if (nodes.length === 0) return 'No connected memories found yet. Run edge extraction or add linked memories first.';
+  return [
+    'Spotlight memories:',
+    ...nodes.map((node, index) =>
+      `${index + 1}. #${node.entry.id} (${node.degree} edge${node.degree === 1 ? '' : 's'}) ${compactMemory(node.entry)}`,
+    ),
+  ].join('\n');
+}
+
+function formatSurprises(items: BrainWikiSurprisingConnection[]): string {
+  if (items.length === 0) return 'No cross-topic connections found yet. Detect communities after adding more linked memories.';
+  return [
+    'Serendipity links:',
+    ...items.map((item, index) =>
+      `${index + 1}. #${item.src.id} -> #${item.dst.id} (${item.edge.rel_type}, ${Math.round(item.edge.confidence * 100)}%, ${item.label})\n   ${compactMemory(item.src, 72)}\n   ${compactMemory(item.dst, 72)}`,
+    ),
+  ].join('\n');
+}
+
+function formatReviewQueue(items: BrainWikiReviewItem[]): string {
+  if (items.length === 0) return 'No memories are ready for review right now.';
+  return [
+    'Revisit queue:',
+    ...items.map((item, index) =>
+      `${index + 1}. #${item.entry.id} (gravity ${item.gravity.toFixed(2)}) ${compactMemory(item.entry)}`,
+    ),
+  ].join('\n');
+}
+
+function looksLikeIngestSource(value: string): boolean {
+  return /^(https?:\/\/|crawl:)/i.test(value) || /^[a-zA-Z]:[\\/]/.test(value) || value.startsWith('\\\\');
+}
+
+async function handleBrainWikiSlashCommand(message: string): Promise<boolean> {
+  const command = parseBrainWikiSlashCommand(message);
+  if (!command) return false;
+
+  addUserChatMessage(message);
+
+  try {
+    switch (command.kind) {
+      case 'digest': {
+        if (!command.arg) {
+          addTerranSoulChatMessage(`Usage:\n${BRAIN_WIKI_HELP_TEXT}`);
+          return true;
+        }
+        if (looksLikeIngestSource(command.arg)) {
+          const result = await invoke<IngestStartResult>('ingest_document', {
+            source: command.arg,
+            tags: 'wiki:digest,imported',
+            importance: 4,
+          });
+          addTerranSoulChatMessage(
+            `Digest started for ${result.source_type}: ${result.source}\nTask: ${result.task_id}`,
+          );
+          return true;
+        }
+        const result = await invoke<SourceDedupResult>('brain_wiki_digest_text', {
+          content: command.arg,
+          sourceUrl: null,
+          tags: 'wiki:digest,chat',
+          importance: 4,
+        });
+        const id = result.kind === 'skipped' ? result.existing_id : result.entry_id;
+        addTerranSoulChatMessage(
+          result.kind === 'skipped'
+            ? `That source note is already remembered as #${id}.`
+            : `Digest saved as memory #${id}.`,
+        );
+        return true;
+      }
+      case 'ponder': {
+        const report = await invoke<BrainWikiAuditReport>('brain_wiki_audit', { limit: 50 });
+        addTerranSoulChatMessage([
+          'Brain wiki audit complete.',
+          `Memories: ${report.total_memories}`,
+          `Live edges: ${report.total_edges}`,
+          `Open conflicts: ${report.open_conflicts.length}`,
+          `Orphans: ${report.orphan_ids.length}`,
+          `Stale review candidates: ${report.stale_ids.length}`,
+          `Embedding queue: ${report.pending_embeddings}`,
+        ].join('\n'));
+        return true;
+      }
+      case 'spotlight': {
+        const nodes = await invoke<BrainWikiGodNode[]>('brain_wiki_spotlight', { limit: 10 });
+        addTerranSoulChatMessage(formatGodNodes(nodes));
+        return true;
+      }
+      case 'serendipity': {
+        const items = await invoke<BrainWikiSurprisingConnection[]>('brain_wiki_serendipity', { limit: 10 });
+        addTerranSoulChatMessage(formatSurprises(items));
+        return true;
+      }
+      case 'revisit': {
+        const items = await invoke<BrainWikiReviewItem[]>('brain_wiki_revisit', { limit: 12 });
+        addTerranSoulChatMessage(formatReviewQueue(items));
+        return true;
+      }
+      case 'weave':
+      case 'trace':
+      case 'why':
+        addTerranSoulChatMessage(
+          `/${command.kind} is planned for the next wiki rollout. Available now:\n${BRAIN_WIKI_HELP_TEXT}`,
+        );
+        return true;
+      default:
+        return false;
+    }
+  } catch (error) {
+    addTerranSoulChatMessage(`Brain wiki command failed: ${String(error)}`, 'sad');
+    return true;
+  }
+}
+
 function precomputePendingEmotionForStreaming(message: string): void {
   // Pre-compute user emotion before the async send starts so streaming UI
   // can use this value instead of a generic 'talking' state.
@@ -952,7 +1147,7 @@ function precomputePendingEmotionForStreaming(message: string): void {
 }
 
 async function handleSend(message: string) {
-  if (browserRuntime.value && !brain.browserAuthSession) {
+  if (browserRuntime.value && !brain.browserAuthSession && !brain.hasBrain) {
     showBrowserLlmConfig.value = true;
     return;
   }
@@ -960,28 +1155,75 @@ async function handleSend(message: string) {
   // Stop any ongoing TTS playback before sending a new message.
   tts.stop();
 
+  // /commands — list all available slash commands (built-in + prompt files)
+  if (message.trim().toLowerCase() === '/commands') {
+    addUserChatMessage(message);
+    const { getAvailableCommands } = usePromptCommandDispatch();
+    const promptCmds = getAvailableCommands();
+    const builtIn = ['reflect', 'commands'];
+    let output = '**Available Commands:**\n\n';
+    output += '**Built-in:**\n';
+    for (const cmd of builtIn) {
+      output += `- \`/${cmd}\`\n`;
+    }
+    if (promptCmds.length > 0) {
+      output += '\n**Prompt Commands** (`.terransoul/prompts/`):\n';
+      for (const cmd of promptCmds) {
+        output += `- \`/${cmd.name}\` — ${cmd.description}\n`;
+      }
+    }
+    addTerranSoulChatMessage(output);
+    return;
+  }
+
+  if (message.trim().toLowerCase() === '/reflect') {
+    addUserChatMessage(message);
+    try {
+      const report = await invoke<SessionReflectionReport>('reflect_on_session');
+      addTerranSoulChatMessage(`Reflection saved.\n\nSummary: ${report.summary}\n\nSaved ${report.facts_saved} fact${report.facts_saved === 1 ? '' : 's'} and linked ${report.source_turn_count} source turn${report.source_turn_count === 1 ? '' : 's'} with ${report.derived_edge_count} provenance edge${report.derived_edge_count === 1 ? '' : 's'}.`);
+    } catch (error) {
+      addTerranSoulChatMessage(`Reflection failed: ${String(error)}`, 'sad');
+    }
+    return;
+  }
+
+  if (await handleBrainWikiSlashCommand(message)) {
+    return;
+  }
+
+  // Extensible prompt commands: if the message matches a loaded
+  // `.terransoul/prompts/*.md` file, inject its content as the prompt.
+  const promptResult = tryDispatchPromptCommand(message);
+  if (promptResult.handled) {
+    addUserChatMessage(message);
+    if (promptResult.error) {
+      addTerranSoulChatMessage(`⚠️ Prompt command /${promptResult.name} failed: ${promptResult.error}`, 'sad');
+      return;
+    }
+    setAvatarState('thinking');
+    await conversationStore.sendMessage(promptResult.prompt!);
+    const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
+    const reactionState = lastMsg?.role === 'assistant'
+      ? sentimentToState(lastMsg.sentiment)
+      : pendingEmotion.value;
+    setAvatarState(reactionState);
+    pendingEmotion.value = 'idle';
+    return;
+  }
+
   // Plugin slash-command interception (Chunk 22.4): if the message
   // matches `/<name> ...` and an active plugin contributes that name,
   // route to the plugin host and surface the result as an assistant
   // chat message instead of going through the LLM.
   const dispatch = await tryDispatchSlashCommand(message);
   if (dispatch.handled) {
-    conversationStore.addMessage({
-      id: generateMessageId(),
-      role: 'user',
-      content: message,
-      timestamp: Date.now(),
-    });
-    conversationStore.addMessage({
-      id: generateMessageId(),
-      role: 'assistant',
-      content: dispatch.error
+    addUserChatMessage(message);
+    addTerranSoulChatMessage(
+      dispatch.error
         ? `⚠️ Plugin command \`/${dispatch.name}\` failed: ${dispatch.error}`
         : (dispatch.output || `(plugin returned no output for /${dispatch.name})`),
-      agentName: 'TerranSoul',
-      sentiment: dispatch.error ? 'sad' : 'neutral',
-      timestamp: Date.now(),
-    });
+      dispatch.error ? 'sad' : 'neutral',
+    );
     return;
   }
 
@@ -1494,6 +1736,9 @@ onMounted(async () => {
   window.addEventListener('ts:llm-sentence', handleBrowserSentenceEvent);
   await setupTauriEventListener();
 
+  // Load extensible prompt commands from .terransoul/prompts/
+  promptCommandsStore.loadCommands();
+
   // Initialise background task listener
   const taskStore = useTaskStore();
   await taskStore.init();
@@ -1623,39 +1868,49 @@ onUnmounted(() => {
   z-index: 15;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 14px;
+  gap: 7px;
+  padding: 5px 16px;
   border-radius: var(--ts-radius-pill);
-  background: var(--ts-success-bg);
-  backdrop-filter: blur(8px);
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
   border: 1px solid rgba(34, 197, 94, 0.2);
   font-size: 0.7rem;
   color: var(--ts-success);
   pointer-events: auto;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
+  transition: transform var(--ts-transition-fast), box-shadow var(--ts-transition-fast);
+}
+.brain-status-pill:hover {
+  transform: translateX(-50%) translateY(-1px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
 }
 .brain-pill-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   background: var(--ts-success-dim);
+  box-shadow: 0 0 6px rgba(34, 197, 94, 0.4);
   animation: pulse-dot 2s ease-in-out infinite;
 }
 
 .brain-reconfigure-btn,
 .chatbox-reconfigure-btn {
-  border: 1px solid color-mix(in srgb, var(--ts-accent) 36%, var(--ts-border));
+  border: 1px solid rgba(124, 111, 255, 0.25);
   border-radius: var(--ts-radius-pill);
-  padding: 0.25rem 0.55rem;
+  padding: 0.28rem 0.6rem;
   color: var(--ts-text-primary);
-  background: color-mix(in srgb, var(--ts-bg-input) 86%, transparent);
+  background: rgba(255, 255, 255, 0.04);
   font-size: 0.68rem;
   font-weight: 800;
   cursor: pointer;
+  transition: all var(--ts-transition-fast);
 }
 
 .brain-reconfigure-btn:hover,
 .chatbox-reconfigure-btn:hover {
-  background: color-mix(in srgb, var(--ts-accent) 16%, var(--ts-bg-input));
+  background: rgba(124, 111, 255, 0.12);
+  border-color: rgba(124, 111, 255, 0.4);
 }
 
 /* ── Floating subtitle overlay — karaoke-style word sync ── */
@@ -1672,13 +1927,16 @@ onUnmounted(() => {
 }
 .subtitle-text {
   margin: 0;
-  padding: 12px 20px;
-  background: var(--ts-bg-backdrop);
-  backdrop-filter: blur(12px);
+  padding: 14px 22px;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-radius: var(--ts-radius-lg);
-  border: 1px solid var(--ts-border);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
+              inset 0 1px 0 rgba(255, 255, 255, 0.05);
   color: var(--ts-text-primary);
-  font-size: 0.92rem;
+  font-size: 0.93rem;
   line-height: 1.6;
   text-align: center;
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -1687,7 +1945,7 @@ onUnmounted(() => {
   scroll-behavior: smooth;
   pointer-events: auto;
   scrollbar-width: thin;
-  scrollbar-color: var(--ts-text-dim) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 .subtitle-text::-webkit-scrollbar { width: 4px; }
 .subtitle-text::-webkit-scrollbar-track { background: transparent; }
@@ -1771,9 +2029,11 @@ onUnmounted(() => {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--ts-bg-overlay);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid var(--ts-border);
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-top: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.3);
   scrollbar-width: thin;
   scrollbar-color: var(--ts-text-dim) transparent;
   display: flex;
@@ -1783,8 +2043,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px 8px;
-  border-bottom: 1px solid var(--ts-border-subtle);
+  padding: 12px 16px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
 }
 .chat-history-actions {
@@ -1793,20 +2053,22 @@ onUnmounted(() => {
   gap: 6px;
 }
 .chat-history-action-btn {
-  border: 1px solid var(--ts-border-strong);
-  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: rgba(255, 255, 255, 0.04);
   color: var(--ts-text-primary);
   font-size: 0.68rem;
   font-weight: 700;
   border-radius: var(--ts-radius-sm);
-  padding: 4px 8px;
+  padding: 5px 10px;
   cursor: pointer;
+  transition: all var(--ts-transition-fast);
 }
 .chat-history-action-btn:hover {
-  background: var(--ts-bg-hover);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.14);
 }
 .chat-history-action-btn.skip {
-  border-color: rgba(239, 68, 68, 0.45);
+  border-color: rgba(239, 68, 68, 0.35);
   color: var(--ts-error);
 }
 .chat-history-title {
@@ -1840,10 +2102,12 @@ onUnmounted(() => {
 
 /* Input footer — always visible at the very bottom */
 .input-footer {
-  background: var(--ts-bg-panel);
-  backdrop-filter: blur(20px);
-  border-top: 1px solid var(--ts-border);
-  padding: 8px 12px 10px;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(24px) saturate(1.3);
+  -webkit-backdrop-filter: blur(24px) saturate(1.3);
+  border-top: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  padding: 10px 14px 12px;
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
 }
 .input-row {
   display: flex;
@@ -1854,11 +2118,12 @@ onUnmounted(() => {
 /* ── Chat toggle button — pill with icon + label ── */
 .chat-drawer-toggle {
   height: 40px;
-  padding: 0 14px;
+  padding: 0 16px;
   border-radius: var(--ts-radius-pill);
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-panel);
-  backdrop-filter: blur(10px);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   color: var(--ts-text-primary);
   font-size: 0.72rem;
   font-weight: 600;
@@ -1867,7 +2132,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
-  transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
   box-shadow: var(--ts-shadow-sm);
 }
 .toggle-label {
@@ -1876,7 +2141,9 @@ onUnmounted(() => {
 .chat-drawer-toggle:hover {
   background: var(--ts-accent);
   color: var(--ts-text-on-accent);
-  box-shadow: 0 4px 16px var(--ts-accent-glow);
+  border-color: transparent;
+  transform: scale(1.04);
+  box-shadow: 0 4px 20px rgba(124, 111, 255, 0.3);
 }
 .chat-drawer-toggle.active {
   background: var(--ts-accent);
@@ -1928,36 +2195,84 @@ onUnmounted(() => {
   left: 50%;
   transform: translate(-50%, -50%);
   z-index: 30;
-  width: 340px;
+  width: 360px;
   max-width: 90vw;
 }
 .browser-llm-overlay {
   width: min(620px, 92vw);
 }
-.brain-card { background: var(--ts-bg-overlay); backdrop-filter: blur(20px); border-radius: var(--ts-radius-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--ts-accent-glow); box-shadow: var(--ts-shadow-lg); }
-.brain-card-header { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-base); }
+.brain-card {
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border-radius: var(--ts-radius-lg);
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  box-shadow: var(--ts-shadow-lg), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+.brain-card-header { display: flex; align-items: center; gap: 8px; font-size: var(--ts-text-base); font-weight: 600; }
 .brain-hw { font-size: var(--ts-text-sm); color: var(--ts-text-secondary); margin: 0; }
-.brain-rec { font-size: 0.8rem; color: var(--ts-text-bright, var(--ts-text-primary)); margin: 0; line-height: 1.4; }
+.brain-rec { font-size: 0.8rem; color: var(--ts-text-bright, var(--ts-text-primary)); margin: 0; line-height: 1.45; }
 .brain-rec small { color: var(--ts-text-muted); }
-.brain-models { display: flex; flex-wrap: wrap; gap: 4px; }
-.brain-model-btn { padding: 4px 10px; border-radius: var(--ts-radius-sm); border: 1px solid var(--ts-border); background: var(--ts-bg-panel); color: var(--ts-text-secondary); font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: all var(--ts-transition-fast); }
-.brain-model-btn.top { border-color: rgba(59, 130, 246, 0.4); }
-.brain-model-btn.selected { border-color: var(--ts-success); background: var(--ts-success-bg); color: var(--ts-success); }
-.brain-model-btn:hover { background: var(--ts-bg-surface); }
+.brain-models { display: flex; flex-wrap: wrap; gap: 6px; }
+.brain-model-btn {
+  padding: 6px 12px;
+  border-radius: var(--ts-radius-sm);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--ts-text-secondary);
+  font-size: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.brain-model-btn.top { border-color: rgba(59, 130, 246, 0.35); }
+.brain-model-btn.selected { border-color: var(--ts-success); background: rgba(34, 197, 94, 0.08); color: var(--ts-success); box-shadow: 0 0 10px rgba(34, 197, 94, 0.15); }
+.brain-model-btn:hover { background: rgba(255, 255, 255, 0.06); transform: translateY(-1px); }
 .brain-star { font-size: 0.7rem; }
-.brain-warn { font-size: var(--ts-text-sm); color: var(--ts-warning-text); background: var(--ts-error-bg); padding: 6px 10px; border-radius: var(--ts-radius-sm); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.brain-warn code { background: var(--ts-bg-surface); padding: 1px 4px; border-radius: 3px; font-size: 0.72rem; }
-.brain-retry-btn { padding: 2px 8px; border: none; background: var(--ts-accent-glow); color: var(--ts-accent-blue); border-radius: 4px; cursor: pointer; font-size: 0.72rem; }
-.brain-pulling { display: flex; align-items: center; gap: 6px; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
-.brain-spinner { width: 14px; height: 14px; border: 2px solid var(--ts-border-medium); border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.brain-warn { font-size: var(--ts-text-sm); color: var(--ts-warning-text); background: rgba(239, 68, 68, 0.08); padding: 8px 12px; border-radius: var(--ts-radius-sm); border: 1px solid rgba(239, 68, 68, 0.15); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.brain-warn code { background: rgba(0, 0, 0, 0.3); padding: 2px 6px; border-radius: 3px; font-size: 0.72rem; }
+.brain-retry-btn { padding: 3px 10px; border: none; background: rgba(124, 111, 255, 0.12); color: var(--ts-accent-blue); border-radius: 4px; cursor: pointer; font-size: 0.72rem; transition: all var(--ts-transition-fast); }
+.brain-retry-btn:hover { background: rgba(124, 111, 255, 0.2); }
+.brain-pulling { display: flex; align-items: center; gap: 8px; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
+.brain-spinner { width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.1); border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.brain-activate-btn { padding: 6px 14px; border: none; background: var(--ts-success-dim); color: var(--ts-text-on-accent); border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
-.brain-activate-btn:hover { background: var(--ts-success); }
-.brain-local-btn { padding: 6px 14px; border: none; background: var(--ts-accent-blue); color: var(--ts-text-on-accent); border-radius: var(--ts-radius-sm); cursor: pointer; font-size: 0.82rem; font-weight: 500; align-self: flex-start; transition: background var(--ts-transition-fast); }
-.brain-local-btn:hover { background: var(--ts-accent-blue-hover); }
-.brain-free-start { display: flex; flex-direction: column; gap: 4px; }
+.brain-activate-btn {
+  padding: 8px 18px;
+  border: none;
+  background: linear-gradient(135deg, var(--ts-success-dim), var(--ts-success));
+  color: var(--ts-text-on-accent);
+  border-radius: var(--ts-radius-sm);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  align-self: flex-start;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 10px rgba(34, 197, 94, 0.2);
+}
+.brain-activate-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(34, 197, 94, 0.3); }
+.brain-local-btn {
+  padding: 8px 18px;
+  border: none;
+  background: linear-gradient(135deg, var(--ts-accent-blue), var(--ts-accent-blue-hover));
+  color: var(--ts-text-on-accent);
+  border-radius: var(--ts-radius-sm);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+  align-self: flex-start;
+  transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  box-shadow: 0 2px 10px rgba(96, 165, 250, 0.2);
+}
+.brain-local-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(96, 165, 250, 0.3); }
+.brain-free-start { display: flex; flex-direction: column; gap: 6px; }
 .brain-free-start p { margin: 0; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
-.brain-local-section { border-top: 1px solid var(--ts-border-subtle); padding-top: 6px; margin-top: 2px; }
+.brain-local-section { border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 8px; margin-top: 4px; }
 
 /* ── Mobile adjustments ── */
 /* ═══ CHATBOX-ONLY MODE ═══
@@ -1985,26 +2300,29 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 16px;
-  background: var(--ts-bg-nav);
-  border-bottom: 1px solid var(--ts-border);
+  padding: 12px 18px;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border-bottom: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   flex-shrink: 0;
 }
 .chatbox-header-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .chatbox-header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 .chatbox-provider {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 0.75rem;
+  gap: 7px;
+  font-size: 0.76rem;
   color: var(--ts-success);
   font-weight: 600;
 }
@@ -2015,19 +2333,22 @@ onUnmounted(() => {
   font-size: 0.78rem;
 }
 .chatbox-brain-btn {
-  border: 1px solid var(--ts-accent-glow);
-  background: var(--ts-accent-glow);
+  border: 1px solid rgba(124, 111, 255, 0.3);
+  background: rgba(124, 111, 255, 0.1);
   color: var(--ts-accent);
   font-size: 0.72rem;
   font-weight: 700;
-  padding: 5px 14px;
+  padding: 6px 16px;
   border-radius: var(--ts-radius-pill);
   cursor: pointer;
-  transition: background 0.15s, transform 0.15s;
+  transition: all 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .chatbox-brain-btn:hover {
   background: var(--ts-accent);
-  transform: translateY(-1px);
+  color: var(--ts-text-on-accent);
+  border-color: transparent;
+  transform: translateY(-1px) scale(1.02);
+  box-shadow: 0 4px 16px rgba(124, 111, 255, 0.3);
 }
 
 /* AI state pill in chatbox header — smaller inline variant */
@@ -2035,21 +2356,22 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 12px;
+  padding: 5px 14px;
   border-radius: var(--ts-radius-pill, 999px);
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  background: rgba(37, 99, 235, 0.2);
+  background: rgba(37, 99, 235, 0.15);
   color: #93c5fd;
-  border: 1px solid rgba(147, 197, 253, 0.2);
-  transition: background 0.3s, color 0.3s, border-color 0.3s;
+  border: 1px solid rgba(147, 197, 253, 0.15);
+  backdrop-filter: blur(8px);
+  transition: all 0.3s ease;
 }
-.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.25); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.3); }
-.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.2); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.25); }
-.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.2); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.25); }
-.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.2); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.25); }
+.chatbox-state-pill.thinking { background: rgba(245, 158, 11, 0.18); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.2); }
+.chatbox-state-pill.talking  { background: rgba(22, 163, 74, 0.15); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.2); }
+.chatbox-state-pill.happy    { background: rgba(8, 145, 178, 0.15); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.2); }
+.chatbox-state-pill.sad      { background: rgba(126, 34, 206, 0.15); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.2); }
 .chatbox-state-pill.angry    { background: rgba(239, 68, 68, 0.2); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.25); }
 .chatbox-state-pill.thinking .ai-state-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
 
@@ -2060,24 +2382,27 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 0;
   scrollbar-width: thin;
-  scrollbar-color: var(--ts-text-dim) transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
 
 .chat-llm-auth {
-  margin: 12px;
+  margin: 14px;
 }
 
 /* ── Chatbox input footer ── */
 .chatbox-footer {
   flex-shrink: 0;
-  background: var(--ts-bg-nav);
-  border-top: 1px solid var(--ts-border);
-  padding: 10px 16px 12px;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border-top: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  padding: 12px 18px 14px;
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.12);
 }
 .chatbox-footer .input-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 /* ── Mobile responsive for chatbox mode ── */

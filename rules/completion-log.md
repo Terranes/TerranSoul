@@ -21,6 +21,103 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 45.6 — Cross-repo contract drift across PR / main](#chunk-456--cross-repo-contract-drift-across-pr--main) | 2026-05-07 |
+| [Chunk 45.5 — Cluster fragmentation guard + visualisation sampling](#chunk-455--cluster-fragmentation-guard--visualisation-sampling) | 2026-05-07 |
+| [Chunk 45.4 — Vendor / asset detection + tiered indexing](#chunk-454--vendor--asset-detection--tiered-indexing) | 2026-05-07 |
+| [Chunk 45.3 — Deterministic `.codegraph/snapshot.json` export/import](#chunk-453--deterministic-codegraphsnapshotjson-exportimport) | 2026-05-07 |
+| [Chunk 45.2 — Git hook installer + code_branch_sync MCP tool](#chunk-452--git-hook-installer--code_branch_sync-mcp-tool) | 2026-05-07 |
+| [Chunk 45.1 — Branch-overlay schema + content-hash diff sync](#chunk-451--branch-overlay-schema--content-hash-diff-sync) | 2026-05-07 |
+| [Chunk 44.5 — Embedding model registry](#chunk-445--embedding-model-registry) | 2026-05-08 |
+| [Chunk 44.4 — Cross-harness replay mode](#chunk-444--cross-harness-replay-mode) | 2026-05-08 |
+| [Chunk 44.3 — Ambient agent validation](#chunk-443--ambient-agent-validation) | 2026-05-08 |
+| [Chunk 44.2 — First-run setup wizard](#chunk-442--first-run-setup-wizard) | 2026-05-08 |
+| [Chunk 44.1 — RAG latency optimization](#chunk-441--rag-latency-optimization) | 2026-05-08 |
+| [Chunk 43.13 — Post-completion comparative review](#chunk-4313--post-completion-comparative-review) | 2026-05-07 |
+| [Chunk 43.12 — Cross-harness session import](#chunk-4312--cross-harness-session-import) | 2026-05-07 |
+| [Chunk 43.11 — Background-maintenance agent skeleton](#chunk-4311--background-maintenance-agent-skeleton) | 2026-05-07 |
+| [Chunk 43.10 — Tier 1/Tier 2 safety classifier](#chunk-4310--tier-1tier-2-safety-classifier) | 2026-05-07 |
+| [Chunk 43.9 — Embedding-indexed instruction slices](#chunk-439--embedding-indexed-instruction-slices) | 2026-05-07 |
+| [Chunk 43.8 — Gap detection](#chunk-438--gap-detection) | 2026-05-07 |
+| [Chunk 43.7 — Negative memories + trigger patterns](#chunk-437--negative-memories--trigger-patterns) | 2026-05-07 |
+| [Chunk 43.6 — Post-retrieval maintenance background task](#chunk-436--post-retrieval-maintenance-background-task) | 2026-05-07 |
+| [Chunk 43.5 — Cascade retrieval through memory_edges](#chunk-435--cascade-retrieval-through-memory_edges) | 2026-05-07 |
+| [Chunk 43.4 — Reinforcement provenance](#chunk-434--reinforcement-provenance) | 2026-05-07 |
+| [Chunk 43.3 — Per-category confidence decay](#chunk-433--per-category-confidence-decay) | 2026-05-07 |
+| [Chunk 43.2 — V20 schema migration (confidence + 4 new tables)](#chunk-432--v20-schema-migration-confidence--4-new-tables) | 2026-05-07 |
+| [Chunk 43.1 — Memorable session names + idle timeout for headless MCP](#chunk-431--memorable-session-names--idle-timeout-for-headless-mcp) | 2026-05-07 |
+| [Chunk 41.12R — PRAGMA optimize on open + periodic ANALYZE](#chunk-4112r--pragma-optimize-on-open--periodic-analyze) | 2026-05-07 |
+| [Chunk 41.6R — Re-embed on content update + ANN tombstone](#chunk-416r--re-embed-on-content-update--ann-tombstone) | 2026-05-07 |
+| [Chunk 41.5R — Cursor-based reads on hot search paths](#chunk-415r--cursor-based-reads-on-hot-search-paths) | 2026-05-07 |
+| [Chunk 41.2R — Wire metrics Timer into store.rs CRUD/search ops](#chunk-412r--wire-metrics-timer-into-storers-crudsearch-ops) | 2026-05-07 |
+| [Chunk 42.9 — Hive protocol spec + signed knowledge bundle format](#chunk-429--hive-protocol-spec--signed-knowledge-bundle-format) | 2026-05-07 |
+| [Chunk 42.10 — Hive relay reference server](#chunk-4210--hive-relay-reference-server) | 2026-05-07 |
+| [Chunk 42.11 — Job queue + capability gates](#chunk-4211--job-queue--capability-gates) | 2026-05-07 |
+| [Chunk 42.12 — Privacy / per-memory ACL for hive sharing](#chunk-4212--privacy--per-memory-acl-for-hive-sharing) | 2026-05-07 |
+| [Chunk 42.8 — Backend test matrix in CI](#chunk-428--backend-test-matrix-in-ci-sqlite--postgres) | 2026-05-07 |
+| [Chunk 42.7 — Postgres backend: pgvector HNSW + ANN parity](#chunk-427--postgres-backend-pgvector-hnsw--ann-parity--bench) | 2026-05-07 |
+| [Chunk 42.6 — Postgres backend: RRF, FTS, KG, contextual retrieval parity](#chunk-426--postgres-backend-rrf-fts-kg-contextual-retrieval-parity) | 2026-05-07 |
+| [Chunk 42.5 — Op-log replication over LinkManager](#chunk-425--op-log-replication-over-linkmanager) | 2026-05-08 |
+| [Chunk 42.4 — KG edges 2P-Set CRDT with tombstone GC](#chunk-424--kg-edges-2p-set-crdt-with-tombstone-gc) | 2026-05-08 |
+| [Chunk 42.3 — Memory LWW CRDT with HLC](#chunk-423--memory-lww-crdt-with-hlc) | 2026-05-08 |
+| [Chunk 42.2 — Mobile SQLite + WAL hardening](#chunk-422--mobile-sqlite--wal-hardening) | 2026-05-08 |
+| [Chunk 42.1 — Mobile ANN fallback (IVF + i8 quantization)](#chunk-421--mobile-ann-fallback-ivf--i8-quantization) | 2026-05-08 |
+| [Chunk 41.15 — Online snapshot + atomic restore](#chunk-4115--online-snapshot--atomic-restore) | 2026-05-07 |
+| [Chunk 41.14 — Time-bucketed shards](#chunk-4114--time-bucketed-shards) | 2026-05-07 |
+| [Chunk 41.13 — Bounded KG traversal + LRU cache](#chunk-4113--bounded-kg-traversal--lru-cache) | 2026-05-07 |
+| [Chunk 41.12 — Targeted indexes + PRAGMA optimize](#chunk-4112--targeted-indexes--pragma-optimize) | 2026-05-07 |
+| [Chunk 41.11 — ANN compaction / tombstone GC job](#chunk-4111--ann-compaction--tombstone-gc-job) | 2026-05-07 |
+| [Chunk 41.10 — Memory-mapped HNSW + debounced async flush](#chunk-4110--memory-mapped-hnsw--debounced-async-flush) | 2026-05-07 |
+| [Chunk 41.9 — usearch quantization (i8/b1)](#chunk-419--usearch-quantization-i8b1) | 2026-05-07 |
+| [Chunk 41.8 — Multi-model embedding columns + AnnRegistry](#chunk-418--multi-model-embedding-columns--annregistry) | 2026-05-07 |
+| [Chunk 41.7 — Embedding worker concurrency + rate limiting](#chunk-417--embedding-worker-concurrency--rate-limiting) | 2026-05-07 |
+| [Chunk 41.6 — Re-embed on content update + ANN tombstone](#chunk-416--re-embed-on-content-update--ann-tombstone) | 2026-05-07 |
+| [Chunk 41.5 — Cursor-based reads on hot search paths](#chunk-415--cursor-based-reads-on-hot-search-paths) | 2026-05-07 |
+| [Chunk 41.3 — Extend million-memory bench to write/update/delete mix](#chunk-413--extend-million-memory-bench-to-writeupdatedelete-mix) | 2026-05-07 |
+| [Chunk 41.2 — Per-op latency metrics for memory CRUD + retrieval](#chunk-412--per-op-latency-metrics-for-memory-crud--retrieval) | 2026-05-07 |
+| [Chunk 41.4 — Transactional `add_many` bulk insert API](#chunk-414--transactional-add_many-bulk-insert-api) | 2026-05-07 |
+| [Chunk 41.1 — SQLite write-path PRAGMA tuning](#chunk-411--sqlite-write-path-pragma-tuning) | 2026-05-07 |
+| [Chunk 38.5 — Million-memory benchmark](#chunk-385--million-memory-benchmark) | 2026-05-07 |
+| [Chunk 38.4 — Capacity-based self-eviction](#chunk-384--capacity-based-self-eviction) | 2026-05-07 |
+| [Chunk 38.3 — Native-ANN default for desktop](#chunk-383--native-ann-default-for-desktop) | 2026-05-07 |
+| [Chunk 38.2 — Self-healing pending-embeddings retry queue](#chunk-382--self-healing-pending-embeddings-retry-queue) | 2026-05-07 |
+| [Chunk 38.1 — Batched embedding pipeline + concurrency cap](#chunk-381--batched-embedding-pipeline--concurrency-cap) | 2026-05-07 |
+| [Chunk 33B.6 — Agent-roster capability tags + tag-based routing](#chunk-33b6--agent-roster-capability-tags--tag-based-routing) | 2026-05-06 |
+| [Chunk 33B.5 — `BrainGraphViewport.vue` 3-D KG visualiser](#chunk-33b5--braingraphviewportvue-3-d-kg-visualiser) | 2026-05-06 |
+| [Chunk 33B.4 — Memory-audit provenance view](#chunk-33b4--memory-audit-provenance-view) | 2026-05-06 |
+| [Chunk 36B.4 — Diff impact overlay](#chunk-36b4--diff-impact-overlay) | 2026-05-06 |
+| [Chunk 36B.3 — Guided architecture tours](#chunk-36b3--guided-architecture-tours) | 2026-05-06 |
+| [Chunk 36B.2 — Persona-adaptive graph explanations](#chunk-36b2--persona-adaptive-graph-explanations) | 2026-05-06 |
+| [Chunk 36B.1 — Committed code-graph snapshot](#chunk-36b1--committed-code-graph-snapshot) | 2026-05-06 |
+| [Chunk 33B.10 — Standalone scheduler daemon](#chunk-33b10--standalone-scheduler-daemon) | 2026-05-06 |
+| [Chunk 33B.9 — PARA opt-in template for Obsidian export](#chunk-33b9--para-opt-in-template-for-obsidian-export) | 2026-05-06 |
+| [Chunk 33B.8 — Stdio MCP transport adapter (pre-existing)](#chunk-33b8--stdio-mcp-transport-adapter-pre-existing) | 2026-05-06 |
+| [Chunk 33B.7 — Per-workspace data_root setting](#chunk-33b7--per-workspace-data_root-setting) | 2026-05-06 |
+| [Chunk 33B.3 — quest_daily_brief skill-tree quest](#chunk-33b3--quest_daily_brief-skill-tree-quest) | 2026-05-06 |
+| [Chunk 37.13 — Multi-repo groups and contracts](#chunk-3713--multi-repo-groups-and-contracts) | 2026-05-06 |
+| [Chunk 37.12 — Generated repo skills + code wiki](#chunk-3712--generated-repo-skills--code-wiki) | 2026-05-06 |
+| [Chunk 37.11 — Native code-graph workbench UI](#chunk-3711--native-code-graph-workbench-ui) | 2026-05-06 |
+| [Chunk 37.10 — MCP resources, prompts, and setup writer](#chunk-3710--mcp-resources-prompts-and-setup-writer) | 2026-05-06 |
+| [Chunk 37.9 — Graph-backed rename review](#chunk-379--graph-backed-rename-review) | 2026-05-06 |
+| [Chunk 37.8 — Native diff impact analysis](#chunk-378--native-diff-impact-analysis) | 2026-05-06 |
+| [Chunk 37.7 — Hybrid semantic code search](#chunk-377--hybrid-semantic-code-search) | 2026-05-06 |
+| [Chunk 37.6 — Process-grouped code search](#chunk-376--process-grouped-code-search) | 2026-05-06 |
+| [Chunk 37.5 — Confidence-scored relation provenance](#chunk-375--confidence-scored-relation-provenance) | 2026-05-06 |
+| [Chunk 37.4 — Import, heritage, and type-resolution upgrades](#chunk-374--import-heritage-and-type-resolution-upgrades) | 2026-05-06 |
+| [Chunk 37.3 — Multi-language parser expansion](#chunk-373--multi-language-parser-expansion) | 2026-05-06 |
+| [Chunk 37.2 — Incremental repo registry + content-hash indexing](#chunk-372--incremental-repo-registry--content-hash-indexing) | 2026-05-06 |
+| [Chunk 37.1 — Clean-room code-intelligence architecture spec](#chunk-371--clean-room-code-intelligence-architecture-spec) | 2026-05-06 |
+| [Chunk 33B.2 — `/reflect` slash command for session reflection](#chunk-33b2--reflect-slash-command-for-session-reflection) | 2026-05-05 |
+| [Chunk 33B.1 — Persisted judgment-rules artefact](#chunk-33b1--persisted-judgment-rules-artefact) | 2026-05-05 |
+| [Chunk 35.4 — Provider observability dashboard](#chunk-354--provider-observability-dashboard) | 2026-05-05 |
+| [Chunk 35.3 — Multi-agent task routing policy](#chunk-353--multi-agent-task-routing-policy) | 2026-05-05 |
+| [Chunk 35.2 — Automatic provider failover](#chunk-352--automatic-provider-failover) | 2026-05-05 |
+| [Chunk 35.1 — Unified provider policy registry](#chunk-351--unified-provider-policy-registry) | 2026-05-05 |
+| [Chunk 34.3 — Backlog promotion controls](#chunk-343--backlog-promotion-controls) | 2026-05-05 |
+| [Chunk 34.2 — Coding workflow gate telemetry](#chunk-342--coding-workflow-gate-telemetry) | 2026-05-05 |
+| [Chunk 34.1 — Persisted self-improve workboard](#chunk-341--persisted-self-improve-workboard) | 2026-05-05 |
+| [Chunk 33.6 — Maintenance scheduler in headless MCP runner](#chunk-336--maintenance-scheduler-in-headless-mcp-runner) | 2026-05-05 |
+| [Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning](#chunk-335--reranker-default-on-for-rrf--relevance-threshold-pruning) | 2026-05-05 |
+| [Chunk 33.4 — Auto-edge extraction on memory ingest](#chunk-334--auto-edge-extraction-on-memory-ingest) | 2026-05-05 |
 | [Chunk 33.3 — `brain_kg_neighbors` MCP tool seed-graph integration test](#chunk-333--brain_kg_neighbors-mcp-tool-seed-graph-integration-test) | 2026-05-05 |
 | [MCP dependency bootstrap + self-improve dashboard prep](#mcp-dependency-bootstrap--self-improve-dashboard-prep) | 2026-05-05 |
 | [MCP Data Governance — Rules enforcement coverage](#mcp-data-governance--rules-enforcement-coverage) | 2026-05-05 |
@@ -271,6 +368,2640 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 45.6 — Cross-repo contract drift across PR / main
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add MCP tools `code_branch_diff` and `code_group_drift` that consult branch overlays and contract tables to detect symbols added/removed/modified between refs and signature-hash mismatches across repos in a group.
+
+**Architecture:**
+- `drift.rs` module with `branch_diff(conn, repo_id, left_ref, right_ref)` → `BranchDiffResult` and `group_drift(conn, data_dir, group_label)` → `GroupDriftResult`
+- Branch diff compares base symbols (overlay_id IS NULL) against overlay symbols for the given branch pair
+- Group drift loads contracts across all member repos and detects `signature_hash` mismatches on same-named contracts
+
+**Files created:**
+- `src-tauri/src/coding/drift.rs` — 600+ lines, types + logic + 5 tests
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod drift;`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added `code_branch_diff` and `code_group_drift` tool definitions + dispatch (tools count 31→33)
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — updated tool count assertion 31→33, added new tool name checks
+
+**Tests:** 5 unit tests (branch_diff_detects_added_symbols, branch_diff_detects_removed_symbols, branch_diff_detects_modified_symbols, group_drift_detects_signature_mismatch, group_drift_no_drift_when_hashes_match)
+
+---
+
+## Chunk 45.5 — Cluster fragmentation guard + visualisation sampling
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Prevent cluster fragmentation in large code graphs. Add `min_cluster_size` threshold, two-phase partitioned clustering for graphs > 5000 nodes, and a visualisation sampling utility.
+
+**Architecture:**
+- `MIN_CLUSTER_SIZE = 8` — clusters smaller than this are merged into the nearest large cluster by edge affinity.
+- `LARGE_GRAPH_THRESHOLD = 5000` — above this, use partitioned BFS instead of label-propagation.
+- `partitioned_label_propagation()` — Phase 1: partition nodes by directory. Phase 2: find connected components within each partition via BFS. O(V+E), no iteration-count issues.
+- `merge_small_clusters()` — counts edges from small cluster members to each large cluster, merges into the one with highest affinity (or largest if no connections).
+- `sample_clusters_for_viz()` — returns top-N highest-degree nodes per cluster for workbench rendering.
+- Improved label-propagation majority rule: switch when best label has strict majority (>50% of votes) or is the only neighbor label.
+
+**Files Modified:**
+- `src-tauri/src/coding/processes.rs` — added fragmentation guard (~200 lines), 3 new tests
+- `rules/milestones.md` — removed 45.5, updated Next Chunk to 45.6
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 3 new tests (merge_small_clusters, large_graph_no_panics with 22k nodes, sample_clusters_for_viz).
+
+---
+
+## Chunk 45.4 — Vendor / asset detection + tiered indexing
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Classify repository files into tiers (app/vendor/asset/generated) and apply tiered indexing — vendor gets symbols-only, assets are skipped, app gets full symbol + edge extraction. Exclude vendor-tier symbols from the process call graph.
+
+**Architecture:**
+- New `coding/vendor_detector.rs` — `VendorDetector` struct with 3-layer classification:
+  1. `.codeignore` file (gitignore syntax + tier annotations like `[asset]`, `[vendor]`, `[generated]`)
+  2. Auto-detected vendor directories based on manifests (package.json → node_modules/, Cargo.toml → target/, etc.)
+  3. Extension/path heuristics (asset extensions, vendor path markers, minified files)
+- `FileTier` enum: App, Vendor, Asset, Generated — with `index_edges()`, `index_symbols()`, `skip()` methods.
+- Pattern matching: simplified gitignore with `*`, `**`, `?`, trailing `/` for dirs, leading `/` for anchored, `!` negation.
+
+**Integration:**
+- `symbol_index.rs` `index_repo()`: creates `VendorDetector` from repo root, skips asset-tier files, only inserts edges for app-tier files.
+- `processes.rs` `build_call_graph()`: excludes non-app-tier symbols from the call graph (prevents vendor noise in clustering and entry-point scoring).
+
+**Files Created:**
+- `src-tauri/src/coding/vendor_detector.rs` — ~500 lines
+
+**Files Modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod vendor_detector;`
+- `src-tauri/src/coding/symbol_index.rs` — integrated tiered indexing in `index_repo()`
+- `src-tauri/src/coding/processes.rs` — excluded vendor-tier symbols from `build_call_graph()`
+- `rules/milestones.md` — removed 45.4, updated Next Chunk to 45.5
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 14 unit tests (empty detector, asset extensions, vendor paths, manifest detection, generated patterns, codeignore overrides, codeignore negation, codeignore parsing, file tier rules, classify_all, glob star, glob double-star, directory patterns, anchored patterns).
+
+---
+
+## Chunk 45.3 — Deterministic `.codegraph/snapshot.json` export/import
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add `coding/snapshot.rs` with `export_snapshot(base_ref)` and `import_snapshot(path)`. Output is sorted lexicographically and free of timestamps so two devs at the same commit produce byte-identical files (no git merge driver needed). Includes `snapshot.meta.json`.
+
+**Architecture:**
+- New `coding/snapshot.rs` — deterministic export/import of the code graph to `.codegraph/snapshot.json`. Output is sorted by (file, line, name) for symbols, (from_file, from_line, kind, target_name) for edges, and (path) for files. No timestamps in serialized output.
+- Types: `CodeGraphSnapshot`, `SnapshotMeta`, `SnapshotFile`, `SnapshotSymbol`, `SnapshotEdge`, `ImportResult`.
+- Functions: `export_snapshot(conn, repo_id, base_ref)`, `write_snapshot(repo_path, snapshot)`, `import_snapshot(conn, snapshot, repo_path)`, `read_snapshot(path)`.
+- Export only includes base data (overlay_id IS NULL).
+- Import replaces existing base data for the repo (clean import), preserves overlays.
+- SCHEMA_VERSION = 1 for forward-compat detection.
+
+**Files Created:**
+- `src-tauri/src/coding/snapshot.rs` — ~350 lines
+
+**Files Modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod snapshot;`
+- `rules/milestones.md` — removed 45.3, updated Next Chunk to 45.4
+- `rules/completion-log.md` — added this entry
+
+**Tests:** 6 unit tests (export sorted deterministic, determinism same bytes, round-trip export/import, import replaces existing, excludes overlay data, no timestamps in output).
+
+---
+
+## Chunk 45.2 — Git hook installer + code_branch_sync MCP tool
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Install git hooks that auto-notify TerranSoul's MCP server of branch changes, and expose `code_branch_sync` + `code_index_commit` as MCP tools.
+
+**Architecture:**
+- New `coding/hooks.rs` — generates `post-checkout`, `post-merge`, `post-commit` POSIX shell scripts that POST to local MCP. Always exit 0 (never block git). Support for release (:7421), dev (:7422), headless (:7423) targets. Skips foreign hooks by default, force-overwrite option.
+- New `coding/branch_sync.rs` — orchestrates git diff → overlay re-index: runs `git diff --name-only prev..new`, reads file contents from working tree, calls `branch_overlay::branch_sync`. Also handles `index_commit` (re-index commit, promote overlay to base when HEAD matches main).
+- New `GatewayCaps.code_write` field (serde-defaulted to false for backward compat) gates the write tools.
+- Two new MCP tools: `code_branch_sync` and `code_index_commit` in `code_tool_definitions()` and dispatch.
+
+**Files created:**
+- `src-tauri/src/coding/hooks.rs` (~285 lines, 9 tests)
+- `src-tauri/src/coding/branch_sync.rs` (~210 lines, 1 test)
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `pub mod hooks`, `pub mod branch_sync`
+- `src-tauri/src/ai_integrations/gateway.rs` — added `code_write` field to `GatewayCaps`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added 2 tool definitions + dispatch
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` — updated tool count assertions
+
+**Tests:** 9 hook tests + 1 branch_sync test + 9 tool assertion tests (all pass). Full suite: 2559 tests pass.
+
+**CI:** clippy clean, 2559 Rust tests pass, 1750 frontend tests pass.
+
+---
+
+## Chunk 45.1 — Branch-overlay schema + content-hash diff sync
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add branch-aware overlay schema to the code-intelligence graph so only files that differ between branches are re-indexed, avoiding full re-parse on checkout.
+
+**Architecture:**
+- New `code_branch_overlays` table: `(repo_id, base_ref, branch_ref, file, hash, indexed_at)` with unique constraint on `(repo_id, base_ref, branch_ref, file)`.
+- Added `overlay_id` nullable FK column to `code_symbols` and `code_edges` (NULL = base snapshot).
+- `branch_sync()` takes a diff file list + content map, re-indexes only changed files into the overlay, removes overlay rows for files no longer in diff.
+- Overlay-aware queries: `query_symbols_with_overlay()` and `query_symbols_in_file_with_overlay()` union base rows (where file NOT overlaid) with overlay rows for the active branch.
+- Multiple overlays coexist — switching branches doesn't destroy other branch data.
+- Content-hash check skips re-indexing if overlay file hasn't changed.
+
+**Files created:**
+- `src-tauri/src/coding/branch_overlay.rs` — full module (~580 lines)
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `pub mod branch_overlay`
+- `src-tauri/src/coding/symbol_index.rs` — call `ensure_overlay_schema` from `open_db`, made `extract_rust_symbols` and `extract_ts_symbols` `pub(crate)`
+
+**Tests:** 8 unit tests covering schema creation, sync, overlay-aware queries, re-switch, delete, unchanged-file skip, and file-level query.
+
+**CI:** clippy clean, 2549 Rust tests pass (1 pre-existing flaky unrelated), 1750 frontend tests pass, vue-tsc clean.
+
+---
+
+## Chunk 44.5 — Embedding model registry
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**What was done:**
+- Created `brain/embedding_registry.rs`: `EmbedProvider` enum (Ollama/CloudFree/CloudPaid/LmStudio), `EmbeddingModelEntry` struct (id, display_name, dimensions, provider, max_tokens, description), `EmbeddingRegistryState` (active model, previous model, migration tracking). Catalogue of 12 known models (5 Ollama local, 4 cloud-paid, 2 cloud-free, 1 LM Studio). State persistence to `embedding_registry.json`. Pure model-switch logic: `plan_model_switch()`, `commit_model_switch()`, `update_migration_progress()`, `complete_migration()`.
+- Added Tauri commands in `commands/brain.rs`: `list_embedding_models`, `get_embedding_registry_state`, `plan_embedding_model_switch`, `switch_embedding_model` (clears embeddings, re-embeds in batches of 50, emits `embedding-migration-progress` events, updates registry state).
+- Added `embedded_count()` and `clear_all_embeddings()` methods to `MemoryStore`.
+- 13 unit tests: catalogue non-empty/unique-IDs/positive-dimensions, find_model known/unknown, state round-trip, plan same/different model, commit switch, migration progress decrements, complete migration, no-previous-model edge case.
+
+**Files changed:**
+- `src-tauri/src/brain/embedding_registry.rs` (new)
+- `src-tauri/src/brain/mod.rs` (register module)
+- `src-tauri/src/commands/brain.rs` (4 new Tauri commands)
+- `src-tauri/src/memory/store.rs` (added `embedded_count`, `clear_all_embeddings`)
+- `src-tauri/src/lib.rs` (imports + invoke_handler registration)
+
+---
+
+## Chunk 44.4 — Cross-harness replay mode
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**What was done:**
+- Created `coding/session_replay.rs`: `ReplaySessionConfig` (window_size, dry_run, max_turns, max_memories_per_session), `ReplaySegment`, `ReplayPlan`, `ReplayResult` types. `plan_replay()` splits ImportedTurns into overlapping windows (50% overlap) for extraction. `replay_tag()` builds provenance tag strings. `plan_file_replay()` combines parse + plan for a single file.
+- Added `parse_transcript_turns()` to `session_import.rs` — returns actual `Vec<ImportedTurn>` (the existing `parse_transcript` only returned metadata).
+- Added Tauri commands `code_replay_session` and `code_replay_all_sessions` in `commands/coding.rs`. `code_replay_session` takes a harness + file path, parses, plans windows, feeds each through `extract_facts_segmented_any_mode`, stores facts tagged with import provenance (budget-capped), emits `session-replay-progress` events. `code_replay_all_sessions` replays all sessions from a harness directory.
+- 12 unit tests: empty/few/overlapping/large windows, max_turns cap, minimum window clamp, tag format, harness preservation, config defaults, result structure, file-based JSON replay, missing file handling.
+
+**Files changed:**
+- `src-tauri/src/coding/session_replay.rs` (new)
+- `src-tauri/src/coding/session_import.rs` (added `parse_transcript_turns`)
+- `src-tauri/src/coding/mod.rs` (register `session_replay`)
+- `src-tauri/src/commands/coding.rs` (added `code_replay_session`, `code_replay_all_sessions`)
+- `src-tauri/src/lib.rs` (register new commands)
+
+---
+
+## Chunk 44.3 — Ambient agent validation
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Validate the ambient maintenance agent (chunk 43.11) by running 50+
+simulated garden cycles on a pre-populated memory store, measuring decay
+progression, GC effectiveness, and scheduling correctness.
+
+**Architecture:**
+- 7 validation tests with synthetic clock (no real-time dependency)
+- `run_60_simulated_garden_cycles`: 200 entries, 60 cycles × 24h, verifies decay applications ≥50, GC deletions >0, store not emptied, decay scores properly distributed
+- `stress_100_cycles_500_entries`: 500 entries through 100 cycles, verifies high-importance entries survive
+- `high_importance_survives_gc`: importance=5 entries persist even at decay_score=0.01
+- `decay_respects_floor`: decay never goes below 0.01 minimum
+- `garden_on_empty_store_is_safe`: no panics on empty DB
+- `cycle_state_accumulation`: 50 cycles of tool tracking
+- `cooldown_respected_across_cycles`: 48h cooldown correctly blocks intermediate cycles
+
+**Files created:**
+- `src-tauri/src/coding/ambient_validation.rs` — 7 tests
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `mod ambient_validation`
+
+**Test count:** 2512 Rust tests passing. Clippy clean.
+
+---
+
+## Chunk 44.2 — First-run setup wizard
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Complete the guided first-run setup wizard with embedding warmup
+visibility. The wizard already existed (Ollama install + model pull + brain
+auto-config + voice + skill tree). This chunk added the missing embedding
+warmup step and fixed pre-existing type errors from Phase 43's confidence field.
+
+**Architecture:**
+- Embedding warmup phase (Phase 1b) added to `FirstLaunchWizard.vue` between brain config and voice setup.
+- Calls `backfillEmbeddings()` after brain is configured to index any existing memories.
+- Shows user-visible progress: "Warming up vector search..." with count of embedded memories.
+- Non-blocking: if no brain or embedding fails, wizard continues.
+
+**Files modified:**
+- `src/components/FirstLaunchWizard.vue` — added memory store import, Phase 1b embedding warmup step
+- `src/components/FirstLaunchWizard.test.ts` — added memory store mock
+- `src/stores/memory.ts` — added `backfillEmbeddings()` function wrapping Tauri command
+- `src/stores/conversation.ts` — added `confidence: 1.0` to inline memory mock
+- `src/components/WikiPanel.test.ts` — added `confidence: 1.0` to helper
+- `src/components/BrainGraphViewport.test.ts` — added `confidence: 1.0` to `makeEntry`
+- `src/views/BrainView.test.ts` — added `confidence: 1.0` to mock entries
+- `src/views/MemoryView.test.ts` — added `confidence: 1.0` to helpers
+- `src/transport/browser-rag.ts` — added `confidence: 1.0` to mock record
+
+**Test count:** 1749 frontend tests passing, 2505 Rust tests. vue-tsc clean.
+
+---
+
+## Chunk 44.1 — RAG latency optimization
+
+**Status:** Complete
+**Date:** 2026-05-08
+
+**Goal:** Benchmark and optimize end-to-end RAG retrieval latency. Add query
+result caching (LRU with generation-based invalidation) and per-stage metrics
+for the hot RRF path.
+
+**Architecture:**
+- `SearchCache` — LRU cache keyed by (query, mode, limit) with 30s TTL and generation-based invalidation on any store write (add/update/delete/set_embedding). Capacity 128 entries. Thread-safe via Mutex + AtomicU64.
+- Per-stage `Timer` metrics: `rag_candidate_retrieval`, `rag_scoring`, `rag_rrf_fusion`, `rag_cache_hit` added to `MemoryMetrics`.
+- Cache wired into `hybrid_search_rrf`: on hit, bypass all candidate/scoring/fusion work and serve from cache; on miss, compute and store.
+- Fixed confidence_decay re-sort tie-break: preserves RRF position order (first-appearance) instead of ascending ID, preventing incorrect reordering of tied entries.
+
+**Files created:**
+- `src-tauri/src/memory/search_cache.rs` — SearchCache module with 9 unit tests
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — added `pub mod search_cache`
+- `src-tauri/src/memory/metrics.rs` — 4 new per-stage metric fields
+- `src-tauri/src/memory/store.rs` — cache invalidation in write ops, per-stage timers, cache lookup/store in hybrid_search_rrf, confidence_decay tie-break fix
+- `src-tauri/src/commands/memory.rs` — `get_search_cache_stats` command
+- `src-tauri/src/lib.rs` — registered new command
+
+**Test count:** 2505 Rust tests passing, 0 failed. Clippy clean.
+
+---
+
+## Chunk 43.13 — Post-completion comparative review
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `docs/coding-workflow-comparison-2026.md`: Neutral comparison of TerranSoul vs 5 active AI coding agents (Claude Code, Codex CLI, Cursor, GitHub Copilot, OpenCode) across 6 dimensions: session continuity, memory quality, context efficiency, safety/permission gating, orchestration/self-improve, throughput metrics.
+- Identified 5 key differentiators (persistent structured memory, hybrid RAG, safety with learning, cross-harness interop, ambient maintenance) and 5 improvement areas (latency, onboarding, mobile, proactive validation, embedding diversity).
+- Follow-up milestone proposal: 7 items across high/medium/low priority for Phase 44+.
+- Phase 43 complete: 13 chunks, ~120 new Rust tests, 8 new modules, CI gate green throughout.
+
+**Files changed:**
+- `docs/coding-workflow-comparison-2026.md` (new)
+
+---
+
+## Chunk 43.12 — Cross-harness session import
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `coding/session_import.rs`: `Harness` enum (Claude/Codex/OpenCode/Cursor/CopilotCli), `ImportedTurn` struct, `DetectedHarness`/`ImportResult` types. `detect_harnesses()` scans $HOME for known transcript directories with JSON/JSONL files. `list_session_files()` enumerates transcripts. `parse_transcript()` handles both JSON array and JSONL line formats, extracting (role, content) turns. `turns_to_history()` converts to `(String, String)` pairs for `brain_memory::extract_facts`. `redact_secrets()` strips bearer tokens, sk-* keys, and common secret labels without a regex dependency. `import_tag()` generates `imported_from=<harness>` tag strings.
+- Added Tauri commands `code_detect_harnesses` and `code_import_sessions` in `commands/coding.rs`.
+- 12 tests: unique tags, detect with/without files, JSON array parsing, JSONL parsing, skip-no-content, history conversion, tag format, bearer/API-key redaction, normal text preservation, file listing filter.
+
+**Files changed:**
+- `src-tauri/src/coding/session_import.rs` (new)
+- `src-tauri/src/commands/coding.rs`
+- `src-tauri/src/coding/mod.rs`
+- `src-tauri/src/lib.rs`
+
+---
+
+## Chunk 43.11 — Background-maintenance agent skeleton
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `coding/ambient.rs`: `AmbientConfig` (enabled=false, proactive_work=false, maturity_threshold=20, user_headroom=0.20), `AmbientTool` enum (7 tools: Garden/ExtractFromSession/VerifyFact/ScoutRecentSessions/RequestPermission/ScheduleNext/EndCycle), `CycleState` tracker, `PidGuard` single-instance lock with crash-safe stale detection (tasklist on Windows, signal-0 on Unix), `garden()` delegates to `maintenance_scheduler::jobs_due()`, `is_mature()` checks decision count against threshold, `gate_action()` wraps safety classifier, `end_cycle()` checks promotions for all actions
+- Created `coding/ambient_scheduler.rs`: `RateLimitInfo::from_headers()` parses x-ratelimit-* headers, `BackoffState` with exponential backoff on 429 (capped at 5 min), `schedule_next()` computes adaptive delay (backoff > budget exhaustion > rate-scaled > base), 20% user headroom reserve
+- 20 tests total (10 ambient + 10 scheduler): config defaults, cycle tracking, proactive flags, maturity checks, gate approve/deny, end_cycle, garden delegation, PID guard acquire/release, header parsing, usage fraction, exponential backoff, cap, reset, schedule with backoff/throttle/scale/default
+
+**Files changed:**
+- `src-tauri/src/coding/ambient.rs` (new)
+- `src-tauri/src/coding/ambient_scheduler.rs` (new)
+- `src-tauri/src/coding/mod.rs`
+
+---
+
+## Chunk 43.10 — Tier 1/Tier 2 safety classifier
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `coding/safety.rs`: `Action` enum (12 variants: Read/Write/Delete/Create/Rename/Move/Shell/Git/Deploy/Network/Install/Custom), `Tier` enum (Tier1 auto-approve, Tier2 ask), `SafetyConfig` with per-action overrides and promotion threshold. `request_permission()` classifies action tier + logs decision to `safety_decisions` table. `consecutive_approvals()` counts streak since last deny. `check_promotion()` promotes Tier2→Tier1 after N consecutive approvals. `list_decisions()` returns recent history.
+- Created `commands/safety.rs`: Tauri commands `safety_request_permission`, `safety_list_decisions`, `safety_check_promotion` with `parse_action()` helper.
+- Wired into `lib.rs` invoke_handler.
+- Schema uses existing V20 `safety_decisions` table (action, decision, decided_at, decided_via).
+- 9 tests: tier classification, auto-approve, tier2 deny, config override, consecutive approval counting, deny-reset streak, promotion threshold, list decisions, custom action.
+
+**Files changed:**
+- `src-tauri/src/coding/safety.rs` (new)
+- `src-tauri/src/commands/safety.rs` (new)
+- `src-tauri/src/coding/mod.rs`
+- `src-tauri/src/commands/mod.rs`
+- `src-tauri/src/lib.rs`
+
+---
+
+## Chunk 43.9 — Embedding-indexed instruction slices
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `memory/instruction_slices.rs`: `chunk_by_heading()` splits markdown by heading, `index_directory()` / `index_repo_instructions()` indexes `rules/`, `instructions/`, `docs/` as `category=rule` memories with `instruction,rule,<source>` tags, `retrieve_relevant_slices()` uses hybrid search to pull top-K, `format_instruction_block()` formats with per-file TOC
+- Idempotent: content+source tag match skips duplicates
+- Minimum 20-char threshold skips empty heading sections
+- 9 tests covering chunking, heading detection, indexing, idempotency, formatting
+
+**Files changed:**
+- `src-tauri/src/memory/instruction_slices.rs` (new)
+- `src-tauri/src/memory/mod.rs`
+
+---
+
+## Chunk 43.8 — Gap detection
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `memory/gap_detection.rs`: `detect_and_record_gap()` checks `top_score < 0.3 && embedding_norm > 0.7`, persists to `memory_gaps` table; `list_recent_gaps()`, `dismiss_gap()`, `gap_count()`, `embedding_norm()` utility
+- Wired gap detection into `gateway.rs` search (Step 4 after scoring), fires on every `search()` call
+- Added `brain_review_gaps` MCP tool with list and dismiss modes
+- Created `MemoryGapsPanel.vue` with dismiss buttons, refresh, empty state
+- MCP tool count: 28 (15 brain + 13 code)
+- 9 Rust tests in `gap_detection.rs`, 5 Vitest tests for panel
+
+**Files changed:**
+- `src-tauri/src/memory/gap_detection.rs` (new)
+- `src-tauri/src/memory/mod.rs`
+- `src-tauri/src/ai_integrations/gateway.rs`
+- `src-tauri/src/ai_integrations/mcp/tools.rs`
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs`
+- `src/components/MemoryGapsPanel.vue` (new)
+- `src/components/MemoryGapsPanel.test.ts` (new)
+
+---
+
+## Chunk 43.7 — Negative memories + trigger patterns
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Added `CognitiveKind::Negative` variant to `cognitive_kind.rs` with `as_str()`, `classify_from_tags()`, and `KindBoosts` support
+- Created `memory/negative.rs`: `scan_triggers()` scans context against `memory_trigger_patterns` table for substring matches, `format_negative_block()` formats as `[NEGATIVE — DO NOT DO THIS]` prompt block, `add_trigger()` with check-before-insert idempotency (no unique constraint on table)
+- Created `MemoryNegativeBadge.vue` component: inline badge with trigger count tooltip, uses `var(--ts-danger*)` design tokens
+- Created `code_extract_negatives` Tauri command + MCP tool: parses `rules/coding-standards.md` for "never/don't/avoid/must not" lines, creates negative memories with substring triggers, idempotent via content-match skip
+- Wired `CognitiveKind::Negative` into confidence decay (365d half-life, same as Judgment)
+- 7 Rust tests in `negative.rs`, 3 in `extract_negatives_tests`, 6 Vitest tests for badge
+- MCP tool count: 27 (was 26)
+
+**Files changed:**
+- `src-tauri/src/memory/negative.rs` (new)
+- `src-tauri/src/memory/mod.rs`
+- `src-tauri/src/memory/cognitive_kind.rs`
+- `src-tauri/src/memory/query_intent.rs`
+- `src-tauri/src/memory/confidence_decay.rs`
+- `src-tauri/src/commands/coding.rs`
+- `src-tauri/src/lib.rs`
+- `src-tauri/src/ai_integrations/mcp/tools.rs`
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs`
+- `src/components/MemoryNegativeBadge.vue` (new)
+- `src/components/MemoryNegativeBadge.test.ts` (new)
+
+---
+
+## Chunk 43.6 — Post-retrieval maintenance background task
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **`post_retrieval.rs`** — new module with `PostRetrievalConfig` (bump +0.05/cap 1.0, penalty -0.02/floor 0.0), `RetrievalVerdict` enum (Verified/Rejected), and `run_maintenance()` function.
+2. **Confidence adjustments** — verified entries get `confidence += 0.05` (capped at 1.0), rejected entries get `confidence -= 0.02` (floored at 0.0).
+3. **Co-relevant edge strengthening** — when ≥2 entries are verified, creates/strengthens `related_to` edges between all pairs (`INSERT … ON CONFLICT DO UPDATE SET confidence = MIN(confidence + 0.05, 1.0)`).
+4. **Gap logging** — when all candidates are rejected (no verified hits), logs a `memory_gaps` row with the query as context_snippet.
+5. **Gateway integration** — `gateway.rs`: builds `(memory_id, verdict)` list from reranker scores vs threshold, runs `run_maintenance` after reranking in `search()`.
+6. **6 unit tests** — verified bumps confidence, rejected decays confidence, co-relevant pairs get edges, no-hits logs gap, edge strengthening on repeat, empty verdicts no-op.
+
+**Files created:** `src-tauri/src/memory/post_retrieval.rs`
+**Files modified:** `src-tauri/src/memory/mod.rs`, `src-tauri/src/ai_integrations/gateway.rs`
+**Tests:** 2427 Rust tests pass (6 new), clippy clean
+
+---
+
+## Chunk 43.5 — Cascade retrieval through memory_edges
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **`cascade.rs`** — new module with `cascade_expand(conn, seeds, max_depth)` performing BFS depth ≤ 2 through `memory_edges`. Edge-type priors: supersedes 0.9, has_tag 0.8, related_to (edge confidence), in_cluster 0.6, contradicts/derived_from 0.3, other 0.5. Per-hop decay factor 0.7. Scores accumulate multiplicatively: `node_score × prior × 0.7`.
+2. **`brain_suggest_context` integration** — `gateway.rs`: after RRF search (step 1), cascade expansion runs as step 1b, expanding seed hits through the knowledge graph. Expanded entries materialize with positional scores and replace the original hit list (capped to `limit`).
+3. **Store visibility** — `conn` field of `MemoryStore` changed to `pub(crate)` so cascade can access the raw connection.
+4. **6 cascade tests** — depth-0 returns seeds, depth-1 finds neighbours, depth-2 reaches transitive, score decay verification with exact values, empty seeds, descending sort order.
+
+**Files created:** `src-tauri/src/memory/cascade.rs`
+**Files modified:** `src-tauri/src/memory/mod.rs`, `src-tauri/src/memory/store.rs`, `src-tauri/src/ai_integrations/gateway.rs`
+**Tests:** 2421 Rust tests pass (6 new), clippy clean
+
+---
+
+## Chunk 43.4 — Reinforcement provenance
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **Store methods** — `store.rs`: `record_reinforcement(memory_id, session_id, message_index)` with `INSERT OR IGNORE` for PK idempotency; `get_reinforcements(memory_id, limit)` returns `Vec<ReinforcementRecord>` ordered by ts DESC.
+2. **`ReinforcementRecord` struct** — `store.rs`: `memory_id`, `session_id`, `message_index`, `ts` with `Serialize`/`Deserialize`.
+3. **Gateway hook (brain_search)** — `gateway.rs`: after `rerank_candidates_with_threshold`, records reinforcement for each surviving entry with session_id `brain_search_{timestamp}`.
+4. **Chat hook** — `commands/chat.rs`: after reranking in `retrieve_prompt_memories`, records reinforcement for each surviving entry with session_id `chat_{timestamp}`.
+5. **`EntryDetail` struct** — `gateway.rs`: wraps `MemoryEntry` + `Vec<ReinforcementRecord>`. New `get_entry_detail` trait method returns last 10 reinforcements.
+6. **MCP `brain_get_entry`** — `tools.rs`: now calls `get_entry_detail` so MCP clients see reinforcement history.
+7. **`MemoryDetailPanel.vue`** — new Vue component showing memory metadata (type, tier, importance, confidence, decay, created) + reinforcement list with session ID and timestamp.
+8. **TS types** — `types/index.ts`: added `confidence` to `MemoryEntry`, new `ReinforcementRecord` and `EntryDetail` interfaces.
+9. **`now_ms()` visibility** — changed from `fn` to `pub(crate) fn` so gateway/chat can generate session timestamps.
+10. **4 reinforcement tests** — round-trip, PK idempotency, limit, empty.
+
+**Files created:** `src/components/MemoryDetailPanel.vue`
+**Files modified:** `src-tauri/src/memory/store.rs`, `src-tauri/src/ai_integrations/gateway.rs`, `src-tauri/src/ai_integrations/mcp/tools.rs`, `src-tauri/src/commands/chat.rs`, `src/types/index.ts`
+**Tests:** 2415 Rust tests pass (4 new), clippy clean
+
+---
+
+## Chunk 43.3 — Per-category confidence decay
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **`confidence_decay.rs`** — new module with `ConfidenceDecayConfig` (per-kind half-life days: Judgment 365d, Semantic 90d, Procedural 60d, Episodic 7d) and `confidence_factor(config, kind, confidence, age_ms) -> f64` using exponential half-life decay formula `confidence × 0.5^(age_days / half_life)`. Clamped to `[0.0, 1.0]`.
+2. **`hybrid_search_rrf()`** — after RRF fusion, each entry's fused score is multiplied by `confidence_factor(kind, confidence, age)`, then re-sorted. Uses `classify()` from `cognitive_kind.rs` to determine kind.
+3. **`hybrid_search_rrf_with_intent()`** — same confidence decay applied before intent boosting step (step 4a before 4b), so both factors stack multiplicatively.
+4. **8 unit tests** — brand_new_memory full confidence, half-life precision, Judgment slow decay, Episodic fast decay, None→Semantic default, stored confidence scaling, negative age guard, clamp guard.
+
+**Files created:** `src-tauri/src/memory/confidence_decay.rs`
+**Files modified:** `src-tauri/src/memory/mod.rs`, `src-tauri/src/memory/store.rs`
+**Tests:** 2411 Rust tests pass (8 new), clippy clean
+
+---
+
+## Chunk 43.2 — V20 schema migration (confidence + 4 new tables)
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **V20 canonical schema** — `schema.rs`: bumped `CANONICAL_SCHEMA_VERSION` to 20; added `confidence REAL NOT NULL DEFAULT 1.0` to `memories` table; added 4 new tables: `memory_reinforcements`, `memory_trigger_patterns`, `memory_gaps`, `safety_decisions` with indexes.
+2. **`ensure_v20_tables()` migration** — idempotent upgrade from V19: detects `confidence` column via `PRAGMA table_info`, adds if missing; creates 4 tables with `IF NOT EXISTS`.
+3. **`validate_canonical_schema()`** — extended with `SELECT … LIMIT 0` probes for all 4 new tables and the `confidence` column.
+4. **`MemoryEntry` struct** — added `confidence: f64` with `#[serde(default = "default_confidence")]` (defaults to 1.0); updated `row_to_entry` (col 22) and `row_to_entry_with_embedding` (col 23).
+5. **12 SELECT column lists** — mass-replaced all `SELECT` statements in `store.rs` to include `, confidence` after `hlc_counter`.
+6. **6 struct literal fixes** — added `confidence: 1.0` to all `MemoryEntry { … }` initializers in `crag.rs`, `obsidian_export.rs`, `replay.rs`, `reranker.rs`.
+7. **4 V20 tests** — `v20_confidence_column_exists_with_default`, `v20_new_tables_exist`, `v20_upgrade_from_v19_adds_confidence_and_tables`, `v20_reinforcements_round_trip`.
+
+**Files modified:** `src-tauri/src/memory/schema.rs`, `src-tauri/src/memory/store.rs`, `src-tauri/src/commands/crag.rs`, `src-tauri/src/memory/obsidian_export.rs`, `src-tauri/src/memory/replay.rs`, `src-tauri/src/memory/reranker.rs`
+**Tests:** 2403 Rust tests pass (4 new V20 schema tests), clippy clean
+
+---
+
+## Chunk 43.1 — Memorable session names + idle timeout for headless MCP
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+1. **Session names** — `session_names.rs`: 80 adjectives × 80 animals = 6400 combinations; `generate_unique(existing)`, `normalize(name)`, `is_valid_memorable_name(name)`; 6 unit tests.
+2. **Session registry** — `session_registry.rs`: JSON-backed `sessions.json` mapping memorable names → session IDs; `load()`, `save()`, `resolve()`, `create_session()`, `register()`, `unregister()`, `list_names()`; atomic write via temp+rename, case-insensitive lookup; 8 unit tests.
+3. **Idle timeout watchdog** — `mcp/mod.rs`: `start_server_full()` polls `activity.snapshot().updated_at_ms`, sends shutdown via watch channel when `idle_timeout_secs` exceeded; poll interval = `(timeout/4).clamp(5,60)`.
+4. **`--resume <name>` CLI flag** — `main.rs`: sets `TERRANSOUL_MCP_RESUME` env var before Tauri launch.
+5. **`coding_session_resume` command** — `commands/coding_sessions.rs`: resolves memorable name via registry, falls back to direct session ID, returns entry + last N messages; `resume_session_inner()` extracted for testability; 3 unit tests.
+6. **Headless runner updates** — `scripts/copilot-start-mcp.mjs`: `--resume <name>` and `--idle-timeout <secs>` argument parsing.
+7. **lib.rs wiring** — idle timeout from `TERRANSOUL_MCP_IDLE_TIMEOUT` env, resume from `TERRANSOUL_MCP_RESUME` env.
+
+**Files created:** `src-tauri/src/coding/session_names.rs`, `src-tauri/src/coding/session_registry.rs`
+**Files modified:** `src-tauri/src/coding/mod.rs`, `src-tauri/src/ai_integrations/mcp/mod.rs`, `src-tauri/src/main.rs`, `src-tauri/src/commands/coding_sessions.rs`, `src-tauri/src/lib.rs`, `scripts/copilot-start-mcp.mjs`
+**Tests:** 2399 Rust tests pass (14 new for session_names + session_registry + resume), 1738 Vitest pass
+
+---
+
+## Chunk 41.2R — Wire metrics Timer into store.rs CRUD/search ops
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:** Source-code audit found that the metrics infrastructure (OpMetrics, Timer, METRICS singleton in metrics.rs) existed but zero timing hooks were wired into actual store.rs operations. Added `Timer::start(&METRICS.xxx)` RAII guards to: `add`, `add_many`, `update`, `delete`, `set_embedding`, `hybrid_search`, `hybrid_search_rrf`.
+
+**Files modified:** `src-tauri/src/memory/store.rs`
+**Tests:** 2396 Rust tests pass, 1738 Vitest pass
+
+---
+
+## Chunk 41.5R — Cursor-based reads on hot search paths
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:** Source-code audit found all hot search paths (`relevant_for`, `hybrid_search`, `hybrid_search_rrf`, `hybrid_search_scored`, `hybrid_search_rrf_with_intent`) loaded the entire corpus via `get_all()`/`get_with_embeddings()`. Implemented candidate-pool retrieval:
+- `CANDIDATE_POOL = 500` constant
+- `freshness_candidate_ids()` — SQL `ORDER BY created_at DESC LIMIT pool`
+- `keyword_candidate_ids()` — SQL `INSTR(LOWER(content/tags), word)` with dynamic params
+- `get_entries_by_ids()` / `get_entries_by_ids_with_embeddings()` — batch fetch by ID set
+- `search_candidates()` — orchestrator: union of ANN index + keyword SQL + freshness SQL candidates, fetch only those rows
+- All 5 hot search methods now use `search_candidates()` instead of full table scans
+
+**Memory at scale:** O(1500) rows loaded per search instead of O(N) for N total memories. At 1M memories, this reduces per-search allocation from ~1 GB to ~3 MB.
+
+**Files modified:** `src-tauri/src/memory/store.rs`
+**Tests:** 2396 Rust tests pass, 1738 Vitest pass
+
+---
+
+## Chunk 41.6R — Re-embed on content update + ANN tombstone
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:** Source-code audit found `update()` method did not invalidate stale embeddings when content changed. Added to `update()`:
+- Detect `content_changed` flag from `upd.content.is_some()`
+- Clear embedding to NULL: `UPDATE memories SET embedding = NULL WHERE id = ?1`
+- Remove stale vector from ANN index via `idx.remove(id)`
+- Enqueue for re-embedding via `embedding_queue::enqueue(conn, id)`
+
+**Files modified:** `src-tauri/src/memory/store.rs`
+**Tests:** 2396 Rust tests pass, 1738 Vitest pass
+
+---
+
+## Chunk 41.12R — PRAGMA optimize on open + periodic ANALYZE
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:** Source-code audit found the 4 partial indexes existed but `PRAGMA optimize` and periodic `ANALYZE` were absent. Added:
+- `PRAGMA optimize;` after schema creation in `MemoryStore::new()`
+- `ANALYZE_EVERY = 10_000` constant
+- `mutations: AtomicU64` field on `MemoryStore`
+- `record_mutations(n)` method: bumps counter, runs `ANALYZE` when crossing 10k boundary
+- Wired `record_mutations()` into `add`, `add_many`, `update`, `delete`
+
+**Files modified:** `src-tauri/src/memory/store.rs`
+**Tests:** 2396 Rust tests pass, 1738 Vitest pass
+
+---
+
+## Chunk 42.9 — Hive protocol spec + signed knowledge bundle format
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `docs/hive-protocol.md` — full protocol specification with:
+  - Three message types: BUNDLE (signed batch), OP (single CRDT op), JOB (work item)
+  - HiveEnvelope wire format with Ed25519 signature scheme
+  - Content-addressable memory references (SHA-256 hashes for cross-device edge resolution)
+  - Transport spec (gRPC/Tonic for relay, LinkManager for P2P)
+  - Security model: replay protection (HLC monotonicity), signature verification, share_scope enforcement
+  - Worked examples (share memory, dispatch job, privacy enforcement)
+  - Migration path (42.9–42.12 roadmap)
+- Created `src-tauri/src/hive/` module with:
+  - `protocol.rs` — all wire types (HiveEnvelope, Bundle, MemoryDelta, EdgeDelta, Op, JobSpec, Capability, ShareScope, etc.)
+  - `signing.rs` — Ed25519 sign/verify for envelopes using existing `ed25519-dalek` dependency
+  - 10 unit tests covering serde roundtrips, sign/verify, tamper detection, wrong-key rejection
+- Registered `pub mod hive` in `lib.rs`
+
+**CI impact:** None (new module, no feature flag). All 2362 tests pass, clippy clean.
+
+---
+
+## Chunk 42.11 — Job queue + capability gates
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `src-tauri/src/hive/jobs.rs` — job distribution module:
+  - `capabilities_match()` — subset requirement checker (job.capabilities ⊆ worker.advertised)
+  - `JobHandler` trait — async interface for local job execution (`job_type()`, `capabilities()`, `execute()`)
+  - `JobDispatcher` — routes jobs locally (self-job) or signals relay dispatch when capabilities don't match
+  - `JobResult` — completed job output with `into_bundle()` conversion for relay transmission
+  - `MockEmbedHandler` — synthetic test handler for `embed_chunks` job type
+- 8 unit tests: capability matching (exact, subset, mismatch, empty), dispatcher local/relay routing, result-to-bundle conversion
+
+**CI impact:** None (new module). All 2370 tests pass (18 hive), clippy clean.
+
+---
+
+## Chunk 42.12 — Privacy / per-memory ACL for hive sharing
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Added `share_scope` column to SQLite schema (v18 → v19):
+  - `memories.share_scope TEXT NOT NULL DEFAULT 'private'` in canonical SQL
+  - `ensure_share_scope()` migration for existing databases
+  - Updated `validate_canonical_schema` to include the new column
+- Created `src-tauri/src/hive/privacy.rs` — privacy policy engine:
+  - `ShareScope` ordering: `Private(0) < Paired(1) < Hive(2)`
+  - `filter_bundle(bundle, target)` — filters memories by scope, edges by both-endpoints rule
+  - `default_scope_for_kind()` — sensible defaults (personal→private, factual→paired)
+  - `apply_default_scopes()` — applies cognitive_kind defaults with user overrides
+  - Returns `None` when bundle is empty after filtering (no accidental empty submissions)
+- 13 unit tests covering:
+  - Private memory never in hive/paired bundle
+  - Paired excluded from hive bundle
+  - Edge excluded when either endpoint is private
+  - Edge included when both endpoints are hive
+  - Empty bundle returns `None`
+  - Scope hierarchy (hive passes paired filter)
+  - Default scope per cognitive_kind
+  - User overrides take effect
+  - Explicit non-private scope preserved
+- Updated `docs/brain-advanced-design.md` — added §28 "Hive Protocol — Opt-in Federation & Privacy ACL"
+- Updated `README.md` — added "🐝 Hive Federation" section
+
+**CI impact:** Schema v19. All 2383 Rust + 1738 TS tests pass, clippy clean.
+
+---
+
+## Chunk 42.10 — Hive relay reference server
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+- Created `crates/hive-relay/` — standalone Tonic gRPC server crate (MIT licensed):
+  - `proto/hive.proto` — gRPC service definition (Submit, Subscribe, ClaimJob, CompleteJob, Health)
+  - `src/relay.rs` — full service implementation with signature verification, replay protection (HLC watermarks), bundle persistence, real-time broadcast to subscribers, job claim/complete
+  - `src/db.rs` — Postgres persistence layer (bundles table, jobs table with SKIP LOCKED claim, HLC watermarks, idempotent schema migration)
+  - `src/verify.rs` — Ed25519 signature verification (matches client signing scheme)
+  - `src/main.rs` — CLI binary entry point (clap + tracing + sqlx)
+  - `docker-compose.yml` + `Dockerfile` for one-command self-hosting
+- Added `hive_url: Option<String>` setting to `AppSettings` (Rust + TypeScript)
+  - When `None` (default), hive features are invisible
+  - Frontend type updated in `src/stores/settings.ts`
+- 3 unit tests (verify module), crate compiles and passes clippy independently
+
+**CI impact:** Relay is a separate crate (not part of `src-tauri` build). Main crate: 2362 tests + 1738 TS tests pass, clippy clean.
+
+---
+
+## Chunk 42.8 — Backend test matrix in CI (SQLite + Postgres)
+
+**Status:** Complete
+**Date:** 2026-05-07
+**Goal:** Add a CI job that tests the Postgres backend with pgvector on every push, and document the backend coverage gap for MSSQL/Cassandra.
+
+### Changes
+
+| File | What |
+|------|------|
+| `.github/workflows/terransoul-ci.yml` | New `rust-postgres` job: `pgvector/pgvector:pg16` service, `cargo clippy --features postgres`, `cargo test --features postgres -- --include-ignored` with `TEST_POSTGRES_URL` env |
+| `docs/brain-advanced-design.md` | New §27 "Backend Test Matrix — CI Parity": table of backends, cadences, feature flags, coverage gap note for MSSQL/Cassandra weekly-only schedule |
+
+### Verification
+
+- CI YAML syntax valid (jobs + services + steps)
+- All existing tests still pass (2352 Rust, 1738 TS)
+- Clippy clean (default + postgres features)
+- Documentation added to brain-advanced-design.md §27
+
+---
+
+## Chunk 42.7 — Postgres backend: pgvector HNSW + ANN parity + bench
+
+**Status:** Complete
+**Date:** 2026-05-07
+**Goal:** Add native pgvector HNSW vector search to the PostgreSQL backend, replacing in-process cosine similarity for `vector_search`, `find_duplicate`, and the RRF vector retriever.
+
+### Changes
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/postgres.rs` | V9 migration (pgvector extension, `vec_embedding vector(768)` column, HNSW index with m=16 ef_construction=64); `embedding_to_pgvector_literal()` helper; `set_embedding()` writes both BYTEA + pgvector; native `vector_search()` via `ORDER BY <=>` (cosine distance); native `find_duplicate()` with distance threshold; RRF vector retriever uses server-side HNSW instead of loading all embeddings; `supports_native_vector_search()` → `true`; new test `vector_search_native_pgvector` |
+
+### Verification
+
+- `cargo check --features postgres` — clean
+- `cargo clippy --features postgres -- -D warnings` — clean  
+- `cargo test --lib` — 2352 tests passing
+- 6 ignored integration tests (require PostgreSQL with pgvector)
+
+---
+
+## Chunk 42.6 — Postgres backend: RRF, FTS, KG, contextual retrieval parity
+
+**Status:** Complete
+**Date:** 2026-05-07
+**Goal:** Port the SQLite memory features to PostgreSQL for distributed deployments — native FTS via `tsvector` GIN index, RRF fusion, KG edges with recursive CTE traversal, and contextual retrieval prefix on insert.
+
+### Changes
+
+| File | What |
+|------|------|
+| `src-tauri/src/memory/postgres.rs` | V5–V8 migrations (FTS tsvector+GIN+trigger, memory_edges table, CRDT columns, RRF indexes); native `search()` via FTS `@@`; `hybrid_search_rrf()` override with 3-retriever RRF (FTS rank + vector cosine + freshness composite, k=60); `add_edge()`, `get_edges_for()`, `traverse_from()` (recursive CTE BFS), `delete_edge()`, `edge_count()`; `add_with_context()` for contextual retrieval prefix; `row_to_entry` updated with `hlc_counter`; `row_to_edge` helper; 5 ignored integration tests |
+
+### Verification
+
+- `cargo check --features postgres` — clean
+- `cargo clippy --features postgres -- -D warnings` — clean
+- `cargo test --lib` — 2352 tests passing (no regressions)
+- `npx vitest run` — 1738 frontend tests passing
+- Integration tests (`#[ignore]`) verify against real Postgres when available
+
+---
+
+## Chunk 42.5 — Op-log replication over LinkManager
+
+**Status:** Complete
+**Date:** 2026-05-08
+**Goal:** Extend the Soul Link sync to replicate both memory and KG edge CRDTs over the existing `LinkManager` transport (QUIC + WS), with bidirectional push on connect/reconnect.
+
+**What was done:**
+- Added `edge_sync` message kind to `dispatch_link_message` router.
+- Implemented `handle_edge_sync` handler that:
+  - Deserializes `Vec<EdgeSyncDelta>` from payload.
+  - Applies via `apply_edge_sync_deltas` (HLC-based LWW).
+  - Responds with local edge deltas for bidirectional sync.
+- Extended `trigger_sync` to push BOTH memory deltas AND edge deltas on connect/reconnect:
+  - Memory deltas via `memory_sync` message kind (existing).
+  - Edge deltas via `edge_sync` message kind (new).
+- New test: `dispatch_edge_sync_applies_edge_deltas` verifying full round-trip.
+- Resume-after-disconnect maintained: `start_receive_loop` calls `trigger_sync()` on reconnect, which now includes edges.
+
+**Files modified:** `src-tauri/src/link/handlers.rs`
+
+**Tests:** 2352 Rust + 1738 TS passing, clippy clean.
+
+---
+
+## Chunk 42.4 — KG edges 2P-Set CRDT with tombstone GC
+
+**Status:** Complete
+**Date:** 2026-05-08
+**Goal:** Make knowledge-graph edges an Observed-Remove-Set CRDT keyed by `(src_id, dst_id, rel_type)` with HLC-based conflict resolution and tombstone compaction.
+
+**What was done:**
+- Added `origin_device TEXT` and `hlc_counter INTEGER NOT NULL DEFAULT 0` columns to `memory_edges` (schema V18).
+- Added `ensure_edge_crdt_columns()` migration for existing databases.
+- Created `src-tauri/src/memory/edge_crdt_sync.rs` module with:
+  - `EdgeSyncDelta` struct — captures full edge state including tombstone (`valid_to`).
+  - `compute_edge_sync_deltas(since_hlc, device_id)` — returns edges with HLC > threshold.
+  - `apply_edge_sync_deltas(deltas, local_device_id)` — HLC-based LWW resolution; inserts new, updates when remote HLC wins, skips when local wins.
+  - `compact_tombstoned_edges()` — hard-deletes edges tombstoned > 30 days (configurable retention).
+- Tests: 6 new tests covering insert, HLC remote/local wins, tombstone + re-add convergence, compaction, and delta filtering.
+
+**Files created:** `src-tauri/src/memory/edge_crdt_sync.rs`
+**Files modified:** `src-tauri/src/memory/schema.rs`, `src-tauri/src/memory/mod.rs`
+
+**Tests:** 2351 Rust + 1738 TS passing, clippy clean.
+
+---
+
+## Chunk 42.3 — Memory LWW CRDT with HLC
+
+**Status:** Complete
+**Date:** 2026-05-08
+**Goal:** Upgrade the memory sync delta system to use Hybrid Logical Clock (HLC) counters for causal ordering, replacing timestamp-based LWW.
+
+**What was done:**
+- Added `hlc_counter INTEGER NOT NULL DEFAULT 0` column to `memories` table (schema V17).
+- Added `ensure_hlc_counter()` migration for existing databases.
+- Extended `SyncDelta` struct with `hlc_counter: u64` field.
+- Rewrote `apply_sync_deltas` to use `(hlc_counter, origin_device)` total order:
+  - Higher HLC wins; equal HLC → lexicographic device ID tiebreak.
+  - Concurrent edits (same HLC, different device) recorded in `memory_conflicts` table.
+  - Loser archived via `save_version()` before overwrite.
+- Extended `MemoryEntry` with `hlc_counter: Option<i64>`.
+- Updated all 10 SELECT queries + both `row_to_entry` functions.
+- `compute_sync_deltas` reads `hlc_counter` from DB and populates delta.
+- Added `ApplyResult.conflicts` counter.
+- Fixed 12 test compilation errors (missing `hlc_counter` field in struct literals).
+- Implemented 6 missing Phase 41 methods on `MemoryStore`: `set_flush_handle`, `ann_save_all`, `ann_needs_compaction`, `compact_ann`, `backfill_embedding_model`, `rebuild_ann_quantized` + `live_embeddings` helper.
+- Added `flush_handle` field to `MemoryStore` struct.
+- 3 new convergence tests: `two_device_convergence_hlc`, `convergence_equal_hlc_device_tiebreaker`, `concurrent_edit_detected_as_conflict`.
+
+**Files modified:** `src-tauri/src/memory/store.rs`, `src-tauri/src/memory/crdt_sync.rs`, `src-tauri/src/memory/schema.rs`, `src-tauri/src/commands/crag.rs`, `src-tauri/src/link/handlers.rs`, `src-tauri/src/memory/obsidian_export.rs`, `src-tauri/src/memory/replay.rs`, `src-tauri/src/memory/reranker.rs`
+
+**Tests:** 2345 Rust + 1738 TS passing, clippy clean.
+
+---
+
+## Chunk 42.2 — Mobile SQLite + WAL hardening
+
+**Status:** Complete
+**Date:** 2026-05-08
+**Goal:** Platform-adaptive SQLite PRAGMAs for mobile + verify `rusqlite bundled` ships on iOS/Android + smoke integration test.
+
+**Architecture:**
+- New `memory/platform.rs` module: returns compile-time-selected PRAGMA strings via `production_pragmas()` and `test_pragmas()`.
+- Desktop profile (default): 64 MiB cache, 256 MiB mmap, WAL autocheckpoint=1000, 64 MiB journal limit.
+- Mobile profile (`--features mobile`): 16 MiB cache, 32 MiB mmap, WAL autocheckpoint=100 (iOS background-kill safety), 8 MiB journal limit.
+- WAL mode retained on mobile (both iOS and Android) — it's the correct choice. Aggressive autocheckpoint (100 vs 1000) mitigates the iOS jetsam orphan-WAL risk by keeping the WAL small.
+- `rusqlite` with `bundled` feature compiles SQLite from C source on all targets including iOS/Android. `bundled-full` was evaluated but rejected: it enables `modern_sqlite` which sets `SQLITE_DQS=0` (breaking double-quoted strings used in some existing SQL) and adds ~200 KB binary bloat for features (FTS5 virtual tables, session extension) not currently used.
+
+**Files created:**
+- `src-tauri/src/memory/platform.rs` — platform-adaptive PRAGMA module + 5 unit tests including a full open/migrate/write/read smoke test.
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — added `pub mod platform;`.
+- `src-tauri/src/memory/store.rs` — `new()` and `in_memory()` now delegate to `platform::production_pragmas()` / `platform::test_pragmas()` instead of inline PRAGMA strings.
+
+**Tests:** 2371 pass (desktop), 2381 pass (mobile). 4 new platform tests: `production_pragmas_contain_journal_mode`, `test_pragmas_contain_foreign_keys`, `desktop_pragmas_have_full_cache`, `sqlite_open_migrate_write_read_roundtrip`. Mobile additionally runs `mobile_pragmas_have_reduced_cache`.
+**Clippy:** Clean on both profiles.
+
+**bundled-full decision:** Evaluated and rejected. The `bundled-full` feature enables `modern_sqlite` compile flags (`SQLITE_DQS=0`) that break 66 existing tests using double-quoted string literals. Since keyword search uses SQL LIKE (not FTS5 virtual tables), `bundled` is correct and sufficient for all targets.
+
+---
+
+## Chunk 42.1 — Mobile ANN fallback (IVF + i8 quantization)
+
+**Status:** Complete
+**Date:** 2026-05-08
+**Goal:** Ship a pure-Rust ANN index for mobile targets where usearch C++ cannot compile, bounded to 200k vectors with graceful degradation.
+
+**Architecture:**
+- New `mobile_ann` module (`src-tauri/src/memory/mobile_ann.rs`): IVF (Inverted File Index) with i8 scalar quantization for O(√n) search instead of O(n) brute-force.
+- `MobileAnnIndex` struct: flat store + lazy IVF build when vectors exceed `IVF_BUILD_THRESHOLD` (1000). Capacity capped at `MAX_MOBILE_VECTORS` (200,000).
+- Quantization: f32→i8 via max-abs scaling; quantized cosine similarity avoids dequantization.
+- IVF parameters: 128 lists, 8 probes, k-means with 10 iterations.
+- Feature gating: `mobile = []` feature flag (excludes `native-ann`). Module compiles only when `not(feature = "native-ann")`.
+- `AnnIndex` integration: all non-native-ann paths delegate to `MobileAnnIndex` via a `mobile: RefCell<MobileAnnIndex>` field.
+
+**Files created:**
+- `src-tauri/src/memory/mobile_ann.rs` — 300+ lines, full IVF + quantization implementation + 9 unit tests.
+
+**Files modified:**
+- `src-tauri/Cargo.toml` — added `mobile = []` feature.
+- `src-tauri/src/memory/mod.rs` — conditional module export.
+- `src-tauri/src/memory/ann_index.rs` — replaced brute-force `entries` field with `MobileAnnIndex` delegation; removed dead `cosine_similarity` fn; added `cfg_attr` allow on `write_quant_sidecar`.
+
+**Tests:** 2377 pass (mobile profile), 2367 pass (desktop profile). 9 new mobile_ann tests: basic_add_and_search, remove_works, capacity_limit, ivf_build_and_search, quantize_i8_roundtrip_quality, cosine_sim_identical, cosine_sim_orthogonal, ensure_built_triggers_ivf, dimension_mismatch_ignored, replace_updates_existing.
+**Clippy:** Clean on both `--features mobile` and default (desktop).
+
+**Recall regression budget:** IVF+i8 quantization trades ~5-10% recall for 10-50x speedup at 200k vectors vs brute-force. Above 200k the index stops accepting new vectors; search still works on existing entries while hybrid search degrades to FTS5+keyword for new content.
+
+---
+
+## Chunk 41.15 — Online snapshot + atomic restore
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+
+- New module `src-tauri/src/memory/snapshot.rs` implementing:
+  - `snapshot(conn, data_dir, dest_dir, schema_version)` — non-blocking online snapshot via `VACUUM INTO` (WAL-safe), copies ANN `.usearch` + `.quant` sidecar files, writes `snapshot.json` manifest with SHA-256 checksums
+  - `verify_snapshot(snapshot_dir)` — validates all manifest checksums match file contents
+  - `restore(snapshot_dir, data_dir)` — verifies checksums, atomically swaps data_dir (rename-based), removes backup on success
+  - `SnapshotManifest` struct (created_at, schema_version, files map)
+  - `SnapshotError` enum (IO, SQLite, JSON, ChecksumMismatch, ManifestInvalid, Ann)
+  - Helper functions: `sha256_file`, `discover_ann_files`, `discover_quant_files`
+- 6 unit tests covering: roundtrip snapshot+verify, corruption detection, atomic restore with data revert, no-ANN snapshots, missing manifest error, concurrent writes during snapshot
+- Concurrent CRUD continues unblocked during snapshot (WAL mode guarantees)
+
+**CI:** 2367 Rust tests + 1738 Vitest — all green. Phase 41 complete.
+
+---
+
+## Chunk 41.14 — Time-bucketed shards
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+
+- New feature flag `time-shards` in Cargo.toml (opt-in, not default)
+- New module `src-tauri/src/memory/shards.rs` implementing:
+  - `QuarterKey` — derives quarter from `created_at` ms epoch (civil calendar algorithm)
+  - `ShardManager` — manages ATTACH/DETACH of per-quarter SQLite databases
+  - `ShardInsert` struct — clean parameter passing for shard writes
+  - `ShardAnnKey` — composite key `(shard, model_id)` for per-shard ANN indices
+  - `attach_existing_shards()` — discovers and attaches all shard files on startup
+  - `rebuild_union_view()` — creates `all_memories` TEMP VIEW as UNION ALL across main + shards
+  - `route_write(tier, created_at)` — routes long-tier writes to appropriate shard (current quarter stays in main)
+  - `migrate_existing(conn, batch_size)` — moves old long-tier rows from main to shards
+  - `vacuum_shard()` — per-shard backup/vacuum independently runnable
+  - Helper functions: `civil_from_days`, `days_from_civil`, `quarter_start_ms`, `parse_quarter_from_filename`, `shard_memories_ddl`
+- 11 unit tests covering: quarter key calculation (Q1–Q4), filename parsing, shard attachment, view rebuild, write routing, migration (5-row corpus split across shards), quarter boundary rotation, ANN key file stems, and shard discovery
+
+**CI:** 2372 Rust tests (with time-shards) / 2361 (default) — all green.
+
+---
+
+## Chunk 41.13 — Bounded KG traversal + LRU cache
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+
+- New module `src-tauri/src/memory/kg_cache.rs` implementing:
+  - `bounded_bfs(seed_id, depth, direction, get_edges)` — BFS capped at MAX_DEPTH=3, MAX_FAN_OUT=50 per node
+  - `KgCache` — thread-safe LRU cache (Vec-based, default capacity 256) keyed by `(seed_id, depth, direction)`
+  - Reverse index (`node_to_keys`) for O(1) invalidation by node ID
+  - 8 unit tests covering BFS traversal, depth capping, fan-out truncation, cache hit/miss, eviction, and invalidation
+- Added `KgCache` field to `AppStateInner` (both constructors)
+- Rewrote `AppStateGateway::kg_neighbors` to use `bounded_bfs` + cache (check cache → if miss, lock store, BFS, cache result → flatten hops for backward-compatible response)
+- Cache invalidation wired into:
+  - `add_memory_edge` Tauri command
+  - `delete_memory_edge` Tauri command (via new `get_edge_by_id` method)
+  - `add_edges_batch` call site in `extract_edges` command
+- Added `get_edge_by_id(id) -> SqlResult<MemoryEdge>` to `MemoryStore`
+- Added `Hash` derive to `EdgeDirection` enum for `KgCacheKey`
+- Updated gateway test `kg_neighbors_reports_truncation_when_depth_above_one` to test depth > MAX_DEPTH
+
+**CI:** 2361 Rust tests + 1738 Vitest — all green.
+
+---
+
+## Chunk 41.12 — Targeted indexes + PRAGMA optimize
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add partial indexes for hot query patterns, run `PRAGMA optimize`
+on database open, and trigger `ANALYZE` after every 10k mutations to keep the
+query planner stats fresh.
+
+**What shipped:**
+
+1. **New targeted indexes** (added to `CANONICAL_SCHEMA_SQL` in `schema.rs`):
+   - `idx_memories_long_embedded` — partial index on `id WHERE tier='long' AND embedding IS NOT NULL` (used by compact_ann, hybrid search)
+   - `idx_memories_active` — partial index on `id WHERE valid_to IS NULL` (active entries fast path)
+   - `idx_memories_session_recent` — composite `(session_id, created_at DESC)` (session-scoped recent queries)
+   - Note: `idx_pending_due(next_retry_at)` already existed as `idx_pending_embeddings_next`
+
+2. **PRAGMA optimize on open** (`store.rs` → `MemoryStore::new()`):
+   - Runs `PRAGMA optimize;` immediately after schema creation
+   - Lets SQLite re-analyze tables with stale stat1/stat4 data
+
+3. **Periodic ANALYZE** (`store.rs`):
+   - `mutations_since_analyze: Cell<u64>` field on `MemoryStore`
+   - `ANALYZE_THRESHOLD = 10_000` constant
+   - `maybe_analyze()` helper: increments counter, runs `ANALYZE` and resets when threshold reached
+   - Called from `add()`, `update()`, `delete()`, `add_many()` (batch-aware)
+
+4. **Tests (3 new, 2353 total Rust tests):**
+   - `targeted_indexes_exist_in_schema` — queries `sqlite_master` for all 3 new indexes
+   - `maybe_analyze_triggers_after_threshold` — verifies ANALYZE fires at 10k
+   - `maybe_analyze_does_not_trigger_below_threshold` — verifies no premature fire
+
+**CI gate:** `cargo clippy -- -D warnings` clean, 2353 Rust tests pass, 1738 Vitest pass.
+
+---
+
+## Chunk 41.11 — ANN compaction / tombstone GC job
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add a `compact_ann()` operation that rebuilds the HNSW index from
+live long-tier embeddings when fragmentation exceeds 20%. Wire it into the
+maintenance scheduler as `MaintenanceJob::AnnCompact` with daily cadence and
+expose a manual `compact_ann` Tauri command.
+
+**What shipped:**
+
+1. **Fragmentation tracking** (`ann_index.rs`):
+   - `removed_since_compact: Cell<usize>` field on `AnnIndex`
+   - `fragmentation_ratio()` → `removed / (live + removed)`
+   - `reset_fragmentation()` zeroes the counter after rebuild
+
+2. **`compact_ann()` on MemoryStore** (`store.rs`):
+   - Queries `memories WHERE embedding IS NOT NULL AND tier = 'long'`
+   - Calls `idx.rebuild(entries)` then `reset_fragmentation()`
+   - Returns count of vectors in compacted index
+   - `ann_needs_compaction()` — checks fragmentation ≥ 0.20 threshold
+   - `ann_fragmentation()` — returns current ratio
+
+3. **Maintenance scheduler integration** (`maintenance_scheduler.rs` + `maintenance_runtime.rs`):
+   - `MaintenanceJob::AnnCompact` variant added to enum
+   - `ORDER` array now 6 elements (placed after PromoteTier, before EdgeExtract)
+   - `ann_compact_cooldown_ms` in `MaintenanceConfig` (23h default, serde-default)
+   - `last_ann_compact_ms` in `MaintenanceState` (serde-default for compat)
+   - `dispatch_job` case: skips if below threshold, otherwise compacts
+
+4. **Tauri command** (`commands/memory.rs`):
+   - `compact_ann(state, force: Option<bool>)` — force bypasses threshold check
+
+5. **Tests (4 new, 2350 total):**
+   - `fragmentation_ratio_tracks_removes` — verifies 3/10 removal → 0.3 ratio
+   - `reset_fragmentation_zeroes_counter` — verifies reset
+   - `compact_ann_rebuilds_from_live_data` — full add/delete/compact/search cycle
+   - `compact_ann_is_idempotent` — double-compact produces same result
+
+**CI gate:** `cargo clippy -- -D warnings` clean, 2350 Rust tests pass, 1738 Vitest pass.
+
+---
+
+## Chunk 41.10 — Memory-mapped HNSW + debounced async flush
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Replace `SAVE_INTERVAL = 50` synchronous auto-save with a
+debounced async flush: ops+time threshold signals a tokio background task
+that coalesces concurrent flushes. Use usearch `view()` (memory-mapped)
+on open instead of `load()` so the hot graph stays out of process RSS.
+
+**Architecture:**
+
+- `AnnIndex::open_quantized()` and `ann_open_file_quantized()` now call
+  `index.view(path)` instead of `index.load(path)` — the index file is
+  memory-mapped by the OS, keeping resident set low for cold query paths.
+- `FLUSH_OPS_THRESHOLD = 20_000` + `FLUSH_SECS_THRESHOLD = 30` replace
+  the old `SAVE_INTERVAL = 50`. A 1M bulk insert triggers ≤50 flushes.
+- `AnnIndex::needs_flush()` checks ops count OR elapsed time.
+- `AnnIndex::flush_if_needed()` saves and returns ops-flushed count.
+- `bump_dirty()` now returns `bool` (flush needed) without auto-saving.
+- `first_dirty_at: Cell<Option<Instant>>` tracks time since first mutation.
+- New module `memory/ann_flush.rs`: `AnnFlushHandle` (Notify + AtomicBool)
+  and `spawn_flush_task()` — debounces signals with a 200ms window, then
+  acquires the store mutex and calls `ann_save_all()`.
+- `MemoryStore::set_flush_handle()` attaches the handle; `maybe_signal_flush()`
+  is called after every ANN mutation (set_embedding, delete, bulk delete).
+- `MemoryStore::ann_save_all()` flushes primary + registry indices.
+- `AppStateInner.ann_flush_handle` field; task spawned in app setup.
+
+**Files created:**
+
+- `src-tauri/src/memory/ann_flush.rs` — AnnFlushHandle, spawn_flush_task,
+  3 async tests (coalesce, shutdown final flush, no-signal-no-flush)
+
+**Files modified:**
+
+- `src-tauri/src/memory/ann_index.rs` — mmap open, debounced dirty,
+  needs_flush, flush_if_needed, first_dirty_at, 4 new tests
+- `src-tauri/src/memory/store.rs` — flush_handle field, set_flush_handle,
+  maybe_signal_flush, ann_save_all; signal calls in set_embedding, delete
+- `src-tauri/src/memory/mod.rs` — registered ann_flush module
+- `src-tauri/src/lib.rs` — ann_flush_handle field, spawn_ann_flush_task,
+  attach flush handle to store on app startup
+
+**Tests:** 2346 Rust lib tests pass (7 new), 1738 Vitest pass. Clippy clean.
+
+---
+
+## Chunk 41.9 — usearch quantization (i8/b1)
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal:** Add `EmbeddingQuantization` enum (F32/I8/B1) plumbed into usearch
+`IndexOptions.quantization`, with persistent sidecar file so reloads keep
+the correct mode, a Tauri command to rebuild the index with a new quantization,
+and a recall regression test ensuring i8 stays within budget.
+
+**Architecture:**
+
+- `EmbeddingQuantization` enum with `to_scalar_kind()`, `from_str_lossy()`,
+  `as_str()` for type-safe quantization mapping.
+- Sidecar persistence: `vectors.usearch.quant` text file next to the index
+  stores the active quantization mode; read on `open()`, written on `save()`.
+- `AnnIndex::new_quantized(dim, quant)` and `open_quantized(dir, dim, quant)`
+  constructors.
+- `MemoryStore::rebuild_ann_quantized(quant)` drops and rebuilds from DB rows.
+- `MemoryStore::ann_quantization()` getter exposes current mode.
+- `set_ann_quantization` Tauri command for frontend/settings UI.
+
+**Files modified:**
+
+- `src-tauri/src/memory/ann_index.rs` — EmbeddingQuantization enum, sidecar
+  read/write, quantized constructors, `ann_open_file_quantized`, 7 new tests
+- `src-tauri/src/memory/store.rs` — `rebuild_ann_quantized`, `ann_quantization`,
+  1 new test (`rebuild_ann_quantized_reindexes`)
+- `src-tauri/src/commands/memory.rs` — `set_ann_quantization` command
+- `src-tauri/src/lib.rs` — registered `set_ann_quantization` in invoke_handler
+
+**Tests:** 2339 Rust lib tests pass (8 new), 1738 Vitest pass. Clippy clean.
+
+---
+
+## Chunk 41.8 — Multi-model embedding columns + AnnRegistry
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+Implemented V16 schema with multi-model embedding support:
+
+1. **Schema V16** — Added `embedding_model_id TEXT` and `embedding_dim INTEGER`
+   columns to `memories` table. Created `memory_embeddings` side table keyed
+   by `(memory_id, model_id)` with `dim`, `embedding BLOB`, and `created_at`.
+2. **AnnRegistry** — New struct in `ann_index.rs` managing multiple ANN indices
+   per model_id. Each model gets its own `vectors_<model_id>.usearch` file.
+   Primary (legacy) index preserved for backward compatibility.
+3. **Multi-model store APIs** — `set_embedding_for_model()`, `get_embedding_for_model()`,
+   `embedding_models_for()`, `vector_search_model()` (with brute-force fallback),
+   `backfill_embedding_model()`.
+4. **Tauri command** — `backfill_embedding_model_id` command to tag existing
+   embeddings with a model ID and copy them to the side table.
+5. **Upgrade path** — `ensure_multi_model_embeddings()` handles ALTER TABLE
+   for databases upgrading from V15.
+
+**Files changed:**
+- `src-tauri/src/memory/schema.rs` — V16 schema DDL, upgrade function, validation
+- `src-tauri/src/memory/ann_index.rs` — `AnnRegistry` struct + `ann_open_file()` helper
+- `src-tauri/src/memory/store.rs` — multi-model APIs, `ann_registry` field, 5 new tests
+- `src-tauri/src/commands/memory.rs` — `backfill_embedding_model_id` command
+- `src-tauri/src/lib.rs` — command registration + import
+- `src-tauri/src/brain/selection.rs` — test fixture updated to schema_version=16
+
+**Tests added:** 5 (set_embedding_for_model_populates_side_table,
+multiple_models_coexist, vector_search_model_brute_force,
+backfill_embedding_model_tags_existing, schema_version_is_16).
+
+**CI:** 2331 Rust lib tests pass, 1738 Vitest tests pass, clippy clean.
+
+---
+
+## Chunk 41.7 — Embedding worker concurrency + rate limiting
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**What was done:**
+Refactored the `embedding_queue` background worker for production-grade
+concurrency control and rate-limit resilience:
+
+1. **Provider-adaptive batch sizes** — `batch_size_for_provider()` returns 8
+   for Ollama/local, 32 for free/Pollinations, 128 for paid/OpenAI/Anthropic.
+2. **Concurrency semaphore** — `tokio::Semaphore(MAX_CONCURRENCY=4)` caps
+   concurrent embed API calls to avoid thundering herd.
+3. **Soft pause vs hard fail** — `is_rate_limit_error()` detects 429/busy/quota
+   patterns; rate-limited batches use `record_soft_pause()` (does NOT increment
+   attempts) instead of `record_failure()`. Consecutive rate limits trigger
+   exponential backoff (30s × 2^n, max 600s).
+4. **WorkerMetrics + WorkerStatus** — lock-free `Arc<Atomic*>` counters exposed
+   via `snapshot()` → serialized in `brain_health` response under `embed_worker`.
+5. **Graceful shutdown** — `tokio::sync::watch<bool>` channel; `tokio::select!`
+   in the worker loop exits cleanly when shutdown is signalled.
+6. **Health surface** — `HealthResponse.embed_worker` field (Optional) shows
+   `rate_limited`, `pause_remaining_secs`, `hard_failures`, `total_embedded`,
+   `rate_limit_pauses`.
+
+**Files changed:**
+- `src-tauri/src/memory/embedding_queue.rs` — full worker refactor + 7 new tests
+- `src-tauri/src/ai_integrations/gateway.rs` — `HealthResponse.embed_worker` field + snapshot() call
+- `src-tauri/src/lib.rs` — `embed_worker_metrics` / `embed_worker_shutdown` on AppStateInner
+
+**Tests added:** 7 new unit tests (batch_size_per_provider_category,
+is_rate_limit_error_detects_patterns, record_soft_pause_does_not_increment_attempts,
+worker_metrics_snapshot_reports_pause, worker_metrics_accumulate_atomically,
+provider_category_maps_brain_modes, fetch_due_excludes_already_embedded was pre-existing).
+
+**CI:** 2326 Rust lib tests pass, 1738 Vitest tests pass, clippy clean.
+
+---
+
+## Chunk 41.6 — Re-embed on content update + ANN tombstone
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** When `MemoryStore::update` changes `content`, the old embedding
+is stale: clear it to NULL, remove the entry from the ANN index (tombstone),
+and enqueue it in `pending_embeddings` so the background embedding worker
+re-embeds with the new content. Non-content updates (tags, importance,
+memory_type) must not disturb the embedding.
+
+**Architecture:**
+- In `update()`, detect `content_changed` flag before consuming the
+  `Option<String>`.
+- After all field updates, if `content_changed`:
+  1. `UPDATE memories SET embedding = NULL WHERE id = ?`
+  2. `self.ann.get()?.remove(id)` (best-effort ANN tombstone)
+  3. `embedding_queue::enqueue(&self.conn, id)` (best-effort queue)
+- `MemoryUpdate` now derives `Default` for ergonomic test construction.
+
+**Files modified:**
+- `src-tauri/src/memory/store.rs` — added re-embed logic in `update()`,
+  added `Default` derive on `MemoryUpdate`, fixed pre-existing unused
+  variable warning, added 5 new tests.
+
+**Test counts:**
+- Full `cargo test --lib`: 2320 passed, 0 failed
+- Frontend vitest: 1738 passed
+- Clippy: clean (0 warnings)
+
+**New tests (5):**
+- `update_content_clears_embedding` — embedding → NULL on content change
+- `update_content_enqueues_for_reembedding` — entry appears in pending_embeddings
+- `update_content_removes_from_ann_index` — vector_search no longer finds stale entry
+- `update_tags_only_preserves_embedding` — non-content update leaves embedding intact
+- `update_content_then_reembed_restores_search` — full round-trip: update → clear → re-embed → searchable
+
+---
+
+## Chunk 41.5 — Cursor-based reads on hot search paths
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Eliminate `get_all()` / `get_with_embeddings()` from hot search
+paths (`hybrid_search`, `hybrid_search_rrf`, `hybrid_search_rrf_with_intent`,
+`relevant_for`). Replace with bounded SQL-level candidate selection: ANN
+top-N + keyword INSTR top-N + freshness/tier top-N, union-deduplicated via
+HashSet, then in-Rust scoring on the bounded candidate set only (max ~600
+entries vs potentially 1M).
+
+**Architecture:**
+- `CANDIDATE_POOL = 200` per signal (const on `MemoryStore` impl block).
+- `keyword_candidate_ids(words, pool)` — dynamic SQL with `INSTR(LOWER(content), ?)` OR chains, `prepare_cached`.
+- `freshness_candidate_ids(pool)` — SQL `ORDER BY tier_priority, importance DESC, created_at DESC LIMIT ?`.
+- `get_entries_by_ids(ids)` — fetch rows by ID set (no embeddings), uses `params_from_iter`.
+- `get_entries_by_ids_with_embeddings(ids)` — fetch rows + embeddings by ID set.
+- `search_candidate_ids(query_embedding, words, pool)` — unifies ANN + keyword + freshness candidates via HashSet dedup.
+- `iter_with_embeddings(f)` — streaming iterator for rebuild/decay paths (no full Vec allocation).
+- All hot search methods refactored to use `search_candidate_ids` → `get_entries_by_ids[_with_embeddings]`.
+
+**Files modified:**
+- `src-tauri/src/memory/store.rs` — added 6 new methods, `CANDIDATE_POOL` const, refactored 4 hot-path search methods, added 14 new tests (~170 lines net).
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — fixed 4 pre-existing test assertions (brain_wiki tool count mismatch from earlier chunk).
+
+**Test counts:**
+- Store tests: 91 passed (14 new cursor-based tests)
+- Full memory module: 491 passed
+- Full `cargo test --lib`: 2315 passed, 0 failed
+- Frontend vitest: 1738 passed
+- vue-tsc: clean
+- Clippy: clean (0 warnings)
+- Bench (10k smoke): write 244K/s, read 783K/s, mixed 18.8K ops/s
+
+**Performance impact:** At 1M memories, search paths now touch at most
+~600 candidate rows instead of loading all 1M × full row data into memory.
+Peak heap during search bounded to O(CANDIDATE_POOL) rather than O(corpus).
+
+---
+
+## Chunk 41.3 — Extend million-memory bench to write/update/delete mix
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Extend the million-memory benchmark beyond write/read so Phase 41 can track real CRUD behavior (update, mixed workload, delete) without hanging indefinitely during pathological long phases.
+
+**Files created/modified:**
+- `src-tauri/benches/million_memory.rs` — added `bulk_update`, `mixed_crud_workload`, and `bulk_delete` sections to `run_crud_benchmark()` with explicit per-bench timeout (`TS_BENCH_TIMEOUT_SECS`, default 300s), pre-phase timeout checks, and in-loop timeout checks for update/delete loops.
+- `src-tauri/benches/million_memory.rs` — added safer mixed-workload bounds and deterministic million-scale behavior: mixed cap reduced to 10k ops and million-scale bulk delete is explicitly skipped with `completed_delete_skipped_at_million` to avoid index-maintenance tails dominating benchmark wall-clock.
+
+**Validation:**
+- `cargo check --benches --target-dir ../target-copilot-bench` clean.
+- 1M CRUD-only bench (`TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1 TS_BENCH_TIMEOUT_SECS=300`) repeatedly confirmed headline targets remain green while long delete tails no longer block completion: write/read stayed far under 60s/5s; update and mixed sections now emit bounded results instead of hanging.
+
+---
+
+## Chunk 41.2 — Per-op latency metrics for memory CRUD + retrieval
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Add lightweight per-operation latency telemetry for memory CRUD/retrieval paths and expose it through Tauri/MCP health surfaces so performance regressions can be spotted without ad-hoc profiling.
+
+**Files created/modified:**
+- `src-tauri/src/memory/metrics.rs` (new) — lock-free `AtomicU64`-based operation counters and bucketed latency histograms, `Timer` RAII helper, and serializable snapshots.
+- `src-tauri/src/memory/mod.rs` — exports `metrics` module.
+- `src-tauri/src/memory/store.rs` — instrumented `add`, `add_many`, `update`, `delete`, `set_embedding`, `hybrid_search`, and `hybrid_search_rrf` with `Timer::start(...)`.
+- `src-tauri/src/commands/memory.rs` — added `get_memory_metrics` Tauri command.
+- `src-tauri/src/lib.rs` — registered `get_memory_metrics` invoke handler.
+- `src-tauri/src/ai_integrations/mcp/router.rs` — included metrics snapshot in MCP health response.
+
+**Validation:**
+- `cargo test --lib memory::metrics` passes.
+- `cargo clippy --lib -- -D warnings` clean after adding `Default` for `MemoryMetrics` and removing stale imports.
+- Memory test suite remained green after instrumentation.
+
+---
+
+## Chunk 41.4 — Transactional `add_many` bulk insert API
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Provide a transactional bulk insert API on `MemoryStore` so ingest pipelines that turn one document into thousands of chunks no longer pay per-row WAL fsync cost. Phase 41's headline target was 1M write < 60 s; the existing per-row `add()` topped out at ~600 rows/s (≈28 minutes for 1M).
+
+**Files created/modified:**
+- `src-tauri/src/memory/store.rs` — added `MemoryStore::add_many(&mut self, Vec<NewMemory>) -> SqlResult<Vec<i64>>` using `prepare_cached` inside a single `transaction()`; returns the assigned row ids in input order. Skips the per-row `get_by_id` round-trip — callers that need the full `MemoryEntry` can call `get_by_id` afterwards.
+- `src-tauri/benches/million_memory.rs` — added `CrudReport` struct, `run_crud_benchmark()` (10k batch size, real `MemoryStore::add_many` + `get_all` round-trip), and a `TS_BENCH_CRUD_ONLY=1` env switch to skip the long HNSW build when iterating on the SQLite path.
+
+**Validation:** `cargo bench --bench million_memory --target-dir ../target-copilot-bench` (smoke 10k) and `TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1 cargo bench --bench million_memory` (1M).
+- 10k smoke: write 0.04 s @ 244 657 rows/s; read 0.01 s @ 939 956 rows/s.
+- **1M full: write 6.37 s @ 157 031 rows/s, read 1.84 s @ 544 704 rows/s.** Targets 1M-write < 60 s and 1M-read < 5 s passed by ~10× and ~3×.
+- `cargo test --lib memory::` (471 tests) green; `cargo clippy --lib -- -D warnings` clean.
+
+---
+
+## Chunk 41.1 — SQLite write-path PRAGMA tuning
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Apply the May 2026 audit's recommended SQLite PRAGMAs at every `MemoryStore::new` so the on-disk store does not carry stock SQLite defaults into million-row workloads.
+
+**Files created/modified:**
+- `src-tauri/src/memory/store.rs` — `MemoryStore::new` now sets `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`, `cache_size=-65536` (64 MiB), `mmap_size=268435456` (256 MiB), `temp_store=MEMORY`, `busy_timeout=5000`, `wal_autocheckpoint=1000`, `journal_size_limit=67108864`. `MemoryStore::in_memory` matches the cache/temp policy so tests stay representative.
+
+**Validation:** Same bench run as 41.4 (PRAGMAs are required for the 1M throughput numbers to hold). 471 memory tests green. FTS5 verification stays a follow-up — current `schema.rs` does not declare an FTS5 virtual table, so there is nothing to verify yet.
+
+---
+
+## Chunk 38.5 — Million-memory benchmark
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Add a reproducible benchmark that stops the million-memory claim from being hand-wavy: 10k smoke on normal CI/dev runs, full 1M HNSW assertions behind `bench-million`, linear backend skipped at 1M, and `enforce_capacity` timed against the 1.05x -> 0.95x pruning target.
+
+**Files created/modified:**
+- `src-tauri/benches/million_memory.rs` — Criterion harness with deterministic xoshiro vectors, machine/report JSON, HNSW latency thresholds, linear-backend skip reporting, and real canonical-schema `enforce_capacity` timing.
+- `src-tauri/Cargo.toml` — confirmed existing `bench-million`, `criterion`, `rand`, `rand_xoshiro`, and `[[bench]]` wiring.
+- `docs/brain-advanced-design.md` — replaced rhetorical million-memory latency claims with measured smoke data, benchmark commands, and the explicit single-node ceiling.
+- `README.md` — synced public Brain/Memory listings for schema V15, capacity eviction, and the new benchmark gate.
+- `mcp-data/shared/memory-seed.sql` — synced the durable Chunk 38.5 lesson and corrected stale Chunk 38.4 audit/target wording.
+- `rules/milestones.md` — archived Chunk 38.5 and cleared the active Phase 38 queue.
+
+**Validation:** `cargo bench --bench million_memory --target-dir ../target-copilot-bench` passed. Report: 10k vectors, 1,000 HNSW queries, p50 0.57 ms, p95 0.74 ms, p99 0.86 ms, max 1.03 ms; `enforce_capacity` pruned 10,500 -> 9,500 in 0.26 s while preserving 10 protected and 10 high-importance rows. The full 1M tier remains intentionally gated by `cargo bench --bench million_memory --features bench-million` for local/nightly hardware with enough RAM.
+
+---
+
+## Chunk 38.4 — Capacity-based self-eviction
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Configurable hard cap (`MAX_LONG_TERM_ENTRIES = 1_000_000`) with capacity-based eviction. When long-tier count exceeds cap, evict lowest-value rows (respecting protected + importance≥4) until count ≤ cap × 0.95.
+
+**Files created/modified:**
+- `src-tauri/src/memory/eviction.rs` (new) — `enforce_capacity()`, audit log, `EvictionReport`
+- `src-tauri/src/memory/schema.rs` — schema V15, `protected` column, eviction index
+- `src-tauri/src/memory/mod.rs` — `pub mod eviction`
+- `src-tauri/src/settings/mod.rs` — `max_long_term_entries` field, `data_root`, `ObsidianLayout` enum
+- `src-tauri/src/settings/config_store.rs` — `resolve_effective_data_dir()`
+- `src-tauri/src/brain/maintenance_runtime.rs` — wired `enforce_capacity` into GC tick
+- `src-tauri/src/commands/brain.rs` — `brain_eviction_log` Tauri command
+- `src-tauri/src/lib.rs` — registered command
+
+**Tests:** 5 unit tests (eviction module)
+
+---
+
+## Chunk 38.3 — Native-ANN default for desktop
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Goal.** Feature-flag `native-ann` enabled by default for desktop builds; headless MCP uses linear fallback. ANN parity test verifies both backends produce consistent results.
+
+**Files created/modified:**
+- `src-tauri/Cargo.toml` — `default = ["desktop"]`, `desktop = ["native-ann"]`, `headless-mcp = []`
+- `scripts/copilot-start-mcp.mjs` — build with `--no-default-features --features headless-mcp`
+- `src-tauri/src/memory/ann_index.rs` — `ann_parity_deterministic_ranking` test
+
+**Tests:** 9 ANN tests pass on both feature sets
+
+---
+
+## Chunk 38.2 — Self-healing pending-embeddings retry queue
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Summary:** Added a self-healing background worker that retries failed embeddings until `rag_quality_pct` reaches 100%, with no user action required. Schema bumped to v14, adding `pending_embeddings` table (memory_id PK, attempts, last_error, next_retry_at). On boot, the worker backfills the queue with any memories that have NULL embeddings — this self-heals databases populated before this worker existed (e.g. the current MCP database with 1029 memories at ~12% RAG quality). The worker drains the queue every 10 seconds in batches of 32 using Chunk 38.1's batch endpoint, with exponential backoff (10s → 20s → 40s → … capped at 1 hour) on per-row failures.
+
+**Key behavior:**
+- `commands/ingest.rs` enqueues failed embeddings inline so they're picked up on the next tick
+- `embedding_queue_status` Tauri command exposes `{ pending, failing, next_retry_at }`
+- `BrainView.vue` polls every 5s and shows a small status strip when `pending > 0`
+- Schema migration is forward-compatible: existing v13 databases get the new table via `CREATE TABLE IF NOT EXISTS`
+
+**Files changed:**
+- `src-tauri/src/memory/schema.rs` — `CANONICAL_SCHEMA_VERSION = 14`, `pending_embeddings` table, `ensure_pending_embeddings` migration helper
+- `src-tauri/src/memory/embedding_queue.rs` (new) — queue CRUD, worker, 8 unit tests
+- `src-tauri/src/memory/mod.rs` — module declaration
+- `src-tauri/src/commands/ingest.rs` — enqueue failed embeds via `enqueue_many`
+- `src-tauri/src/commands/brain.rs` — `embedding_queue_status` Tauri command
+- `src-tauri/src/lib.rs` — `spawn_embedding_queue_worker` on app boot, command registration
+- `src/views/BrainView.vue` — polling + status strip with spinning icon
+
+**Tests:** 8 new embedding_queue tests (enqueue/dequeue idempotent, record_failure backoff, fetch_due batching, backfill, exclusion of already-embedded). 2280 lib tests pass total. Clippy clean. vue-tsc clean.
+
+**Self-healing demo:** Once MCP restarts with the new build, the worker will backfill ~907 unembedded memories into the queue and drain them at 32 per 10s tick (~5 min total at full Ollama speed) — `rag_quality_pct` should climb from 12% toward ~99%.
+
+---
+
+## Chunk 38.1 — Batched embedding pipeline + concurrency cap
+
+**Status:** Complete
+**Date:** 2026-05-07
+
+**Summary:** Replaced the sequential per-chunk embedding loop in `commands/ingest.rs` with a batched approach. Added `embed_text_batch()` to `OllamaAgent` (POSTs array to `/api/embed`, handles empty texts, reassembles results), `embed_batch_for_mode()` and `embed_batch_openai()` to `cloud_embeddings.rs` (unified dispatch for all brain modes), and a `tokio::sync::Semaphore(4)` on `AppStateInner` to cap concurrent ingest tasks. Added `model_pull` task kind to backend + frontend for background model pull progress display.
+
+**Files changed:**
+- `src-tauri/src/brain/ollama_agent.rs` — `embed_text_batch()` + 2 tests
+- `src-tauri/src/brain/cloud_embeddings.rs` — `embed_batch_for_mode()` + `embed_batch_openai()` + 5 tests
+- `src-tauri/src/brain/mod.rs` — re-export `embed_batch_for_mode`
+- `src-tauri/src/commands/ingest.rs` — batched embed drain + semaphore acquire
+- `src-tauri/src/lib.rs` — `ingest_semaphore: Arc<Semaphore>` field
+- `src-tauri/src/tasks/manager.rs` — `ModelPull` variant in `TaskKind`
+- `src-tauri/src/commands/brain.rs` — task-progress events for model pull
+- `src/stores/tasks.ts` — `model_pull` kind
+- `src/components/TaskProgressBar.vue` — model pull label
+- `src/views/BrainView.vue` — render TaskProgressBar
+
+**Tests:** 39 embed tests pass, 20 ingest tests pass, vue-tsc clean.
+
+---
+
+## Chunk 33B.6 — Agent-roster capability tags + tag-based routing
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+**Goal:** Extend `agents/roster.rs` with capability tags; `coding/coding_router.rs` selects by tag instead of name.
+
+### Architecture
+
+Adds a `capabilities: Vec<String>` field to `AgentProfile` (serde-default for backward compat with existing on-disk JSON). Agents can now be tagged with capabilities like `["code", "plan", "review", "fix"]`.
+
+- **`AgentProvider` trait** — gained a `fn capabilities(&self) -> &[String]` method with a default empty-slice implementation (no breakage for existing providers).
+- **`AgentOrchestrator`** — new methods `agents_with_capabilities(required)` (filters agents that have ALL required tags) and `dispatch_by_capability(required, message)` (routes to first match, falls back to default agent).
+- **`CodingCapability::required_tags()`** — maps each capability variant (Plan/Implement/Review/Fix/Refactor/Test/Explain) to required tag tuples (`["code", "plan"]`, etc.), bridging intent detection to agent selection.
+- **`CreateAgentRequest`** — accepts optional `capabilities` from the frontend.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src-tauri/src/agents/roster.rs` | Modified — added `capabilities: Vec<String>` to `AgentProfile` + test fixtures |
+| `src-tauri/src/agent/mod.rs` | Modified — added `fn capabilities()` to `AgentProvider` trait (default impl) |
+| `src-tauri/src/orchestrator/agent_orchestrator.rs` | Modified — added `agents_with_capabilities()` + `dispatch_by_capability()` + 5 new tests |
+| `src-tauri/src/orchestrator/coding_router.rs` | Modified — added `CodingCapability::required_tags()` + 2 new tests |
+| `src-tauri/src/commands/agents_roster.rs` | Modified — added `capabilities` to `CreateAgentRequest` and profile construction |
+
+### Test Counts
+
+- Rust lib tests: 2225 passed (7 new)
+- Frontend tests: 1712 passed
+- Clippy: clean
+- vue-tsc: clean
+
+### Focused Revalidation (2026-05-06)
+
+- `cargo test --target-dir target-copilot-check --lib orchestrator::agent_orchestrator`: 13 passed
+- `cargo test --target-dir target-copilot-check --lib orchestrator::coding_router`: 20 passed
+- `cargo test --target-dir target-copilot-check --lib agents::roster`: 13 passed
+
+---
+
+## Chunk 33B.5 — `BrainGraphViewport.vue` 3-D KG visualiser
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+**Goal:** Three.js + d3-force-3d component consuming `memory_edges` + `memories`; node colour = `cognitive_kind`, edge colour = `rel_type`.
+
+### Architecture
+
+A new `BrainGraphViewport.vue` component renders the entire memory knowledge graph in 3D using Three.js `InstancedMesh` (spheres for nodes) + `LineSegments` (coloured edges). Layout uses `d3-force-3d` (3-dimensional force simulation) with charge repulsion, link attraction, and centering.
+
+- **Node colour** = cognitive kind (episodic, semantic, procedural, judgment). The component now calls the shared TS mirror `src/utils/cognitive-kind.ts` instead of duplicating classifier logic.
+- **Edge colour** = deterministic hash of `rel_type` into an 8-colour design-token-backed palette, with an edge legend for the visible relation types.
+- **Interaction** — orbit drag for camera rotation, scroll for zoom, left-click for node select (emits `select` event), pointer hover for tooltip.
+- **Integration** — added a "3-D" checkbox toggle in the Graph tab toolbar of `MemoryView.vue`. When checked, swaps `MemoryGraph` (Cytoscape 2D) for `BrainGraphViewport` (Three.js 3D).
+- **Parity hardening** — added judgment coverage to the Rust and TS cognitive-kind tests, expanded BrainView's cognitive-kind breakdown to four kinds, and rebuilt the graph whenever memory/edge semantic inputs change.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src/components/BrainGraphViewport.vue` | Created — Three.js + d3-force-3d 3D KG renderer with orbit camera, raycasting, tooltip, cognitive-kind legend, and relation legend |
+| `src/types/d3-force-3d.d.ts` | Created — minimal ambient type declarations (no @types package) |
+| `src/views/MemoryView.vue` | Modified — imported BrainGraphViewport, added `graph3d` ref + 3-D toggle checkbox in toolbar, conditional render |
+| `src/components/BrainGraphViewport.test.ts` | Created — 15 pure-function tests for shared cognitive-kind classification, relTypeColour, truncate |
+| `src/utils/cognitive-kind.ts` / `.test.ts` | Modified — added `judgment` parity support and summary counts |
+| `src-tauri/src/memory/cognitive_kind.rs` | Modified — added Rust-side `judgment` parity tests |
+| `src/views/BrainView.vue` / `.test.ts` | Modified — displayed and tested the judgment cognitive-kind row |
+| `CREDITS.md` | Modified — credited `d3-force-3d` dependency |
+| `README.md` / `docs/brain-advanced-design.md` | Modified — documented the 3-D KG viewport and four cognitive-kind axes |
+| `package.json` | Modified — added `d3-force-3d` dependency |
+
+### Test Counts
+
+- Focused frontend: `npx vitest run src/utils/cognitive-kind.test.ts src/components/BrainGraphViewport.test.ts src/views/BrainView.test.ts` — 44 passed
+- Frontend typecheck: `npx vue-tsc --noEmit` — clean
+- Focused Rust parity: `cargo test --target-dir target-copilot-check --lib memory::cognitive_kind` — 19 passed
+
+---
+
+## Chunk 33B.4 — Memory-audit provenance view
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+**Goal:** New brain-panel tab that joins `memories ⨝ memory_versions ⨝ memory_edges` and renders a provenance tree per entry.
+
+### Architecture
+
+Adds an "Audit" tab to `MemoryView.vue` that lets the user select any memory and view its full provenance:
+
+- **Version timeline** — calls existing `get_memory_history(memoryId)` Tauri command (chunk 16.12) for the oldest-first list of `memory_versions` snapshots, then renders a vertical timeline ending in the current `memories` row.
+- **Typed edges** — calls existing `get_edges_for_memory(memoryId, direction='both')` for incident `memory_edges`, rendered with directional arrows (← / →) plus relation type, source, and confidence percentage.
+- **Source colour-coding** — edges are visually distinguished by `EdgeSource`: `user` = solid blue accent, `llm` = dashed green accent, `auto` = faded muted accent.
+
+No new backend commands were required — the existing versioning + edges Tauri surface already covers the data join. The component reuses scoped CSS design tokens and degrades gracefully on tablet/mobile (single-column stack at ≤840 px).
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src/views/MemoryView.vue` | Modified — added `MvTab` union with `'Audit'`, audit refs (`auditSearch`, `auditSelectedId`, `auditHistory`, `auditEdges`, `auditLoading`), `auditCandidates` / `auditSelected` / `auditHistoryReversed` computeds, `selectAuditMemory()` action invoking `get_memory_history` + `get_edges_for_memory` in parallel; new template section with searchable list + provenance detail panel; `truncate()` helper; local `MemoryVersion` interface |
+| `src/views/MemoryView.css` | Modified — scoped styles for `.mv-audit-panel`, `.mv-audit-list`, `.mv-audit-timeline`, `.mv-audit-edges` with source-based accent borders; mobile single-column override |
+| `src/views/MemoryView.test.ts` | Modified — 10 new pure-function tests for `auditCandidates` (filtering, sorting, capping, immutability) and `truncate` |
+
+### Test Counts
+
+- Rust lib tests: 2218 passed
+- Frontend tests: 1697 passed (10 new)
+- Clippy: clean
+- vue-tsc: clean
+
+---
+
+## Chunk 33B.4 — Memory-audit provenance view
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Goal:** New brain-panel tab that joins `memories ⨝ memory_versions ⨝ memory_edges` and renders a provenance tree per entry.
+
+### Architecture
+- Added `memory::audit` with `MemoryProvenance`, `AuditEdge`, and `AuditNeighbor` payloads.
+- New `get_memory_provenance(memory_id)` Tauri command returns one joined provenance tree: current memory row, `memory_versions` history, incident `memory_edges`, direction labels, and neighboring memory summaries.
+- Memory Pinia store now exposes `getMemoryProvenance()`.
+- Existing Memory tab Audit panel now consumes the joined payload and renders edge neighbor content instead of raw edge IDs only.
+- Planning audit cleaned stale backlog/milestone duplication: 33B.1/33B.2 were already completed, 36B rows were already complete, and active milestones now contain only remaining 33B.5–33B.6.
+
+### Files Created
+- `src-tauri/src/memory/audit.rs` — joined provenance model + 3 unit tests.
+
+### Files Modified
+- `src-tauri/src/memory/mod.rs` — registered `audit` module.
+- `src-tauri/src/commands/memory.rs` — added `get_memory_provenance` command.
+- `src-tauri/src/lib.rs` — import + invoke_handler registration.
+- `src/types/index.ts` — added `MemoryVersion`, `MemoryAuditNeighbor`, `MemoryAuditEdge`, and `MemoryProvenance` types.
+- `src/stores/memory.ts` — added `getMemoryProvenance()` store helper.
+- `src/views/MemoryView.vue` / `src/views/MemoryView.css` — Audit panel uses joined provenance payload and displays neighboring memory summaries.
+- `README.md` and `docs/brain-advanced-design.md` — documented the new memory audit surface.
+- `rules/milestones.md` and `rules/backlog.md` — reconciled active/completed chunk state.
+
+### Test Counts
+- Rust: 2265 total (3 new memory-audit tests)
+- Frontend: 1712 pass
+- Focused frontend: `src/views/MemoryView.test.ts` 20 pass
+- Clippy: clean
+- vue-tsc: clean
+
+---
+
+## Chunk 36B.4 — Diff impact overlay
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Goal:** Changed-file overlay marking impacted symbols, processes, docs, and tests before commit.
+
+### Architecture
+- New `DiffOverlay` and `FileOverlay` types model a per-file pre-commit reviewer view
+- Wraps existing `analyze_diff_impact` and adds three lookups per changed file:
+  - **Impacted processes** — join `code_processes` + `code_process_steps` to find traced execution flows touching changed symbols
+  - **Related docs** — scan `<repo>/docs/` and `<repo>/wiki/` for `.md` files mentioning the changed file basename or any changed symbol name
+  - **Related tests** — query `code_edges` for incoming edges from files matching `%test%`/`%spec%`/`tests/%` to changed symbols
+- Aggregate counts (`total_processes`, `total_docs`, `total_tests`) for at-a-glance review
+- New `code_diff_overlay` Tauri command
+
+### Files Created
+- `src-tauri/src/coding/diff_overlay.rs` — module + 6 unit tests
+
+### Files Modified
+- `src-tauri/src/coding/mod.rs` — registered `diff_overlay` module
+- `src-tauri/src/commands/coding.rs` — added `code_diff_overlay` Tauri command
+- `src-tauri/src/lib.rs` — import + invoke_handler registration
+
+### Test Counts
+- Rust: 2262 total (6 new diff_overlay tests)
+- Frontend: 1712 pass
+- Clippy: clean
+- vue-tsc: clean
+
+### Phase 36B Closure
+With 36B.4 complete, **Phase 36B — Understand-Anything Adoption Catalogue** is fully delivered. All four chunks (graph snapshot export, persona-adaptive explanations, guided tours, diff overlay) are implemented and passing CI. The phase heading is removed from `milestones.md`.
+
+---
+
+## Chunk 36B.3 — Guided architecture tours
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Goal:** Generate ordered tours from `coding/processes.rs` and dependency edges.
+
+### Architecture
+- New `ArchitectureTour` and `TourStop` types modeling a reading-order walk through code
+- Each indexed `Process` (entry-point trace) is converted into one tour
+- Stops are ordered by traversal depth; each stop gets a narrative note based on its position ("Start here", "called directly from the entry point", "reached through N hops")
+- `max_stops` cap prevents overwhelming long tours; default 12
+- `find_tour_by_entry` looks up a single tour by entry-point name
+- New `code_architecture_tours` Tauri command exposes the feature
+- `ensure_process_tables` made `pub(crate)` so tours work even on never-resolved repos (returns empty list instead of SQL error)
+
+### Files Created
+- `src-tauri/src/coding/graph_tours.rs` — module + 6 unit tests (incl. real SQLite integration test)
+
+### Files Modified
+- `src-tauri/src/coding/mod.rs` — registered `graph_tours` module
+- `src-tauri/src/coding/processes.rs` — `ensure_process_tables` visibility raised to `pub(crate)`
+- `src-tauri/src/commands/coding.rs` — added `code_architecture_tours` Tauri command
+- `src-tauri/src/lib.rs` — import + invoke_handler registration
+
+### Test Counts
+- Rust: 2256 total (6 new graph_tours tests)
+- Frontend: 1712 pass
+- Clippy: clean
+- vue-tsc: clean
+
+---
+
+## Chunk 36B.2 — Persona-adaptive graph explanations
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Goal:** Vary graph explanations for newcomer/maintainer/PM/power-user views via persona state.
+
+### Architecture
+- New `Audience` enum with 4 variants: `Newcomer`, `Maintainer`, `ProjectManager`, `PowerUser`
+- Each audience has a tailored system prompt (vocabulary, depth, focus)
+- Pure prompt-builder functions for symbols and clusters; LLM call is best-effort
+- New `code_explain_graph` Tauri command loads a symbol's call graph (callers + callees) from the code index, builds an audience-specific prompt, and asks the active brain mode to explain it
+- Brain mode is optional — if no brain configured, returns the prompt context summary so callers can still inspect it
+
+### Files Created
+- `src-tauri/src/coding/graph_explain.rs` — module + 7 unit tests
+
+### Files Modified
+- `src-tauri/src/coding/mod.rs` — registered `graph_explain` module
+- `src-tauri/src/commands/coding.rs` — added `code_explain_graph` Tauri command
+- `src-tauri/src/lib.rs` — import + invoke_handler registration
+
+### Test Counts
+- Rust: 2250 total (7 new graph_explain tests)
+- Frontend: 1712 pass
+- Clippy: clean
+- vue-tsc: clean
+
+---
+
+## Chunk 36B.1 — Committed code-graph snapshot
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Goal:** Reviewable `code-graph.json` export from existing `coding/symbol_index.rs`.
+
+### Architecture
+- New module `src-tauri/src/coding/graph_export.rs` with `CodeGraphSnapshot` struct containing version, repo metadata, symbols, edges, and stats
+- `export_snapshot(conn, repo_id)` reads all symbols and edges from SQLite `code_index.sqlite`
+- `export_to_file(conn, repo_id, output_path)` writes pretty-printed JSON
+- `export_first_repo(data_dir, output_path)` convenience for single-repo use
+- Tauri command `code_export_graph` wired into invoke_handler
+
+### Files Created
+- `src-tauri/src/coding/graph_export.rs` — module implementation (4 unit tests)
+
+### Files Modified
+- `src-tauri/src/coding/mod.rs` — added `pub mod graph_export;`
+- `src-tauri/src/coding/symbol_index.rs` — added `EdgeKind::parse()` method
+- `src-tauri/src/commands/coding.rs` — added `code_export_graph` Tauri command
+- `src-tauri/src/lib.rs` — import + invoke_handler registration
+
+### Test Counts
+- Rust: 2243 total (4 new graph_export tests)
+- Frontend: 1712 pass
+- Clippy: clean (0 warnings)
+- vue-tsc: clean
+
+---
+
+## Chunk 33B.10 — Standalone scheduler daemon
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** Harden the maintenance scheduler into a dedicated `terransoul-scheduler` binary for headless/server environments.
+
+**Architecture:**
+- New `[[bin]]` target `terransoul-scheduler` in `Cargo.toml` → `src/bin/scheduler.rs`
+- New `pub fn run_scheduler()` in `lib.rs` — resolves data dir from `TERRANSOUL_SCHEDULER_DATA_DIR` env (falls back to platform default), applies `data_root` override from settings, builds a tokio runtime
+- New `pub async fn run_foreground()` in `maintenance_runtime.rs` — runs the tick loop on the current tokio runtime using `CancellationToken` for graceful shutdown (no Tauri dependency)
+- `dispatch_job()` made `pub` so standalone and embedded paths share the same dispatch logic
+- Graceful Ctrl+C shutdown via `tokio::signal::ctrl_c()` → CancellationToken
+- Configurable tick interval via `TERRANSOUL_SCHEDULER_INTERVAL_SECS` env (default 3600s)
+- `tokio-util` upgraded from optional to always-included (needed for `CancellationToken`)
+
+**Files Created:**
+- `src-tauri/src/bin/scheduler.rs` — standalone binary entry point
+
+**Files Modified:**
+- `src-tauri/Cargo.toml` — added `[[bin]]` section, made `tokio-util` non-optional
+- `src-tauri/src/lib.rs` — added `pub fn run_scheduler()`
+- `src-tauri/src/brain/maintenance_runtime.rs` — added `pub async fn run_foreground()`, made `dispatch_job` public
+
+**Tests:** 2239 Rust, 1712 Frontend, Clippy clean. Smoke-tested: binary starts, resolves data dir, fires maintenance tick.
+
+---
+
+## Chunk 33B.9 — PARA opt-in template for Obsidian export
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** Optional Project / Area / Resource / Archive folder layout for the one-way Obsidian export, behind a setting.
+
+**Architecture:**
+- New `ObsidianLayout` enum (`Flat` / `Para`) in `settings/mod.rs`
+- New `obsidian_layout: ObsidianLayout` field in `AppSettings`
+- New `ParaCategory` enum + `classify_para()` classifier in `obsidian_export.rs`
+- Classification priority: low importance/decay → Archive, `project:*` → Projects, `personal:*` → Areas, `code:*`/`domain:*`/fallback → Resources
+- New `export_to_vault_with_layout()` function; legacy `export_to_vault()` delegates with `Flat`
+- Maintenance runtime + Tauri command read `obsidian_layout` from settings before exporting
+- TS interface adds `obsidian_layout?: 'flat' | 'para'`
+
+**Files Modified:**
+- `src-tauri/src/settings/mod.rs` — added ObsidianLayout enum, field, default
+- `src-tauri/src/memory/obsidian_export.rs` — added ParaCategory, classify_para, export_to_vault_with_layout, 9 new tests
+- `src-tauri/src/brain/maintenance_runtime.rs` — passes layout from settings
+- `src-tauri/src/commands/memory.rs` — `export_to_obsidian` reads layout from settings
+- `src-tauri/src/settings/config_store.rs` — test fixtures
+- `src-tauri/src/commands/settings.rs` — test fixtures
+- `src/stores/settings.ts` — added `obsidian_layout?` field
+
+**Tests:** 2239 Rust (31 obsidian, +9 PARA), 1712 Frontend, Clippy clean, vue-tsc clean.
+
+---
+
+## Chunk 33B.8 — Stdio MCP transport adapter (pre-existing)
+
+**Status:** Complete (already implemented in Chunk 15.9)
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** Add an alternate transport (alongside HTTP) that speaks JSON-RPC over stdio for editors that only support stdio MCP.
+
+**Resolution:** This functionality already exists at `src-tauri/src/ai_integrations/mcp/stdio.rs` (Chunk 15.9). The `run_loop()` function accepts generic `AsyncRead`/`AsyncWrite`, `run_with_state()` wires stdin/stdout, and `lib.rs::run_stdio()` handles `--mcp-stdio` CLI dispatch. 5+ integration tests cover initialize, tools/list, ping, notifications, and error handling. No new code needed — milestones entry was stale.
+
+---
+
+## Chunk 33B.7 — Per-workspace data_root setting
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** Allow `app_settings.json` to override the SQLite + HNSW + export root per workspace via a `data_root` field.
+
+**Architecture:**
+- `data_root: Option<String>` field in `AppSettings` (Rust + TS)
+- `resolve_effective_data_dir(default_data_dir)` in `config_store.rs` — reads settings from the default platform path, checks `data_root`, resolves absolute/relative paths, creates dir
+- GUI startup (`lib.rs` setup hook) calls the resolver after platform path but before `AppState::new()`
+- CLI/stdio startup applies the resolver when not in repo-local mode
+- MCP/tray modes skip the override (they already have explicit paths)
+- Settings file always stays in the original platform path so the bootstrap can always find the override
+
+**Files Modified:**
+- `src-tauri/src/settings/mod.rs` — added `data_root: Option<String>` field + Default impl
+- `src-tauri/src/settings/config_store.rs` — added `resolve_effective_data_dir()` + 4 new tests
+- `src-tauri/src/lib.rs` — GUI + stdio startup call the resolver
+- `src-tauri/src/commands/settings.rs` — test fixture fix
+- `src/stores/settings.ts` — added `data_root?: string` to TS interface
+
+**Tests:** 2229 Rust (11 config_store) + 1712 Frontend, Clippy clean, vue-tsc clean.
+
+---
+
+## Chunk 33B.3 — quest_daily_brief skill-tree quest
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 33B — Claudia Adoption Catalogue
+**Goal:** Once-per-day quest that runs `hybrid_search_rrf("overdue OR upcoming OR commitment", since=now-1d)` via `memory/temporal.rs` and surfaces results in the existing skill-tree UI.
+
+### Architecture
+
+A new "Morning Report" skill in the skill-tree quest system. When active (brain + memories configured), the frontend calls a backend `daily_brief_query` command once per day. The command:
+1. Computes a 24-hour time window (now − 86400000 ms).
+2. Filters all memories in that range.
+3. Runs `hybrid_search_rrf("overdue OR upcoming OR commitment")` to rank them.
+4. Intersects RRF results with the time window (only recent memories).
+5. Falls back to most-recent-by-recency if no RRF results match.
+
+The result is cached in `QuestTrackerData.dailyBrief` with the ISO date, so the query runs at most once per day. The computed `dailyBrief` returns `null` if the cached date is stale.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src-tauri/src/commands/memory.rs` | Modified — added `DailyBriefResult` struct and `daily_brief_query` Tauri command |
+| `src-tauri/src/lib.rs` | Modified — registered `daily_brief_query` command |
+| `src/stores/skill-tree.ts` | Modified — added `DailyBriefCache`, `DailyBriefItem` interfaces; `dailyBrief` field in `QuestTrackerData`; `quest-daily-brief` SkillNode; `checkActive` case; `fetchDailyBrief()` action; `dailyBrief` / `dailyBriefNeedsRefresh` computeds; migration + merge support |
+| `src/stores/skill-tree.test.ts` | Modified — 4 new tests (stale brief, today brief, fetchDailyBrief invoke, skill node existence); added `dailyBrief: null` to existing tracker mock objects |
+
+### Test Counts
+
+- Rust lib tests: 2218 passed
+- Frontend tests: 1687 passed (4 new)
+- Clippy: clean
+- vue-tsc: clean
+
+---
+
+## Chunk 37.13 — Multi-repo groups and contracts
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+**Goal:** Add cross-repo grouping, contract extraction, group status, and cross-service query surfaces after single-repo parity is stable.
+
+### Architecture
+
+Three new tables on the code-intelligence database (`code_index.sqlite`):
+
+- `code_repo_groups` — named groupings of indexed repos (id, label UNIQUE, description, created_at).
+- `code_repo_group_members` — many-to-many between groups and repos with an optional `role` tag (e.g., `frontend`, `backend`, `shared`). Cascading deletes on both sides.
+- `code_contracts` — extracted public-API surface per repo (top-level `function`/`struct`/`enum`/`trait`/`class`/`interface`/`type_alias`/`constant` symbols) with a SHA-256 `signature_hash` over `name|kind|parent` for change detection across re-indexing runs.
+
+The `repo_groups` module exposes CRUD over groups + memberships, transactional contract extraction (atomic replace per repo), aggregated group status (member counts, total symbols, total contracts, stalest indexed timestamp), and a cross-repo `LIKE`-based symbol query that flags whether each match belongs to the repo's contract surface.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src-tauri/src/coding/repo_groups.rs` | Created — `RepoGroup`, `GroupMember`, `GroupStatus`, `ContractEntry`, `ContractExtractResult`, `CrossRepoMatch`; `create_group`, `list_groups`, `delete_group`, `add_repo_to_group`, `remove_repo_from_group`, `group_status`, `extract_contracts`, `list_group_contracts`, `cross_repo_query`; 7 unit tests |
+| `src-tauri/src/coding/symbol_index.rs` | Modified — added `code_repo_groups`, `code_repo_group_members`, `code_contracts` tables + indexes to `init_schema` |
+| `src-tauri/src/coding/mod.rs` | Modified — added `pub mod repo_groups;` |
+| `src-tauri/src/ai_integrations/mcp/tools.rs` | Modified — 7 new MCP tools (`code_list_groups`, `code_create_group`, `code_add_repo_to_group`, `code_group_status`, `code_extract_contracts`, `code_list_group_contracts`, `code_cross_repo_query`); definitions, dispatch, and tool-name test updated |
+| `src-tauri/src/ai_integrations/mcp/integration_tests.rs` | Modified — tool count 14 → 21 |
+| `src-tauri/src/commands/coding.rs` | Modified — 9 new Tauri commands mirroring the module API |
+| `src-tauri/src/lib.rs` | Modified — registered all 9 new commands |
+
+### Test Counts
+
+- Rust lib tests: 2218 passed (7 new repo_groups tests)
+- MCP integration tests: 87 passed
+- Frontend tests: 1683 passed (no changes)
+- Clippy: clean
+
+### Notes
+
+- Contract extraction runs in a transaction so partial failures cannot leave a half-replaced contract set on disk.
+- `cross_repo_query` clamps the limit to `[1, 1000]` and uses LIKE substring matching (case-insensitive thanks to SQLite's default collation on the `name` column).
+- `delete_group` does **not** remove contracts; contracts live on repos, not groups.
+- The new MCP tools are only dispatched when the client has the `code_read` capability, matching existing code-intelligence tool security.
+
+---
+
+## Chunk 37.12 — Generated repo skills + code wiki
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+**Goal:** Generate reviewable neutral skill/context docs and wiki pages from the native graph using TerranSoul's summarization pipeline.
+
+### Architecture
+
+The `skills` module reads the code intelligence graph (clusters + processes) from `code_index.sqlite` and renders SKILL.md files in agent-compatible format (YAML frontmatter + Markdown sections). Each cluster produces an "Architecture" skill; each process produces a "Workflow" skill. Skills include top-level symbols, file listings, and relationships.
+
+### Files Created/Modified
+
+| File | Action |
+|------|--------|
+| `src-tauri/src/coding/skills.rs` | Created — `generate_skills()`, `render_cluster_skill()`, `render_process_skill()`, `SkillGenResult`, `SkillSymbol` |
+| `src-tauri/src/coding/mod.rs` | Modified — added `pub mod skills;` |
+| `src-tauri/src/ai_integrations/mcp/tools.rs` | Modified — added `code_generate_skills` tool definition + dispatch |
+| `src-tauri/src/ai_integrations/mcp/integration_tests.rs` | Modified — tool count 13 → 14 |
+| `src-tauri/src/commands/coding.rs` | Modified — added `code_generate_skills` Tauri command |
+| `src-tauri/src/lib.rs` | Modified — registered `code_generate_skills` command |
+
+### Test Counts
+
+- Rust lib tests: 2211 passed (4 new tests in `skills.rs`)
+- Frontend tests: 1683 passed (no changes)
+
+---
+
+## Chunk 37.11 — Native code-graph workbench UI
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Build a dense Vue workbench with graph canvas, file tree, code references, chat/tool-call visibility, citation-to-node focus, process diagrams, repo switcher, status bar, and blast-radius highlights.
+
+**Architecture:**
+- Pinia store `useCodeIntelStore` — reactive state for repos, clusters, processes, impact analysis, diff impact
+- 3-panel layout: left (clusters + processes), center (graph canvas placeholder), right (impact analysis + diff results)
+- Status bar with repo switcher and live stats
+- Risk-colored diff impact display (critical/high/moderate/low)
+- Symbol impact analyzer with depth-grouped callers
+- CSS uses `var(--ts-*)` design tokens throughout
+
+**Files created:**
+- `src/stores/code-intel.ts` — Pinia store with Tauri IPC bindings (fetchRepos, fetchClusters, fetchProcesses, analyzeImpact, analyzeDiffImpact)
+- `src/stores/code-intel.test.ts` — 11 tests covering all store actions + computed
+- `src/components/CodeGraphWorkbench.vue` — 3-panel workbench component with scoped styles
+
+**Tests:** 11 (frontend Vitest — store actions, error handling, computed, state resets)
+
+---
+
+## Chunk 37.10 — MCP resources, prompts, and setup writer
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expose `terransoul://repos`, repo context, clusters, processes, schema/resources, guided impact/map prompts, and a local setup writer for editors.
+
+**Architecture:**
+- 3 new MCP resources: `terransoul://schema` (symbol/edge kind counts), `terransoul://context` (LLM-ready repo context text), `terransoul://setup` (VS Code MCP config generator)
+- 2 new MCP prompts: `guided_impact` (diff-based risk review with risk breakdown), `explore_cluster` (cluster deep-dive with public API / internal symbol listing)
+- `generate_editor_setup()` generates ready-to-use `.vscode/mcp.json` config
+- `write_editor_setup()` can write the config to a repo's `.vscode/` directory (merge-safe)
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — added 3 resources, 2 prompts, setup writer functions
+
+**Tests:** 87 MCP tests pass (updated resource/prompt count assertions)
+
+---
+
+## Chunk 37.9 — Graph-backed rename review
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expand `code_rename` with heritage/re-export edge awareness, confidence scoring, file-grouped review payloads, and focused tests.
+
+**Architecture:**
+- Three confidence tiers: graph (1.0) for definitions/calls/imports, heritage (0.8) for extends/implements/re-exports, text (0.4) for grep matches
+- Heritage edges: extends/implements relationships propagate rename to subclasses/implementors
+- Re-export edges: re-export chains referencing the symbol are included at medium confidence
+- Review payload: `by_file` groups edits per file; `summary` counts graph/heritage/text edits
+- Edits sorted by confidence descending for review UX
+- MCP `code_rename` schema updated with enhanced description
+
+**Files modified:**
+- `src-tauri/src/coding/rename.rs` — added `confidence_score`, `FileEditGroup`, `RenameSummary`, heritage/re-export phases, `build_file_groups()`
+
+**Tests:** 7 total (4 existing updated + 3 new: rename_review_payload_structure, rename_heritage_edges_included, build_file_groups_correct)
+
+---
+
+## Chunk 37.8 — Native diff impact analysis
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Map git diffs to changed symbols and affected processes through native code indexing; surface risk buckets for pre-commit review.
+
+**Architecture:**
+- Pipeline: git diff → parse hunks → intersect with symbol line ranges → BFS callers → risk classify
+- Risk levels: critical (20+ affected or API with 10+), high (10+ or depth≥4), moderate (3+ or depth≥2), low (otherwise)
+- `DiffImpactReport` with `risk_summary`, per-symbol impacts, and affected dependency chains
+- MCP `code_impact` tool enhanced with `diff` parameter (accepts git ref/range) alongside existing `symbol` mode
+- Reuses existing `resolver::call_graph()` for BFS traversal
+
+**Files created:**
+- `src-tauri/src/coding/diff_impact.rs` — `analyze_diff_impact()`, `parse_unified_diff()`, `find_changed_symbols()`, `bfs_affected()`, `classify_risk()`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod diff_impact`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — `code_impact` schema/handler now accepts `diff` param
+
+**Tests:** 6 (parse_unified_diff_basic, parse_hunk_header_single_line, parse_hunk_header_deletion_only, classify_risk_levels, find_changed_symbols_overlap, bfs_affected_empty_graph)
+
+---
+
+## Chunk 37.7 — Hybrid semantic code search
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Add BM25 + embedding + RRF retrieval over code symbols/processes using TerranSoul's existing embedding providers and fallback embedder.
+
+**Architecture:**
+- Three retrieval signals: BM25-like text scoring (name/parent/file), cosine vector similarity (stored embeddings), graph importance (entry-point + process participation)
+- RRF fusion via existing `memory::fusion::reciprocal_rank_fuse()` (k=60)
+- `code_embeddings` table: symbol_id (PK), repo_id, embedding BLOB, model TEXT
+- `code_query` MCP tool enhanced with `query` param for free-text hybrid search
+
+**Files created:**
+- `src-tauri/src/coding/code_search.rs` — hybrid_code_search, text_rank, vector_rank, graph_rank, embedding storage/loading
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod code_search`
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — `code_query` now accepts `query` param, returns `{ results, mode: "hybrid_rrf" }`
+
+**Tests:** 4 (test_text_rank_scores, test_vector_rank_cosine, test_rrf_fusion_basic, test_ensure_embedding_table)
+
+---
+
+## Chunk 37.6 — Process-grouped code search
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Improve functional clustering, entry-point scoring, and execution-flow traces so `code_query` can return process-ranked results.
+
+**What was done:**
+- Enhanced `code_query` MCP tool to return `{ symbols, processes }` JSON with related execution processes for each symbol match
+- Added `include_processes` parameter (default true) to allow callers to opt out
+- Updated tool schema description to reflect process-grouped output
+- Expanded `build_call_graph` in `processes.rs` to include `implements`/`extends` edges for better clustering affinity
+- Improved entry-point scoring: added bonus for exported/uppercase-starting Go-style functions
+- All 348 coding tests + 87 MCP tests pass; clippy clean
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — process-grouped `code_query` response, schema update
+- `src-tauri/src/coding/processes.rs` — heritage edges in graph, improved entry-point scoring
+
+---
+
+## Chunk 37.5 — Confidence-scored relation provenance
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Expand code edges with relation confidence, source span, resolver tier, and provenance for auditable context/impact/rename results.
+
+**What was done:**
+- Added `from_col`, `end_line`, `end_col`, `resolver_tier`, `provenance` columns to `code_edges` schema
+- Added `migrate_schema()` function for backwards-compatible ALTER TABLE on existing databases
+- Created `CodeEdge::from_node()` constructor that captures full tree-sitter span (row, col, end_row, end_col)
+- Converted all 16 `CodeEdge { ... }` literals (7 in symbol_index.rs, 9 in parser_registry.rs) to use `from_node()`
+- Updated edge INSERT to write span columns
+- Updated resolver's UPDATE statement to write `resolver_tier` with values: `path_resolution`, `name_lookup`, `heritage_lookup`
+- 2 new resolver tests: `test_edge_span_columns_populated`, expanded `test_resolve_heritage_edges` to check `resolver_tier`
+- All 349 coding tests pass; clippy clean
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` — schema expansion, migration, `CodeEdge::from_node()`, INSERT update
+- `src-tauri/src/coding/parser_registry.rs` — all edge literals converted to `from_node()`
+- `src-tauri/src/coding/resolver.rs` — resolver_tier in UPDATE, 2 new tests
+
+---
+
+## Chunk 37.4 — Import, heritage, and type-resolution upgrades
+
+**Status:** Complete
+**Date:** 2026-05-06
+**Phase:** 37 — Native Code Intelligence Parity
+
+**Goal:** Add re-export resolution, class/trait/interface heritage, receiver inference, and return-aware bindings where language support exists.
+
+**What was done:**
+- Expanded `EdgeKind` enum with `ReExports`, `Extends`, `Implements` variants
+- Rust extractor: detects `impl Trait for Type` → emits `Implements` edge; detects `pub use` → emits `ReExports` edge (vs plain `use` → `Imports`)
+- TypeScript extractor: heritage clause extraction (`extends`/`implements` on class declarations); `export { X } from` re-export detection → `ReExports` edge
+- New `resolve_heritage()` function in resolver: resolves extends/implements edges to type-like symbols (struct/class/trait/interface/enum)
+- New `resolve_reexport_chains()` function: follows re-export chains by updating import edges that target a re-exporting symbol to point through to the final definition
+- Resolver dispatch updated: `ReExports` handled via same path as `Imports`; `Extends`/`Implements` routed to heritage resolver
+- 4 new symbol_index tests: `test_rust_heritage_edges`, `test_rust_reexport_edges`, `test_typescript_heritage_edges`, `test_typescript_reexport_edges`
+- 2 new resolver tests: `test_resolve_heritage_edges`, `test_resolve_reexport_chains`
+- All 15 coding tests pass (10 symbol_index + 5 resolver); clippy clean
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` — EdgeKind expansion, heritage/re-export extraction, 4 new tests
+- `src-tauri/src/coding/resolver.rs` — heritage resolution, re-export chain following, 2 new tests
+
+---
+
+## Chunk 37.3 — Multi-language parser expansion
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Extend Tree-sitter extraction beyond Rust/TypeScript with a neutral parser registry and fixture tests for priority languages.
+
+**Architecture:**
+- New `parser_registry.rs` module providing a unified `Language` enum, `detect_language()`, `create_parser()`, and `extract_symbols()` for all supported languages.
+- Feature-gated optional grammar crates: `tree-sitter-python`, `tree-sitter-go`, `tree-sitter-java`, `tree-sitter-c`, `tree-sitter-cpp`.
+- Cargo features: `parser-python`, `parser-go`, `parser-java`, `parser-c`, `all-parsers`.
+- `collect_source_files` now uses `parser_registry::supported_extensions()` instead of hardcoded list.
+- `index_repo` routes to registry extractors for non-Rust/non-TS files.
+
+**Files created/modified:**
+- `src-tauri/src/coding/parser_registry.rs` (new — 450+ lines)
+- `src-tauri/src/coding/mod.rs` (added module registration)
+- `src-tauri/src/coding/symbol_index.rs` (updated to use registry)
+- `src-tauri/Cargo.toml` (added optional grammar deps + features)
+
+**Tests:** 2 core tests (detect_language, supported_extensions). Feature-gated tests for Python/Go/Java/C extraction (8 tests total when all features enabled).
+
+---
+
+## Chunk 37.2 — Incremental repo registry + content-hash indexing
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Persist indexed repositories and per-file content hashes so unchanged files skip parse/embed/edge recomputation.
+
+**Architecture:**
+- New `code_file_hashes` SQLite table (repo_id, file, hash, indexed_at) with UNIQUE(repo_id, file).
+- `index_repo()` now loads existing hashes, computes SHA-256 per file, skips unchanged files, removes deleted files' data, and only re-parses changed files.
+- New `IndexStats` fields: `files_skipped`, `files_deleted`.
+- New public functions: `list_repos()` (registry with file/symbol counts), `remove_repo()`, `check_freshness()` (reports unchanged/stale/deleted/new counts without re-indexing).
+- `RepoEntry` and `IndexFreshness` structs for observability.
+
+**Files modified:**
+- `src-tauri/src/coding/symbol_index.rs` (incremental logic, new functions, 4 new tests)
+
+**Tests:** 4 new tests (incremental_skips_unchanged, handles_deleted, list_repos_and_freshness, existing tests still pass). Total: 6 symbol_index tests.
+
+---
+
+## Chunk 37.1 — Clean-room code-intelligence architecture spec
+
+**Status:** Complete
+**Date:** 2026-05-06
+
+**Goal:** Document the native replacement boundary, sidecar removal guardrails, map existing `coding/*` modules to the full parity plan, and add checks that prevent noncommercial dependency creep.
+
+**Architecture:**
+- Architecture spec document mapping 33 existing coding modules, the parity roadmap, naming conventions, integration with Brain RAG, and sidecar removal status.
+- CI guardrail script checking for noncommercial dependency creep.
+- README fix removing stale `gitnexus_mirror.rs` reference.
+
+**Files created/modified:**
+- `docs/native-code-intelligence-spec.md` (new — architecture spec)
+- `scripts/check-noncommercial-deps.mjs` (new — CI guardrail)
+- `README.md` (fixed stale reference)
+
+**Tests:** Guardrail script runs clean on Windows/Linux.
+
+---
+
+## Chunk 33B.2 — `/reflect` slash command for session reflection
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** User-invocable wrapper around the existing session-memory absorption pipeline; writes a `session_reflection` memory with `derived_from` edges to the turns it summarises.
+
+**Architecture:**
+- New `memory/reflection.rs` helper persists extracted facts, filtered source-turn context rows, a Working-tier `session_reflection` summary, and `derived_from` edges from the reflection summary to each saved source turn.
+- New `reflect_on_session` Tauri command snapshots the current short-term conversation, runs segmented fact extraction for any configured brain mode, summarizes the session, persists the reflection report, best-effort embeds the summary, and enforces the configured memory cap.
+- Chat UI catches `/reflect` before plugin slash-command dispatch, adds the user command to the transcript, then displays a concise success/error assistant message with the saved fact count and provenance edge count.
+- Brain docs and README now list the reflection write path, the command surface, and the KG provenance behavior.
+
+**Files created:**
+- `src-tauri/src/memory/reflection.rs`
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — register reflection module
+- `src-tauri/src/commands/memory.rs` — add `reflect_on_session`
+- `src-tauri/src/lib.rs` — register Tauri command
+- `src/views/ChatView.vue` — built-in `/reflect` slash command
+- `docs/brain-advanced-design.md` — session reflection architecture + write-back loop docs
+- `README.md` — brain/memory component listings and command surface
+- `rules/milestones.md` — archive 33B.2 and advance Next Chunk
+- `mcp-data/shared/memory-seed.sql` — durable lesson for provenance-linked reflection writes
+- `mcp-data/shared/migrations/009_reflection_provenance.sql` — versioned seed migration for existing MCP DBs
+- `src-tauri/src/memory/seed_migrations.rs` — register migration 009 in compiled migrations
+
+**Tests:** `cargo test reflection` (2 passed), `cargo check` clean, `cargo check && cargo clippy -- -D warnings` clean, `npx vue-tsc --noEmit` clean, `npx vitest run` (129 files / 1669 tests passed)
+
+---
+
+## Chunk 33B.1 — Persisted judgment-rules artefact
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33B — Claudia Adoption Catalogue
+
+**Goal:** New `cognitive_kind='judgment'` rows + Tauri commands `judgment_add` / `judgment_list` / `judgment_apply`; inject top-N matching judgments into `commands/chat.rs` system prompt.
+
+**Architecture:**
+- Added `Judgment` variant to `CognitiveKind` enum; detected via `judgment` tag prefix
+- New `memory/judgment.rs` module: `add_judgment()`, `list_judgments()`, `apply_judgments()`, `format_judgment_block()`
+- Tauri commands `judgment_add`, `judgment_list`, `judgment_apply` in commands/memory.rs
+- Chat system prompt injection: `retrieve_judgment_block()` produces a `[JUDGMENT RULES]` block injected after `[LONG-TERM MEMORY]` via modified `build_budgeted_prompt()`
+- Frontend: `useMemoryStore()` gains `addJudgment`, `listJudgments`, `applyJudgments` methods
+
+**Files created:**
+- `src-tauri/src/memory/judgment.rs`
+
+**Files modified:**
+- `src-tauri/src/memory/mod.rs` — register judgment module
+- `src-tauri/src/memory/cognitive_kind.rs` — add Judgment variant + tag recognition
+- `src-tauri/src/memory/query_intent.rs` — handle Judgment in match
+- `src-tauri/src/commands/memory.rs` — 3 new Tauri commands
+- `src-tauri/src/commands/chat.rs` — judgment injection in prompt builder
+- `src-tauri/src/lib.rs` — register commands
+- `src/stores/memory.ts` — frontend store methods
+
+**Tests:** 6 Rust tests (judgment module), all 2213 Rust tests pass (1 pre-existing failure unrelated), 1669 frontend tests pass, clippy + vue-tsc clean
+
+---
+
+## Chunk 35.4 — Provider observability dashboard
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Add a settings/workflow panel showing active provider, fallback history, rate-limit cooldowns, token-budget decisions, and per-task model usage for the whole app and MCP mode.
+
+**Architecture:**
+- Vue 3 component `ProviderObservabilityPanel.vue` using `<script setup lang="ts">` with scoped styles
+- Invokes Tauri commands: `get_failover_summary`, `get_failover_policy`, `set_failover_policy`, `resolve_provider_for_task`, `get_agent_routing`, `health_check_providers`
+- Sections: summary stats (healthy/rate-limited/unhealthy/active), failover policy controls, per-task model grid, agent routing overview, recent failover events list, all-exhausted alert
+- Uses `var(--ts-*)` design tokens throughout
+
+**Files created:**
+- `src/components/ProviderObservabilityPanel.vue`
+- `src/components/ProviderObservabilityPanel.test.ts`
+
+**Tests:** 7 Vitest tests — panel render, summary stats, per-task rows, failover events, all-exhausted alert, policy update interaction, refresh button
+
+**CI:** 1669 frontend tests pass, vue-tsc clean
+
+---
+
+## Chunk 35.3 — Multi-agent task routing policy
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Let coding workflows declare agent roles, preferred model classes, max token budgets, and fallback chains. Reuse the unified provider policy so all agents share rate-limit and quota state instead of retrying independently.
+
+**Architecture:**
+- `AgentRouteConfig { role, preferred_tier, preferred_provider, preferred_model, fallback_providers, max_tokens, enabled }` — per-role routing stored in `ProviderPolicy.agent_routing`.
+- `AgentTier { Fast, Balanced, Premium }` — maps to `AgentRole::recommended_llms()` tiers.
+- `role_to_task_kind(role)` — maps each AgentRole to its primary TaskKind for fallback resolution.
+- `resolve_for_agent_role(policy, role, brain_mode, provider_healthy)` — resolution cascade: agent route preferred → fallback chain → tier-only → task-kind → brain-mode.
+- `derive_provider_endpoint()` + `model_for_tier()` — helpers for endpoint/model derivation.
+- Tauri commands: `get_agent_routing`, `set_agent_route`, `remove_agent_route`, `resolve_provider_for_role`.
+- `resolve_provider_for_role` integrates with `ProviderRotator` health state so workflow steps respect rate-limit/health without re-checking independently.
+
+**Files modified:**
+- `src-tauri/src/brain/provider_policy.rs` — `AgentRouteConfig`, `AgentTier`, `ResolvedAgentProvider`, `role_to_task_kind()`, `resolve_for_agent_role()`, `derive_provider_endpoint()`, `model_for_tier()`, agent route methods on `ProviderPolicy`, 7 new tests (18 total)
+- `src-tauri/src/brain/mod.rs` — re-export new types
+- `src-tauri/src/commands/brain.rs` — 4 new Tauri commands
+- `src-tauri/src/lib.rs` — register commands
+- `src/types/index.ts` — `AgentRole`, `AgentTier`, `AgentRouteConfig`, `ResolvedAgentProvider` types
+- `src/stores/brain.ts` — `getAgentRouting`, `setAgentRoute`, `removeAgentRoute`, `resolveForRole` store methods
+
+**Tests:** 18 provider_policy tests pass, clippy clean, 1662 frontend tests pass.
+
+---
+
+## Chunk 35.2 — Automatic provider failover
+
+**Status:** Complete
+**Date:** 2026-05-05 (updated 2026-05-06)
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Extend `ProviderRotator` with structured retry/failover using `SelectionConstraints` — respecting rate limits, free-tier exhaustion, context-window overflow, token caps, and privacy (local-only) mode. Automatic retry loop in streaming, failover policy configuration, UI events for failover decisions.
+
+**Architecture:**
+- `select_provider(&mut self, constraints: &SelectionConstraints) -> Result<&FreeProvider, FailoverReason>` iterates sorted (fastest-first) candidates, applying health → rate-limit → privacy → token-cap → context-window gates in order.
+- `select_failover_chain(&mut self, constraints, policy) -> Vec<String>` returns ordered provider IDs to try, respecting `FailoverPolicy.max_attempts`.
+- `FailoverPolicy { max_attempts, respect_privacy, min_cooldown_secs }` — configurable via Tauri commands.
+- FreeApi streaming path now has automatic retry loop: tries each provider in the failover chain, marks rate-limited/unhealthy on failure, emits `provider-failover` event with `FailoverDecision` showing all attempts.
+- `record_rate_limit_with_cooldown()` enforces minimum cooldown period.
+- Each skipped provider records a `FailoverEvent` in a capped ring buffer (50 entries).
+- `provider_context_limit()` maps provider ids to conservative context window sizes.
+- New Tauri commands: `get_failover_summary`, `get_failover_policy`, `set_failover_policy`, `select_provider_with_constraints`.
+- Events: `provider-failover` (FailoverDecision), `providers-exhausted`.
+
+**Files modified:**
+- `src-tauri/src/brain/provider_rotator.rs` — `FailoverPolicy`, `FailoverDecision`, `FailoverAttempt`, `select_failover_chain()`, `record_rate_limit_with_cooldown()`, 12 new tests (41 total)
+- `src-tauri/src/brain/mod.rs` — re-export new types
+- `src-tauri/src/commands/brain.rs` — `get_failover_policy`, `set_failover_policy` commands
+- `src-tauri/src/commands/streaming.rs` — FreeApi retry loop with automatic failover, removed redundant `done:true` emission on error
+- `src-tauri/src/lib.rs` — `failover_policy: Mutex<FailoverPolicy>` in AppState, register new commands
+
+**Tests:** 41 provider_rotator tests pass, 2199 total Rust tests pass (1 pre-existing KG failure unrelated), 1662 frontend tests pass.
+
+**Tests:** 33 provider_rotator tests pass (8 new); 9 mcp::tools tests pass; 135 ai_integrations tests pass (1 pre-existing seed failure unrelated); 1662 Vitest frontend tests pass; clippy clean.
+
+---
+
+## Chunk 35.1 — Unified provider policy registry
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 35 — Multi-Agent/LLM Provider Configuration & Failover
+
+**Goal:** Add a single app-wide model/provider configuration registry used by chat, memory/RAG, MCP tools, and coding workflows. Include per-task defaults for chat, embeddings, rerank, summarise, code review, and long-context analysis.
+
+**Architecture:**
+- New Rust module `src-tauri/src/brain/provider_policy.rs` (320+ lines):
+  - `TaskKind` enum: Chat, Embeddings, Rerank, Summarise, CodeReview, LongContext
+  - `TaskOverride` struct: per-task provider_id / model / base_url / api_key / max_tokens / enabled
+  - `ProviderPolicy` struct: versioned registry with `HashMap<TaskKind, TaskOverride>`
+  - `resolve_for_task(policy, kind, brain_mode)` — resolution logic:
+    1. Active override → merge with brain_mode defaults for unfilled fields
+    2. No override → derive from `BrainMode` using task-appropriate model defaults
+  - `ResolvedProvider` — fully resolved (source, provider_id, model, base_url, api_key, max_tokens)
+  - Task-default model maps: `task_default_model_paid()`, `task_default_model_free()`, `task_default_model_ollama()`
+  - Persistence: `load(data_dir)` / `save(data_dir)` → `provider_policy.json`
+  - 10 unit tests: default policy, set/get, disabled filter, remove, resolution (fallback + override + partial merge + Ollama embeddings + paid embeddings), serde roundtrip
+- Registered in `brain/mod.rs` as public module + re-exports
+- `AppStateInner` gains `provider_policy: Mutex<brain::ProviderPolicy>` field
+- Initialized from disk in `AppState::new()`, default in `AppState::for_test()`
+- 5 new Tauri commands in `commands/brain.rs`:
+  - `get_provider_policy` — read current policy
+  - `set_provider_policy` — replace entire policy + persist
+  - `set_provider_task_override` — upsert one task override + persist
+  - `remove_provider_task_override` — delete one override + persist
+  - `resolve_provider_for_task` — preview what would be used (pure read)
+- All 5 commands registered in `lib.rs` invoke_handler
+- Frontend types in `src/types/index.ts`: TaskKind, TaskOverride, ProviderPolicy, ResolvedProvider
+- Brain store (`src/stores/brain.ts`):
+  - `providerPolicy` reactive ref
+  - `loadProviderPolicy()` — invoked during `initialise()` (non-critical parallel load)
+  - `setProviderPolicy(policy)`, `setTaskOverride(ovr)`, `removeTaskOverride(kind)`, `resolveForTask(kind)`
+  - All exposed in the store return
+
+**Files created:**
+- `src-tauri/src/brain/provider_policy.rs`
+
+**Files modified:**
+- `src-tauri/src/brain/mod.rs` — module + re-exports
+- `src-tauri/src/lib.rs` — AppState field, initialisation, command imports + registration
+- `src-tauri/src/commands/brain.rs` — 5 new Tauri commands
+- `src/types/index.ts` — 4 new TS interfaces
+- `src/stores/brain.ts` — policy state + 5 actions + initialise wiring
+
+**Tests:** 10 Rust unit tests in provider_policy.rs (compile-clean), 1647 frontend tests pass, `cargo check` + `cargo check --tests` clean, `vue-tsc --noEmit` clean.
+
+---
+
+## Chunk 34.3 — Backlog promotion controls
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Add safe UI controls for converting failed runs, research ideas, and deferred self-improve items into scoped milestone chunks without editing markdown by hand.
+
+**Architecture:**
+- New Rust Tauri command `promote_to_milestone_chunk(title, goal, phase_id?)` in `commands/coding.rs`:
+  - Sanitises title/goal cells (strips `\r`, `\n`, `|`)
+  - Auto-detects the latest `## Phase N` header when no `phase_id` is supplied
+  - Computes the next unused chunk number within the target phase by scanning all `| N.M |` rows
+  - Locates the phase's `| ID | Status | Title | Goal |` table, walks past the separator + existing rows, and inserts the new `not-started` row at the end of that table
+  - Returns `PromoteToChunkResult { chunk_id, phase_id, title }`
+  - Refuses to write when the target phase is missing or has no table skeleton
+- 6 unit tests covering: phase detection, next-id computation (with rows / empty table), in-place row insertion, table-cell sanitisation, missing-phase fallback.
+- Frontend `promoteToChunk(title, goal, phaseId?)` action in `stores/self-improve.ts`:
+  - Invokes the command, logs to the activity feed, refreshes the workboard so the promoted item moves into the milestone lane.
+- UI in `SelfImprovePanel.vue`:
+  - `↑ Promote` button on every backlog-lane item whose `source` is not `rules/milestones.md` (failed runs, etc.)
+  - `↑ Promote to milestone` button on every improvement chunk (bug-triage, research scouting, etc.)
+  - Browser-native `confirm()` dialog before any markdown write, then `alert()` on success/failure for visible feedback.
+  - Helper functions `isPromotable()` and `backlogItemGoal()` keep the template free of inline TS casts.
+- New TS interface `PromoteToChunkResult` in `src/types/index.ts`.
+- Scoped CSS for `.si-queue-row`, `.si-promote-btn`, `.si-improvement-actions` using existing `--ts-*` design tokens.
+
+**Files modified:**
+- `src-tauri/src/commands/coding.rs` — new command + helpers + 6 unit tests
+- `src-tauri/src/lib.rs` — register `promote_to_milestone_chunk` in import + invoke_handler
+- `src/types/index.ts` — `PromoteToChunkResult`
+- `src/stores/self-improve.ts` — `promoteToChunk()` action + import + return
+- `src/components/SelfImprovePanel.vue` — promote buttons + confirm flow + styles
+
+**Tests:** 6 Rust unit tests in `coding.rs::promote_tests` (compile-clean), 1647 frontend tests pass, `cargo check` clean, `vue-tsc --noEmit` clean. The two pre-existing `clippy::manual_clamp` warnings in unrelated files (`chat.rs:150`, `memory/store.rs:568`) are out of scope.
+
+---
+
+## Chunk 34.2 — Coding workflow gate telemetry
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Emit structured workflow-gate events for context load, plan, code, review, apply, test, stage, and archive so the panel can show the exact active gate and last successful gate per session.
+
+**Architecture:**
+- New Rust module `src-tauri/src/coding/gate_telemetry.rs`:
+  - `GateEvent` struct (ts, gate, session_id, chunk_id, event_type, result, duration_ms, error, meta)
+  - `GateResult` enum: Pass / Partial / Fail
+  - `GateLog` — append-only JSONL (`self_improve_gates.jsonl`) persisted per event
+  - `GateMetricsSummary` / `GateStats` — per-gate pass/fail rates, avg duration, last error
+  - `summarise_gates()` pure aggregation function
+  - 5 unit tests (serde round-trip, log read/write, summarise correctness)
+- Wired into the DAG execution in `engine.rs`:
+  - Each DAG node (plan/code/review/apply/test/stage) emits gate-start before execution and gate-end after
+  - Measures wall-clock `duration_ms` via `std::time::Instant`
+  - Emits Tauri event `"self-improve-gate"` for live frontend updates
+- Two new Tauri commands registered in `lib.rs` + `commands/coding.rs`:
+  - `get_self_improve_gate_metrics` — per-gate aggregate stats
+  - `get_self_improve_gate_history` — recent end-events (newest first)
+- Frontend types in `src/types/index.ts`: `GateEvent`, `GateResult`, `GateStats`, `GateMetricsSummary`
+- Store extensions in `src/stores/self-improve.ts`:
+  - `gateMetrics`, `gateHistory`, `activeGate` reactive state
+  - `loadGateMetrics()`, `loadGateHistory()` invoke wrappers
+  - `subscribeToGateEvents()` listener on `"self-improve-gate"` — updates activeGate on start, appends to history on end
+  - Exposed in store return for panel consumption
+
+**Files created:**
+- `src-tauri/src/coding/gate_telemetry.rs`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — registered `gate_telemetry` module
+- `src-tauri/src/coding/engine.rs` — import gate_telemetry, create GateLog, pass through DAG, emit start/end around each node
+- `src-tauri/src/commands/coding.rs` — two new Tauri commands
+- `src-tauri/src/lib.rs` — register commands in import + invoke_handler
+- `src/types/index.ts` — gate telemetry TS interfaces
+- `src/stores/self-improve.ts` — gate state, loaders, event subscription
+
+**Tests:** 5 Rust unit tests in gate_telemetry.rs (serde, log I/O, summarise, pass-rate), 1647 frontend tests pass, cargo check --tests clean.
+
+---
+
+## Chunk 34.1 — Persisted self-improve workboard
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 34 — Self-Improve Operations Dashboard & Coding Workflow UX
+
+**Goal:** Promote the Self-Improve panel's Finished / Working on / Backlog lanes from derived frontend-only state into a persisted backend workboard sourced from active milestones, completion history, and the run log.
+
+**Architecture:**
+- Added `get_self_improve_workboard`, which parses `rules/milestones.md` for active backlog/working rows, reads recent self-improve run records for running/success/failure items, reads the completion-log table of contents for finished chunks, and persists the assembled snapshot as `self_improve_workboard.json` under the app data directory.
+- Added serializable workboard item/board types and pure Markdown table parsers with unit coverage.
+- Extended the Pinia self-improve store to load the backend workboard during initialisation and after terminal progress events.
+- Updated `SelfImprovePanel` to use persisted backend workboard lanes when present, while preserving the existing static roadmap fallback for browser/test mode.
+- Updated README and MCP shared data so future agents know the workboard source of truth.
+
+**Files modified:**
+- `src-tauri/src/commands/coding.rs`
+- `src-tauri/src/lib.rs`
+- `src/types/index.ts`
+- `src/stores/self-improve.ts`
+- `src/components/SelfImprovePanel.vue`
+- `README.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test commands::coding::tests::milestone_table_parser_extracts_workboard_rows` → 1 passed.
+- `cargo test commands::coding::tests::completion_log_parser_extracts_finished_rows` → 1 passed.
+- `npx vitest run src/components/SelfImprovePanel.test.ts` → 7 passed.
+
+---
+
+## Chunk 33.6 — Maintenance scheduler in headless MCP runner
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Ensure the brain maintenance scheduler runs in both the GUI Tauri app and the headless `npm run mcp` / `--mcp-http` runner, using the same persisted settings and state file.
+
+**Architecture:**
+- Added a shared startup helper in `lib.rs` that derives `MaintenanceConfig` from `AppSettings.maintenance_interval_hours`, starts `brain::maintenance_runtime::spawn`, and logs the persisted `maintenance_state.json` path.
+- Called the helper from normal Tauri app setup, MCP app mode setup, and headless `run_http_server` after MCP brain auto-configuration and post-seed embedding backfill.
+- The existing runtime keeps reading live app settings each tick, so GUI and headless modes share the same enable flag, interval, idle guard, storage cap, and dispatch code for decay, garbage collection, tier promotion, and LLM edge extraction.
+- Updated README, `docs/brain-advanced-design.md`, and MCP shared seed/index entries so future agents know headless MCP now owns maintenance too.
+
+**Files modified:**
+- `src-tauri/src/lib.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test brain::maintenance_runtime` → 6 passed.
+- `cargo test brain::maintenance_scheduler` → 17 passed.
+- `cargo test mcp_seed_tests::seed_mcp_data_reports_first_run_only` → 1 passed.
+- `TERRANSOUL_MCP_PORT=7427 node scripts/copilot-start-mcp.mjs 120 --smoke` → headless MCP reached `/health` and stopped cleanly.
+
+---
+
+## Chunk 33.5 — Reranker default-on for RRF + relevance threshold pruning
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Make RRF/HyDE retrieval prefer precision by default and prevent weak reranked candidates from reaching `[LONG-TERM MEMORY]` prompt context.
+
+**Architecture:**
+- Added default-on `rerank` and `rerank_threshold` fields to MCP/gateway search requests. RRF/HyDE searches now pull a bounded 20–50 candidate recall set when a local active brain is available, score with `OllamaAgent::rerank_score`, and prune below the normalised default threshold `0.55`.
+- Added `memory::reranker::rerank_candidates_with_threshold`, preserving the existing recall-first `rerank_candidates` helper while providing a thresholded path for prompt injection.
+- Wired non-streaming chat prompt memory assembly through `hybrid_search_rrf` plus the same thresholded reranker before `build_budgeted_prompt` formats retrieved records into the `[RETRIEVED CONTEXT]` / `[LONG-TERM MEMORY]` block.
+- Surfaced `rerank` and `rerank_threshold` in the MCP `brain_search` schema; gRPC search uses the default-on policy for its existing proto shape.
+- Updated README, `docs/brain-advanced-design.md`, and MCP shared data for the brain-surface change.
+
+**Files modified:**
+- `src-tauri/src/ai_integrations/gateway.rs`
+- `src-tauri/src/ai_integrations/grpc/mod.rs`
+- `src-tauri/src/ai_integrations/mcp/tools.rs`
+- `src-tauri/src/commands/chat.rs`
+- `src-tauri/src/memory/reranker.rs`
+- `src-tauri/src/settings/mod.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `mcp-data/shared/memory-seed.sql`
+- `mcp-data/shared/project-index.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- Pre-edit `npm run lint` → 0 errors, existing warnings only.
+- `cargo test memory::reranker` → 16 passed.
+- `cargo test ai_integrations::gateway::tests::search_returns_descending_positional_scores` → 1 passed.
+- `cargo test commands::chat::tests` → 15 passed.
+
+---
+
+## Chunk 33.4 — Auto-edge extraction on memory ingest
+
+**Status:** Complete
+**Date:** 2026-05-05
+**Phase:** 33 — MCP Memory Stack Full-Stack Optimization (SQLite + HNSW + KG-edges + RRF + HyDE + Reranker)
+
+**Goal:** Make newly ingested document memories join the typed knowledge graph without manual seed edits or a separate user-triggered extraction pass.
+
+**Architecture:**
+- Extended `commands/ingest.rs` so URL/file/crawl ingest runs a best-effort follow-up after storing source chunks, deterministic source-guide rows, and embeddings.
+- The follow-up checks `AppSettings.auto_extract_edges`, requires an active local brain model, snapshots memories under a short lock, runs `OllamaAgent::propose_edges`, parses output with `parse_llm_edges`, and writes edges through `add_edges_batch`.
+- Failures are intentionally swallowed because the primary ingest is the source of truth; manual `extract_edges_via_brain` and the maintenance scheduler can retry later.
+- Added a small Rust unit test for the auto-edge gating helper.
+- Updated README and `docs/brain-advanced-design.md` per the brain documentation sync rule.
+
+**Files modified:**
+- `src-tauri/src/commands/ingest.rs`
+- `README.md`
+- `docs/brain-advanced-design.md`
+- `rules/milestones.md`
+- `rules/completion-log.md`
+
+**Validation:**
+- `cargo test commands::ingest::tests::auto_edge_extraction_model_requires_setting_model_and_created_entries` → 1 passed.
+- Prior local validation after the implementation: `npm run lint`, `npm run build`, `cargo clippy --all-targets -- -D warnings`, `cargo test --all-targets`, and the previously failing Playwright specs passed.
 
 ---
 

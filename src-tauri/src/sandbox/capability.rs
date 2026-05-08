@@ -10,12 +10,9 @@ pub enum Capability {
     Clipboard,
     Network,
     ProcessSpawn,
-    /// Read-only code-intelligence access via the GitNexus sidecar bridge
-    /// (Chunk 2.1). Spawning the sidecar process is gated separately by
-    /// `ProcessSpawn`; this capability gates the actual JSON-RPC tool calls
-    /// (`gitnexus_query`, `gitnexus_context`, `gitnexus_impact`,
-    /// `gitnexus_detect_changes`) so a user can install the sidecar and
-    /// still keep code-intelligence read access disabled.
+    /// Read-only code-intelligence access. Native MCP code tools are gated by
+    /// `GatewayCaps.code_read`; this plugin/agent capability keeps code graph
+    /// access disabled for individual agents unless the user grants it.
     CodeIntelligence,
 }
 

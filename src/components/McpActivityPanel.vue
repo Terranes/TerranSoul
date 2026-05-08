@@ -1,32 +1,50 @@
 <template>
   <section
     class="mcp-activity"
-    :class="[`mcp-activity--${activity.snapshot.status}`, { 'mcp-activity--working': activity.isWorking }]"
+    :class="[
+      `mcp-activity--${activity.snapshot.status}`,
+      { 'mcp-activity--working': activity.isWorking, 'mcp-activity--collapsed': collapsed },
+    ]"
     aria-live="polite"
     aria-label="MCP activity"
+    data-testid="mcp-activity-panel"
   >
     <div class="mcp-activity__header">
       <span class="mcp-activity__dot" />
-      <span class="mcp-activity__status">{{ activity.statusLabel }}</span>
+      <span
+        v-if="!collapsed"
+        class="mcp-activity__status"
+      >{{ activity.statusLabel }}</span>
       <span class="mcp-activity__mode">MCP</span>
+      <button
+        class="mcp-activity__toggle"
+        :aria-label="collapsed ? 'Expand MCP panel' : 'Collapse MCP panel'"
+        :title="collapsed ? 'Expand' : 'Collapse'"
+        data-testid="mcp-activity-toggle"
+        @click.stop="collapsed = !collapsed"
+      >
+        {{ collapsed ? '▼' : '▲' }}
+      </button>
     </div>
-    <div class="mcp-activity__model">
-      {{ activity.modelLabel }}
-    </div>
-    <div class="mcp-activity__message">
-      {{ activity.speechText }}
-    </div>
-    <div
-      v-if="activity.snapshot.toolName"
-      class="mcp-activity__tool"
-    >
-      {{ activity.workLabel }}
-    </div>
+    <template v-if="!collapsed">
+      <div class="mcp-activity__model">
+        {{ activity.modelLabel }}
+      </div>
+      <div class="mcp-activity__message">
+        {{ activity.speechText }}
+      </div>
+      <div
+        v-if="activity.snapshot.toolName"
+        class="mcp-activity__tool"
+      >
+        {{ activity.workLabel }}
+      </div>
+    </template>
   </section>
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useAudioStore } from '../stores/audio';
 import { useCharacterStore } from '../stores/character';
@@ -38,6 +56,7 @@ const activity = useMcpActivityStore();
 const character = useCharacterStore();
 const audio = useAudioStore();
 const { muted: audioMuted } = storeToRefs(audio);
+const collapsed = ref(false);
 
 const tts = useTtsPlayback({
   getBrowserPitch: () => GENDER_VOICES[character.currentGender()].browserPitch,
@@ -142,6 +161,26 @@ watch(
 .mcp-activity__mode {
   margin-left: auto;
   color: var(--ts-info);
+}
+
+.mcp-activity__toggle {
+  all: unset;
+  cursor: pointer;
+  margin-left: var(--ts-space-xs);
+  font-size: 0.6rem;
+  line-height: 1;
+  color: var(--ts-text-muted);
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+
+.mcp-activity__toggle:hover {
+  opacity: 1;
+}
+
+.mcp-activity--collapsed {
+  width: auto;
+  min-width: 0;
 }
 
 .mcp-activity__model {

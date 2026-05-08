@@ -164,24 +164,83 @@ pub async fn get_ollama_models(
 
 /// Pull an Ollama model from the registry (downloads it locally).
 /// Emits `ollama-pull-progress` events with live download percentage.
+/// Also emits `task-progress` so the universal TaskProgressBar displays it.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn pull_ollama_model(
     app: AppHandle,
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let client = &state.ollama_client;
+    use crate::tasks::manager::{TaskKind, TaskProgressEvent, TaskStatus};
 
-    let app_handle = app.clone();
-    brain::pull_model_with_progress(
+    let client = &state.ollama_client;
+    let task_id = format!("model-pull-{}", uuid::Uuid::new_v4());
+    let model_display = model_name.clone();
+
+    // Emit initial running event
+    let _ = app.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id.clone(),
+            kind: TaskKind::ModelPull,
+            status: TaskStatus::Running,
+            progress: 0,
+            description: format!("Pulling {model_display}…"),
+            processed_items: 0,
+            total_items: 1,
+            error: None,
+        },
+    );
+
+    let app_pull = app.clone();
+    let app_task = app.clone();
+    let tid = task_id.clone();
+    let mdl = model_display.clone();
+
+    let result = brain::pull_model_with_progress(
         client,
         brain::ollama_agent::OLLAMA_BASE_URL,
         &model_name,
         move |progress| {
-            let _ = app_handle.emit("ollama-pull-progress", &progress);
+            let _ = app_pull.emit("ollama-pull-progress", &progress);
+            // Also emit task-progress with the overall percentage
+            let _ = app_task.emit(
+                "task-progress",
+                TaskProgressEvent {
+                    id: tid.clone(),
+                    kind: TaskKind::ModelPull,
+                    status: TaskStatus::Running,
+                    progress: progress.percent,
+                    description: format!("Pulling {mdl}… {}", progress.status),
+                    processed_items: 0,
+                    total_items: 1,
+                    error: None,
+                },
+            );
         },
     )
-    .await?;
+    .await;
+
+    // Emit completion or failure
+    let final_status = match &result {
+        Ok(_) => TaskStatus::Completed,
+        Err(_) => TaskStatus::Failed,
+    };
+    let _ = app.emit(
+        "task-progress",
+        TaskProgressEvent {
+            id: task_id,
+            kind: TaskKind::ModelPull,
+            status: final_status,
+            progress: if result.is_ok() { 100 } else { 0 },
+            description: format!("Pull {model_display}"),
+            processed_items: if result.is_ok() { 1 } else { 0 },
+            total_items: 1,
+            error: result.as_ref().err().cloned(),
+        },
+    );
+
+    result?;
 
     // Track the pulled model so factory reset can remove it.
     {
@@ -312,9 +371,21 @@ pub async fn get_brain_mode(state: State<'_, AppState>) -> Result<Option<BrainMo
 
 /// Set the brain mode (free API, paid API, or local Ollama).
 /// Persists to disk and updates in-memory state.
+/// Also syncs to mcp-data/shared/brain_config.json so MCP mode inherits
+/// the same provider without needing separate configuration.
 #[tauri::command]
 pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Result<(), String> {
     brain::brain_config::save(&state.data_dir, &mode)?;
+
+    // Sync to mcp-data/shared/ so MCP mode picks up the same provider.
+    // Only sync non-free modes (MCP rejects free_api).
+    if !matches!(mode, BrainMode::FreeApi { .. }) {
+        let cwd = std::env::current_dir().unwrap_or_default();
+        let mcp_shared = cwd.join("mcp-data").join("shared");
+        if mcp_shared.exists() {
+            let _ = brain::brain_config::save(&mcp_shared, &mode);
+        }
+    }
 
     // Also update the legacy active_brain field for backwards compatibility
     // with existing streaming/chat code
@@ -404,6 +475,68 @@ pub async fn get_next_provider(state: State<'_, AppState>) -> Result<Option<Stri
     Ok(rotator.next_healthy_provider().map(|p| p.id.clone()))
 }
 
+/// Return the failover summary: healthy/rate-limited/unhealthy counts,
+/// the currently selected provider, and recent failover events.
+#[tauri::command]
+pub async fn get_failover_summary(
+    state: State<'_, AppState>,
+) -> Result<brain::FailoverSummary, String> {
+    let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    Ok(rotator.failover_summary())
+}
+
+/// Get the current failover policy (max attempts, privacy, cooldown).
+#[tauri::command]
+pub async fn get_failover_policy(
+    state: State<'_, AppState>,
+) -> Result<brain::FailoverPolicy, String> {
+    let policy = state.failover_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.clone())
+}
+
+/// Update the failover policy. Only provided fields are updated.
+#[tauri::command]
+pub async fn set_failover_policy(
+    state: State<'_, AppState>,
+    max_attempts: Option<u8>,
+    respect_privacy: Option<bool>,
+    min_cooldown_secs: Option<u64>,
+) -> Result<brain::FailoverPolicy, String> {
+    let mut policy = state.failover_policy.lock().map_err(|e| e.to_string())?;
+    if let Some(v) = max_attempts {
+        policy.max_attempts = v.clamp(1, 10);
+    }
+    if let Some(v) = respect_privacy {
+        policy.respect_privacy = v;
+    }
+    if let Some(v) = min_cooldown_secs {
+        policy.min_cooldown_secs = v;
+    }
+    Ok(policy.clone())
+}
+
+/// Select a provider with explicit constraints (token budget, context
+/// window, privacy). Returns the provider id or an error describing why
+/// no provider qualified.
+#[tauri::command]
+pub async fn select_provider_with_constraints(
+    state: State<'_, AppState>,
+    estimated_tokens: Option<u32>,
+    token_cap: Option<u32>,
+    local_only: Option<bool>,
+) -> Result<String, String> {
+    let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+    let constraints = brain::SelectionConstraints {
+        estimated_tokens,
+        token_cap,
+        local_only: local_only.unwrap_or(false),
+    };
+    match rotator.select_provider(&constraints) {
+        Ok(p) => Ok(p.id.clone()),
+        Err(reason) => Err(format!("no provider available: {}", reason.label())),
+    }
+}
+
 // ── Brain Selection Snapshot ────────────────────────────────────────────────
 
 /// Return a typed snapshot of every active brain selection (provider, embedding,
@@ -465,7 +598,7 @@ pub async fn get_brain_selection(
     let storage_snapshot = brain::StorageSelection {
         backend: "sqlite".to_string(),
         is_local: true,
-        schema_label: "V13 — canonical memory schema".to_string(),
+        schema_label: "V15 — canonical memory schema".to_string(),
     };
 
     // (5) Agents — read the orchestrator roster. The default routing
@@ -758,6 +891,303 @@ pub async fn get_update_check_state(
         settings.last_update_check_date.clone(),
         settings.dismissed_model_updates.clone(),
     ))
+}
+
+// ---------------------------------------------------------------------------
+// Provider policy registry (Chunk 35.1)
+// ---------------------------------------------------------------------------
+
+/// Get the current unified provider policy (per-task overrides).
+/// Returns `Default` (empty overrides) when no policy file exists.
+#[tauri::command]
+pub async fn get_provider_policy(
+    state: State<'_, AppState>,
+) -> Result<brain::ProviderPolicy, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.clone())
+}
+
+/// Set (replace) the entire provider policy. Persists to disk.
+#[tauri::command]
+pub async fn set_provider_policy(
+    policy: brain::ProviderPolicy,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    policy.save(&state.data_dir)?;
+    let mut current = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    *current = policy;
+    Ok(())
+}
+
+/// Set or update a single task override without replacing the full policy.
+/// Persists to disk. Returns the updated override.
+#[tauri::command]
+pub async fn set_provider_task_override(
+    task_override: brain::TaskOverride,
+    state: State<'_, AppState>,
+) -> Result<brain::TaskOverride, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    policy.set(task_override.clone());
+    policy.save(&state.data_dir)?;
+    Ok(task_override)
+}
+
+/// Remove the override for a task (revert to brain-mode default).
+/// Returns the removed override if one existed.
+#[tauri::command]
+pub async fn remove_provider_task_override(
+    kind: brain::TaskKind,
+    state: State<'_, AppState>,
+) -> Result<Option<brain::TaskOverride>, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let removed = policy.remove(kind);
+    policy.save(&state.data_dir)?;
+    Ok(removed)
+}
+
+/// Resolve the effective provider+model for a specific task, taking
+/// the current policy and brain mode into account. Pure read — no
+/// side effects. Useful for UI preview of what would actually be used.
+#[tauri::command]
+pub async fn resolve_provider_for_task(
+    kind: brain::TaskKind,
+    state: State<'_, AppState>,
+) -> Result<brain::ResolvedProvider, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    Ok(brain::resolve_for_task(&policy, kind, brain_mode.as_ref()))
+}
+
+/// Get the status of the self-healing embedding retry queue.
+#[tauri::command]
+pub async fn embedding_queue_status(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::embedding_queue::EmbeddingQueueStatus, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    crate::memory::embedding_queue::queue_status(store.conn()).map_err(|e| e.to_string())
+}
+
+/// Get the most recent eviction log entries (newest first).
+#[tauri::command]
+pub async fn brain_eviction_log(
+    state: State<'_, AppState>,
+    limit: Option<usize>,
+) -> Result<Vec<crate::memory::eviction::EvictionReport>, String> {
+    let entries = crate::memory::eviction::read_eviction_log(&state.data_dir, limit.unwrap_or(20));
+    Ok(entries)
+}
+
+// ── Agent-Role Routing (Chunk 35.3) ─────────────────────────────────────────
+
+/// Get all agent routing configurations.
+#[tauri::command]
+pub async fn get_agent_routing(
+    state: State<'_, AppState>,
+) -> Result<Vec<brain::AgentRouteConfig>, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    Ok(policy.all_agent_routes().into_iter().cloned().collect())
+}
+
+/// Set (or replace) the agent route config for a specific role.
+#[tauri::command]
+pub async fn set_agent_route(
+    config: brain::AgentRouteConfig,
+    state: State<'_, AppState>,
+) -> Result<brain::AgentRouteConfig, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    policy.set_agent_route(config.clone());
+    policy.save(&state.data_dir)?;
+    Ok(config)
+}
+
+/// Remove the agent route for a role (reverts to task-kind/brain-mode defaults).
+#[tauri::command]
+pub async fn remove_agent_route(
+    role: crate::coding::multi_agent::AgentRole,
+    state: State<'_, AppState>,
+) -> Result<Option<brain::AgentRouteConfig>, String> {
+    let mut policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let removed = policy.remove_agent_route(role);
+    policy.save(&state.data_dir)?;
+    Ok(removed)
+}
+
+/// Resolve the effective provider for an agent role, considering agent
+/// routing, task-kind policy, brain mode, and provider health.
+/// Pure read — useful for UI preview or workflow planning.
+#[tauri::command]
+pub async fn resolve_provider_for_role(
+    role: crate::coding::multi_agent::AgentRole,
+    state: State<'_, AppState>,
+) -> Result<brain::ResolvedAgentProvider, String> {
+    let policy = state.provider_policy.lock().map_err(|e| e.to_string())?;
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
+    let rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
+
+    let resolved =
+        brain::resolve_for_agent_role(&policy, role, brain_mode.as_ref(), |provider_id| {
+            // Check rotator health — local providers always considered healthy
+            match provider_id {
+                "ollama" | "lm-studio" => true,
+                id => rotator
+                    .providers
+                    .get(id)
+                    .map(|s| s.is_healthy && !s.is_rate_limited)
+                    .unwrap_or(true),
+            }
+        });
+    Ok(resolved)
+}
+
+// ---------------------------------------------------------------------------
+// Embedding model registry (Chunk 44.5)
+// ---------------------------------------------------------------------------
+
+use crate::brain::embedding_registry::{
+    self, EmbeddingModelEntry, EmbeddingRegistryState, ModelSwitchResult,
+};
+
+/// List all known embedding models in the catalogue.
+#[tauri::command]
+pub async fn list_embedding_models() -> Vec<EmbeddingModelEntry> {
+    embedding_registry::catalogue()
+}
+
+/// Get the current embedding registry state (active model, migration status).
+#[tauri::command]
+pub async fn get_embedding_registry_state(
+    state: State<'_, crate::AppState>,
+) -> Result<EmbeddingRegistryState, String> {
+    Ok(embedding_registry::load_state(&state.data_dir))
+}
+
+/// Preview what would happen if we switch to a new embedding model.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn plan_embedding_model_switch(
+    model_id: String,
+    state: State<'_, crate::AppState>,
+) -> Result<ModelSwitchResult, String> {
+    // Count memories that have embeddings.
+    let embedded_count = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.embedded_count().map_err(|e| e.to_string())?
+    };
+    Ok(embedding_registry::plan_model_switch(
+        &state.data_dir,
+        &model_id,
+        embedded_count,
+    ))
+}
+
+/// Switch the active embedding model and start re-embedding migration.
+///
+/// This commits the switch and begins re-embedding in batches, emitting
+/// `embedding-migration-progress` events. Returns the final state.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn switch_embedding_model(
+    model_id: String,
+    state: State<'_, crate::AppState>,
+    app_handle: AppHandle,
+) -> Result<EmbeddingRegistryState, String> {
+    // Count embedded memories.
+    let embedded_count = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.embedded_count().map_err(|e| e.to_string())?
+    };
+
+    // Commit the switch.
+    let registry_state =
+        embedding_registry::commit_model_switch(&state.data_dir, &model_id, embedded_count)?;
+
+    // Emit initial progress.
+    let _ = app_handle.emit(
+        "embedding-migration-progress",
+        serde_json::json!({
+            "remaining": registry_state.migration_remaining,
+            "total": registry_state.migration_total,
+            "done": !registry_state.migration_pending,
+        }),
+    );
+
+    // If no migration needed, we're done.
+    if !registry_state.migration_pending {
+        return Ok(registry_state);
+    }
+
+    // Clear existing embeddings to force re-embedding with new model.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.clear_all_embeddings().map_err(|e| e.to_string())?;
+    }
+
+    // Tag existing embeddings with the new model ID.
+    {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let _ = store.backfill_embedding_model(&model_id);
+    }
+
+    // Re-embed in batches.
+    let batch_size = 50;
+    loop {
+        let unembedded: Vec<(i64, String)> = {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let all = store.unembedded_ids().map_err(|e| e.to_string())?;
+            all.into_iter().take(batch_size).collect()
+        };
+
+        if unembedded.is_empty() {
+            break;
+        }
+
+        let mut batch_count = 0;
+        for (id, content) in &unembedded {
+            let (brain_mode, active_brain) = {
+                let bm = state.brain_mode.lock().ok().and_then(|g| g.clone());
+                let ab = state.active_brain.lock().ok().and_then(|g| g.clone());
+                (bm, ab)
+            };
+            if let Some(emb) =
+                crate::brain::embed_for_mode(content, brain_mode.as_ref(), active_brain.as_deref())
+                    .await
+            {
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                if store.set_embedding(*id, &emb).is_ok() {
+                    batch_count += 1;
+                }
+            }
+        }
+
+        // Update registry progress.
+        let updated =
+            embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
+
+        let _ = app_handle.emit(
+            "embedding-migration-progress",
+            serde_json::json!({
+                "remaining": updated.migration_remaining,
+                "total": updated.migration_total,
+                "done": !updated.migration_pending,
+            }),
+        );
+
+        if batch_count == 0 {
+            // No embeddings could be generated (brain offline?). Stop.
+            break;
+        }
+    }
+
+    // Final state.
+    let final_state = embedding_registry::complete_migration(&state.data_dir)?;
+    let _ = app_handle.emit(
+        "embedding-migration-progress",
+        serde_json::json!({
+            "remaining": 0,
+            "total": final_state.migration_total,
+            "done": true,
+        }),
+    );
+
+    Ok(final_state)
 }
 
 #[cfg(test)]
