@@ -113,10 +113,7 @@ where
     W: AsyncWrite + Unpin,
 {
     let mut bytes = serde_json::to_vec(resp).map_err(|e| {
-        std::io::Error::new(
-            std::io::ErrorKind::Other,
-            format!("Failed to serialize JSON-RPC response: {}", e),
-        )
+        std::io::Error::other(format!("Failed to serialize JSON-RPC response: {}", e))
     })?;
     bytes.push(b'\n');
     writer.write_all(&bytes).await?;

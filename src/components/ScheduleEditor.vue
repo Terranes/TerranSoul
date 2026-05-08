@@ -174,8 +174,9 @@ function onSave(): void {
   const startAt = parseLocalInputToEpochMs(startAtLocal.value);
   if (startAt === null) return;
 
-  const endAt = endByLocal.value ? parseLocalInputToEpochMs(endByLocal.value) : undefined;
-  if (endByLocal.value && endAt === null) return;
+  const parsedEndAt = endByLocal.value ? parseLocalInputToEpochMs(endByLocal.value) : null;
+  if (endByLocal.value && parsedEndAt === null) return;
+  const endAt = parsedEndAt ?? undefined;
 
   const schedule: WorkflowSchedule = {
     recurrence: pattern,
