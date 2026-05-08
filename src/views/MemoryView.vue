@@ -811,6 +811,26 @@ const searchResults = ref<MemoryEntry[] | null>(null);
 const TAG_PREFIXES = ['personal', 'domain', 'project', 'tool', 'code', 'external', 'session', 'quest'] as const;
 const TAG_PREFIX_SET = new Set<string>(TAG_PREFIXES as readonly string[]);
 
+function normalizePrefixList(prefixes: readonly string[]): string[] {
+  return [...prefixes].map((p) => p.trim().toLowerCase()).sort();
+}
+
+// Runtime guard for cross-stack drift: frontend TAG_PREFIXES vs backend CURATED_PREFIXES.
+// This check is best-effort and only runs when backend exposes curated_tag_prefixes in stats.
+watchEffect(() => {
+  const backendPrefixes = (store.stats as { curated_tag_prefixes?: string[] } | undefined)?.curated_tag_prefixes;
+  if (!Array.isArray(backendPrefixes) || backendPrefixes.length === 0) return;
+
+  const frontend = normalizePrefixList(TAG_PREFIXES as readonly string[]);
+  const backend = normalizePrefixList(backendPrefixes);
+  if (frontend.length !== backend.length || frontend.some((p, i) => p !== backend[i])) {
+    console.warn(
+      '[memory] Curated tag prefix mismatch between frontend TAG_PREFIXES and backend CURATED_PREFIXES.',
+      { frontend, backend },
+    );
+  }
+});
+
 /** Count memories per curated tag prefix. */
 const tagPrefixCounts = computed(() => {
   const source = searchResults.value ?? store.memories;
