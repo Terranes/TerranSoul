@@ -209,6 +209,7 @@ pub struct MemoryStats {
     pub total_tokens: i64,
     pub avg_decay: f64,
     pub storage_bytes: i64,
+    pub cache_bytes: i64,
 }
 
 /// Result of pruning memory rows to satisfy the configured storage cap.
@@ -560,6 +561,32 @@ impl MemoryStore {
             entries.push(entry);
         }
         Ok(entries)
+    }
+
+    /// Return estimated bytes represented by the current in-memory list cache cap.
+    pub fn active_cache_bytes(&self, max_bytes: u64) -> SqlResult<i64> {
+        let max_bytes = max_bytes.min(i64::MAX as u64) as i64;
+        let mut stmt = self.conn.prepare(
+            "SELECT length(content)
+                    + length(tags)
+                    + COALESCE(length(embedding), 0)
+                    + COALESCE(length(source_url), 0)
+                    + COALESCE(length(source_hash), 0)
+                    + COALESCE(length(obsidian_path), 0)
+                    + 128 AS row_bytes
+             FROM memories ORDER BY importance DESC, created_at DESC",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, i64>(0))?;
+
+        let mut used = 0i64;
+        for row in rows {
+            let row_bytes = row?.max(0);
+            if used > 0 && used.saturating_add(row_bytes) > max_bytes {
+                break;
+            }
+            used = used.saturating_add(row_bytes);
+        }
+        Ok(used)
     }
 
     /// Return memories in a specific tier.
@@ -2120,6 +2147,7 @@ impl MemoryStore {
             total_tokens,
             avg_decay,
             storage_bytes,
+            cache_bytes: storage_bytes,
         })
     }
 

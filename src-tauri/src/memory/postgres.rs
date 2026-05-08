@@ -545,6 +545,7 @@ impl StorageBackend for PostgresBackend {
             total_tokens: row.get("total_tokens"),
             avg_decay: row.get("avg_decay"),
             storage_bytes: row.get("storage_bytes"),
+            cache_bytes: 0,
         })
     }
 

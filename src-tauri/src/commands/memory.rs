@@ -211,7 +211,7 @@ async fn add_memory_inner(
 /// Return all stored memories.
 #[tauri::command]
 pub async fn get_memories(state: State<'_, AppState>) -> Result<Vec<MemoryEntry>, String> {
-    let max_bytes = configured_memory_cache_limit_bytes(&state);
+    let max_bytes = configured_memory_limit_bytes(&state);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store
         .get_all_within_storage_bytes(max_bytes)
@@ -1016,8 +1016,13 @@ pub async fn rerank_search_memories(
 pub async fn get_memory_stats(
     state: State<'_, AppState>,
 ) -> Result<crate::memory::MemoryStats, String> {
+    let cache_limit_bytes = configured_memory_cache_limit_bytes(&state);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    store.stats().map_err(|e| e.to_string())
+    let mut stats = store.stats().map_err(|e| e.to_string())?;
+    stats.cache_bytes = store
+        .active_cache_bytes(cache_limit_bytes)
+        .map_err(|e| e.to_string())?;
+    Ok(stats)
 }
 
 /// Get per-operation latency metrics (p50/p95/p99) for all memory CRUD and

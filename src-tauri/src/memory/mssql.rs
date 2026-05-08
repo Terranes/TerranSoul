@@ -406,6 +406,7 @@ impl StorageBackend for MssqlBackend {
                 total_tokens: row.get::<i64, _>("total_tokens").unwrap_or(0),
                 avg_decay: row.get::<f64, _>("avg_decay").unwrap_or(1.0),
                 storage_bytes: row.get::<i64, _>("storage_bytes").unwrap_or(0),
+                cache_bytes: 0,
             })
         })
     }

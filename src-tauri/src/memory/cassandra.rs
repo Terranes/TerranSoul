@@ -478,6 +478,7 @@ impl StorageBackend for CassandraBackend {
             total_tokens: 0,
             avg_decay: 1.0,
             storage_bytes: 0,
+            cache_bytes: 0,
         })
     }
 

@@ -266,6 +266,7 @@ export interface MemoryStats {
   total_tokens: number;
   avg_decay: number;
   storage_bytes?: number;
+  cache_bytes?: number;
 }
 
 export interface NewMemory {
