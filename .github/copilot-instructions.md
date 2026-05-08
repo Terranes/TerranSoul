@@ -3,11 +3,17 @@
 > This file is auto-loaded by GitHub Copilot on every request.
 > Last updated: 2026-05-05
 
-## MANDATORY — TerranSoul MCP Preflight (every session, no exceptions)
+## MANDATORY — TerranSoul MCP Preflight (local sessions only)
 
-**This rule is the highest priority instruction in this file. Execute it
+> **CI / GitHub Actions skip:** If the environment variable
+> `GITHUB_ACTIONS=true` is set, **skip this entire section**. MCP startup
+> requires a Rust build and is too expensive for CI runners. Proceed
+> directly to the work.
+
+**This rule applies to local development sessions only. Execute it
 before any other work — before reading milestones, before exploring code,
-before planning, before implementing. Skipping this is a violation.**
+before planning, before implementing. Skipping this in a local session is
+a violation.**
 
 1. **Check MCP health** — call `brain_health` (the MCP tool). If tools are
    not loaded yet, check `GET http://127.0.0.1:7423/health` (or `:7421`/`:7422`).
@@ -270,9 +276,9 @@ For dev/coding work, prefer the headless runner: Copilot setup steps run
 end-user data touched). It writes the current bearer token to `.vscode/.mcp-token`;
 set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
 `terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
-then call `brain_health`. **Mandatory every-session rule:** every coding
-agent must check/reuse/start TerranSoul MCP at session start, call
-`brain_health` plus a relevant `brain_search` / `brain_suggest_context`
+then call `brain_health`. **Local-session rule (skip when `GITHUB_ACTIONS=true`):** every
+coding agent in a local session must check/reuse/start TerranSoul MCP at session
+start, call `brain_health` plus a relevant `brain_search` / `brain_suggest_context`
 before broad repo exploration when MCP is available, and feed durable
 self-improve lessons back into `mcp-data/shared/` or the rules/docs rather
 than leaving them only in chat. If MCP is blocked, record the blocker in

@@ -8,9 +8,13 @@
 > `.cursorrules`) are kept in sync per the Multi-Agent Instruction Sync rule
 > in `rules/coding-standards.md`.
 
-## MANDATORY — MCP Preflight (every session, no exceptions)
+## MANDATORY — MCP Preflight (local sessions only)
 
-**Execute this before any other work. Skipping is a violation.**
+> **CI / GitHub Actions skip:** If `GITHUB_ACTIONS=true`, skip this
+> section entirely. MCP startup requires a Rust build and is too expensive
+> for CI runners.
+
+**In local sessions, execute this before any other work. Skipping is a violation.**
 
 1. Call `brain_health` (MCP tool) or `GET http://127.0.0.1:7423/health`.
 2. If healthy → `brain_search` / `brain_suggest_context` with the current task before broad repo searches.

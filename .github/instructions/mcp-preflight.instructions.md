@@ -2,10 +2,14 @@
 applyTo: "**"
 ---
 
-# MCP Preflight — Mandatory for every agent request
+# MCP Preflight — Local sessions only (skip in GitHub Actions)
 
-Before doing ANY work in this repository, you MUST complete the MCP
-preflight check. This is not optional. Skipping it is a violation.
+> **CI / GitHub Actions skip:** If `GITHUB_ACTIONS=true`, **skip this
+> entire file**. MCP startup requires a Rust build (`cargo build`) which
+> is too expensive for CI runners. Proceed directly to the work.
+
+Before doing ANY work in a **local** session, you MUST complete the MCP
+preflight check. Skipping it in a local session is a violation.
 
 1. Call `brain_health` (the MCP tool) to verify the TerranSoul brain
    server is reachable. The workspace auto-starts it on folder open.

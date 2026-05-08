@@ -153,9 +153,13 @@ does NOT upload prompts anywhere.
 
 ## 5. How agents start it
 
-### Mandatory every-session rule
+### Local-session rule (skip in GitHub Actions / CI)
 
-Every AI coding agent session in this repo MUST use TerranSoul MCP as its
+> **CI skip:** If `GITHUB_ACTIONS=true`, skip MCP entirely for the session.
+> MCP startup requires a Rust build (`cargo build --release`) which is too
+> expensive for CI runners. Use grep/glob/file searches instead.
+
+Every AI coding agent **local** session in this repo MUST use TerranSoul MCP as its
 project memory layer:
 
 1. **At session start**, read this file and check/reuse a running
@@ -193,15 +197,16 @@ project memory layer:
    so the next `npm run mcp` session can recover the decision without
    rescanning the repo.
 
-Every AI coding agent in this repo follows the same startup procedure:
+Every AI coding agent in a **local** session follows the same startup procedure:
 
 1. **Check first.** `GET http://127.0.0.1:7423/mcp` — if anything
    answers, the server is already up. Reuse it.
-2. **Copilot cloud agent autostart.** `.github/workflows/copilot-setup-steps.yml`
-   runs `node scripts/copilot-start-mcp.mjs 300` after installing
+2. **Copilot cloud agent (local only).** If running locally (not in
+   GitHub Actions), `.github/workflows/copilot-setup-steps.yml` or
+   `node scripts/copilot-start-mcp.mjs 300` may be used after installing
    dependencies. That script reuses ports `7421`/`7422`/`7423` if healthy,
    otherwise starts `npm run mcp` detached, waits for `/health`, and leaves
-   logs/PIDs in `/tmp`.
+   logs/PIDs in `/tmp`. **Do not run this step when `GITHUB_ACTIONS=true`.**
 3. **If not running in any other agent**, ask the user once before launching it
    (it spawns a Rust build the first time). After confirmation, run:
    ```pwsh
