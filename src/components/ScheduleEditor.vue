@@ -92,9 +92,10 @@ const weekdayOptions: { value: Weekday; label: string }[] = [
 ];
 
 const kind = ref<Kind>(props.plan.schedule?.recurrence.kind ?? 'none');
-const startAtLocal = ref(toLocalInput(props.plan.schedule?.start_at ?? Date.now()));
-const interval = ref(getInterval(props.plan.schedule?.recurrence) ?? 1);
-const dayOfMonth = ref(getDayOfMonth(props.plan.schedule?.recurrence) ?? 1);
+const defaultStartAtMs = props.plan.schedule?.start_at ?? Date.now();
+const startAtLocal = ref(toLocalInput(defaultStartAtMs));
+const interval = ref(getInterval(props.plan.schedule?.recurrence));
+const dayOfMonth = ref(getDayOfMonth(props.plan.schedule?.recurrence));
 const selectedWeekdays = ref(new Set<Weekday>(getWeekdays(props.plan.schedule?.recurrence)));
 const endByLocal = ref(
   props.plan.schedule?.end_at ? toLocalDate(props.plan.schedule.end_at) : '',
@@ -105,9 +106,9 @@ watch(
   () => props.plan,
   (p) => {
     kind.value = p.schedule?.recurrence.kind ?? 'none';
-    startAtLocal.value = toLocalInput(p.schedule?.start_at ?? Date.now());
-    interval.value = getInterval(p.schedule?.recurrence) ?? 1;
-    dayOfMonth.value = getDayOfMonth(p.schedule?.recurrence) ?? 1;
+    startAtLocal.value = toLocalInput(p.schedule?.start_at ?? defaultStartAtMs);
+    interval.value = getInterval(p.schedule?.recurrence);
+    dayOfMonth.value = getDayOfMonth(p.schedule?.recurrence);
     selectedWeekdays.value = new Set(getWeekdays(p.schedule?.recurrence));
     endByLocal.value = p.schedule?.end_at ? toLocalDate(p.schedule.end_at) : '';
     durationMinutes.value = p.schedule?.duration_minutes ?? 30;
@@ -153,18 +154,38 @@ function buildPattern(): RecurrencePattern | null {
   return null;
 }
 
+function resolveScheduleTimeZone(): string {
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  return typeof tz === 'string' && tz.trim().length > 0 ? tz : 'UTC';
+}
+
+function parseLocalInputToEpochMs(value: string): number | null {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function onSave(): void {
   const pattern = buildPattern();
   if (!pattern) {
     emit('save', null);
     return;
   }
+
+  const startAt = parseLocalInputToEpochMs(startAtLocal.value);
+  if (startAt === null) return;
+
+  const parsedEndAt = endByLocal.value ? parseLocalInputToEpochMs(endByLocal.value) : null;
+  if (endByLocal.value && parsedEndAt === null) return;
+  const endAt = parsedEndAt ?? undefined;
+
   const schedule: WorkflowSchedule = {
     recurrence: pattern,
-    start_at: new Date(startAtLocal.value).getTime(),
-    end_at: endByLocal.value ? new Date(endByLocal.value).getTime() : undefined,
+    start_at: startAt,
+    end_at: endAt,
     duration_minutes: durationMinutes.value,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone ?? 'UTC',
+    // Local datetime inputs are interpreted in the browser's local timezone.
+    // Store the resolved runtime timezone alongside epoch milliseconds.
+    timezone: resolveScheduleTimeZone(),
     last_fired_at: props.plan.schedule?.last_fired_at,
   };
   emit('save', schedule);
@@ -187,14 +208,14 @@ function toLocalDate(epochMs: number): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function getInterval(rec?: RecurrencePattern): number | null {
-  if (!rec || rec.kind === 'once') return null;
-  return rec.interval;
+function getInterval(rec?: RecurrencePattern | null): number {
+  if (!rec || rec.kind === 'once') return 1;
+  return rec.interval ?? 1;
 }
 
-function getDayOfMonth(rec?: RecurrencePattern): number | null {
-  if (rec?.kind === 'monthly') return rec.day_of_month;
-  return null;
+function getDayOfMonth(rec?: RecurrencePattern | null): number {
+  if (!rec || rec.kind !== 'monthly') return 1;
+  return rec.day_of_month ?? 1;
 }
 
 function getWeekdays(rec?: RecurrencePattern): Weekday[] {

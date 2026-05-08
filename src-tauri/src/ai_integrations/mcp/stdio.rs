@@ -72,6 +72,7 @@ where
             break;
         }
         let trimmed = line.trim();
+        let line_for_error = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             continue;
         }
@@ -79,7 +80,11 @@ where
         let req: JsonRpcRequest = match serde_json::from_str(trimmed) {
             Ok(r) => r,
             Err(e) => {
-                let resp = JsonRpcResponse::err(Value::Null, -32700, format!("parse error: {e}"));
+                let resp = JsonRpcResponse::err(
+                    Value::Null,
+                    -32700,
+                    format!("parse error on line '{}': {}", line_for_error, e),
+                );
                 write_response(&mut writer, &resp).await?;
                 continue;
             }
@@ -92,6 +97,11 @@ where
 
         let params = req.params.unwrap_or(Value::Null);
         let resp = dispatch_method(gw.as_ref(), &caps, &req.method, params, id).await;
+        if let Ok(v) = serde_json::to_value(&resp) {
+            if v.get("error").is_some_and(|e| !e.is_null()) {
+                eprintln!("MCP stdio dispatch error for method '{}': {}", req.method, v["error"]);
+            }
+        }
         write_response(&mut writer, &resp).await?;
     }
 
@@ -102,7 +112,9 @@ async fn write_response<W>(writer: &mut W, resp: &JsonRpcResponse) -> std::io::R
 where
     W: AsyncWrite + Unpin,
 {
-    let mut bytes = serde_json::to_vec(resp).map_err(std::io::Error::other)?;
+    let mut bytes = serde_json::to_vec(resp).map_err(|e| {
+        std::io::Error::other(format!("Failed to serialize JSON-RPC response: {}", e))
+    })?;
     bytes.push(b'\n');
     writer.write_all(&bytes).await?;
     writer.flush().await?;
@@ -298,6 +310,14 @@ mod tests {
         let parse_err: Value = serde_json::from_str(lines[0]).unwrap();
         assert_eq!(parse_err["error"]["code"], -32700);
         assert!(parse_err["id"].is_null());
+        assert!(
+            parse_err["error"]["message"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("parse error on line 'not json':"),
+            "unexpected parse error message: {}",
+            parse_err["error"]["message"]
+        );
 
         let ping_reply: Value = serde_json::from_str(lines[1]).unwrap();
         assert_eq!(ping_reply["id"], 7);

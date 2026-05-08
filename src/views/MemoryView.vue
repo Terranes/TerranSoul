@@ -791,7 +791,7 @@ const maxMemoryGb = ref(10);
 const maxMemoryMb = ref(10);
 const memoryStorageBytes = computed(() => store.stats?.storage_bytes ?? 0);
 // Use backend-provided stats to avoid O(n) client-side reductions on large memory sets.
-const memoryCacheBytes = computed(() => store.stats?.storage_bytes ?? 0);
+const memoryCacheBytes = computed(() => store.stats?.cache_bytes ?? 0);
 
 // Search & filter
 const searchQuery = ref('');
