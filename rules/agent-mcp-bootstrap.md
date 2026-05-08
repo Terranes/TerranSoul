@@ -106,7 +106,7 @@ that touch this surface MUST NOT:
 4. **Bind anything but loopback.** Even if `lan_enabled` is set in
    the user's app settings, the headless runner ignores it and
    binds `127.0.0.1` only.
-5. **Separate shared data from runtime state.** `mcp-data/shared/`
+5. **Fail to maintain separation between shared data and runtime state.** `mcp-data/shared/`
    is committed reviewable seed knowledge. Runtime files under
    `mcp-data/` (token, SQLite DB, WAL/SHM, vector indexes, logs,
    locks, sessions, worktrees) are ignored. Wiping ignored runtime
@@ -147,9 +147,10 @@ that the app uses.
 If Ollama is not installed or not reachable, provider-specific LLM calls
 degrade gracefully and the headless runner uses the deterministic
 in-process embedder for seed/query vectors. This keeps the SQLite + vector +
-RRF signal live with zero network while still reporting the selected
-provider honestly in `/status` — it does NOT silently switch providers and
-does NOT upload prompts anywhere.
+RRF signal live with zero network. In `/status`, report both values explicitly:
+the selected provider remains `ollama` (user selection), and the active runtime
+path indicates deterministic in-process fallback. The runner does NOT silently
+switch providers and does NOT upload prompts anywhere.
 
 ## 5. How agents start it
 
@@ -233,10 +234,21 @@ Every AI coding agent in a **local** session follows the same startup procedure:
 
 ### target-mcp freshness rule (mandatory)
 
-If `target-mcp/release/terransoul(.exe)` is older than MCP Rust sources or
-config (`src-tauri/src/**`, `src-tauri/Cargo*.toml`, `src-tauri/build.rs`,
-`src-tauri/tauri.conf.json`), agents must treat it as stale and must not reuse
-an already-healthy `7423` process.
+Freshness must be determined by **filesystem modification time** (`mtime`) only
+(use UTC/epoch comparison; do not use git commit times, content hashes, or
+version strings for this rule).
+
+Treat `target-mcp/release/terransoul(.exe)` as **stale** when any of the
+following is true:
+
+- the binary does not exist;
+- the binary `mtime` cannot be read reliably;
+- any MCP Rust source/config path has `mtime` strictly newer than the binary:
+  `src-tauri/src/**`, `src-tauri/Cargo*.toml`, `src-tauri/build.rs`,
+  `src-tauri/tauri.conf.json`.
+
+In other words, if `max(mtime of source/config set) > mtime(binary)`, the
+existing `7423` process must be considered stale and must not be reused.
 
 Required behavior:
 
@@ -299,7 +311,6 @@ Two endpoints exist for live monitoring without speaking JSON-RPC:
       "version": "...",
       "brain_provider": "ollama",
       "brain_model": "llama3.1:8b",
-      "rag_quality_pct": 80,
          "memory_total": 123,
          "rag_quality": {
             "label": "mostly_ready",

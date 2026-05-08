@@ -379,12 +379,12 @@ async fn run_edge_extraction(
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         store.get_all().map_err(|e| e.to_string())?
     };
+    let chunk = chunk.clamp(2, 50);
     if entries.len() < 2 {
         return Ok(0);
     }
     let known_ids: std::collections::HashSet<i64> = entries.iter().map(|e| e.id).collect();
     let agent = crate::brain::OllamaAgent::new(model);
-    let chunk = chunk.clamp(2, 50);
     let mut total_inserted = 0usize;
 
     for window in entries.chunks(chunk) {

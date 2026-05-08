@@ -222,7 +222,17 @@ pub struct MemoryCleanupReport {
 }
 
 /// SQLite-backed persistent memory store.
-/// Number of mutations between automatic ANALYZE runs.
+/// Number of mutations between automatic `ANALYZE` runs.
+///
+/// This threshold balances query-planner freshness against maintenance cost:
+/// running `ANALYZE` too often adds write overhead, while running it too
+/// rarely can leave planner statistics stale after heavy churn. `10_000` is
+/// used as a conservative default for mixed read/write workloads.
+///
+/// Tuning guidance:
+/// - Lower for highly volatile datasets where query plans regress quickly.
+/// - Raise for write-heavy scenarios where minimizing maintenance work matters
+///   more than immediate planner-stat updates.
 const ANALYZE_EVERY: u64 = 10_000;
 
 pub struct MemoryStore {
@@ -255,7 +265,12 @@ impl MemoryStore {
     /// Pass `None` for either to use the platform default.
     pub fn new_with_config(data_dir: &Path, cache_mb: Option<u32>, mmap_mb: Option<u32>) -> Self {
         auto_backup(data_dir);
-        let conn = Connection::open(data_dir.join("memory.db")).unwrap_or_else(|_| {
+        let conn = Connection::open(data_dir.join("memory.db")).unwrap_or_else(|e| {
+            eprintln!(
+                "Failed to open SQLite database at '{}': {}. Falling back to in-memory database.",
+                data_dir.join("memory.db").display(),
+                e
+            );
             Connection::open_in_memory()
                 .expect("Failed to create in-memory SQLite fallback database")
         });
@@ -406,7 +421,7 @@ impl MemoryStore {
     /// path used by ingest pipelines that turn one document into thousands
     /// of chunks; it lifts insert throughput from ~600 rows/s (per-row
     /// auto-commit + per-row fsync) to >100k rows/s on commodity hardware.
-    pub fn add_many(&mut self, mut items: Vec<NewMemory>) -> SqlResult<Vec<i64>> {
+    pub fn add_many(&self, mut items: Vec<NewMemory>) -> SqlResult<Vec<i64>> {
         let _t = Timer::start(&METRICS.add_many);
         SEARCH_CACHE.invalidate();
         if items.is_empty() {
@@ -415,7 +430,7 @@ impl MemoryStore {
         let now = now_ms();
         let mut ids = Vec::with_capacity(items.len());
         let tier_str = MemoryTier::Long.as_str();
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.unchecked_transaction()?;
         {
             let mut stmt = tx.prepare_cached(
                 "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count, source_url, source_hash, expires_at)
@@ -451,11 +466,11 @@ impl MemoryStore {
     /// version snapshots, importance clamping, and the per-row
     /// `get_by_id` round-trip — callers wanting full semantics should
     /// use [`MemoryStore::update`] one row at a time.
-    pub fn update_content_many(&mut self, items: &[(i64, String)]) -> SqlResult<()> {
+    pub fn update_content_many(&self, items: &[(i64, String)]) -> SqlResult<()> {
         if items.is_empty() {
             return Ok(());
         }
-        let tx = self.conn.transaction()?;
+        let tx = self.conn.unchecked_transaction()?;
         {
             let mut stmt =
                 tx.prepare_cached("UPDATE memories SET content = ?1 WHERE id = ?2")?;
@@ -469,6 +484,10 @@ impl MemoryStore {
 
     /// Bulk delete inside a single transaction. Also removes the rows
     /// from the ANN index on a best-effort basis.
+    ///
+    /// This method requires `&mut self` because it opens a transaction on
+    /// the underlying SQLite connection, which needs mutable access in
+    /// `rusqlite`, and performs batched mutations as an exclusive operation.
     pub fn delete_many(&mut self, ids: &[i64]) -> SqlResult<()> {
         if ids.is_empty() {
             return Ok(());
