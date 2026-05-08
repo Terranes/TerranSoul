@@ -47,7 +47,7 @@ describe('useSettingsStore', () => {
     expect(store.settings.bgm_volume).toBeCloseTo(0.15);
     expect(store.settings.bgm_track_id).toBe('prelude');
     expect(store.settings.max_memory_gb).toBe(10);
-    expect(store.settings.max_memory_mb).toBe(10);
+    expect(store.settings.max_memory_mb).toBe(256);
   });
 
   it('loadSettings populates settings from Tauri IPC', async () => {

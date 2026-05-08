@@ -83,7 +83,7 @@
         <span class="mv-stat-label">Tokens</span>
       </div>
       <div class="mv-stat">
-        <span class="mv-stat-value">{{ store.stats.avg_decay.toFixed(2) }}</span>
+        <span class="mv-stat-value">{{ (store.stats.avg_decay ?? 0).toFixed(2) }}</span>
         <span class="mv-stat-label">Avg Decay</span>
       </div>
     </div>
@@ -91,7 +91,7 @@
     <section class="mv-rag-config">
       <div class="mv-storage-summary">
         <strong>Memory configuration</strong>
-        <span>Brain memory &amp; RAG in memory: {{ formatBytes(memoryCacheBytes) }} / {{ maxMemoryMb.toFixed(0) }} MB</span>
+        <span>Brain memory &amp; RAG in memory: {{ formatBytes(memoryCacheBytes) }} / {{ formatBytes(maxMemoryMb * 1024 * 1024) }}</span>
       </div>
       <label class="mv-storage-control">
         <span>Maximum in-memory RAG cache</span>
@@ -120,7 +120,7 @@
     <section class="mv-rag-config">
       <div class="mv-storage-summary">
         <strong>Storage configuration</strong>
-        <span>Brain memory &amp; RAG in storage: {{ formatBytes(memoryStorageBytes) }} / {{ maxMemoryGb.toFixed(1) }} GB</span>
+        <span>Brain memory &amp; RAG in storage: {{ formatBytes(memoryStorageBytes) }} / {{ formatBytes(maxMemoryGb * 1024 * 1024 * 1024) }}</span>
       </div>
       <label class="mv-storage-control">
         <span>Maximum persistent RAG storage</span>
@@ -546,7 +546,7 @@
                 data-testid="mv-audit-timeline"
               >
                 <li
-                  v-for="ver in auditHistoryReversed"
+                  v-for="ver in auditHistorySorted"
                   :key="ver.id"
                   class="mv-audit-version"
                 >
@@ -587,6 +587,13 @@
                 class="mv-status"
               >
                 Loading…
+              </p>
+              <p
+                v-else-if="!auditProvenance"
+                class="mv-status"
+                data-testid="mv-audit-no-provenance"
+              >
+                Edge data is not available yet.
               </p>
               <p
                 v-else-if="auditEdges.length === 0"
@@ -771,7 +778,7 @@ const auditSelected = computed<MemoryEntry | null>(() => {
 
 /** Versions oldest → newest (Rust returns oldest-first; render in that order). */
 const auditHistory = computed(() => auditProvenance.value?.versions ?? []);
-const auditHistoryReversed = computed(() => auditHistory.value);
+const auditHistorySorted = computed(() => auditHistory.value);
 const auditEdges = computed(() => auditProvenance.value?.edges ?? []);
 
 async function selectAuditMemory(id: number) {

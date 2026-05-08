@@ -273,10 +273,9 @@ impl PostgresBackend {
             "CREATE EXTENSION IF NOT EXISTS vector",
             "ALTER TABLE memories ADD COLUMN IF NOT EXISTS vec_embedding vector(768)",
             "CREATE INDEX IF NOT EXISTS idx_memories_vec_hnsw ON memories USING hnsw (vec_embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64)",
-            // Backfill vec_embedding from the existing BYTEA embedding column
-            // (only for rows that already have embeddings but no vec_embedding).
-            // This is a one-time migration for existing data.
-            "UPDATE memories SET vec_embedding = NULL WHERE vec_embedding IS NULL AND embedding IS NULL",
+            // NOTE: No automatic BYTEA->pgvector backfill is performed here.
+            // The legacy `embedding` byte format is application-defined, so conversion
+            // must be handled explicitly by application code or a dedicated migration tool.
         ]).await?;
 
         Ok(())
