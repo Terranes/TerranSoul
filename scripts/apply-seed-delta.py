@@ -88,6 +88,8 @@ def apply_migration(
         try:
             conn.executescript("ROLLBACK;")
         except sqlite3.Error:
+            # Best-effort rollback: ignore rollback failures (for example,
+            # when no transaction is active) and re-raise the original error.
             pass
         raise
 
