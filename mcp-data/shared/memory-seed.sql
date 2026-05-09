@@ -255,7 +255,9 @@ VALUES
 
 ('LESSON: VRMA mood animation re-triggering per sentence (2026-05-09): During a streamed LLM response the characterStore.state watcher in src/components/CharacterViewport.vue plays a one-shot VRMA mood animation every time setState() is called. Multiple sources call setState in one response: the llm-animation event handler (per <anim> tag), the isStreaming watcher (sets talking), and the isSpeaking watcher (sets final emotion). If the LLM emits the same emotion in multiple <anim> tags (one per sentence), the body animation visibly re-triggers per sentence and breaks the talking flow. The durable fix is a lastMoodAnimState tracker inside CharacterViewport.vue: skip vrmaManager.play() when newState === lastMoodAnimState; reset to null on idle and talking transitions so the next distinct emotion can fire normally. Face blend shapes (asm.setEmotion) update independently of body animation, so emotion expressions still flow smoothly per sentence.', 'lesson,animation,vrma,characterstore,llm-animation,streaming-sync,three-stream,bug-fix', 10, 'procedure', 1778976000000, 'long', 1.0, 145, 'brain'),
 
-('VERDICT: terax-ai (https://github.com/crynta/terax-ai) is NOT comparable to TerranSoul for latency benchmarks (2026-05-09). Terax is a 7 MB AI terminal/code editor (xterm.js + CodeMirror 6 + Vercel AI SDK + LM Studio support) with no 3D character, no VRM, no VRMA animations, no TTS, no lip sync, and no viseme scheduling. Its low latency comes from the absence of an animation/voice pipeline; it streams text directly into a chat panel with nothing to coordinate. TerranSoul cannot be made as fast as terax-ai without dropping the avatar; the goal is to keep the three streams (text + animation + voice) tightly synchronised while each stays independently fast: Ollama streaming < 500 ms TTFT, sentence-boundary TTS pipeline, lastMoodAnimState dedup, and VRAM-safe model defaults. Verified TerranSoul direct Ollama chat with gemma3:4b: TTFT < 10 ms, TTFS 26-146 ms, total 66-163 ms; already faster than typical cloud-API terax-ai sessions.', 'verdict,benchmark,terax-ai,scope-mismatch,three-stream,latency,gemma3,deepwiki,2026-05-09', 9, 'decision', 1778976000000, 'long', 1.0, 130, 'brain');
+('VERDICT: terax-ai (https://github.com/crynta/terax-ai) is NOT comparable to TerranSoul for latency benchmarks (2026-05-09). Terax is a 7 MB AI terminal/code editor (xterm.js + CodeMirror 6 + Vercel AI SDK + LM Studio support) with no 3D character, no VRM, no VRMA animations, no TTS, no lip sync, and no viseme scheduling. Its low latency comes from the absence of an animation/voice pipeline; it streams text directly into a chat panel with nothing to coordinate. TerranSoul cannot be made as fast as terax-ai without dropping the avatar; the goal is to keep the three streams (text + animation + voice) tightly synchronised while each stays independently fast: Ollama streaming < 500 ms TTFT, sentence-boundary TTS pipeline, lastMoodAnimState dedup, and VRAM-safe model defaults. Verified TerranSoul direct Ollama chat with gemma3:4b: TTFT < 10 ms, TTFS 26-146 ms, total 66-163 ms; already faster than typical cloud-API terax-ai sessions.', 'verdict,benchmark,terax-ai,scope-mismatch,three-stream,latency,gemma3,deepwiki,2026-05-09', 9, 'decision', 1778976000000, 'long', 1.0, 130, 'brain'),
+
+('LESSON: Decouple Tauri event emission from the LLM streaming loop (2026-05-09): The streaming hot-path in src-tauri/src/commands/streaming.rs (`stream_ollama`, the OpenAI `chat_stream` callback, and `run_self_rag_stream`) used to call `app_handle.emit("llm-chunk"/"llm-animation"/"llm-pose", …)` synchronously inside `while let Some(chunk_result) = stream.next().await`. Each emit JSON-serialises the payload and dispatches it into every subscribed webview (chat + pet overlay + subtitle), so when more than one window was open, the next token had to wait for 2-3 ms × n_windows × n_event_types per chunk. The durable fix introduces a private `StreamEvent` enum and `spawn_event_pump<R: Runtime>(app: AppHandle<R>) -> (UnboundedSender<StreamEvent>, JoinHandle<()>)` helper. The streaming loops push events into the unbounded channel (microsecond-cost `tx.send`), and a single Tokio task owns the AppHandle and drains the channel in arrival order. After the stream completes, the loop drops the sender and awaits the pump JoinHandle so `done:true` is never lost. Two regression tests in `commands::streaming::tests` lock this in: `event_pump_preserves_order_and_drains_on_close` (50 chunks + done in order) and `event_pump_send_is_non_blocking` (10 000 sends < 100 ms). Rule: any future event in the per-token hot-path must go through `spawn_event_pump`, never `app_handle.emit` directly. Out-of-band events (provider-failover, providers-exhausted, stub responses) may still emit directly because they fire once per turn, not per token.', 'lesson,perf,streaming,tauri-emit,backpressure,three-stream,event-pump,mpsc,non-blocking,2026-05-09', 10, 'procedure', 1778976000000, 'long', 1.0, 165, 'brain');
 
 -- ====================================================================
 -- KNOWLEDGE GRAPH EDGES
@@ -1509,3 +1511,33 @@ FROM memories gate
 CROSS JOIN memories rule
 WHERE gate.content LIKE 'MCP COMPLIANCE GATE (2026-05-07)%'
   AND rule.content LIKE 'MILESTONE HYGIENE RULE%';
+
+-- ── 2026-05-09: RAG write-back must refine, not blindly insert ─────────
+-- Lesson: chat-driven memory ingest used to call `brain_memory::save_facts`
+-- which inserted every extracted fact verbatim, so the knowledge base
+-- accumulated near-duplicates ("User likes Python", "User mostly uses
+-- Python", "User prefers Python language" → 3 rows). The fix introduces
+-- `memory::refine` with `save_facts_refined`: for each new fact we
+-- run a keyword hybrid_search to fetch up to 3 candidates, ask the
+-- active brain (LocalOllama / OpenAI / OpenRouter / Pollinations / etc.)
+-- to choose `keep` (drop duplicate), `update` (rewrite existing
+-- entry with merged content) or `new` (genuinely novel), then apply
+-- the decision through `MemoryStore::update` (non-destructive
+-- versioning) or `add`. `extract_memories_from_session` now routes
+-- through `save_facts_refined` whenever a brain mode is configured;
+-- the legacy blind-insert path only runs when no brain exists.
+-- Critical Send/Sync rule: the `std::sync::MutexGuard<MemoryStore>` is
+-- !Send, so the refine pipeline must NOT hold the lock across the LLM
+-- `.await`. `refine_and_save_fact` takes `&Mutex<MemoryStore>` and
+-- briefly locks per phase (keyword_candidates → drop → LLM → re-lock for
+-- update/add). LLM unreachable / unparseable JSON → FallbackInserted, so
+-- knowledge is never silently lost. Added 16 unit tests in
+-- src/memory/refine.rs covering prompt shape, parser robustness
+-- (fences, invented ids, missing content, garbage), stats accounting,
+-- DB-backed keyword retrieval, and the unreachable-brain fallback path.
+INSERT INTO memories (content, kind, importance, confidence, decay, tags, embedding, created_at, updated_at, last_accessed_at, access_count, source, metadata)
+VALUES (
+  'RAG WRITE-BACK REFINEMENT (2026-05-09): chat-extracted facts must go through memory::refine::save_facts_refined when a brain mode is configured. The refiner pulls up to DEFAULT_REFINE_CANDIDATES=3 keyword-similar entries via MemoryStore::hybrid_search, asks the LLM (BrainMode-routed via complete_via_mode) to return JSON {action: keep|update|new, id?, content?}, and applies keep/update/new via MemoryStore::update or add. Never hold the std::sync::MutexGuard<MemoryStore> across the LLM .await — refine_and_save_fact takes &Mutex<MemoryStore> and locks per phase. LLM failure or invalid JSON falls back to insert (FallbackInserted) so no fact is lost. extract_memories_from_session in commands/memory.rs now calls save_facts_refined for any brain mode; brain_memory::save_facts only runs in the no-brain bootstrap path. 16 unit tests in src/memory/refine.rs cover prompt building, parser hardening (fences, invented ids, missing fields), stats, keyword candidate retrieval, and the unreachable-brain fallback.',
+  'rule', 9, 0.97, 1.0, 'rag,memory,refine,dedup,llm-judge,knowledge-graph',
+  NULL, 1746748800000, 1746748800000, 1746748800000, 0, 'seed', '{"area":"memory/refine"}'
+);

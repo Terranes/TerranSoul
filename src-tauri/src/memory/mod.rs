@@ -41,6 +41,7 @@ pub mod platform;
 pub mod post_retrieval;
 pub mod query_intent;
 pub mod reflection;
+pub mod refine;
 pub mod replay;
 pub mod reranker;
 pub mod schema;

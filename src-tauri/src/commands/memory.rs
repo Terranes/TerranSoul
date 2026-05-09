@@ -300,7 +300,7 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
             .collect()
     }; // lock released before await
 
-    let facts = if let Some(mode) = brain_mode {
+    let facts = if let Some(mode) = brain_mode.clone() {
         // Chunk 26.2b — route through the topic-segmenter so a chat
         // that wandered across topics produces a focused per-topic
         // fact list instead of one jumbled blob. Falls back to
@@ -329,7 +329,23 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
         crate::memory::brain_memory::extract_facts(&model, &history).await
     };
 
-    let count = {
+    let brain_mode_for_refine = brain_mode;
+    let count = if let Some(mode) = brain_mode_for_refine.as_ref() {
+        // Brain available → refine each fact through the LLM so we
+        // update existing knowledge instead of accumulating duplicates.
+        // Falls back to plain insert per-fact when the LLM is
+        // unreachable, so we never silently lose extracted facts.
+        let stats = crate::memory::refine::save_facts_refined(
+            &facts,
+            mode,
+            &state.provider_rotator,
+            &state.memory_store,
+        )
+        .await;
+        stats.total_writes()
+    } else {
+        // No brain configured (e.g. legacy Ollama-only path during
+        // first-boot bootstrap) → original blind-insert behaviour.
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         crate::memory::brain_memory::save_facts(&facts, &store)
     };

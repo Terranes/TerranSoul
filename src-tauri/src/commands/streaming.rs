@@ -5,6 +5,130 @@ use crate::persona::pose_frame::{parse_pose_payload, LlmPoseFrame};
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+
+/// Decoupled event payload routed through the [`spawn_event_pump`] channel.
+///
+/// The LLM streaming loop calls `tx.send(StreamEvent::…)` (microsecond cost),
+/// while a background Tokio task owns the [`tauri::AppHandle`] and emits each
+/// event in arrival order. Without this decoupling, every token chunk had to
+/// wait for `app.emit()` to JSON-serialise the payload and dispatch it into
+/// every subscribed webview (chat + pet overlay + subtitle), which back-
+/// pressured `stream.next().await` and slowed perceived token throughput on
+/// LocalOllama.
+#[derive(Debug)]
+enum StreamEvent {
+    Chunk(LlmChunk),
+    Animation(AnimationCommand),
+    Pose(LlmPoseFrame),
+}
+
+/// Spawn a background task that drains `rx` and emits Tauri events in order.
+///
+/// Returns:
+/// - the `UnboundedSender<StreamEvent>` used by the streaming loop, and
+/// - a [`tokio::task::JoinHandle`] the caller awaits **after dropping the
+///   sender** to guarantee every queued event has been emitted before the
+///   function returns (so `done:true` is never lost).
+/// Spawn a background task that drains `rx` and emits Tauri events in order.
+///
+/// Returns:
+/// - the `UnboundedSender<StreamEvent>` used by the streaming loop, and
+/// - a [`tokio::task::JoinHandle`] the caller awaits **after dropping the
+///   sender** to guarantee every queued event has been emitted before the
+///   function returns (so `done:true` is never lost).
+///
+/// ## Three-stream coalescing
+///
+/// LocalOllama on a 3080 Ti emits 60+ tokens/sec, and `app.emit()` JSON-
+/// serialises + dispatches to every subscribed webview (chat, pet overlay,
+/// subtitles). Sending one event per token wastes IPC bandwidth — the
+/// webview cannot render faster than vsync (~60 Hz) anyway.
+///
+/// The pump therefore *coalesces consecutive text chunks*: after waking on
+/// `recv().await`, it drains every `Chunk` already queued via `try_recv()`
+/// and concatenates their text into a single `llm-chunk` emit. The
+/// `Animation` and `Pose` streams are **never coalesced** — each event
+/// carries a discrete command/frame that must reach the renderer with its
+/// original timing. When a non-Chunk event is encountered mid-drain, the
+/// accumulated text is emitted first to preserve global arrival order,
+/// then the non-Chunk event is emitted. The terminal `done:true` chunk is
+/// also flushed eagerly so the frontend can finalize the message.
+fn spawn_event_pump<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> (UnboundedSender<StreamEvent>, tokio::task::JoinHandle<()>) {
+    let (tx, mut rx) = unbounded_channel::<StreamEvent>();
+    let handle = tokio::spawn(async move {
+        // Reusable scratch buffer for coalescing successive text chunks.
+        let mut text_buf = String::with_capacity(256);
+        let mut done_flag = false;
+
+        // Helper closure-style flush: emit the accumulated text (if any)
+        // as a single chunk event. `done` is honoured separately so the
+        // terminal frame still arrives.
+        let flush_text =
+            |buf: &mut String, done: &mut bool, app: &tauri::AppHandle<R>| {
+                if !buf.is_empty() || *done {
+                    let _ = app.emit(
+                        "llm-chunk",
+                        LlmChunk {
+                            text: std::mem::take(buf),
+                            done: *done,
+                        },
+                    );
+                    *done = false;
+                }
+            };
+
+        while let Some(evt) = rx.recv().await {
+            // Process the freshly-received event and any siblings already
+            // in the channel queue, in arrival order.
+            let mut current = Some(evt);
+            loop {
+                let evt = match current.take() {
+                    Some(e) => e,
+                    None => match rx.try_recv() {
+                        Ok(e) => e,
+                        Err(_) => break, // queue empty → wait for next recv
+                    },
+                };
+                match evt {
+                    StreamEvent::Chunk(c) => {
+                        if c.done {
+                            done_flag = true;
+                        }
+                        if !c.text.is_empty() {
+                            text_buf.push_str(&c.text);
+                        }
+                        // Flush immediately on `done:true` so the
+                        // frontend never waits for the next event to
+                        // discover the stream ended.
+                        if done_flag {
+                            flush_text(&mut text_buf, &mut done_flag, &app);
+                        }
+                    }
+                    StreamEvent::Animation(a) => {
+                        // Preserve global order: emit any pending text
+                        // before the animation command.
+                        flush_text(&mut text_buf, &mut done_flag, &app);
+                        let _ = app.emit("llm-animation", a);
+                    }
+                    StreamEvent::Pose(p) => {
+                        flush_text(&mut text_buf, &mut done_flag, &app);
+                        let _ = app.emit("llm-pose", p);
+                    }
+                }
+            }
+            // Queue drained — flush any leftover text before sleeping
+            // again on `recv().await`. This is the natural batching
+            // boundary: one emit per producer wake-up.
+            flush_text(&mut text_buf, &mut done_flag, &app);
+        }
+        // Sender dropped — final flush.
+        flush_text(&mut text_buf, &mut done_flag, &app);
+    });
+    (tx, handle)
+}
 
 /// Decide whether to skip the RAG pipeline (embed + hybrid search) for a
 /// trivial query. Skipping saves 400-1500 ms on cold-embed paths because
@@ -647,27 +771,28 @@ async fn stream_openai_api<R: tauri::Runtime>(
     }
 
     // Stream with callback — parser separates text from <anim> blocks.
-    let app = app_handle.clone();
+    // The callback pushes events into a non-blocking channel so each token
+    // returns control to `stream.next().await` immediately; a background
+    // pump task owns the AppHandle and emits in arrival order.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
     let parser = std::sync::Arc::new(std::sync::Mutex::new(StreamTagParser::new()));
     let parser_cb = std::sync::Arc::clone(&parser);
+    let tx_cb = tx.clone();
     let result = client
         .chat_stream(messages, move |chunk_text| {
             let mut p = parser_cb.lock().unwrap();
             let feed = p.feed(chunk_text);
             if !feed.text.is_empty() {
-                let _ = app.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: feed.text,
-                        done: false,
-                    },
-                );
+                let _ = tx_cb.send(StreamEvent::Chunk(LlmChunk {
+                    text: feed.text,
+                    done: false,
+                }));
             }
             for cmd in feed.anim_commands {
-                let _ = app.emit("llm-animation", cmd);
+                let _ = tx_cb.send(StreamEvent::Animation(cmd));
             }
             for frame in feed.pose_frames {
-                let _ = app.emit("llm-pose", frame);
+                let _ = tx_cb.send(StreamEvent::Pose(frame));
             }
         })
         .await;
@@ -679,28 +804,26 @@ async fn stream_openai_api<R: tauri::Runtime>(
                 let mut p = parser.lock().unwrap();
                 let feed = p.flush();
                 if !feed.text.is_empty() {
-                    let _ = app_handle.emit(
-                        "llm-chunk",
-                        LlmChunk {
-                            text: feed.text,
-                            done: false,
-                        },
-                    );
+                    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                        text: feed.text,
+                        done: false,
+                    }));
                 }
                 for cmd in feed.anim_commands {
-                    let _ = app_handle.emit("llm-animation", cmd);
+                    let _ = tx.send(StreamEvent::Animation(cmd));
                 }
                 for frame in feed.pose_frames {
-                    let _ = app_handle.emit("llm-pose", frame);
+                    let _ = tx.send(StreamEvent::Pose(frame));
                 }
             }
-            let _ = app_handle.emit(
-                "llm-chunk",
-                LlmChunk {
-                    text: String::new(),
-                    done: true,
-                },
-            );
+            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                text: String::new(),
+                done: true,
+            }));
+            // Drop sender + await the pump so all events are flushed in
+            // arrival order before we return to the frontend.
+            drop(tx);
+            let _ = pump.await;
             // Record successful request in rotator
             {
                 let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
@@ -715,6 +838,10 @@ async fn stream_openai_api<R: tauri::Runtime>(
             Ok(())
         }
         Err(e) => {
+            // Drain pump before bubbling the error so any buffered chunks
+            // emitted before the failure still reach the frontend.
+            drop(tx);
+            let _ = pump.await;
             // Don't emit done:true here — the caller (retry loop) decides
             // whether to emit it after all attempts are exhausted.
             // Record rate limit if applicable
@@ -858,6 +985,12 @@ async fn stream_ollama<R: tauri::Runtime>(
     let mut stream = resp.bytes_stream();
     use futures_util::StreamExt;
 
+    // Decouple emit work from the LLM token loop: a background pump owns
+    // the AppHandle and emits events in arrival order, so each token
+    // returns control to `stream.next().await` immediately even when
+    // multiple webviews are subscribed.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
+
     while let Some(chunk_result) = stream.next().await {
         let bytes = chunk_result.map_err(|e| format!("stream error: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
@@ -873,50 +1006,46 @@ async fn stream_ollama<R: tauri::Runtime>(
                         full_response.push_str(&msg.content);
                         let feed = parser.feed(&msg.content);
                         if !feed.text.is_empty() {
-                            let _ = app_handle.emit(
-                                "llm-chunk",
-                                LlmChunk {
-                                    text: feed.text,
-                                    done: false,
-                                },
-                            );
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.text,
+                                done: false,
+                            }));
                         }
                         for cmd in feed.anim_commands {
-                            let _ = app_handle.emit("llm-animation", cmd);
+                            let _ = tx.send(StreamEvent::Animation(cmd));
                         }
                         for frame in feed.pose_frames {
-                            let _ = app_handle.emit("llm-pose", frame);
+                            let _ = tx.send(StreamEvent::Pose(frame));
                         }
                     }
                 }
                 if parsed.done {
                     let feed = parser.flush();
                     if !feed.text.is_empty() {
-                        let _ = app_handle.emit(
-                            "llm-chunk",
-                            LlmChunk {
-                                text: feed.text,
-                                done: false,
-                            },
-                        );
+                        let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                            text: feed.text,
+                            done: false,
+                        }));
                     }
                     for cmd in feed.anim_commands {
-                        let _ = app_handle.emit("llm-animation", cmd);
+                        let _ = tx.send(StreamEvent::Animation(cmd));
                     }
                     for frame in feed.pose_frames {
-                        let _ = app_handle.emit("llm-pose", frame);
+                        let _ = tx.send(StreamEvent::Pose(frame));
                     }
-                    let _ = app_handle.emit(
-                        "llm-chunk",
-                        LlmChunk {
-                            text: String::new(),
-                            done: true,
-                        },
-                    );
+                    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                        text: String::new(),
+                        done: true,
+                    }));
                 }
             }
         }
     }
+
+    // Drop sender + await the pump so every queued event is delivered
+    // (including the final done:true) before we return.
+    drop(tx);
+    let _ = pump.await;
 
     store_assistant_message(state, &strip_anim_blocks(&full_response), model)?;
     Ok(())
@@ -1016,6 +1145,11 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
 
     let mut controller = SelfRagController::new();
 
+    // Decouple emit work from the LLM token loop across all Self-RAG
+    // iterations: a background pump owns the AppHandle and emits in
+    // arrival order so each token returns control immediately.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
+
     let final_answer: String = loop {
         // ── Step 1: Embed + retrieve ──────────────────────────────────
         let query_emb = crate::brain::OllamaAgent::embed_text(&message, &model).await;
@@ -1111,38 +1245,32 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                             full_response.push_str(&msg.content);
                             let feed = parser.feed(&msg.content);
                             if !feed.text.is_empty() {
-                                let _ = app_handle.emit(
-                                    "llm-chunk",
-                                    LlmChunk {
-                                        text: feed.text,
-                                        done: false,
-                                    },
-                                );
+                                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                    text: feed.text,
+                                    done: false,
+                                }));
                             }
                             for cmd in feed.anim_commands {
-                                let _ = app_handle.emit("llm-animation", cmd);
+                                let _ = tx.send(StreamEvent::Animation(cmd));
                             }
                             for frame in feed.pose_frames {
-                                let _ = app_handle.emit("llm-pose", frame);
+                                let _ = tx.send(StreamEvent::Pose(frame));
                             }
                         }
                     }
                     if parsed.done {
                         let feed = parser.flush();
                         if !feed.text.is_empty() {
-                            let _ = app_handle.emit(
-                                "llm-chunk",
-                                LlmChunk {
-                                    text: feed.text,
-                                    done: false,
-                                },
-                            );
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.text,
+                                done: false,
+                            }));
                         }
                         for cmd in feed.anim_commands {
-                            let _ = app_handle.emit("llm-animation", cmd);
+                            let _ = tx.send(StreamEvent::Animation(cmd));
                         }
                         for frame in feed.pose_frames {
-                            let _ = app_handle.emit("llm-pose", frame);
+                            let _ = tx.send(StreamEvent::Pose(frame));
                         }
                     }
                 }
@@ -1165,38 +1293,34 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                         "I don't have enough information in my memory to give you a reliable answer to that question.".to_string()
                     }
                 };
-                let _ = app_handle.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: refusal.clone(),
-                        done: false,
-                    },
-                );
+                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                    text: refusal.clone(),
+                    done: false,
+                }));
                 break refusal;
             }
             Decision::Retrieve => {
                 // Emit a brief indicator that we're re-retrieving
-                let _ = app_handle.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: "\n\n---\n*Refining answer with additional context...*\n\n"
-                            .to_string(),
-                        done: false,
-                    },
-                );
+                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                    text: "\n\n---\n*Refining answer with additional context...*\n\n"
+                        .to_string(),
+                    done: false,
+                }));
                 // Loop continues — next iteration re-embeds and re-retrieves
             }
         }
     };
 
     // ── Final: emit done signal and store message ─────────────────────
-    let _ = app_handle.emit(
-        "llm-chunk",
-        LlmChunk {
-            text: String::new(),
-            done: true,
-        },
-    );
+    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+        text: String::new(),
+        done: true,
+    }));
+
+    // Drop the sender + drain the pump so every queued event reaches the
+    // frontend before we return.
+    drop(tx);
+    let _ = pump.await;
 
     store_assistant_message(state, &strip_anim_blocks(&final_answer), &model)?;
 
@@ -1306,6 +1430,109 @@ mod tests {
         assert!(!should_skip_rag("Hello there friend", 1000));
         assert!(!should_skip_rag("Hi there explain things", 1000));
     }
+
+    /// Verify [`spawn_event_pump`] preserves the order in which events are
+    /// pushed by the streaming loop. Order matters for the frontend: text
+    /// chunks must arrive in generation order, and `done:true` must be the
+    /// last event so the UI's streaming watch fires exactly once.
+    #[tokio::test]
+    async fn event_pump_preserves_order_and_drains_on_close() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let received: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let done = std::sync::Arc::new(tokio::sync::Notify::new());
+
+        let received_cb = std::sync::Arc::clone(&received);
+        let done_cb = std::sync::Arc::clone(&done);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                let is_done = c.done;
+                received_cb.lock().unwrap().push(c.text);
+                if is_done {
+                    done_cb.notify_one();
+                }
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+
+        // Push 50 text events fast — the pump must keep them in order.
+        for i in 0..50 {
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: format!("t{i}"),
+                done: false,
+            }))
+            .expect("send chunk");
+        }
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: String::new(),
+            done: true,
+        }))
+        .expect("send done");
+
+        drop(tx);
+        pump.await.expect("pump drain");
+
+        // Wait for the listener thread to observe the done sentinel.
+        tokio::select! {
+            _ = done.notified() => {}
+            _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                panic!("done:true never observed by listener");
+            }
+        }
+
+        let observed = received.lock().unwrap().clone();
+        assert_eq!(observed.len(), 51, "expected 50 text + 1 done");
+        for (i, label) in observed.iter().take(50).enumerate() {
+            assert_eq!(label, &format!("t{i}"), "out-of-order at index {i}");
+        }
+        assert_eq!(observed[50], "", "done:true must be the final event");
+    }
+
+    /// Sending into the pump must be effectively instant relative to the
+    /// frontend's emit cost. A backpressured pump would defeat the whole
+    /// purpose of the decoupling — this test guards against a regression
+    /// where someone replaces the unbounded channel with a bounded one
+    /// without also moving emit work off the streaming task.
+    #[tokio::test]
+    async fn event_pump_send_is_non_blocking() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+        let (tx, pump) = spawn_event_pump(handle);
+
+        let start = std::time::Instant::now();
+        for i in 0..10_000 {
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: format!("t{i}"),
+                done: false,
+            }))
+            .expect("send");
+        }
+        let send_elapsed = start.elapsed();
+
+        // 10k unbounded sends should complete well under 100 ms even on
+        // slow CI; this guards against accidental sync work being added
+        // to the producer side of the channel.
+        assert!(
+            send_elapsed < std::time::Duration::from_millis(100),
+            "10k pump sends took {send_elapsed:?} — producer side is no longer non-blocking"
+        );
+
+        drop(tx);
+        let _ = pump.await;
+    }
+
 
     #[test]
     fn llm_chunk_serializes() {
