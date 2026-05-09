@@ -5,7 +5,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "taskkill /IM terransoul.exe /F 2>nul & npx tauri dev",
+    "dev": "taskkill /IM terransoul.exe /F 2>nul & cargo build --manifest-path src-tauri/Cargo.toml && npx tauri dev",
     "dev:vite": "node scripts/check-port.cjs && vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",
