@@ -363,39 +363,19 @@ The current `memory_type` column supports four values:
 
 ### Proposed Category Taxonomy
 
-The four core types are **structural** (how the memory was created). Categories are **semantic** (what the memory is about). Both axes are needed:
+The four core types are **structural** (how the memory was created). Categories are **semantic** (what the memory is about). Both axes are needed.
 
-```
- STRUCTURAL TYPE
- fact preference context summary
-              ┌─────────┬────────────┬──────────┬─────────┐
-  personal │ name, │ dark mode, │ "on │ "User │
-  info │ age, │ language,  │ mobile"  │ intro │
-              │ location│ timezone   │          │ session" │
-              ├─────────┼────────────┼──────────┼─────────┤
-  friends & │ "Mom is │ "Dad likes│ "Sister  │ "Talked  │
-  relations │ Sarah"  │ golf" │ visiting"│ about │
-              │         │           │          │ family"  │
-              ├─────────┼────────────┼──────────┼─────────┤
-  habits & │ "Runs │ "Prefers  │ "Morning │ "Health  │
-  routines │ 5km/day"│ 6am alarm"│ workout" │ recap" │
-              ├─────────┼────────────┼──────────┼─────────┤
-  domain │ "Rule │ "Cite │ "Case │ "Law │
-  knowledge │ 14.3..."│ Bluebook" │ research"│ session" │
-              ├─────────┼────────────┼──────────┼─────────┤
-  skills & │ "Knows  │ "Learning │ "Coding  │ "Skill │
-  projects │ Python" │ Rust" │ session" │ progress"│
-              ├─────────┼────────────┼──────────┼─────────┤
-  emotional │ "Anxious│ "Likes │ "Stressed│ "Mood │
-  state │ about │ encourage-│ about │ trend │
-              │ exams"  │ ment"     │ deadline"│ recap"   │
-              ├─────────┼────────────┼──────────┼─────────┤
-  world │ "Earth  │ — │ "Election│ "News │
-  knowledge │ is 93M  │ │ season"  │ digest"  │
-              │ mi from │           │          │          │
-              │ sun"    │           │          │          │
-              └─────────┴────────────┴──────────┴─────────┘
-```
+**Category × Structural Type — example contents:**
+
+| Category \ Type | `fact` | `preference` | `context` | `summary` |
+|---|---|---|---|---|
+| **personal info** | name, age, location | dark mode, language, timezone | "on mobile" | "User intro session" |
+| **friends & relations** | "Mom is Sarah" | "Dad likes golf" | "Sister visiting" | "Talked about family" |
+| **habits & routines** | "Runs 5km/day" | "Prefers 6am alarm" | "Morning workout" | "Health recap" |
+| **domain knowledge** | "Rule 14.3…" | "Cite Bluebook" | "Case research" | "Law session" |
+| **skills & projects** | "Knows Python" | "Learning Rust" | "Coding session" | "Skill progress" |
+| **emotional state** | "Anxious about exams" | "Likes encouragement" | "Stressed about deadline" | "Mood trend recap" |
+| **world knowledge** | "Earth is 93M mi from sun" | — | "Election season" | "News digest" |
 
 **Proposed `category` values** (stored as a new column or as structured tags):
 
@@ -414,17 +394,16 @@ The four core types are **structural** (how the memory was created). Categories 
 
 Not all categories belong in all tiers:
 
-```
- SHORT WORKING LONG
-  personal rare extracted ✓ permanent
-  relations mentioned extracted ✓ permanent
-  habits — observed ✓ after confirmation
-  domain referenced chunked/cited ✓ ingested docs
-  skills mentioned session notes ✓ tracked progress
-  emotional ✓ current session mood ✓ only patterns
-  world referenced — ✓ verified facts
-  meta — — ✓ always
-```
+| Category | `short` | `working` | `long` |
+|---|---|---|---|
+| **personal** | rare | extracted | ✓ permanent |
+| **relations** | mentioned | extracted | ✓ permanent |
+| **habits** | — | observed | ✓ after confirmation |
+| **domain** | referenced | chunked / cited | ✓ ingested docs |
+| **skills** | mentioned | session notes | ✓ tracked progress |
+| **emotional** | ✓ current | session mood | ✓ only patterns |
+| **world** | referenced | — | ✓ verified facts |
+| **meta** | — | — | ✓ always |
 
 **Key insight**: Emotional memories should decay fast in long-term (you don't want "user was stressed on April 3rd" cluttering RAG forever), but personal identity ("user's name is Alex") should essentially never decay.
 
@@ -461,19 +440,14 @@ These overlap with — but are **orthogonal to** — TerranSoul's existing
 `MemoryType` (`fact`/`preference`/`context`/`summary`) and `MemoryTier`
 (`short`/`working`/`long`) axes:
 
-```
- STRUCTURAL TYPE × COGNITIVE KIND  (✓ = common, ◇ = possible, — = rare)
+**Structural Type × Cognitive Kind** (✓ = common, ◇ = possible, — = rare):
 
- episodic semantic procedural judgment
- fact ◇  event ✓  general  ◇  how-to ✓  decision
- record truth fact rule
- preference — ✓  stable ◇  workflow ✓  operating
- choice preference preference
- context ✓  current  ◇  current  ◇  repo ✓  session
- event state workflow heuristic
- summary ✓  session  — ◇  process ◇  decision
- recap recap recap
-```
+| Type \ Kind | `episodic` | `semantic` | `procedural` | `judgment` |
+|---|---|---|---|---|
+| **fact** | ◇ event record | ✓ general truth | ◇ how-to fact | ✓ decision rule |
+| **preference** | — | ✓ stable choice | ◇ workflow preference | ✓ operating preference |
+| **context** | ✓ current event | ◇ current state | ◇ repo workflow | ✓ session heuristic |
+| **summary** | ✓ session recap | — | ◇ process recap | ◇ decision recap |
 
 ### 3.5.2 Do we **need** a cognitive-kind axis?
 
@@ -1011,22 +985,21 @@ This keeps the in-memory working set small while persisting everything to storag
 
 Different categories should decay at different rates:
 
-```
-┌──────────────┬──────────────┬──────────────┬───────────────────────┐
-│ Category     │ Base Rate    │ Half-Life    │ Rationale             │
-├──────────────┼──────────────┼──────────────┼───────────────────────┤
-│ personal     │ 0.99         │ ~6 months    │ Identity is stable    │
-│ relations    │ 0.98         │ ~3 months    │ People change slowly  │
-│ habits       │ 0.96         │ ~1 month     │ Routines evolve       │
-│ domain       │ 0.97         │ ~2 months    │ Knowledge is durable  │
-│ skills       │ 0.96         │ ~1 month     │ Skills need practice  │
-│ emotional    │ 0.90         │ ~1 week      │ Moods are transient   │
-│ world        │ 0.97         │ ~2 months    │ Facts are stable      │
-│ meta         │ 0.99         │ ~6 months    │ App prefs are sticky  │
-└──────────────┴──────────────┴──────────────┴───────────────────────┘
+| Category | Base Rate | Half-Life | Rationale |
+|---|---|---|---|
+| `personal` | 0.99 | ~6 months | Identity is stable |
+| `relations` | 0.98 | ~3 months | People change slowly |
+| `habits` | 0.96 | ~1 month | Routines evolve |
+| `domain` | 0.97 | ~2 months | Knowledge is durable |
+| `skills` | 0.96 | ~1 month | Skills need practice |
+| `emotional` | 0.90 | ~1 week | Moods are transient |
+| `world` | 0.97 | ~2 months | Facts are stable |
+| `meta` | 0.99 | ~6 months | App prefs are sticky |
 
 Future formula:
-  decay_score(t) = 1.0 × category_rate ^ (hours / 168)
+
+```
+decay_score(t) = 1.0 × category_rate ^ (hours / 168)
 ```
 
 ---
