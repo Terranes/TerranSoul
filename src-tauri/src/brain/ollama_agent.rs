@@ -63,7 +63,7 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1, "num_ctx": 2048 },
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "stream": false,
             "keep_alive": "30m",
         });
@@ -181,6 +181,11 @@ struct ChatOptions {
     num_ctx: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
+    /// Prompt-processing batch size. Larger = faster prompt eval at the
+    /// cost of slightly more VRAM. 512 is the Ollama default; we set it
+    /// explicitly so it stays consistent across all request sites.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_batch: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -323,6 +328,7 @@ impl OllamaAgent {
                 num_predict: Some(150),
                 num_ctx: Some(2048),
                 temperature: Some(0.7),
+                num_batch: Some(512),
             }),
             keep_alive: Some("30m".to_string()),
         };

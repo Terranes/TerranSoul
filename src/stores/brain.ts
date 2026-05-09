@@ -660,13 +660,42 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /**
+   * If brain is configured for cloud (free_api) but Ollama is running
+   * locally with at least one model installed, auto-upgrade to local_ollama
+   * for dramatically lower latency (~400ms vs 5-25s for free cloud APIs).
+   * Runs once at app startup — never overwrites an explicit user choice
+   * of paid_api or local_lm_studio.
+   */
+  async function maybeUpgradeToLocalOllama(): Promise<boolean> {
+    if (!brainMode.value || brainMode.value.mode !== 'free_api') return false;
+    try {
+      await checkOllamaStatus();
+      if (!ollamaStatus.value.running) return false;
+      await fetchInstalledModels();
+      if (installedModels.value.length === 0) return false;
+      await fetchSystemInfo();
+      const best = ramAwareFallback(systemInfo.value?.total_ram_mb);
+      const match = installedModels.value.find(m => m.name === best)
+        ?? installedModels.value[0];
+      await setBrainMode({ mode: 'local_ollama', model: match.name });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** RAM-aware fallback when the catalogue/recommendations are unavailable. */
   function ramAwareFallback(totalRamMb?: number): string {
     const ram = totalRamMb ?? 0;
     // Optimised for sub-1 s first-token latency on consumer GPUs.
-    if (ram >= 32_768) return 'gemma4:e4b';
-    if (ram >= 16_384) return 'gemma3:4b';
-    if (ram >= 8_192) return 'gemma3:1b';
+    // VRAM (not RAM) is the real constraint for interactive chat.
+    // gemma3:4b (3.1 GB) is the sweet spot: fits any 8+ GB GPU with
+    // room for nomic-embed-text, and delivers <500 ms TTFT.
+    // gemma4:e4b (8.9 GB) is slower on 12 GB GPUs and causes VRAM
+    // contention with embeddings — only recommend on ≥24 GB VRAM systems.
+    if (ram >= 49_152) return 'gemma4:e4b'; // 48+ GB RAM likely has ≥24 GB VRAM
+    if (ram >= 8_192) return 'gemma3:4b';
     if (ram >= 4_096) return 'gemma3:1b';
     return 'tinyllama';
   }
@@ -1140,6 +1169,7 @@ export const useBrainStore = defineStore('brain', () => {
     authoriseBrowserProvider,
     clearBrowserAuthorisation,
     autoConfigureForDesktop,
+    maybeUpgradeToLocalOllama,
     autoConfigureLocalFirst,
     initialise,
     checkForModelUpdates,

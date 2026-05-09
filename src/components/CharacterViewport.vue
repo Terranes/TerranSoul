@@ -1204,6 +1204,10 @@ onUnmounted(() => {
   }
 });
 
+// Track last mood animation to prevent re-triggering the same one
+// (e.g. multiple <anim> tags with the same emotion in one response).
+let lastMoodAnimState: string | null = null;
+
 watch(
   () => characterStore.state,
   (newState) => {
@@ -1226,6 +1230,7 @@ watch(
     if (vrmaManager.isMoodSuppressed) return;
     // Idle special-case: use character-gender weighted loop selection.
     if (newState === 'idle') {
+      lastMoodAnimState = null; // reset so next emotion can play
       const idleEntry = getIdleAnimationForGender(
         characterStore.currentGender(),
         Math.random,
@@ -1240,15 +1245,21 @@ watch(
       return;
     }
     // Try to play a VRMA animation mapped to this mood (one-shot, then return to procedural).
+    // Skip if the same mood animation is already playing — prevents
+    // re-triggering per sentence when multiple <anim> tags emit the
+    // same emotion during a streamed response.
+    if (newState === lastMoodAnimState) return;
     // In pet/forcePet mode, prefer the standing variant so we don't spawn a chair
     // floating in mid-air next to the small floating preview.
     const entry = isPetMode.value
       ? (getStandingAnimationForMood(newState) ?? getAnimationForMood(newState))
       : getAnimationForMood(newState);
     if (entry && (!isPetMode.value || !SITTING_ANIMATION_PATHS.has(entry.path))) {
+      lastMoodAnimState = newState;
       vrmaManager.suppressMoodAnimation();
       vrmaManager.play(entry.path, false, 0.4);
     } else if (newState === 'talking') {
+      lastMoodAnimState = null; // reset so emotion after talking can play
       // Return to procedural animation for talking
       vrmaManager.stop(0.4);
     }

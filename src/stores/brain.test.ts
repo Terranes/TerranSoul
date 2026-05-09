@@ -440,3 +440,57 @@ describe('brain store — IPC contract', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_active_brain', { modelName: 'phi-4:latest' });
   });
 });
+
+describe('maybeUpgradeToLocalOllama', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    mockInvoke.mockReset();
+  });
+
+  it('switches from free_api to local_ollama when Ollama is running', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_brain_mode') return Promise.resolve({ mode: 'free_api', provider_id: 'pollinations', api_key: null });
+      if (cmd === 'get_active_brain') return Promise.resolve(null);
+      if (cmd === 'list_free_providers') return Promise.resolve([sampleFreeProvider]);
+      if (cmd === 'check_ollama_status') return Promise.resolve({ running: true, model_count: 1 });
+      if (cmd === 'get_ollama_models') return Promise.resolve([{ name: 'gemma3:4b', size: 4000000000 }]);
+      if (cmd === 'get_system_info') return Promise.resolve(sampleInfo);
+      if (cmd === 'set_brain_mode') return Promise.resolve(undefined);
+      if (cmd === 'warmup_local_ollama') return Promise.resolve('ok');
+      return Promise.resolve(null);
+    });
+
+    const store = useBrainStore();
+    await store.loadBrainMode();
+    const upgraded = await store.maybeUpgradeToLocalOllama();
+    expect(upgraded).toBe(true);
+    expect(store.brainMode?.mode).toBe('local_ollama');
+  });
+
+  it('does nothing when already on local_ollama', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_brain_mode') return Promise.resolve({ mode: 'local_ollama', model: 'gemma3:4b' });
+      if (cmd === 'get_active_brain') return Promise.resolve('gemma3:4b');
+      return Promise.resolve(null);
+    });
+
+    const store = useBrainStore();
+    await store.loadBrainMode();
+    const upgraded = await store.maybeUpgradeToLocalOllama();
+    expect(upgraded).toBe(false);
+  });
+
+  it('does nothing when Ollama is not running', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'get_brain_mode') return Promise.resolve({ mode: 'free_api', provider_id: 'pollinations', api_key: null });
+      if (cmd === 'get_active_brain') return Promise.resolve(null);
+      if (cmd === 'check_ollama_status') return Promise.resolve(offlineStatus);
+      return Promise.resolve(null);
+    });
+
+    const store = useBrainStore();
+    await store.loadBrainMode();
+    const upgraded = await store.maybeUpgradeToLocalOllama();
+    expect(upgraded).toBe(false);
+  });
+});

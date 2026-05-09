@@ -207,7 +207,7 @@ async fn call_llm_simple(
         "stream": false,
         "think": false,
         "keep_alive": "30m",
-        "options": { "num_ctx": 2048 },
+        "options": { "num_ctx": 2048, "num_batch": 512 },
     });
 
     let resp = state

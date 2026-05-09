@@ -1663,14 +1663,18 @@ watch(
       // Always show 'talking' while streaming — real emotions arrive via
       // llm-animation events which call setAvatarState directly.
       setAvatarState('talking');
-    } else if (streaming.currentEmotion) {
-      // Stream done — set final emotion from parsed tags (once, not per-chunk)
+    } else if (!tts.isSpeaking.value && streaming.currentEmotion) {
+      // Stream done AND TTS not speaking — set final emotion.
+      // If TTS is still speaking, the isSpeaking watcher handles
+      // the transition when speech finishes.
       characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
     }
-    if (!active && isStreamTtsActive) {
-      tts.flush();
+    // Note: tts.flush() is NOT called here — the llm-chunk done:true
+    // handler already flushes the TTS buffer. Double-flushing caused
+    // the last sentence to be spoken twice.
+    if (!active) {
       isStreamTtsActive = false;
     }
   },
@@ -1688,7 +1692,7 @@ watch(
   },
 );
 
-// TTS speaking state → body='talk', done → body='idle' + schedule subtitle hide
+// TTS speaking state → body='talk', done → apply final emotion + schedule subtitle hide
 watch(tts.isSpeaking, (speaking) => {
   // Don't override state when a VRMA mood animation is active
   const vrmaActive = viewportRef.value?.isAnimationActive ?? false;
@@ -1705,7 +1709,19 @@ watch(tts.isSpeaking, (speaking) => {
   } else {
     if (!vrmaActive) {
       asm.forceBody('idle');
-      characterStore.setState('idle');
+      // Apply final emotion from stream instead of just going idle
+      if (streaming.currentEmotion) {
+        characterStore.setState(
+          sentimentToState(streaming.currentEmotion),
+          streaming.currentEmotionIntensity,
+        );
+        asm.setEmotion(
+          streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion,
+          streaming.currentEmotionIntensity,
+        );
+      } else {
+        characterStore.setState('idle');
+      }
     }
     // TTS finished — schedule subtitle to fade away
     if (subtitleFullText.value) {
@@ -1751,6 +1767,9 @@ onMounted(async () => {
   } else {
     try {
       await brain.initialise();
+      // If on a free cloud API but Ollama is running locally,
+      // auto-upgrade for dramatically lower latency (~400ms vs 5-25s).
+      await brain.maybeUpgradeToLocalOllama();
       if (brain.topRecommendation) {
         selectedBrain.value = brain.topRecommendation.model_tag;
       }

@@ -1163,7 +1163,7 @@ pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1, "num_ctx": 2048 },
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "keep_alive": "30m",
             "stream": false,
         });

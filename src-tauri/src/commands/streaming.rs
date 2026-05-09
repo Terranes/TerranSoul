@@ -837,6 +837,7 @@ async fn stream_ollama<R: tauri::Runtime>(
             "temperature": 0.7,
             "num_ctx": 2048,
             "num_predict": max_tokens,
+            "num_batch": 512,
         },
     });
 
@@ -1074,6 +1075,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
             "options": {
                 "num_predict": 150,
                 "num_ctx": 2048,
+                "num_batch": 512,
                 "temperature": 0.7,
             },
         });
@@ -1628,7 +1630,7 @@ mod tests {
             "messages": [{ "role": "user", "content": "hi" }],
             "stream": false,
             "think": false,
-            "options": { "num_predict": 1, "num_ctx": 2048 },
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "keep_alive": "30m",
         });
         let warm_status = client

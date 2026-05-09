@@ -1899,12 +1899,14 @@ export const useConversationStore = defineStore('conversation', () => {
         if (!sendOk) throw new Error(streaming.error ?? 'Streaming failed');
 
         // Grace period for any in-flight events after invoke resolves.
+        // Rust emits done:true reliably, so we only need a very short
+        // grace — just enough for the Tauri event to transit IPC.
         if (streaming.isStreaming) {
-          const graceWait = 1_500;
+          const graceWait = 200;
           const start = Date.now();
           while (streaming.isStreaming && Date.now() - start < graceWait) {
             streamingText.value = streaming.streamText;
-            await new Promise((r) => setTimeout(r, 50));
+            await new Promise((r) => setTimeout(r, 16));
           }
         }
 

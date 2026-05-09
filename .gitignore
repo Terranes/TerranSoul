@@ -48,3 +48,4 @@ test-output.txt
 /mcp-data/wiki
 scripts/*.py
 /target-test
+.vscode/.mcp-github-token

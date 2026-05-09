@@ -12,15 +12,15 @@
     >
       <CharacterViewport ref="viewportRef" />
 
-      <!-- Floating chat bubble (shows recent message) -->
+      <!-- Floating chat bubble (shows streaming text or last message) -->
       <Transition name="bubble">
         <div
-          v-if="showBubble && lastAssistantText && !petChatExpanded"
+          v-if="showBubble && bubbleText && !petChatExpanded"
           class="pet-bubble"
           @click.stop="toggleChat"
         >
           <p class="pet-bubble-text">
-            {{ truncatedMessage }}
+            {{ truncatedBubble }}
           </p>
         </div>
       </Transition>
@@ -924,8 +924,16 @@ const lastAssistantText = computed(() => {
   return assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1].content : '';
 });
 
-const truncatedMessage = computed(() => {
-  const text = lastAssistantText.value;
+/** During streaming, show the live text; otherwise show the last completed message. */
+const bubbleText = computed(() => {
+  if (conversationStore.isStreaming && conversationStore.streamingText) {
+    return conversationStore.streamingText;
+  }
+  return lastAssistantText.value;
+});
+
+const truncatedBubble = computed(() => {
+  const text = bubbleText.value;
   return text.length > 120 ? text.substring(0, 117) + '…' : text;
 });
 
@@ -1156,11 +1164,6 @@ async function handleSend() {
   await conversationStore.sendMessage(text);
 
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
-  const reactionState = lastMsg?.role === 'assistant'
-    ? sentimentToState(lastMsg.sentiment)
-    : 'idle';
-
-  setAvatarState(reactionState);
 
   if (lastMsg?.role === 'assistant') {
     // Trigger VRMA body animation from the LLM's motion tag (browser-side path)
@@ -1173,16 +1176,17 @@ async function handleSend() {
       tts.feedChunk(lastMsg.content);
       tts.flush();
     }
+
+    // Only set final emotion if TTS is NOT still speaking.
+    // While TTS is active, the isSpeaking watcher keeps the avatar in
+    // 'talking' mode and will transition to 'idle' when speech finishes.
+    if (!tts.isSpeaking.value) {
+      const reactionState = sentimentToState(lastMsg.sentiment);
+      setAvatarState(reactionState);
+    }
   }
 
   nextTick(() => scrollToBottom());
-
-  setTimeout(() => {
-    if (!tts.isSpeaking.value) {
-      setAvatarState('idle');
-      viewportRef.value?.stopMotion?.();
-    }
-  }, 6000);
 }
 
 const canSkipDialog = computed(
@@ -1244,21 +1248,43 @@ watch(
     if (!petChatExpanded.value) {
       showBubble.value = true;
       setTimeout(() => {
-        if (!petChatExpanded.value) showBubble.value = false;
+        if (!petChatExpanded.value && !conversationStore.isStreaming && !tts.isSpeaking.value) {
+          showBubble.value = false;
+        }
       }, 8000);
     }
   },
 );
 
-// Map streaming emotion to character state
+// Show bubble during streaming when chat panel is collapsed
+watch(
+  () => conversationStore.isStreaming,
+  (active) => {
+    if (active && !petChatExpanded.value) {
+      showBubble.value = true;
+    }
+  },
+);
+
+// Hide bubble after TTS finishes (with delay for readability)
+watch(tts.isSpeaking, (speaking) => {
+  if (!speaking && !conversationStore.isStreaming && !petChatExpanded.value) {
+    setTimeout(() => {
+      if (!conversationStore.isStreaming && !tts.isSpeaking.value && !petChatExpanded.value) {
+        showBubble.value = false;
+      }
+    }, 5000);
+  }
+});
+
+// Map streaming emotion to face blend shapes only (body stays 'talking').
+// The isSpeaking watcher handles the body → idle transition when TTS finishes.
 watch(
   () => streaming.currentEmotion,
   (emotion) => {
     if (emotion) {
-      characterStore.setState(sentimentToState(emotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(emotion === 'neutral' ? 'neutral' : emotion, streaming.currentEmotionIntensity);
-      setTimeout(() => setAvatarState('idle'), 6000);
     }
   },
 );
@@ -1277,7 +1303,10 @@ watch(
   (active) => {
     if (active) {
       setAvatarState('talking');
-    } else if (streaming.currentEmotion) {
+    } else if (!tts.isSpeaking.value && streaming.currentEmotion) {
+      // Only apply final emotion if TTS is already done.
+      // If TTS is still speaking, the isSpeaking watcher handles
+      // the transition to idle/emotion when speech finishes.
       characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
@@ -1285,7 +1314,7 @@ watch(
   },
 );
 
-// TTS speaking state → body='talk', done → body='idle'
+// TTS speaking state → body='talk', done → apply final emotion or idle
 watch(tts.isSpeaking, (speaking) => {
   // Don't override state when a VRMA mood animation is active
   if (viewportRef.value?.isAnimationActive) return;
@@ -1295,8 +1324,19 @@ watch(tts.isSpeaking, (speaking) => {
     asm.forceBody('talk');
     characterStore.setState('talking');
   } else {
-    asm.forceBody('idle');
-    characterStore.setState('idle');
+    // TTS finished — apply the final emotion from the stream, or go idle.
+    if (streaming.currentEmotion) {
+      const finalState = sentimentToState(streaming.currentEmotion);
+      characterStore.setState(finalState, streaming.currentEmotionIntensity);
+      asm.forceBody('idle');
+      asm.setEmotion(
+        streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion,
+        streaming.currentEmotionIntensity,
+      );
+    } else {
+      asm.forceBody('idle');
+      characterStore.setState('idle');
+    }
   }
 });
 
@@ -1336,6 +1376,10 @@ onMounted(async () => {
       brain.autoConfigureFreeApi();
     }
   }
+
+  // If currently on a free cloud API but Ollama is running locally,
+  // auto-upgrade for dramatically lower latency (~400ms vs 5-25s).
+  await brain.maybeUpgradeToLocalOllama();
 
   try {
     const { listen } = await import('@tauri-apps/api/event');
