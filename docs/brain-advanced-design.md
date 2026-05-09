@@ -4,38 +4,7 @@
 > Last updated: 2026-05-09
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
-## How to read this document
-
-This is a long reference document. You don't have to read it linearly. Use one
-of these entry points instead:
-
-- **New to the codebase?** Start with [§ 1 System Overview](#1-system-overview),
-  then [§ 2 Three-Tier Memory Model](#three-tier-memory-model), then
-  [§ 4 Hybrid RAG Pipeline](#hybrid-rag-pipeline). That's enough to read the
-  Rust and TypeScript source.
-- **Adding a new memory feature?** Skim [§ 8 SQLite Schema](#8-sqlite-schema)
-  and [§ 11 LLM-Powered Memory Operations](#11-llm-powered-memory-operations)
-  for the public surface, then jump to the relevant subsection (decay, KG,
-  RAG, etc.).
-- **Adding a new brain provider?** Read
-  [§ 10 Brain Modes & Provider Architecture](#10-brain-modes--provider-architecture)
-  and [§ 20 Brain Component Selection & Routing](#20-brain-component-selection--routing--how-the-llm-knows-what-to-use).
-- **Investigating a retrieval bug?** Read
-  [§ 4 Hybrid RAG Pipeline](#hybrid-rag-pipeline) (especially the fast-path
-  gate and 6-signal scoring), then [§ 14 Debugging with SQLite](#14-debugging-with-sqlite).
-- **Doing performance / scaling work?** Read [§ 15 Hardware Scaling](#15-hardware-scaling)
-  and [§ 16 Scaling Roadmap](#16-scaling-roadmap).
-- **Looking up a research paper / RAG technique?** Jump to
-  [§ 19 April 2026 Research Survey](#19-april-2026-research-survey--modern-rag--agent-memory-techniques).
-
-ASCII diagrams are designed for monospace rendering — view this file in VS Code,
-on GitHub, or in any plain-text reader for correct alignment.
-
----
-
 ## Architecture at a glance
-
-Before diving into 3000+ lines of detail, here is the whole system in four small diagrams. Read these first; everything below is elaboration.
 
 ### What it is, in one sentence
 
@@ -180,6 +149,7 @@ When you have those five points internalised, the rest of the doc is just specif
  - [Layer 1: In-App (Cytoscape.js)](#layer-1-in-app-cytoscapejs)
  - [Layer 2: Obsidian Vault Export](#layer-2-obsidian-vault-export)
  - [Layer 3: Debug SQL Console](#layer-3-debug-sql-console)
+ - [§ 7.5 Folder ↔ Knowledge Graph Sync](#75-folder--knowledge-graph-sync)
 8. [SQLite Schema](#sqlite-schema)
 9. [Why SQLite?](#why-sqlite)
 10. [Brain Modes & Provider Architecture](#brain-modes--provider-architecture)
@@ -1448,6 +1418,120 @@ For developers and advanced users:
 │  • Dev overlay: Ctrl+D shows memory stats in-app                   │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 7.5 Folder ↔ Knowledge Graph Sync
+
+> **Why this matters.** A common failure mode is "too many context Markdown
+> files": rules, docs, notes, transcripts, tutorials piling up in folders
+> that no human can keep in their head. TerranSoul treats the **folder** and
+> the **knowledge graph** as two views of the same content and lets you
+> sync in either direction at any time. Missing entries are created on
+> import; missing files are recreated on export.
+
+### The two views
+
+| View | What it is | Source of truth for | Edit with |
+|---|---|---|---|
+| **Knowledge graph (SQLite + `memory_edges`)** | Rows + typed edges + embeddings + decay/importance/tags | RAG retrieval, scoring, decay, conflict resolution | Tauri/MCP commands |
+| **Folder of Markdown files** | One `.md` per memory, YAML frontmatter + body, optional `_graph.json` manifest for graph subtrees | Human reading, manual editing, version control, third-party tools (Obsidian, VS Code) | Any text editor |
+
+### Sync flow
+
+```mermaid
+flowchart LR
+    subgraph KG["Knowledge graph (SQLite, authoritative for retrieval)"]
+        ROWS[("memories<br/>+ memory_edges<br/>+ embeddings")]
+    end
+
+    subgraph FOLDER["User folder of .md files"]
+        FILES["context/&lt;id&gt;-&lt;slug&gt;.md<br/>YAML frontmatter + body<br/>(+ _graph.json for KG subtrees)"]
+    end
+
+    ROWS -->|export_knowledge_to_folder<br/>export_kg_subtree<br/>export_to_obsidian| FILES
+    FILES -->|sync_context_folders<br/>import_file_to_knowledge_graph<br/>convert_context_to_knowledge| ROWS
+    FILES -.->|user edits in any editor| FILES
+```
+
+### Tauri commands you actually call
+
+| Direction | Command | What it does | Source |
+|---|---|---|---|
+| Folder → KG (flat) | `sync_context_folders` | Walks every registered context folder; for each `.md/.txt/.pdf/etc.` runs the chunked ingest pipeline and dedupes by `source_url + source_hash` so re-runs only re-process changed files. **Missing entries are created.** | [`commands/context_folder.rs`](../src-tauri/src/commands/context_folder.rs) |
+| Folder → KG (one file, with graph) | `import_file_to_knowledge_graph(file_path, label, importance)` | Reads one file, splits it semantically, inserts a **document-root summary node** + one chunk node per section, and creates typed edges (`contains`, `follows`) so the document becomes a small subgraph in the KG. | [`commands/context_folder.rs`](../src-tauri/src/commands/context_folder.rs) |
+| Folder → KG (consolidate) | `convert_context_to_knowledge(folder_label?)` | Groups all chunks tagged `context-folder` by `source_url`, concatenates them per file, and writes one consolidated high-importance `knowledge,converted,<label>` memory. The original chunks stay as low-importance reference. | [`commands/context_folder.rs`](../src-tauri/src/commands/context_folder.rs) |
+| KG → Folder (flat) | `export_knowledge_to_folder(output_dir, tag_filter?, min_importance?)` | Writes every matching memory as `<id>-<slug>.md` with YAML frontmatter (id, tags, importance, type, tier, source). **Missing files are recreated.** | [`commands/context_folder.rs`](../src-tauri/src/commands/context_folder.rs) |
+| KG → Folder (subtree, with edges) | `export_kg_subtree(root_ids, output_dir, max_hops?)` | BFS from the root memories up to `max_hops` (default 2, max 5), writes one `.md` per node with a `## Graph Edges` section listing typed edges, plus a `_graph.json` manifest of the full node+edge structure. | [`commands/context_folder.rs`](../src-tauri/src/commands/context_folder.rs) |
+| KG → Folder (Obsidian vault) | `export_to_obsidian` (manual) / `MaintenanceJob::ObsidianExport` (~23 h cooldown) | PARA-classified vault layout (`Projects/`, `Areas/`, `Resources/`, `Archive/`). Idempotent: skips files whose hash matches. | [`memory/obsidian_export.rs`](../src-tauri/src/memory/obsidian_export.rs) |
+
+### File format produced (and read back)
+
+Every exported file uses the same YAML frontmatter so the round-trip stays stable:
+
+```yaml
+---
+id: 1042
+created_at: "2026-05-06T15:42:11Z"
+importance: 9
+memory_type: "fact"
+tier: "long"
+tags:
+  - "tutorial"
+  - "knowledge-graph"
+source_url: "tutorials/folder-to-knowledge-graph-tutorial.md"
+source_hash: "sha256:…"
+---
+
+<verbatim memory body>
+```
+
+For `export_kg_subtree`, each file additionally gets a `## Graph Edges` section listing typed edges:
+
+```markdown
+## Graph Edges
+
+- → `contains` (id=1043, confidence=1.00)
+- → `follows`  (id=1044, confidence=1.00)
+- ← `cites`    (id=987,  confidence=0.82)
+```
+
+…plus a sibling `_graph.json` manifest with the full node+edge graph for programmatic re-import.
+
+### "Sync any time, create what's missing" workflow
+
+The recommended pattern when your folder of Markdown context files is the bottleneck:
+
+1. **Register the folder** — `add_context_folder(folder_path, label)` once.
+2. **First sync** — `sync_context_folders()` walks the folder and inserts every file as KG nodes (chunked).
+3. **Edit in any editor** — open the folder in VS Code, Obsidian, or anything else. Add new files, edit existing ones, delete obsolete ones.
+4. **Re-sync** — call `sync_context_folders()` again:
+   - Files whose `source_hash` changed → re-chunked, re-embedded, edges re-evaluated.
+   - Brand-new files → ingested as new memories (**missing entries are created**).
+   - Unchanged files → skipped (no churn).
+5. **Promote to first-class knowledge** — once you trust the imported chunks, run `convert_context_to_knowledge(label)` to consolidate them into compact, high-importance `knowledge,converted,…` memories that score higher in RAG.
+6. **Round-trip out for editing** — `export_knowledge_to_folder` (flat) or `export_kg_subtree` (preserves graph topology). Edit. Re-import via the same `sync_context_folders` pass; **missing files in the folder are not recreated by sync** (use `export_*` for that), but **missing memories in the graph are recreated by sync**.
+
+### Direction semantics — what "missing" means
+
+| Sync direction | What "missing" triggers |
+|---|---|
+| `sync_context_folders` (folder → KG) | New files in folder → **new KG memories created** |
+| `sync_context_folders` (folder → KG) | Files removed from folder → KG memories **kept** (sync is additive; use targeted deletion via `MemoryView` or `delete_memory`) |
+| `export_knowledge_to_folder` (KG → folder) | Memories not yet on disk → **new files written** |
+| `export_knowledge_to_folder` (KG → folder) | Files on disk that no longer have a matching memory → **left in place** (export is additive; clean the output dir manually if you want a fresh mirror) |
+| `export_to_obsidian` (KG → vault, scheduled) | Same additive semantics; PARA folder classification re-evaluated each run |
+
+This is intentional: neither side ever silently destroys content the other side might still want. Deletion is always an explicit user action.
+
+### Limits & gaps to be aware of
+
+- **Frontmatter on re-ingest is partial.** `sync_context_folders` and `ingest_document` dedupe on `source_url + source_hash` but do **not** currently parse YAML frontmatter back into `id` / `tier` / structured tags — they re-classify from filename and content. This means an edited exported file becomes a *new* memory unless its hash exactly matches the original, with the previous version remaining in the KG. If frontmatter-driven re-binding matters for your workflow, that's a tracked enhancement; for now use `import_file_to_knowledge_graph` for explicit control.
+- **Wikilink parsing is partial.** `[[id-slug]]` references in Markdown bodies are not yet auto-converted into `memory_edges` on ingest. Edges are produced by (a) `import_file_to_knowledge_graph` (`contains` / `follows`), (b) the LLM edge extractor (`extract_edges_via_brain`), and (c) `_graph.json` manifests from `export_kg_subtree`.
+- **Code repos use a separate path.** `code_index_repo` → `code_resolve_edges` → `code_compute_processes` → `code_generate_wiki` produces its own knowledge graph from source code. There is no single command yet that ingests a mixed code+docs folder.
+- **Image OCR is not supported.** Markdown images survive as raw `![](…)` tokens; alt-text and captions are searchable but pixel content is not.
+- **Conflict resolution on re-import.** When edited content contradicts a pre-existing memory, `memory::conflicts` (LLM-as-judge) runs over the affected edge neighbourhood and may mark the older row as superseded (`valid_to` set) rather than deleting it. See [§ 12.4 LLM-Powered Conflict Resolution](#4-llm-powered-conflict-resolution).
+- **Markdown is a projection, not MCP memory.** Anything that should be durable agent knowledge must be synced into `mcp-data/shared/memory-seed.sql` (a numbered migration file) so the SQLite + `memory_edges` graph stays the single source of truth across machines.
 
 ---
 
