@@ -33,6 +33,125 @@ on GitHub, or in any plain-text reader for correct alignment.
 
 ---
 
+## Architecture at a glance
+
+Before diving into 3000+ lines of detail, here is the whole system in four small diagrams. Read these first; everything below is elaboration.
+
+### What it is, in one sentence
+
+> **TerranSoul is a Vue+Tauri desktop app whose Rust backend keeps a SQLite-backed memory store (3 tiers, 8 categories, 4 cognitive kinds) and pipes every chat turn through a hybrid retrieval pipeline before sending it to a pluggable LLM provider (local Ollama, free cloud, or paid cloud).**
+
+### 1. System layers — who calls whom
+
+```mermaid
+flowchart TB
+    subgraph FE["Frontend — Vue 3 + TypeScript"]
+        UI["Views<br/>ChatView · MemoryView · SkillTreeView"]
+        STORES["Pinia stores<br/>brain · conversation · memory · voice"]
+        UI --> STORES
+    end
+
+    subgraph BE["Backend — Rust + Tokio"]
+        CMDS["Tauri commands<br/>(150+ async fns)"]
+        BRAIN["Brain module<br/>OllamaAgent · OpenAiClient · FreeProvider"]
+        MEM["Memory module<br/>MemoryStore · hybrid_search · decay/GC"]
+        DB[("SQLite WAL<br/>memory.db")]
+        CMDS --> BRAIN
+        CMDS --> MEM
+        BRAIN <-->|RAG loop| MEM
+        MEM --> DB
+    end
+
+    subgraph EXT["External providers"]
+        OLLAMA["Ollama<br/>localhost:11434"]
+        CLOUD["OpenRouter · Gemini · OpenAI<br/>Anthropic · Groq · Pollinations"]
+    end
+
+    STORES -->|Tauri IPC<br/>invoke / emit| CMDS
+    BRAIN --> OLLAMA
+    BRAIN --> CLOUD
+```
+
+### 2. Memory model — three tiers, two axes
+
+Every memory has a **tier** (lifecycle), a **structural type** (how it was created), and a derived **cognitive kind** (what mental function it serves).
+
+```mermaid
+flowchart LR
+    CONV["Conversation turn"] --> SHORT["SHORT<br/>last ~20 messages<br/>FIFO, lost on close"]
+    SHORT -->|extract_facts<br/>summarize| WORK["WORKING<br/>session-scoped<br/>working set"]
+    WORK -->|promote<br/>importance ≥ 4| LONG["LONG<br/>persistent<br/>SQLite + embeddings"]
+    MANUAL["Manual entry"] --> LONG
+    INGEST["Document ingestion"] --> LONG
+    LONG -->|decay < 0.05<br/>AND importance ≤ 2| GC["Garbage collected"]
+
+    classDef tier fill:#1e3a5f,stroke:#4a90e2,color:#fff
+    class SHORT,WORK,LONG tier
+```
+
+| Axis | Values | Stored where |
+|---|---|---|
+| **Tier** | `short` · `working` · `long` | `memories.tier` column |
+| **Structural type** | `fact` · `preference` · `context` · `summary` | `memories.memory_type` column |
+| **Cognitive kind** (derived) | `episodic` · `semantic` · `procedural` · `judgment` | classified at retrieval time, optional `cognitive_kind` column for seeded rows |
+| **Category** | `personal` · `relations` · `habits` · `domain` · `skills` · `emotional` · `world` · `meta` | tag prefixes (`personal:*`, `domain:law:*`, …) |
+
+### 3. RAG retrieval pipeline — what happens on every chat turn
+
+```mermaid
+flowchart TB
+    Q["User message"] --> GATE{"Fast-path gate<br/>cheap heuristics"}
+    GATE -->|trivial| INJECT
+    GATE -->|needs RAG| HYBRID
+
+    subgraph HYBRID["Hybrid retrieval — 3 retrievers + RRF fusion"]
+        VEC["Vector similarity<br/>HNSW · usearch · 768-dim"]
+        KW["Keyword / FTS"]
+        FRESH["Recency / freshness"]
+        VEC --> RRF["Reciprocal Rank Fusion<br/>k=60"]
+        KW --> RRF
+        FRESH --> RRF
+    end
+
+    HYBRID --> SCORE["6-signal scoring<br/>vector·40 + keyword·20 + recency·15<br/>+ importance·10 + decay·10 + tier·5"]
+    SCORE --> HYDE{"HyDE?<br/>cold/abstract query"}
+    HYDE -->|yes| HYDE_GEN["LLM writes hypothetical answer<br/>→ embed THAT for retrieval"]
+    HYDE -->|no| RERANK
+    HYDE_GEN --> RERANK
+    RERANK{"Rerank?<br/>local brain available"} -->|yes| LLM_JUDGE["LLM-as-judge<br/>scores each (q, doc) 0-10"]
+    RERANK -->|no| THRESHOLD
+    LLM_JUDGE --> THRESHOLD["Relevance threshold<br/>configurable cutoff"]
+    THRESHOLD --> INJECT["Inject top-k as<br/>[LONG-TERM MEMORY] block<br/>in system prompt"]
+    INJECT --> LLM["LLM provider<br/>(Ollama / cloud)"]
+```
+
+### 4. Brain modes — three pluggable backends, same surface
+
+```mermaid
+flowchart LR
+    APP["TerranSoul app"] --> MODE{"Brain mode<br/>(user setting)"}
+    MODE -->|local| OLLAMA["**Local Ollama**<br/>private · offline<br/>RAM-adaptive model picker"]
+    MODE -->|free| FREE["**Free API**<br/>OpenRouter · Gemini · NVIDIA<br/>Pollinations · user-owned keys"]
+    MODE -->|paid| PAID["**Paid API**<br/>OpenAI · Anthropic · Groq<br/>user-supplied API key"]
+    OLLAMA --> EMBED["embed_text()"]
+    FREE --> EMBED_C["cloud_embeddings::embed_for_mode()"]
+    PAID --> EMBED_C
+    EMBED --> RAG[/"RAG pipeline (above)"/]
+    EMBED_C --> RAG
+```
+
+### Mental model summary
+
+- **The brain is the LLM provider** (Ollama / cloud), pluggable via a trait.
+- **The memory is a SQLite store** with FTS, embeddings, decay, and a knowledge graph (`memory_edges` table).
+- **RAG is the bridge**: every chat turn retrieves the top relevant memories and injects them into the system prompt before calling the brain.
+- **Categories + cognitive kinds** are how decay, retrieval boosting, and conflict resolution are tuned per memory.
+- **Knowledge Graph** (`memory_edges`) enables multi-hop retrieval (e.g., "user's daughter's school" follows two edges).
+
+When you have those five points internalised, the rest of the doc is just specifications and shipped status.
+
+---
+
 ## Table of Contents
 
 1. [System Overview](#system-overview)
