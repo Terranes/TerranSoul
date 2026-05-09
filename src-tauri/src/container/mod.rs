@@ -15,7 +15,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
-use std::time::Duration;
 use tokio::process::Command;
 
 /// Which container runtime to use.
@@ -219,6 +218,7 @@ where
 
     #[cfg(target_os = "windows")]
     {
+        use std::time::Duration;
         let temp_dir = std::env::temp_dir();
         let installer_path = temp_dir.join("DockerDesktopInstaller.exe");
 
@@ -336,6 +336,7 @@ where
 
     #[cfg(target_os = "windows")]
     {
+        use std::time::Duration;
         let temp_dir = std::env::temp_dir();
         let installer_path = temp_dir.join("podman-setup.exe");
 
@@ -426,7 +427,7 @@ where
         progress("Podman installed — verifying...", 90);
 
         // Give PATH a moment to propagate
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
 
         progress("Podman installed successfully", 100);
         Ok("Podman installed via official Windows installer".to_string())
