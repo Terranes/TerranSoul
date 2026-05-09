@@ -5,8 +5,16 @@
     aria-labelledby="po-title"
   >
     <header class="po-header">
-      <span class="po-icon" aria-hidden="true">📡</span>
-      <h2 id="po-title" class="po-title">Provider Status</h2>
+      <span
+        class="po-icon"
+        aria-hidden="true"
+      >📡</span>
+      <h2
+        id="po-title"
+        class="po-title"
+      >
+        Provider Status
+      </h2>
       <button
         type="button"
         class="po-refresh-btn"
@@ -40,7 +48,9 @@
 
     <!-- Failover policy -->
     <div class="po-section">
-      <h3 class="po-section-title">Failover Policy</h3>
+      <h3 class="po-section-title">
+        Failover Policy
+      </h3>
       <div class="po-policy-grid">
         <label class="po-field">
           <span>Max attempts</span>
@@ -75,7 +85,9 @@
 
     <!-- Per-task model usage -->
     <div class="po-section">
-      <h3 class="po-section-title">Per-Task Model Usage</h3>
+      <h3 class="po-section-title">
+        Per-Task Model Usage
+      </h3>
       <div class="po-task-grid">
         <div
           v-for="task in taskResolutions"
@@ -95,7 +107,9 @@
       v-if="agentRoutes.length > 0"
       class="po-section"
     >
-      <h3 class="po-section-title">Agent Routing</h3>
+      <h3 class="po-section-title">
+        Agent Routing
+      </h3>
       <div class="po-task-grid">
         <div
           v-for="route in agentRoutes"
@@ -115,7 +129,9 @@
       v-if="summary.recent_events.length > 0"
       class="po-section"
     >
-      <h3 class="po-section-title">Recent Failover Events</h3>
+      <h3 class="po-section-title">
+        Recent Failover Events
+      </h3>
       <ul class="po-events">
         <li
           v-for="(evt, i) in summary.recent_events.slice(0, 10)"
@@ -123,7 +139,10 @@
           class="po-event"
         >
           <span class="po-event-provider">{{ evt.provider_id }}</span>
-          <span class="po-event-reason" :class="`po-reason--${evt.reason}`">
+          <span
+            class="po-event-reason"
+            :class="`po-reason--${evt.reason}`"
+          >
             {{ formatReason(evt.reason) }}
           </span>
           <span class="po-event-time">{{ formatTime(evt.timestamp_ms) }}</span>

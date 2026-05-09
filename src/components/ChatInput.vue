@@ -44,17 +44,19 @@
           <path d="M16.5 6v11.5a4 4 0 0 1-8 0V5a2.5 2.5 0 0 1 5 0v10.5a1 1 0 0 1-2 0V6h-1v9.5a2 2 0 0 0 4 0V5a3.5 3.5 0 0 0-7 0v12.5a5 5 0 0 0 10 0V6h-1z" />
         </svg>
       </button>
-      <input
+      <textarea
         ref="inputRef"
         v-model="inputText"
-        type="text"
         class="chat-input"
-        placeholder="Type a message…"
+        placeholder="Type a message…  (Shift+Enter for newline)"
+        rows="1"
         autocomplete="off"
+        :style="{ height: textareaHeight }"
         @focus="handleFocus"
         @blur="handleBlur"
         @keydown="handleKeydown"
-      >
+        @input="autoResize"
+      />
       <button
         type="submit"
         class="send-btn"
@@ -82,7 +84,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { burstResetScroll } from '../utils/scroll-reset';
 import { usePromptCommandsStore } from '../stores/prompt-commands';
 
@@ -90,10 +92,14 @@ const props = defineProps<{ disabled: boolean }>();
 const emit = defineEmits<{ submit: [message: string]; focus: []; blur: [] }>();
 
 const inputText = ref('');
-const inputRef = ref<HTMLInputElement | null>(null);
+const inputRef = ref<HTMLTextAreaElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const dragOver = ref(false);
 const selectedSuggestionIdx = ref(0);
+const textareaHeight = ref('auto');
+
+/** Max number of visible rows before the textarea starts scrolling. */
+const MAX_TEXTAREA_ROWS = 6;
 
 const promptCommandsStore = usePromptCommandsStore();
 
@@ -131,6 +137,13 @@ function selectSuggestion(cmd: { name: string }) {
 }
 
 function handleKeydown(e: KeyboardEvent) {
+  // Submit on Enter (without Shift). Shift+Enter inserts a newline.
+  if (e.key === 'Enter' && !e.shiftKey && !showSuggestions.value) {
+    e.preventDefault();
+    handleSubmit();
+    return;
+  }
+
   if (!showSuggestions.value || filteredSuggestions.value.length === 0) return;
 
   if (e.key === 'ArrowDown') {
@@ -150,6 +163,28 @@ function handleKeydown(e: KeyboardEvent) {
     }
   }
 }
+
+/**
+ * Auto-resize the textarea to fit its content, up to MAX_TEXTAREA_ROWS rows.
+ * Beyond that, it scrolls vertically.
+ */
+function autoResize() {
+  const el = inputRef.value;
+  if (!el) return;
+  // Reset to auto so scrollHeight reflects the natural content height.
+  el.style.height = 'auto';
+  const styles = window.getComputedStyle(el);
+  const lineHeight = parseFloat(styles.lineHeight) || 20;
+  const paddingTop = parseFloat(styles.paddingTop) || 0;
+  const paddingBottom = parseFloat(styles.paddingBottom) || 0;
+  const maxHeight = lineHeight * MAX_TEXTAREA_ROWS + paddingTop + paddingBottom;
+  const next = Math.min(el.scrollHeight, maxHeight);
+  textareaHeight.value = `${next}px`;
+}
+
+watch(inputText, () => {
+  void nextTick(autoResize);
+});
 
 function handleSubmit() {
   const text = inputText.value.trim();
@@ -219,11 +254,11 @@ async function handleDrop(e: DragEvent) {
 
 .input-wrapper {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   flex: 1;
   background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
   border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--ts-radius-pill);
+  border-radius: var(--ts-radius-lg, 16px);
   padding: 5px 6px 5px 10px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -291,8 +326,15 @@ async function handleDrop(e: DragEvent) {
   background: transparent;
   color: var(--ts-text-primary);
   font-size: var(--ts-text-base);
+  font-family: inherit;
+  line-height: 1.4;
   outline: none;
   min-width: 0;
+  resize: none;
+  overflow-y: auto;
+  max-height: calc(1.4em * 6 + 18px);
+  scrollbar-width: thin;
+  scrollbar-color: var(--ts-text-dim) transparent;
 }
 
 .chat-input::placeholder {

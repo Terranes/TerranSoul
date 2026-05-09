@@ -42,6 +42,10 @@ export default [
       'tests/**',
       'playwright/**',
       'coverage/**',
+      'target/**',             // Rust build artifacts (cargo target dirs)
+      'target-copilot-bench/**',
+      'target-mcp/**',
+      'mcp-data/**',           // Generated MCP runtime data
     ],
   },
 

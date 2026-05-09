@@ -30,6 +30,29 @@ fn chat_model_for_warmup() -> &'static RwLock<Option<String>> {
     CELL.get_or_init(|| RwLock::new(None))
 }
 
+// ── Debug-logging toggle ──────────────────────────────────────────────────────
+//
+// A process-wide atomic so every fire-and-forget spawn can read the flag
+// without needing to capture an Arc<AppState>. Defaults to `false`; the
+// `save_app_settings` Tauri command flips it whenever the user toggles the
+// "Debug logging" setting.
+
+fn debug_logging_flag() -> &'static std::sync::atomic::AtomicBool {
+    static CELL: OnceLock<std::sync::atomic::AtomicBool> = OnceLock::new();
+    CELL.get_or_init(|| std::sync::atomic::AtomicBool::new(false))
+}
+
+/// Enable or disable verbose debug logging from the Ollama brain layer.
+/// Called by `save_app_settings` whenever `debug_logging` changes.
+pub fn set_debug_logging(enabled: bool) {
+    debug_logging_flag().store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Returns `true` when debug logging is currently enabled.
+pub fn is_debug_logging() -> bool {
+    debug_logging_flag().load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Register the active chat model so embed calls can re-warm it after
 /// running. Called from app startup, MCP server startup, and on every
 /// brain-mode change.
@@ -75,15 +98,19 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
             .await
         {
             Ok(resp) => {
-                eprintln!(
-                    "[chat-rewarm:{reason}] {} status={} {}ms",
-                    model,
-                    resp.status(),
-                    started.elapsed().as_millis()
-                );
+                if is_debug_logging() {
+                    eprintln!(
+                        "[chat-rewarm:{reason}] {} status={} {}ms",
+                        model,
+                        resp.status(),
+                        started.elapsed().as_millis()
+                    );
+                }
             }
             Err(e) => {
-                eprintln!("[chat-rewarm:{reason}] {model} skipped: {e}");
+                if is_debug_logging() {
+                    eprintln!("[chat-rewarm:{reason}] {model} skipped: {e}");
+                }
             }
         }
     });

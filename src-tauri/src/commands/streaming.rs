@@ -55,21 +55,26 @@ fn spawn_event_pump<R: tauri::Runtime>(
         // Reusable scratch buffer for coalescing successive text chunks.
         let mut text_buf = String::with_capacity(256);
         let mut done_flag = false;
+        // Track whether the accumulated buffer is thinking content so we
+        // flush before mixing thinking and non-thinking chunks.
+        let mut is_thinking_buf = false;
 
         // Helper closure-style flush: emit the accumulated text (if any)
         // as a single chunk event. `done` is honoured separately so the
         // terminal frame still arrives.
         let flush_text =
-            |buf: &mut String, done: &mut bool, app: &tauri::AppHandle<R>| {
+            |buf: &mut String, done: &mut bool, thinking: &mut bool, app: &tauri::AppHandle<R>| {
                 if !buf.is_empty() || *done {
                     let _ = app.emit(
                         "llm-chunk",
                         LlmChunk {
                             text: std::mem::take(buf),
                             done: *done,
+                            thinking: *thinking,
                         },
                     );
                     *done = false;
+                    *thinking = false;
                 }
             };
 
@@ -90,6 +95,12 @@ fn spawn_event_pump<R: tauri::Runtime>(
                         if c.done {
                             done_flag = true;
                         }
+                        // If thinking flag changes, flush the buffer first
+                        // to avoid merging thinking and answer text.
+                        if !text_buf.is_empty() && c.thinking != is_thinking_buf {
+                            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+                        }
+                        is_thinking_buf = c.thinking;
                         if !c.text.is_empty() {
                             text_buf.push_str(&c.text);
                         }
@@ -97,17 +108,17 @@ fn spawn_event_pump<R: tauri::Runtime>(
                         // frontend never waits for the next event to
                         // discover the stream ended.
                         if done_flag {
-                            flush_text(&mut text_buf, &mut done_flag, &app);
+                            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
                         }
                     }
                     StreamEvent::Animation(a) => {
                         // Preserve global order: emit any pending text
                         // before the animation command.
-                        flush_text(&mut text_buf, &mut done_flag, &app);
+                        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
                         let _ = app.emit("llm-animation", a);
                     }
                     StreamEvent::Pose(p) => {
-                        flush_text(&mut text_buf, &mut done_flag, &app);
+                        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
                         let _ = app.emit("llm-pose", p);
                     }
                 }
@@ -115,10 +126,10 @@ fn spawn_event_pump<R: tauri::Runtime>(
             // Queue drained — flush any leftover text before sleeping
             // again on `recv().await`. This is the natural batching
             // boundary: one emit per producer wake-up.
-            flush_text(&mut text_buf, &mut done_flag, &app);
+            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
         }
         // Sender dropped — final flush.
-        flush_text(&mut text_buf, &mut done_flag, &app);
+        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
     });
     (tx, handle)
 }
@@ -160,6 +171,12 @@ pub struct LlmChunk {
     pub text: String,
     /// Whether this is the final chunk (stream ended).
     pub done: bool,
+    /// When `true`, this chunk contains extended-thinking / chain-of-thought
+    /// reasoning from a thinking model (Gemma 3, Qwen 3, DeepSeek-R1, etc.).
+    /// The frontend should render it in a collapsible "Thinking…" section
+    /// rather than the main chat bubble.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub thinking: bool,
 }
 
 /// A structured animation command deserialized from `<anim>` JSON blocks.
@@ -186,6 +203,10 @@ struct OllamaStreamChunk {
 #[derive(Debug, Deserialize)]
 struct OllamaStreamMessage {
     content: String,
+    /// Extended-thinking reasoning text (only present when `think: true`
+    /// was sent in the request and the model supports it).
+    #[serde(default)]
+    thinking: Option<String>,
 }
 
 // ── Streaming tag parser ──────────────────────────────────────────────────────
@@ -585,6 +606,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 LlmChunk {
                     text: String::new(),
                     done: true,
+                thinking: false,
                 },
             );
             let decision = crate::brain::FailoverDecision {
@@ -779,6 +801,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
                 let _ = tx_cb.send(StreamEvent::Chunk(LlmChunk {
                     text: feed.text,
                     done: false,
+                thinking: false,
                 }));
             }
             for cmd in feed.anim_commands {
@@ -800,6 +823,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
                     let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                         text: feed.text,
                         done: false,
+                    thinking: false,
                     }));
                 }
                 for cmd in feed.anim_commands {
@@ -812,6 +836,7 @@ async fn stream_openai_api<R: tauri::Runtime>(
             let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                 text: String::new(),
                 done: true,
+            thinking: false,
             }));
             // Drop sender + await the pump so all events are flushed in
             // arrival order before we return to the frontend.
@@ -946,12 +971,22 @@ async fn stream_ollama<R: tauri::Runtime>(
     // Changing num_ctx between requests forces Ollama to reallocate the
     // KV cache and reload the model weights — adding 2-3s per request.
     // 2048 is enough for 10-message history + system prompt + persona.
-    let max_tokens: u32 = if skip_rag { 256 } else { 512 };
+    let base_tokens: u32 = if skip_rag { 256 } else { 512 };
+
+    // Read the user's reasoning-effort setting to control extended thinking.
+    let reasoning_effort = state
+        .app_settings
+        .lock()
+        .map(|s| s.reasoning_effort)
+        .unwrap_or_default();
+    let think_enabled = reasoning_effort.think_enabled();
+    let max_tokens = reasoning_effort.max_tokens(base_tokens);
+
     let body = serde_json::json!({
         "model": model,
         "messages": messages,
         "stream": true,
-        "think": false,
+        "think": think_enabled,
         "keep_alive": "30m",
         "options": {
             "temperature": 0.7,
@@ -995,6 +1030,18 @@ async fn stream_ollama<R: tauri::Runtime>(
             }
             if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
                 if let Some(msg) = &parsed.message {
+                    // Extended-thinking content (reasoning phase) — emitted
+                    // as `thinking: true` chunks so the frontend can render
+                    // them in a collapsible "Thinking…" section.
+                    if let Some(think_text) = &msg.thinking {
+                        if !think_text.is_empty() {
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: think_text.clone(),
+                                done: false,
+                                thinking: true,
+                            }));
+                        }
+                    }
                     if !msg.content.is_empty() {
                         full_response.push_str(&msg.content);
                         let feed = parser.feed(&msg.content);
@@ -1002,6 +1049,7 @@ async fn stream_ollama<R: tauri::Runtime>(
                             let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                                 text: feed.text,
                                 done: false,
+                                thinking: false,
                             }));
                         }
                         for cmd in feed.anim_commands {
@@ -1018,6 +1066,7 @@ async fn stream_ollama<R: tauri::Runtime>(
                         let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                             text: feed.text,
                             done: false,
+                            thinking: false,
                         }));
                     }
                     for cmd in feed.anim_commands {
@@ -1029,6 +1078,7 @@ async fn stream_ollama<R: tauri::Runtime>(
                     let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                         text: String::new(),
                         done: true,
+                        thinking: false,
                     }));
                 }
             }
@@ -1193,14 +1243,21 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
         }
 
         let url = format!("{OLLAMA_BASE_URL}/api/chat");
+        let self_rag_reasoning = state
+            .app_settings
+            .lock()
+            .map(|s| s.reasoning_effort)
+            .unwrap_or_default();
+        let self_rag_think = self_rag_reasoning.think_enabled();
+        let self_rag_tokens = self_rag_reasoning.max_tokens(150);
         let body = serde_json::json!({
             "model": model,
             "messages": messages,
             "stream": true,
-            "think": false,
+            "think": self_rag_think,
             "keep_alive": "30m",
             "options": {
-                "num_predict": 150,
+                "num_predict": self_rag_tokens,
                 "num_ctx": 2048,
                 "num_batch": 512,
                 "temperature": 0.7,
@@ -1234,6 +1291,15 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 }
                 if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
                     if let Some(msg) = &parsed.message {
+                        if let Some(think_text) = &msg.thinking {
+                            if !think_text.is_empty() {
+                                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                    text: think_text.clone(),
+                                    done: false,
+                                    thinking: true,
+                                }));
+                            }
+                        }
                         if !msg.content.is_empty() {
                             full_response.push_str(&msg.content);
                             let feed = parser.feed(&msg.content);
@@ -1241,6 +1307,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                                 let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                                     text: feed.text,
                                     done: false,
+                                    thinking: false,
                                 }));
                             }
                             for cmd in feed.anim_commands {
@@ -1257,6 +1324,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                             let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                                 text: feed.text,
                                 done: false,
+                            thinking: false,
                             }));
                         }
                         for cmd in feed.anim_commands {
@@ -1289,6 +1357,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 let _ = tx.send(StreamEvent::Chunk(LlmChunk {
                     text: refusal.clone(),
                     done: false,
+                thinking: false,
                 }));
                 break refusal;
             }
@@ -1298,6 +1367,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                     text: "\n\n---\n*Refining answer with additional context...*\n\n"
                         .to_string(),
                     done: false,
+                thinking: false,
                 }));
                 // Loop continues — next iteration re-embeds and re-retrieves
             }
@@ -1308,6 +1378,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
     let _ = tx.send(StreamEvent::Chunk(LlmChunk {
         text: String::new(),
         done: true,
+    thinking: false,
     }));
 
     // Drop the sender + drain the pump so every queued event reaches the
@@ -1332,6 +1403,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         LlmChunk {
             text: stub_text.clone(),
             done: false,
+        thinking: false,
         },
     );
     let _ = app_handle.emit(
@@ -1339,6 +1411,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         LlmChunk {
             text: String::new(),
             done: true,
+        thinking: false,
         },
     );
 
@@ -1466,12 +1539,14 @@ mod tests {
             tx.send(StreamEvent::Chunk(LlmChunk {
                 text: t,
                 done: false,
+            thinking: false,
             }))
             .expect("send chunk");
         }
         tx.send(StreamEvent::Chunk(LlmChunk {
             text: String::new(),
             done: true,
+        thinking: false,
         }))
         .expect("send done");
 
@@ -1542,12 +1617,14 @@ mod tests {
             tx.send(StreamEvent::Chunk(LlmChunk {
                 text: t,
                 done: false,
+            thinking: false,
             }))
             .expect("send");
         }
         tx.send(StreamEvent::Chunk(LlmChunk {
             text: String::new(),
             done: true,
+        thinking: false,
         }))
         .expect("send done");
         drop(tx);
@@ -1594,6 +1671,7 @@ mod tests {
         tx.send(StreamEvent::Chunk(LlmChunk {
             text: "before".to_string(),
             done: false,
+        thinking: false,
         }))
         .unwrap();
         tx.send(StreamEvent::Animation(AnimationCommand {
@@ -1605,6 +1683,7 @@ mod tests {
         tx.send(StreamEvent::Chunk(LlmChunk {
             text: "middle".to_string(),
             done: false,
+        thinking: false,
         }))
         .unwrap();
         tx.send(StreamEvent::Animation(AnimationCommand {
@@ -1616,6 +1695,7 @@ mod tests {
         tx.send(StreamEvent::Chunk(LlmChunk {
             text: "after".to_string(),
             done: true,
+        thinking: false,
         }))
         .unwrap();
         drop(tx);
@@ -1648,6 +1728,7 @@ mod tests {
             tx.send(StreamEvent::Chunk(LlmChunk {
                 text: format!("t{i}"),
                 done: false,
+            thinking: false,
             }))
             .expect("send");
         }
@@ -1671,6 +1752,7 @@ mod tests {
         let chunk = LlmChunk {
             text: "Hello".to_string(),
             done: false,
+        thinking: false,
         };
         let json = serde_json::to_string(&chunk).unwrap();
         assert!(json.contains("Hello"));
@@ -1682,6 +1764,7 @@ mod tests {
         let chunk = LlmChunk {
             text: String::new(),
             done: true,
+        thinking: false,
         };
         let json = serde_json::to_string(&chunk).unwrap();
         assert!(json.contains("true"));

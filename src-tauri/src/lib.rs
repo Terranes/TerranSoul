@@ -220,9 +220,9 @@ use commands::{
     },
     window::{
         close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build, is_mcp_mode,
-        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
-        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
-        toggle_window_mode,
+        open_panel_window, set_cursor_passthrough, set_pet_modal_backdrop, set_pet_mode_bounds,
+        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
+        stop_pet_cursor_poll, toggle_window_mode,
     },
     workflow_plans::{
         workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
@@ -1682,6 +1682,7 @@ pub fn run() {
             get_window_mode,
             toggle_window_mode,
             set_cursor_passthrough,
+            set_pet_modal_backdrop,
             get_all_monitors,
             set_pet_mode_bounds,
             start_window_drag,

@@ -14,6 +14,9 @@ export default defineConfig({
   // Global per-test timeout. LLM-driven specs can issue several real
   // free-API calls (~30s each) plus VRM model load, so we give them headroom.
   timeout: 180_000,
+  // In CI, run only desktop-flow.spec.ts (sanity check).
+  // Other tests run locally or in dedicated E2E environments.
+  grep: process.env.CI ? /desktop-flow/ : undefined,
   use: {
     baseURL: 'http://localhost:1420',
     trace: 'on-first-retry',

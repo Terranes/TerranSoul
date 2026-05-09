@@ -51,8 +51,6 @@ The panel has three tabs:
 
 ## 2. Audit Your Brain (`/ponder`)
 
-![/ponder output showing brain health metrics and memory statistics](screenshots/knowledge-wiki/02-ponder-audit.png)
-
 Type `/ponder` in chat (or click the Audit tab):
 
 The audit report shows:
@@ -77,8 +75,6 @@ The audit report shows:
 
 ## 3. Spotlight Hub Memories (`/spotlight`)
 
-![/spotlight results showing highest-connected memory nodes](screenshots/knowledge-wiki/03-spotlight.png)
-
 Type `/spotlight` in chat (or click the Spotlight tab):
 
 Shows the **most-connected memories** in your knowledge graph — the "god nodes" that link to many other entries.
@@ -98,8 +94,6 @@ Shows the **most-connected memories** in your knowledge graph — the "god nodes
 
 ## 4. Serendipity: Cross-Community Connections (`/serendipity`)
 
-![/serendipity showing unexpected cross-topic connections between memories](screenshots/knowledge-wiki/04-serendipity.png)
-
 Type `/serendipity` in chat (or click the Serendipity tab):
 
 Discovers **surprising high-confidence edges between otherwise unrelated memory clusters**.
@@ -115,8 +109,6 @@ Discovers **surprising high-confidence edges between otherwise unrelated memory 
 ---
 
 ## 5. Review Queue (`/revisit`)
-
-![/revisit showing queue of memories pending human review](screenshots/knowledge-wiki/05-revisit.png)
 
 Type `/revisit` in chat:
 
@@ -138,8 +130,6 @@ Returns memories that are **most ready for review** using the append-and-review 
 ---
 
 ## 6. Digest New Content (`/digest`)
-
-![/digest showing recently ingested content with summary cards](screenshots/knowledge-wiki/06-digest.png)
 
 Type `/digest <text>` in chat to store a deduplicated source note:
 
@@ -166,8 +156,6 @@ Type `/digest <text>` in chat to store a deduplicated source note:
 
 ## 7. Planned Commands (Coming Soon)
 
-![Roadmap list of upcoming slash commands with status indicators](screenshots/knowledge-wiki/07-planned-commands.png)
-
 | Command | Purpose |
 |---------|---------|
 | `/weave <topic>` | Synthesize a protected wiki page from related memories |
@@ -177,8 +165,6 @@ Type `/digest <text>` in chat to store a deduplicated source note:
 ---
 
 ## 8. Confidence Rubric (How Edges Are Scored)
-
-![Confidence scoring rubric showing edge weight calculation](screenshots/knowledge-wiki/08-confidence-rubric.png)
 
 The knowledge graph uses a confidence rubric for edges:
 

@@ -38,7 +38,7 @@ parity with third-party tools that make broader claims.
 
 ## 1. Human-Brain ↔ AI-System ↔ RPG-Stat
 
-![RPG stat mapping table showing Intelligence stat relationship](screenshots/folder-to-knowledge-graph/01-rpg-stat.png)
+![Knowledge graph view](screenshots/folder-to-knowledge-graph/01-knowledge-graph-view.png)
 
 | Human action | AI system surface | Persona "stat" exercised |
 | --- | --- | --- |
@@ -50,8 +50,6 @@ parity with third-party tools that make broader claims.
 | "Ask a question across everything" | `brain_search` with RRF + HyDE + LLM-as-judge rerank | Hybrid retrieval |
 
 ## 2. What You Are Building
-
-![Architecture diagram showing folder → index → graph → wiki → Q&A pipeline](screenshots/folder-to-knowledge-graph/02-architecture.png)
 
 ```
 your-folder/                          MCP brain output
@@ -78,8 +76,6 @@ Concrete artifacts you will produce by the end of this tutorial:
 
 ## 3. Requirements
 
-![System requirements checklist with checkmarks](screenshots/folder-to-knowledge-graph/03-requirements.png)
-
 - TerranSoul desktop app **or** the headless MCP runner (`npm run mcp`)
   on Windows / macOS / Linux. See
   [rules/agent-mcp-bootstrap.md](../rules/agent-mcp-bootstrap.md).
@@ -94,8 +90,6 @@ Concrete artifacts you will produce by the end of this tutorial:
   `.vscode/.mcp-token`; the app shows it in **Settings → MCP**.
 
 ## 4. Index the Code in the Folder
-
-![Terminal showing code_query indexing a project folder with symbol count](screenshots/folder-to-knowledge-graph/04-index-code.png)
 
 For repositories with source code, run the symbol-graph pipeline.
 
@@ -127,8 +121,6 @@ up in the symbol graph as opaque files but contribute no symbols.
 > the registry is designed to make adding one a 3-step change.
 
 ## 5. Ingest Documents and PDFs
-
-![Document ingestion progress showing chunking and embedding status](screenshots/folder-to-knowledge-graph/05-ingest-docs.png)
 
 Code indexing covers source files. Plain documents go through the
 **memory ingest** pipeline.
@@ -171,8 +163,6 @@ concurrent tasks. Failed embeddings auto-retry via the
 
 ## 6. Generate the Wiki
 
-![Wiki panel showing generated pages with topic headings and links](screenshots/folder-to-knowledge-graph/06-generate-wiki.png)
-
 For the indexed code repository, run `code_generate_wiki({ repoPath })`.
 It writes:
 
@@ -195,8 +185,6 @@ shape of your knowledge graph the same way Wikipedia's "What links
 here" does.
 
 ## 7. Export to an Obsidian Vault
-
-![Obsidian graph view showing backlinked notes from the exported vault](screenshots/folder-to-knowledge-graph/07-obsidian-export.png)
 
 Trigger the export from **Settings → Memory → Obsidian** in the app,
 or call the export module directly. The export pipeline is in
@@ -233,8 +221,6 @@ the brain (`file_mtime > last_exported`).
 
 ## 8. Ask Questions in Natural Language
 
-![Chat showing natural language question with RAG-grounded answer citing sources](screenshots/folder-to-knowledge-graph/08-ask-questions.png)
-
 After indexing, ask anything from chat or any MCP-connected agent:
 
 ```text
@@ -260,8 +246,6 @@ relevant tools here are `brain_search`, `brain_get_entry`,
 
 ## 9. What Is Not Yet Supported
 
-![Feature comparison table showing supported vs. roadmap items](screenshots/folder-to-knowledge-graph/09-not-supported.png)
-
 So you can plan around real capability rather than marketing claims:
 
 - **Image OCR.** Image-only PDFs and standalone images (`.png`,
@@ -285,8 +269,6 @@ So you can plan around real capability rather than marketing claims:
 
 ## 10. Worked Example: Cook County Family-Law Notes
 
-![Terminal showing the Cook County folder being indexed end-to-end](screenshots/folder-to-knowledge-graph/10-worked-example.png)
-
 A recurring example folder used in the TerranSoul corpus is
 [documents/cook-county-family-law-rules.md](../documents/cook-county-family-law-rules.md).
 End-to-end:
@@ -307,8 +289,6 @@ End-to-end:
    document.
 
 ## 11. Troubleshooting
-
-![Common error messages with resolution steps](screenshots/folder-to-knowledge-graph/11-troubleshooting.png)
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |

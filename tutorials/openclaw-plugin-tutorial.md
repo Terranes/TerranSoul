@@ -58,8 +58,6 @@ boundary visible and make file/network access auditable.
 
 ## 2. What the Plugin Contributes
 
-![Plugin contribution table showing commands, slash commands, and events](screenshots/openclaw-plugin/02-contributions.png)
-
 The built-in plugin id is `openclaw-bridge`. It contributes these commands:
 
 | Command | Slash/direct usage | Capability |
@@ -81,8 +79,6 @@ without requiring an OpenClaw runtime in CI.
 ---
 
 ## 3. Capability Grants
-
-![Capability grant flow showing permission check before command execution](screenshots/openclaw-plugin/03-capability-grants.png)
 
 Sensitive OpenClaw tools are denied unless the persisted capability store has a
 grant for plugin id `openclaw-bridge`.
@@ -110,8 +106,6 @@ the built-in placeholder path.
 ---
 
 ## 4. Wiring a Real OpenClaw Runtime
-
-![Configuration panel showing OpenClaw runtime URL and API key fields](screenshots/openclaw-plugin/04-wiring-runtime.png)
 
 The real-runtime seam is `invoke_openclaw_tool()` in
 `src-tauri/src/plugins/host.rs`. Replace the placeholder output with a thin
@@ -162,8 +156,6 @@ the normal plugin command result path.
 
 ## 5. How TerranSoul and OpenClaw Work Best Together
 
-![Workflow diagram showing TerranSoul chat triggering OpenClaw contract execution](screenshots/openclaw-plugin/05-best-together.png)
-
 Use TerranSoul for planning, memory, and coordination:
 
 - Ask TerranSoul to recall relevant project history before invoking a tool.
@@ -194,8 +186,6 @@ Avoid hidden coupling:
 
 ## 6. Chunk Plan for Deeper Integration
 
-![Roadmap showing planned integration chunks with dependencies](screenshots/openclaw-plugin/06-chunk-plan.png)
-
 | Chunk | Goal | Status |
 |---|---|---|
 | OpenClaw Plugin Bridge | Register OpenClaw as a built-in PluginHost plugin like Translator, with commands, `/openclaw`, and capability checks. | Complete |
@@ -210,8 +200,6 @@ changing the core chat orchestrator or weakening plugin capability consent.
 ---
 
 ## 7. Tests
-
-![Test output showing OpenClaw plugin integration test results](screenshots/openclaw-plugin/07-tests.png)
 
 Focused Rust tests live in `src-tauri/src/plugins/host.rs`:
 

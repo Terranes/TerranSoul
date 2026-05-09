@@ -49,3 +49,4 @@ test-output.txt
 scripts/*.py
 /target-test
 .vscode/.mcp-github-token
+/target-ci

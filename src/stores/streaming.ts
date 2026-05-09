@@ -16,6 +16,10 @@ export const useStreamingStore = defineStore('streaming', () => {
   const streamText = ref('');
   /** Raw accumulated text (tags not stripped). */
   const streamRawText = ref('');
+  /** Accumulated extended-thinking / chain-of-thought text. */
+  const thinkingText = ref('');
+  /** Whether the model is currently in reasoning/thinking phase. */
+  const isThinkingPhase = ref(false);
   /** Latest emotion detected during streaming. */
   const currentEmotion = ref<EmotionTag | null>(null);
   /** Intensity of the current emotion in [0, 1]. Defaults to 1. */
@@ -36,6 +40,8 @@ export const useStreamingStore = defineStore('streaming', () => {
     isStreaming.value = false;
     streamText.value = '';
     streamRawText.value = '';
+    thinkingText.value = '';
+    isThinkingPhase.value = false;
     currentEmotion.value = null;
     currentEmotionIntensity.value = 1;
     currentMotion.value = null;
@@ -55,10 +61,28 @@ export const useStreamingStore = defineStore('streaming', () => {
    * Process a single LLM chunk from the Tauri event.
    * Text is already clean (anim blocks stripped by Rust StreamTagParser).
    */
-  function handleChunk(chunk: { text: string; done: boolean }) {
+  function handleChunk(chunk: { text: string; done: boolean; thinking?: boolean }) {
     if (chunk.done) {
       isStreaming.value = false;
+      isThinkingPhase.value = false;
       return;
+    }
+
+    // Thinking / chain-of-thought chunk — accumulate separately.
+    if (chunk.thinking) {
+      isThinkingPhase.value = true;
+      thinkingText.value += chunk.text;
+      // Mark streaming active even during thinking so the UI knows work
+      // is happening.
+      if (!isStreaming.value && chunk.text) {
+        isStreaming.value = true;
+      }
+      return;
+    }
+
+    // Transition from thinking phase to answer phase.
+    if (isThinkingPhase.value) {
+      isThinkingPhase.value = false;
     }
 
     // Set isStreaming to true on first chunk with actual text
@@ -98,6 +122,8 @@ export const useStreamingStore = defineStore('streaming', () => {
     isStreaming.value = false;
     streamText.value = '';
     streamRawText.value = '';
+    thinkingText.value = '';
+    isThinkingPhase.value = false;
     currentEmotion.value = null;
     currentEmotionIntensity.value = 1;
     currentMotion.value = null;
@@ -108,6 +134,8 @@ export const useStreamingStore = defineStore('streaming', () => {
     isStreaming,
     streamText,
     streamRawText,
+    thinkingText,
+    isThinkingPhase,
     currentEmotion,
     currentEmotionIntensity,
     currentMotion,

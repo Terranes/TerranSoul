@@ -211,6 +211,22 @@ describe('useSettingsStore', () => {
     });
   });
 
+  it('reasoning_effort defaults to off in DEFAULT_SETTINGS', () => {
+    const store = useSettingsStore();
+    // Before any loadSettings call, store uses DEFAULT_SETTINGS
+    expect(store.settings.reasoning_effort).toBe('off');
+  });
+
+  it('saveSettings persists reasoning_effort', async () => {
+    mockInvoke.mockResolvedValue({});
+    const store = useSettingsStore();
+    await store.saveSettings({ reasoning_effort: 'high' });
+    expect(store.settings.reasoning_effort).toBe('high');
+    expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
+      settings: expect.objectContaining({ reasoning_effort: 'high' }),
+    });
+  });
+
   it('saveRelevanceThreshold clamps above maximum', async () => {
     mockInvoke.mockResolvedValue({});
     const store = useSettingsStore();

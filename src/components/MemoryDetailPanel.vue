@@ -1,6 +1,8 @@
 <template>
   <div class="memory-detail-panel">
-    <h3 class="panel-title">Memory #{{ entry.id }}</h3>
+    <h3 class="panel-title">
+      Memory #{{ entry.id }}
+    </h3>
     <div class="detail-row">
       <span class="label">Type:</span>
       <span class="value">{{ entry.memory_type }}</span>
@@ -27,7 +29,9 @@
     </div>
     <div class="detail-row content-row">
       <span class="label">Content:</span>
-      <p class="content-text">{{ entry.content }}</p>
+      <p class="content-text">
+        {{ entry.content }}
+      </p>
     </div>
 
     <div

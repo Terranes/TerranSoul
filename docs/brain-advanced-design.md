@@ -6,8 +6,6 @@
 
 ## Architecture at a glance
 
-### What it is, in one sentence
-
 > **TerranSoul is a Vue+Tauri desktop app whose Rust backend keeps a SQLite-backed memory store (3 tiers, 8 categories, 4 cognitive kinds) and pipes every chat turn through a hybrid retrieval pipeline before sending it to a pluggable LLM provider (local Ollama, free cloud, or paid cloud).**
 
 ### 1. System layers — who calls whom

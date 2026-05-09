@@ -102,7 +102,14 @@ export interface AppSettings {
   code_index_mmap_mb?: number;
   /** User-defined context folders for knowledge ingestion (brute-force scan, not recommended for large trees). */
   context_folders?: ContextFolder[];
+  /** Controls extended-thinking (chain-of-thought) depth for the LLM. Only affects models supporting Ollama's `think` parameter. */
+  reasoning_effort?: ReasoningEffort;
+  /** When true, verbose debug messages are printed (e.g. chat-rewarm timings). Default false. */
+  debug_logging?: boolean;
 }
+
+/** Reasoning effort level for extended-thinking models. */
+export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
 
 const MIN_MAX_MEMORY_GB = 1;
 const MAX_MAX_MEMORY_GB = 100;
@@ -176,6 +183,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
   code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
   context_folders: [],
+  reasoning_effort: 'off',
+  debug_logging: false,
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

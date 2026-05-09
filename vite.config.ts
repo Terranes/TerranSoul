@@ -133,5 +133,8 @@ export default defineConfig({
       process.env.TAURI_ENV_PLATFORM == "windows" ? "chrome105" : "safari13",
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    // Three.js + VRM are legitimately large bundles; suppress the warning
+    // rather than artificially splitting dependencies that must be co-loaded.
+    chunkSizeWarningLimit: 3000,
   },
 });

@@ -67,8 +67,6 @@ file, the test slice that ran green, and the reviewer verdict.
 
 ## 2. Requirements
 
-![Requirements checklist showing Self-Improve panel, Coding LLM, and GitHub setup](screenshots/self-improve-to-pr/02-requirements.png)
-
 - TerranSoul desktop running with the **Self-Improve** panel visible
   (right-click pet → **Self-Improve…**, or open via Quest tree once the
   *Engineer* skill activates).
@@ -98,8 +96,6 @@ file, the test slice that ran green, and the reviewer verdict.
 ---
 
 ## 3. Authorize TerranSoul to Talk to GitHub
-
-![GitHub authorization panel showing device flow code and verification URL](screenshots/self-improve-to-pr/03-github-auth.png)
 
 There are two supported paths. Use whichever matches your security
 posture.
@@ -139,8 +135,6 @@ POSIX. The panel never shows the raw token after the initial save.
 
 ## 4. Promote the Proven Asset
 
-![Charisma panel showing Proven row with ⭐ Promote to source button highlighted](screenshots/self-improve-to-pr/04-promote-asset.png)
-
 Pick any Charisma row whose maturity is **✨ Proven**.
 
 1. Right-click the pet → **Charisma — Teach me…**.
@@ -171,8 +165,6 @@ let alone pushed to GitHub — without your explicit click.
 ---
 
 ## 5. Run the Workflow
-
-![Multi-agent workflow panel showing 4-step DAG with Researcher → Coder → Tester → Reviewer](screenshots/self-improve-to-pr/05-run-workflow.png)
 
 1. Right-click the pet → **Multi-agent workflows…**.
 2. The **Workflows** tab lists your new plan with status
@@ -239,8 +231,6 @@ let alone pushed to GitHub — without your explicit click.
 
 ## 6. Open the Pull Request
 
-![Self-Improve panel GitHub section with Open Pull Request button](screenshots/self-improve-to-pr/06-open-pr.png)
-
 The workflow runner stages and commits locally; pushing and PR opening
 is one separate human-driven action.
 
@@ -274,8 +264,6 @@ is one separate human-driven action.
 
 ## 7. Wait for Review
 
-![PR status pill showing open/approved/merged state in the Self-Improve panel](screenshots/self-improve-to-pr/07-wait-review.png)
-
 This is a *human* phase. TerranSoul's job is done — the rest is
 ordinary GitHub workflow.
 
@@ -306,8 +294,6 @@ ordinary GitHub workflow.
 ---
 
 ## 8. Worked End-to-End Example
-
-![Complete flow screenshot showing all steps completed with green checkmarks](screenshots/self-improve-to-pr/08-worked-example.png)
 
 > `says 'indeed' a lot`
 

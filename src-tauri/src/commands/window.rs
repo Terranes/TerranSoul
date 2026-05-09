@@ -163,6 +163,31 @@ pub async fn set_cursor_passthrough(
         .map_err(|e| e.to_string())
 }
 
+/// Toggle the WebView2 background alpha between fully-transparent (alpha=0)
+/// and near-transparent (alpha=1).  On Windows, DWM performs per-pixel
+/// hit-testing against the composited surface — a fully-transparent pixel
+/// is treated as "not part of the window" even when
+/// `set_ignore_cursor_events(false)` is active.  Setting alpha=1 ensures
+/// the entire viewport is hittable while remaining visually transparent.
+///
+/// Call with `opaque=true` when a modal is open in pet mode, and
+/// `opaque=false` when it closes to restore desktop click-through.
+#[tauri::command]
+pub async fn set_pet_modal_backdrop(
+    opaque: bool,
+    app_handle: tauri::AppHandle,
+) -> Result<(), String> {
+    let window = app_handle
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+    let wv: &tauri::Webview = window.as_ref();
+    // alpha=1 is visually invisible but makes DWM treat the pixel as
+    // belonging to this window for hit-testing purposes.
+    let alpha = if opaque { 1 } else { 0 };
+    let _ = wv.set_background_color(Some(Color(0, 0, 0, alpha)));
+    Ok(())
+}
+
 /// Initiate a window drag operation from the frontend.
 /// Call this from a mousedown handler so the OS takes over dragging.
 #[tauri::command]

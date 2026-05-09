@@ -39,7 +39,7 @@ resolution, decay/eviction, and the memory audit/provenance system.
 
 ## 1. The RAG Pipeline (What Happens on Every Message)
 
-![RAG pipeline diagram showing 6-signal search → RRF fusion → rerank → inject](screenshots/advanced-memory-rag/01-rag-pipeline.png)
+![Memory panel showing stored memories](screenshots/advanced-memory-rag/01-memory-view.png)
 
 Every time you send a message, TerranSoul runs a multi-stage retrieval pipeline:
 
@@ -124,7 +124,7 @@ Open **Settings → Brain** to adjust:
 
 ## 3. Cognitive Memory Axes
 
-![Memory detail showing cognitive_kind badge and tier classification](screenshots/advanced-memory-rag/03-cognitive-axes.png)
+*Memory entries are automatically classified into cognitive kinds visible in the Memory tab.*
 
 Every memory is automatically classified into one of four **cognitive kinds**:
 
@@ -152,8 +152,6 @@ Every memory is automatically classified into one of four **cognitive kinds**:
 
 ## 4. Auto-Learn Policy
 
-![Settings showing auto-learn toggle with cognitive kind routing rules](screenshots/advanced-memory-rag/04-auto-learn.png)
-
 TerranSoul automatically extracts memories from conversations:
 
 1. After each conversation, the brain identifies noteworthy facts, preferences, and experiences.
@@ -177,8 +175,6 @@ TerranSoul automatically extracts memories from conversations:
 
 ## 5. Memory Conflict Resolution
 
-![Conflict resolution dialog showing two conflicting memories with resolution options](screenshots/advanced-memory-rag/05-conflict-resolution.png)
-
 When a new memory contradicts an existing one:
 
 1. **Detection:** Cosine similarity ≥ 0.85 between new and existing memory triggers LLM-based contradiction check.
@@ -197,7 +193,6 @@ When a new memory contradicts an existing one:
 
 ## 6. Temporal Queries (Time-Scoped Search)
 
-![Chat showing natural-language time query “what did I learn last week?” with results](screenshots/advanced-memory-rag/06-temporal-queries.png)
 
 TerranSoul understands natural-language time expressions in searches:
 
@@ -215,8 +210,6 @@ Use these in chat naturally: *"What did we discuss last week about deployments?"
 ---
 
 ## 7. Decay, Eviction & Garbage Collection
-
-![Brain debug view showing decay scores and GC status indicators](screenshots/advanced-memory-rag/07-decay-gc.png)
 
 ### Decay (Gradual Forgetting)
 
@@ -250,8 +243,6 @@ Manually trigger GC to remove fully-decayed memories:
 
 ## 8. Memory Audit & Provenance
 
-![Memory version history panel showing edit chain and provenance graph](screenshots/advanced-memory-rag/08-audit-provenance.png)
-
 ### Audit Tab
 
 Open **Brain View → Wiki Panel → Audit tab** to see:
@@ -275,8 +266,6 @@ Click any memory → **Audit** tab to see its full history:
 ---
 
 ## 9. Session Reflection (`/reflect`)
-
-![Chat showing /reflect command output with session learning summary](screenshots/advanced-memory-rag/09-session-reflection.png)
 
 After a productive conversation, type `/reflect` to trigger session reflection:
 

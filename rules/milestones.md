@@ -32,7 +32,17 @@
 
 ## Next Chunk
 
-No chunks remain. All phases through 45 are complete.
-Add new phases below when planning future work.
+**Phase 46.1 — Agent-session lesson capture for self-improve.**
+See chunk row below.
 
 ---
+
+## Phase 46 — Agent-session knowledge ingestion (closes self-improve gap discovered 2026-05-10)
+
+| Chunk | Title | Status | Goal |
+|---|---|---|---|
+| 46.1 | Agent-session lesson detector + `brain_ingest_lesson` MCP tool | not-started | Add `src-tauri/src/coding/agent_session_lessons.rs` with `detect_lesson(message, role, prior_messages) -> Option<LessonChunk>` recognising user-corrective ("you should X instead of Y", "stop doing X") and agent-authored ("I learned X", "lesson:") patterns. Add `brain_ingest_lesson{content,tags,importance,category}` MCP tool that writes to `memories` table via the gateway AND appends an `INSERT` row to `mcp-data/shared/memory-seed.sql` so lessons survive DB reseed. Extend `coding/conversation_learning.rs` `DetectionReply` schema with a `lesson` category that routes to the new tool instead of `milestones.md`. Add CI check: when `mcp-data/shared/migrations/NNN_*.sql` is added, `lessons-learned.md` must change in the same commit. Tests: detection unit tests for both pattern families, MCP tool round-trip via `gateway` mock, CI check via shell script. Reference: migration `019_self_improve_agent_session_gap_lessons.sql`. |
+| 46.2 | Manual tutorial screenshot QA — sweep all 21 tutorials | not-started | Walk every tutorial step-by-step (one screenshot at a time), opening the exact target view, dismissing quest overlays, confirming 3D mode state, capturing, and visually verifying the resulting PNG before moving on. Fix any UI defect found and recapture immediately. Tutorials: `quick-start`, `brain-rag-setup`, `brain-rag-local-lm`, `advanced-memory-rag`, `knowledge-wiki`, `folder-to-knowledge-graph`, `context-folder-conversion`, `skill-tree-quests`, `voice-setup`, `charisma-teaching`, `teaching-animations-expressions-persona`, `device-sync-hive`, `hive-relay`, `lan-mcp-sharing`, `browser-mobile`, `mcp-coding-agents`, `multi-agent-workflows`, `openclaw-plugin`, `packages-plugins`, `self-improve-to-pr`, `mcp-server-integration-guide`. Will span multiple sessions; track progress via `/memories/session/tutorial-qa-progress.md`. **No batch scripts** — each capture must be human-verified per migration `018`. |
+
+---
+

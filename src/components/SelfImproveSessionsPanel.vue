@@ -141,7 +141,9 @@
               <span class="si-chat-role">{{ msg.role }}</span>
               <span class="si-chat-time">{{ formatTime(msg.ts_ms) }}</span>
             </header>
-            <p class="si-chat-body">{{ msg.content }}</p>
+            <p class="si-chat-body">
+              {{ msg.content }}
+            </p>
           </article>
         </div>
 
@@ -156,7 +158,7 @@
             placeholder="Message or /help for slash commands"
             aria-label="Self-improve session message"
             autocomplete="off"
-          />
+          >
           <button
             type="submit"
             class="si-chat-send"

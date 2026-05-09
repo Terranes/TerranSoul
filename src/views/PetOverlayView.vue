@@ -327,6 +327,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, type CSSProperties } from 'vue';
 import { storeToRefs } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -890,6 +891,17 @@ watch(petModalOpen, (open) => {
   }
 });
 
+// On Windows, DWM ignores clicks on fully-transparent pixels even when
+// set_ignore_cursor_events(false) is active.  Toggle the WebView2
+// background alpha between 0 (click-through on blank areas) and 1
+// (visually invisible but hittable) so interactive overlays receive clicks.
+const anyInteractiveOverlay = computed(
+  () => petModalOpen.value || menuVisible.value || petChatExpanded.value,
+);
+watch(anyInteractiveOverlay, (open) => {
+  invoke('set_pet_modal_backdrop', { opaque: open }).catch(() => {});
+});
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const recentMessages = computed(() => conversationStore.messages.slice(-20));
 
@@ -1151,11 +1163,105 @@ function scrollToBottom() {
   }
 }
 
+// ── Pet-chat ingest support ───────────────────────────────────────────────────
+// Allows pasting a URL or using `/ingest <url>` / `/digest <text>` directly
+// in the pet chat without switching to the full window.
+
+function looksLikeUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function petMsg(role: 'user' | 'assistant', content: string) {
+  return { id: crypto.randomUUID(), role, content, timestamp: Date.now() } as const;
+}
+
+async function handlePetIngestCommand(text: string): Promise<boolean> {
+  // /ingest <url-or-path>
+  const ingestMatch = text.match(/^\/ingest\s+(.+)/i);
+  if (ingestMatch) {
+    const source = ingestMatch[1].trim();
+    conversationStore.addMessage(petMsg('user', text));
+    try {
+      const result = await invoke<{ task_id: string; source: string; source_type: string }>(
+        'ingest_document',
+        { source, tags: 'imported', importance: 4 },
+      );
+      conversationStore.addMessage(
+        petMsg('assistant', `📥 Ingesting ${result.source_type}: ${result.source}\nTask: ${result.task_id}`),
+      );
+    } catch (err) {
+      conversationStore.addMessage(petMsg('assistant', `❌ Ingest failed: ${err}`));
+    }
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  // /digest <text> — digest pasted text into the brain wiki
+  const digestMatch = text.match(/^\/digest\s+(.+)/is);
+  if (digestMatch) {
+    const content = digestMatch[1].trim();
+    conversationStore.addMessage(petMsg('user', text));
+    // If it looks like a URL, route to ingest_document instead
+    if (looksLikeUrl(content)) {
+      try {
+        const result = await invoke<{ task_id: string; source: string; source_type: string }>(
+          'ingest_document',
+          { source: content, tags: 'wiki:digest,imported', importance: 4 },
+        );
+        conversationStore.addMessage(
+          petMsg('assistant', `📥 Ingesting ${result.source_type}: ${result.source}\nTask: ${result.task_id}`),
+        );
+      } catch (err) {
+        conversationStore.addMessage(petMsg('assistant', `❌ Ingest failed: ${err}`));
+      }
+    } else {
+      try {
+        const result = await invoke<{ kind: string; entry_id?: number; existing_id?: number }>(
+          'brain_wiki_digest_text',
+          { content, sourceUrl: null, tags: 'wiki:digest,chat', importance: 4 },
+        );
+        const id = result.kind === 'skipped' ? result.existing_id : result.entry_id;
+        conversationStore.addMessage(
+          petMsg('assistant', result.kind === 'skipped'
+            ? `⏭ Already known (memory #${id}).`
+            : `✅ Digested into memory #${id}.`),
+        );
+      } catch (err) {
+        conversationStore.addMessage(petMsg('assistant', `❌ Digest failed: ${err}`));
+      }
+    }
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  // /help — show available slash commands
+  if (/^\/help\s*$/i.test(text)) {
+    conversationStore.addMessage(petMsg('user', text));
+    conversationStore.addMessage(
+      petMsg('assistant', [
+        '**Pet Chat Commands:**',
+        '`/ingest <url>` — Fetch and learn a URL or local file',
+        '`/digest <text>` — Digest pasted text into the brain',
+        '`/help` — Show this help',
+        '',
+        'You can also just paste a URL to chat — the brain uses RAG to answer from your memories.',
+      ].join('\n')),
+    );
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  return false;
+}
+
 async function handleSend() {
   const text = inputText.value.trim();
   if (!text || conversationStore.isThinking) return;
   inputText.value = '';
   autoResize();
+
+  // Handle /ingest and /digest slash commands in pet chat
+  if (await handlePetIngestCommand(text)) return;
 
   // Stop any ongoing TTS before sending a new message
   tts.stop();

@@ -555,7 +555,9 @@
                     <span class="mv-audit-version-date">{{ formatDate(ver.created_at) }}</span>
                     <span class="mv-audit-version-type">{{ ver.memory_type }}</span>
                   </div>
-                  <p class="mv-audit-version-content">{{ ver.content }}</p>
+                  <p class="mv-audit-version-content">
+                    {{ ver.content }}
+                  </p>
                   <p
                     v-if="ver.tags"
                     class="mv-audit-version-tags"
@@ -569,7 +571,9 @@
                     <span class="mv-audit-version-date">{{ formatDate(auditSelected.created_at) }}</span>
                     <span class="mv-audit-version-type">{{ auditSelected.memory_type }}</span>
                   </div>
-                  <p class="mv-audit-version-content">{{ auditSelected.content }}</p>
+                  <p class="mv-audit-version-content">
+                    {{ auditSelected.content }}
+                  </p>
                   <p
                     v-if="auditSelected.tags"
                     class="mv-audit-version-tags"

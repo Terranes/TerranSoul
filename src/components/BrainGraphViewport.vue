@@ -26,7 +26,10 @@
       <span class="bgv-tooltip-kind">{{ classifyMemoryKind(hovered) }}</span>
       <p>{{ truncate(hovered.content, 100) }}</p>
     </div>
-    <div class="bgv-legend bgv-kind-legend" data-testid="bgv-legend">
+    <div
+      class="bgv-legend bgv-kind-legend"
+      data-testid="bgv-legend"
+    >
       <span
         v-for="(colour, kind) in COGNITIVE_COLOURS"
         :key="kind"

@@ -360,6 +360,19 @@ pub struct AppSettings {
     /// folders with thousands of files. A warning is shown in the UI.
     #[serde(default)]
     pub context_folders: Vec<ContextFolder>,
+
+    /// Controls extended-thinking (chain-of-thought) depth for the LLM.
+    /// Only affects models that support Ollama's `think` parameter.
+    /// Default `Off` — fastest first-token latency.
+    #[serde(default)]
+    pub reasoning_effort: ReasoningEffort,
+
+    /// When `true`, verbose debug messages are printed to stderr (e.g.
+    /// `[chat-rewarm:embed_text] gemma4:e4b status=200 OK 174ms`).
+    /// Default `false` — silent in production. Toggle from the Brain
+    /// settings panel when diagnosing performance or provider issues.
+    #[serde(default)]
+    pub debug_logging: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -368,6 +381,49 @@ pub enum ObsidianLayout {
     #[default]
     Flat,
     Para,
+}
+
+/// Controls whether and how deeply the LLM is allowed to "think"
+/// (extended reasoning / chain-of-thought) before producing visible
+/// output.  Models that support Ollama's `think` parameter (Gemma 3,
+/// Qwen 3, DeepSeek-R1, etc.) emit a `<think>…</think>` block when
+/// `think: true`.  The effort level maps to `num_predict` budget caps
+/// and `think` flag values on the Ollama `/api/chat` request.
+///
+/// - **Off** — `think: false`, fastest first-token (default).
+/// - **Low** — `think: true`, small budget (`num_predict: 256`).
+/// - **Medium** — `think: true`, moderate budget (`num_predict: 512`).
+/// - **High** — `think: true`, generous budget (`num_predict: 1024`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    /// No extended thinking — fastest TTFT.
+    #[default]
+    Off,
+    /// Brief chain-of-thought.
+    Low,
+    /// Moderate reasoning pass.
+    Medium,
+    /// Deep extended reasoning.
+    High,
+}
+
+impl ReasoningEffort {
+    /// Whether to send `think: true` in the Ollama request.
+    pub fn think_enabled(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// Maximum output tokens (`num_predict`) for the combined
+    /// thinking + answer budget.
+    pub fn max_tokens(self, base: u32) -> u32 {
+        match self {
+            Self::Off => base,
+            Self::Low => base + 256,
+            Self::Medium => base + 512,
+            Self::High => base + 1024,
+        }
+    }
 }
 
 /// A user-defined folder that is scanned for documents and ingested
@@ -568,6 +624,8 @@ impl Default for AppSettings {
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            reasoning_effort: ReasoningEffort::Off,
+            debug_logging: false,
         }
     }
 }
@@ -751,6 +809,8 @@ mod tests {
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            reasoning_effort: ReasoningEffort::Off,
+            debug_logging: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -987,5 +1047,42 @@ mod tests {
         let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.model_camera_positions.is_empty());
+    }
+
+    #[test]
+    fn reasoning_effort_think_enabled() {
+        assert!(!ReasoningEffort::Off.think_enabled());
+        assert!(ReasoningEffort::Low.think_enabled());
+        assert!(ReasoningEffort::Medium.think_enabled());
+        assert!(ReasoningEffort::High.think_enabled());
+    }
+
+    #[test]
+    fn reasoning_effort_max_tokens() {
+        let base = 1000;
+        assert_eq!(ReasoningEffort::Off.max_tokens(base), 1000);
+        assert_eq!(ReasoningEffort::Low.max_tokens(base), 1256);
+        assert_eq!(ReasoningEffort::Medium.max_tokens(base), 1512);
+        assert_eq!(ReasoningEffort::High.max_tokens(base), 2024);
+    }
+
+    #[test]
+    fn reasoning_effort_serde_roundtrip() {
+        let json = r#""low""#;
+        let parsed: ReasoningEffort = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, ReasoningEffort::Low);
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), r#""low""#);
+    }
+
+    #[test]
+    fn reasoning_effort_default_is_off() {
+        assert_eq!(ReasoningEffort::default(), ReasoningEffort::Off);
+    }
+
+    #[test]
+    fn serde_fills_reasoning_effort_default_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.reasoning_effort, ReasoningEffort::Off);
     }
 }

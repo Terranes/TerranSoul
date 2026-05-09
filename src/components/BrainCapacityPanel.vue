@@ -25,6 +25,7 @@ const contextualRetrieval = computed(() => appSettings.settings?.contextual_retr
 const lateChunking = computed(() => appSettings.settings?.late_chunking ?? false);
 const webSearchEnabled = computed(() => appSettings.settings?.web_search_enabled ?? false);
 const backgroundMaintenance = computed(() => appSettings.settings?.background_maintenance_enabled ?? true);
+const debugLogging = computed(() => appSettings.settings?.debug_logging ?? false);
 const maintenanceInterval = computed(() => appSettings.settings?.maintenance_interval_hours ?? DEFAULT_MAINTENANCE_INTERVAL_HOURS);
 const maintenanceIdle = computed(() => appSettings.settings?.maintenance_idle_minimum_minutes ?? 5);
 const dataRoot = computed(() => appSettings.settings?.data_root ?? '');
@@ -102,6 +103,10 @@ function onToggleWebSearch(checked: boolean) {
 
 function onToggleMaintenance(checked: boolean) {
   appSettings.saveSettings({ background_maintenance_enabled: checked });
+}
+
+function onToggleDebugLogging(checked: boolean) {
+  appSettings.saveSettings({ debug_logging: checked });
 }
 
 function onMaintenanceIntervalChange(e: Event) {
@@ -488,6 +493,25 @@ function onCodeIndexMmapMbChange(e: Event) {
           this many minutes — avoids interrupting active sessions.
         </p>
       </template>
+    </section>
+
+    <!-- ── Debug ───────────────────────────────────────────────────────────── -->
+    <section class="bcp-section">
+      <h4 class="bcp-section-title">
+        Debug
+      </h4>
+      <label class="bcp-toggle">
+        <input
+          type="checkbox"
+          :checked="debugLogging"
+          data-testid="bcp-debug-logging-toggle"
+          @change="onToggleDebugLogging(($event.target as HTMLInputElement).checked)"
+        >
+        <span class="bcp-toggle-text">
+          <strong>Verbose debug logging</strong>
+          <small>Print brain internals to stderr (e.g. chat-rewarm timings, embed status). Disable in production.</small>
+        </span>
+      </label>
     </section>
   </div>
 </template>

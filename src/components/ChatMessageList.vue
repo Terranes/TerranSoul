@@ -71,6 +71,18 @@
           v-if="item.msg!.role === 'assistant'"
           :name="item.msg!.agentName ?? 'TerranSoul'"
         />
+        <details
+          v-if="item.msg!.thinkingContent"
+          class="thinking-details"
+        >
+          <summary class="thinking-summary">
+            💭 Thinking…
+          </summary>
+          <SafeMarkdown
+            class="thinking-content"
+            :text="item.msg!.thinkingContent"
+          />
+        </details>
         <SafeMarkdown
           class="bubble"
           :text="item.msg!.content"
@@ -99,13 +111,28 @@
     </div>
     <!-- Live streaming response bubble -->
     <div
-      v-if="isStreaming && streamingText"
+      v-if="isStreaming && (streamingText || streamingThinkingText)"
       key="streaming"
       class="message-row assistant"
     >
       <div class="bubble-wrapper">
         <AgentBadge name="TerranSoul" />
+        <details
+          v-if="streamingThinkingText"
+          class="thinking-details"
+          :open="isThinkingPhase"
+        >
+          <summary class="thinking-summary">
+            💭 {{ isThinkingPhase ? 'Thinking…' : 'Thought process' }}
+          </summary>
+          <SafeMarkdown
+            class="thinking-content"
+            :text="streamingThinkingText"
+            :cursor="isThinkingPhase"
+          />
+        </details>
         <SafeMarkdown
+          v-if="streamingText"
           class="bubble streaming-bubble"
           :text="streamingText"
           cursor
@@ -167,6 +194,10 @@ const props = defineProps<{
   isThinking: boolean;
   streamingText?: string;
   isStreaming?: boolean;
+  /** Accumulated extended-thinking text during streaming. */
+  streamingThinkingText?: string;
+  /** Whether the model is currently in the thinking phase. */
+  isThinkingPhase?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -609,6 +640,52 @@ watch(() => props.streamingText, scrollToBottom);
   padding: 2px 6px;
   font-family: var(--ts-font-mono);
   font-size: 0.84em;
+}
+
+/* Thinking / chain-of-thought */
+.thinking-details {
+  width: 100%;
+  margin-bottom: 4px;
+}
+
+.thinking-summary {
+  cursor: pointer;
+  font-size: 0.8rem;
+  color: var(--ts-text-muted, rgba(255, 255, 255, 0.5));
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  user-select: none;
+  list-style: none;
+}
+
+.thinking-summary::marker,
+.thinking-summary::-webkit-details-marker {
+  display: none;
+}
+
+.thinking-summary::before {
+  content: '▶ ';
+  font-size: 0.7em;
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.thinking-details[open] > .thinking-summary::before {
+  content: '▼ ';
+}
+
+.thinking-content {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--ts-text-muted, rgba(255, 255, 255, 0.5));
+  padding: 6px 10px;
+  border-left: 2px solid var(--ts-accent, #7c3aed);
+  margin: 4px 0 4px 4px;
+  background: rgba(124, 58, 237, 0.06);
+  border-radius: 0 6px 6px 0;
+  max-height: 300px;
+  overflow-y: auto;
 }
 
 :deep(strong) {

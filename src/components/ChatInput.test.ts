@@ -70,7 +70,10 @@ describe('ChatInput', () => {
 
   it('has correct placeholder text', () => {
     const wrapper = mountChatInput();
-    const input = wrapper.find('.chat-input').element as HTMLInputElement;
-    expect(input.placeholder).toBe('Type a message…');
+    const input = wrapper.find('.chat-input').element as HTMLTextAreaElement;
+    // Placeholder includes a Shift+Enter hint since the input is now a
+    // multi-line auto-grow textarea (see ChatInput.vue).
+    expect(input.placeholder).toContain('Type a message');
+    expect(input.placeholder).toContain('Shift+Enter');
   });
 });

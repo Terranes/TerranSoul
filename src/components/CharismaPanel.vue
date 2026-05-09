@@ -1,10 +1,24 @@
 <template>
-  <section class="ch-panel" aria-labelledby="ch-panel-title">
+  <section
+    class="ch-panel"
+    aria-labelledby="ch-panel-title"
+  >
     <header class="ch-panel-header">
       <div class="ch-panel-title-row">
-        <span class="ch-panel-icon" aria-hidden="true">🎭</span>
-        <h2 id="ch-panel-title" class="ch-panel-title">Charisma — Teach TerranSoul</h2>
-        <span class="ch-pill" :class="{ 'ch-pill-active': summary.proven > 0 }">
+        <span
+          class="ch-panel-icon"
+          aria-hidden="true"
+        >🎭</span>
+        <h2
+          id="ch-panel-title"
+          class="ch-panel-title"
+        >
+          Charisma — Teach TerranSoul
+        </h2>
+        <span
+          class="ch-pill"
+          :class="{ 'ch-pill-active': summary.proven > 0 }"
+        >
           {{ summary.proven }} proven
         </span>
       </div>
@@ -34,7 +48,10 @@
         </div>
       </div>
 
-      <nav class="ch-tabs" role="tablist">
+      <nav
+        class="ch-tabs"
+        role="tablist"
+      >
         <button
           v-for="tab in tabs"
           :key="tab.id"
@@ -51,8 +68,16 @@
     </header>
 
     <div class="ch-tab-body">
-      <p v-if="store.loading" class="ch-status">Loading…</p>
-      <p v-else-if="visibleStats.length === 0" class="ch-empty">
+      <p
+        v-if="store.loading"
+        class="ch-status"
+      >
+        Loading…
+      </p>
+      <p
+        v-else-if="visibleStats.length === 0"
+        class="ch-empty"
+      >
         No {{ kindLabel(currentKind).toLowerCase() }}s taught yet.
         <span v-if="currentKind === 'expression' || currentKind === 'motion'">
           Open the <strong>Persona Teacher</strong> to capture one from
@@ -64,8 +89,15 @@
         </span>
       </p>
 
-      <ul v-else class="ch-list">
-        <li v-for="s in visibleStats" :key="s.kind + s.asset_id" class="ch-row">
+      <ul
+        v-else
+        class="ch-list"
+      >
+        <li
+          v-for="s in visibleStats"
+          :key="s.kind + s.asset_id"
+          class="ch-row"
+        >
           <div class="ch-row-main">
             <span class="ch-kind-icon">{{ kindIcon(s.kind) }}</span>
             <div class="ch-row-text">
@@ -86,7 +118,11 @@
 
           <div class="ch-row-bottom">
             <!-- Rating stars -->
-            <div class="ch-rating" role="radiogroup" :aria-label="`Rate ${s.display_name}`">
+            <div
+              class="ch-rating"
+              role="radiogroup"
+              :aria-label="`Rate ${s.display_name}`"
+            >
               <button
                 v-for="n in 5"
                 :key="n"
@@ -96,8 +132,13 @@
                 :class="['ch-star', { 'ch-star-on': Math.round(avg(s)) >= n }]"
                 :title="`Rate ${n}/5`"
                 @click="onRate(s, n)"
-              >★</button>
-              <span v-if="s.rating_count > 0" class="ch-rating-num">
+              >
+                ★
+              </button>
+              <span
+                v-if="s.rating_count > 0"
+                class="ch-rating-num"
+              >
                 {{ avg(s).toFixed(1) }} ({{ s.rating_count }})
               </span>
             </div>
@@ -106,8 +147,8 @@
               <button
                 v-if="maturityOf(s) === 'proven'"
                 class="ch-btn ch-btn-promote"
-                @click="onPromote(s)"
                 :title="'Promote into source-code defaults via a coding workflow plan'"
+                @click="onPromote(s)"
               >
                 ⭐ Promote to source
               </button>
@@ -118,17 +159,29 @@
               >
                 Canon
               </span>
-              <button class="ch-btn" @click="onTest(s)" v-if="s.kind !== 'trait'">
+              <button
+                v-if="s.kind !== 'trait'"
+                class="ch-btn"
+                @click="onTest(s)"
+              >
                 ▶ Test
               </button>
-              <button class="ch-btn ch-btn-danger" @click="onDelete(s)">Delete</button>
+              <button
+                class="ch-btn ch-btn-danger"
+                @click="onDelete(s)"
+              >
+                Delete
+              </button>
             </div>
           </div>
         </li>
       </ul>
 
       <!-- Last promotion result -->
-      <div v-if="lastPromotionPlanId" class="ch-promotion-toast">
+      <div
+        v-if="lastPromotionPlanId"
+        class="ch-promotion-toast"
+      >
         ✅ Created workflow plan
         <code>{{ lastPromotionPlanId }}</code>
         — open the
@@ -136,7 +189,12 @@
       </div>
     </div>
 
-    <p v-if="store.error" class="ch-error">{{ store.error }}</p>
+    <p
+      v-if="store.error"
+      class="ch-error"
+    >
+      {{ store.error }}
+    </p>
   </section>
 </template>
 

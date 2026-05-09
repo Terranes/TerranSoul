@@ -144,6 +144,30 @@
   Markdown-only rule or architecture knowledge is incomplete because future
   agents must retrieve it through SQLite/FTS/RRF/KG, not by loading `.md`
   files as memory.
+- **Self-improve does NOT yet capture lessons from external coding-agent
+  sessions** (Copilot/Claude Code/Codex working in the main checkout).
+  `coding/conversation_learning.rs` only routes user-authored chat messages to
+  `rules/milestones.md`; `coding/engine.rs` runs in an isolated worktree
+  against the configured Coding LLM. Until `brain_ingest_lesson` MCP tool
+  ships and `agent_session_lessons.rs` lands, the agent **must hand-write a
+  numbered `mcp-data/shared/migrations/NNN_*.sql` file plus update this
+  document** when it discovers a procedural rule. See migration `019` for a
+  worked example (screenshot-QA workflow + native-select contrast + chat
+  textarea auto-grow). Verify with `brain_search` before declaring done.
+- **Custom CSS token references must match a definition in EVERY theme
+  block** of `src/style.css`. The 2026-05-10 chat-bar dropdown contrast bug
+  was caused by `var(--ts-text, #e2e8f0)` and `var(--ts-bg-base, #0f172a)` in
+  `.reasoning-effort-select` — `--ts-text` was never defined per theme so the
+  dark fallback bled through on light themes. Use `--ts-text-primary` and
+  `--ts-bg-surface` plus `color-scheme: inherit` so the native popup adopts
+  the active theme automatically.
+- **Chat input is a multi-line auto-grow textarea, never `<input
+  type="text">`.** Long messages clip horizontally and become unreadable on
+  small screens. The pattern is documented in `src/components/ChatInput.vue`:
+  `rows="1"`, `resize:none`, `max-height: calc(1.4em * MAX_ROWS + padding)`,
+  `overflow-y:auto`, and `autoResize()` on `@input` that resets height to
+  `auto` then sets `min(scrollHeight, maxHeight)`. Submit on Enter without
+  Shift; Shift+Enter inserts a newline.
 
 ## CI / GitHub
 

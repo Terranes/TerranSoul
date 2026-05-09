@@ -1836,7 +1836,11 @@ export const useConversationStore = defineStore('conversation', () => {
           // visibly rendering in the chat bubble.
           if (streaming.isStreaming && !isStreaming.value) {
             isStreaming.value = true;
-            isThinking.value = false;
+            // Only clear isThinking when answer text arrives (not during
+            // the extended-thinking phase).
+            if (!streaming.isThinkingPhase) {
+              isThinking.value = false;
+            }
           } else if (!streaming.isStreaming && isStreaming.value) {
             isStreaming.value = false;
           }
@@ -1929,6 +1933,7 @@ export const useConversationStore = defineStore('conversation', () => {
           const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
           const motion = streaming.currentMotion ?? parsed.motion ?? undefined;
           const { clean, warning } = extractWarning(cleanText);
+          const thinkingContent = streaming.thinkingText || undefined;
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
             role: 'assistant',
@@ -1938,6 +1943,7 @@ export const useConversationStore = defineStore('conversation', () => {
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
             motion,
+            thinkingContent,
           };
           stampAgent(assistantMsg);
           if (warning) applyWarningAsQuest(assistantMsg, warning);

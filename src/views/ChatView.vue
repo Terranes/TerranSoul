@@ -245,6 +245,8 @@
           :is-thinking="conversationStore.isThinking"
           :streaming-text="conversationStore.streamingText"
           :is-streaming="conversationStore.isStreaming"
+          :streaming-thinking-text="streaming.thinkingText"
+          :is-thinking-phase="streaming.isThinkingPhase"
           @suggest="handleSend"
           @start-quest="handleStartQuest"
           @navigate="(target: string) => emit('navigate', target)"
@@ -302,6 +304,26 @@
               />
             </svg>
           </button>
+          <select
+            v-if="brain.hasBrain"
+            class="reasoning-effort-select"
+            :value="settingsStore.settings.reasoning_effort ?? 'off'"
+            :title="`Reasoning effort: ${settingsStore.settings.reasoning_effort ?? 'off'}`"
+            @change="handleReasoningEffortChange"
+          >
+            <option value="off">
+              💬 Instant
+            </option>
+            <option value="low">
+              🧠 Low
+            </option>
+            <option value="medium">
+              🧠 Medium
+            </option>
+            <option value="high">
+              🧠 Deep
+            </option>
+          </select>
           <ChatInput
             :disabled="conversationStore.isThinking"
             @submit="handleSend"
@@ -311,8 +333,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Game-dialog upgrade prompt -->
     <UpgradeDialog
       :visible="showUpgradeDialog"
       :current-model-name="currentUpgradeModel"
@@ -476,6 +496,26 @@
               />
             </svg>
           </button>
+          <select
+            v-if="brain.hasBrain"
+            class="reasoning-effort-select"
+            :value="settingsStore.settings.reasoning_effort ?? 'off'"
+            :title="`Reasoning effort: ${settingsStore.settings.reasoning_effort ?? 'off'}`"
+            @change="handleReasoningEffortChange"
+          >
+            <option value="off">
+              💬 Instant
+            </option>
+            <option value="low">
+              🧠 Low
+            </option>
+            <option value="medium">
+              🧠 Medium
+            </option>
+            <option value="high">
+              🧠 Deep
+            </option>
+          </select>
           <ChatInput
             :disabled="conversationStore.isThinking"
             @submit="handleSend"
@@ -1144,6 +1184,11 @@ function precomputePendingEmotionForStreaming(message: string): void {
   // can use this value instead of a generic 'talking' state.
   const userSentiment = detectSentiment(message);
   pendingEmotion.value = sentimentToState(userSentiment);
+}
+
+function handleReasoningEffortChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value as 'off' | 'low' | 'medium' | 'high';
+  settingsStore.saveSettings({ reasoning_effort: value });
 }
 
 async function handleSend(message: string) {
@@ -2132,6 +2177,36 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.reasoning-effort-select {
+  height: 34px;
+  padding: 0 6px;
+  border-radius: var(--ts-radius-sm, 6px);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  color: var(--ts-text-primary, #e2e8f0);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: border-color 0.2s, background 0.2s;
+  /* Inherit from <html> color-scheme so the native popup adopts the
+     active theme's light/dark scheme automatically. */
+  color-scheme: inherit;
+  accent-color: var(--ts-accent, #7c3aed);
+}
+
+.reasoning-effort-select:hover,
+.reasoning-effort-select:focus {
+  border-color: var(--ts-accent, #7c3aed);
+  background: var(--ts-glass-bg-focus, var(--ts-glass-bg, rgba(15, 23, 42, 0.85)));
+}
+
+.reasoning-effort-select option {
+  background: var(--ts-bg-surface, var(--ts-bg-base, #0f172a));
+  color: var(--ts-text-primary, #e2e8f0);
 }
 
 /* ── Chat toggle button — pill with icon + label ── */

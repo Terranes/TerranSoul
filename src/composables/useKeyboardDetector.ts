@@ -66,7 +66,19 @@ export function useKeyboardDetector() {
     if (!vv) return;
 
     const shrink = fullViewportHeight - vv.height;
-    if (shrink > KEYBOARD_THRESHOLD_PX) {
+    // Only consider the keyboard open when an editable element is focused.
+    // External viewport resizes (e.g. window resize, CDP setViewportSize)
+    // can shrink the viewport without a keyboard being present.
+    const ae = document.activeElement;
+    const inputFocused = ae instanceof HTMLInputElement
+      || ae instanceof HTMLTextAreaElement
+      || (ae as HTMLElement)?.isContentEditable === true;
+    // True virtual keyboard opening also shrinks visualViewport versus
+    // layout viewport. A plain window resize can change both equally.
+    const layoutShrink = Math.max(0, window.innerHeight - vv.height);
+    const keyboardLikelyVisible = layoutShrink > 20 || vv.offsetTop > 0;
+
+    if (shrink > KEYBOARD_THRESHOLD_PX && inputFocused && keyboardLikelyVisible) {
       keyboardHeight.value = shrink;
       keyboardOpen.value = true;
       burstResetScroll();
@@ -76,7 +88,7 @@ export function useKeyboardDetector() {
       // Update baseline when keyboard is confirmed closed — this tracks
       // address-bar height changes that happen while the keyboard was open.
       fullViewportHeight = Math.max(fullViewportHeight, vv.height);
-      resetAllScroll();
+      if (inputFocused) resetAllScroll();
     }
   }
 

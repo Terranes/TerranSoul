@@ -47,7 +47,7 @@ You'll see a visual constellation map with nodes representing skills, connected 
 
 ## 2. Understand the Structure
 
-![Skill categories sidebar showing Brain, Voice, Avatar, Social, Utility icons](screenshots/skill-tree/02-categories.png)
+![Skill categories in the sidebar](screenshots/skill-tree/02-skill-categories.png)
 
 ### Skill Categories (5 Constellations)
 
@@ -79,7 +79,7 @@ You'll see a visual constellation map with nodes representing skills, connected 
 
 ## 3. Auto-Detection (How Skills Activate)
 
-![Skills lighting up after brain configuration — active state shown](screenshots/skill-tree/03-auto-detection.png)
+![Skill category detail view](screenshots/skill-tree/03-category-detail.png)
 
 Most skills activate **automatically** based on your actual configuration:
 
@@ -102,8 +102,6 @@ Most skills activate **automatically** based on your actual configuration:
 ---
 
 ## 4. Quest Steps (Guided Setup)
-
-![Quest step detail panel with numbered actions and progress indicators](screenshots/skill-tree/04-quest-steps.png)
 
 Each skill has **quest steps** that guide you through activation:
 
@@ -132,8 +130,6 @@ Each skill has **quest steps** that guide you through activation:
 
 ## 5. Combos (Skill Synergies)
 
-![Combo unlock notification — glowing connection between skill nodes](screenshots/skill-tree/05-combos.png)
-
 When multiple skills are active simultaneously, **combos** unlock:
 
 ### Notable Combos
@@ -157,8 +153,6 @@ Combos appear as glowing connections between skill nodes on the constellation ma
 
 ## 6. Daily Suggestions (Morning Report)
 
-![Morning Report panel showing daily quest suggestions](screenshots/skill-tree/06-morning-report.png)
-
 The **"Morning Report"** skill (Brain category, advanced tier) provides daily quest suggestions:
 
 1. Activate the **Morning Report** skill.
@@ -170,8 +164,6 @@ The **"Morning Report"** skill (Brain category, advanced tier) provides daily qu
 ---
 
 ## 7. Platform-Specific Skills
-
-![Platform-gated skills shown greyed out on non-Windows OS](screenshots/skill-tree/07-platform-skills.png)
 
 Some skills are platform-gated:
 
@@ -187,8 +179,6 @@ These only appear on their supported platform.
 ---
 
 ## 8. All Brain Skills (Progression Path)
-
-![Brain category progression tree from Foundation to Ultimate tier](screenshots/skill-tree/08-brain-progression.png)
 
 Here's the recommended Brain category progression:
 

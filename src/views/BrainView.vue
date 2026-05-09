@@ -280,7 +280,10 @@
       role="status"
       aria-live="polite"
     >
-      <span class="bv-embed-queue__icon" aria-hidden="true">🔄</span>
+      <span
+        class="bv-embed-queue__icon"
+        aria-hidden="true"
+      >🔄</span>
       <span class="bv-embed-queue__text">
         Self-healing embeddings:
         <strong>{{ embedQueueStatus.pending }}</strong> pending
@@ -298,7 +301,9 @@
 
     <!-- ── Context Folders — user-defined knowledge directories ────────────── -->
     <section class="bv-context-folders-section">
-      <h3 class="bv-section-title">📂 Context Folders</h3>
+      <h3 class="bv-section-title">
+        📂 Context Folders
+      </h3>
       <p class="bv-context-warning">
         ⚠️ Not recommended for large directories. Scanning is brute-force
         (like Copilot / Claude workspace indexing) and can be slow for folders
@@ -313,7 +318,7 @@
           placeholder="Paste folder path (e.g. D:\Docs\Notes)"
           data-testid="bv-context-folder-input"
           @keydown.enter="addContextFolder"
-        />
+        >
         <button
           class="bv-btn bv-btn--accent"
           data-testid="bv-context-folder-add"
@@ -355,7 +360,7 @@
               type="checkbox"
               :checked="folder.enabled"
               @change="toggleFolder(folder.path, !folder.enabled)"
-            />
+            >
           </label>
           <div class="bv-context-info">
             <span class="bv-context-label">{{ folder.label }}</span>
@@ -384,14 +389,19 @@
       >
         Synced {{ syncResult.folders_synced }} folder(s),
         {{ syncResult.files_ingested }} file(s) ingested.
-        <span v-if="syncResult.errors.length > 0" class="bv-context-errors">
+        <span
+          v-if="syncResult.errors.length > 0"
+          class="bv-context-errors"
+        >
           {{ syncResult.errors.length }} error(s).
         </span>
       </div>
 
       <!-- Conversion tools -->
       <div class="bv-context-conversion">
-        <h4 class="bv-context-conversion-title">🔄 Context ↔ Knowledge Conversion</h4>
+        <h4 class="bv-context-conversion-title">
+          🔄 Context ↔ Knowledge Conversion
+        </h4>
         <p class="bv-context-conversion-hint">
           Convert raw context-folder chunks into consolidated knowledge entries
           for better RAG retrieval, or export knowledge back to portable files.
@@ -423,7 +433,7 @@
               class="bv-context-input bv-context-export-input"
               placeholder="Export path (e.g. D:\Export\Knowledge)"
               data-testid="bv-context-export-input"
-            />
+            >
             <button
               class="bv-btn bv-btn--secondary"
               data-testid="bv-context-export"
@@ -450,7 +460,9 @@
 
         <!-- Knowledge Graph ↔ Files -->
         <div class="bv-kg-section">
-          <h4 class="bv-context-conversion-title">🕸️ Knowledge Graph ↔ Files</h4>
+          <h4 class="bv-context-conversion-title">
+            🕸️ Knowledge Graph ↔ Files
+          </h4>
           <p class="bv-context-conversion-hint">
             Import a text file as a structured KG subgraph (root → chunks with edges),
             or export a KG subtree starting from memory IDs.
@@ -464,7 +476,7 @@
               class="bv-context-input"
               placeholder="File path to import (e.g. D:\Docs\notes.md)"
               data-testid="bv-kg-import-input"
-            />
+            >
             <button
               class="bv-btn bv-btn--secondary"
               data-testid="bv-kg-import-btn"
@@ -489,14 +501,14 @@
               class="bv-context-input bv-kg-ids-input"
               placeholder="Root memory IDs (comma-separated, e.g. 42,78)"
               data-testid="bv-kg-export-ids"
-            />
+            >
             <input
               v-model="kgExportDir"
               type="text"
               class="bv-context-input"
               placeholder="Output directory"
               data-testid="bv-kg-export-dir"
-            />
+            >
             <button
               class="bv-btn bv-btn--secondary"
               data-testid="bv-kg-export-btn"

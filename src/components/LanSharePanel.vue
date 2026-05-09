@@ -1,9 +1,18 @@
 <template>
-  <section class="lan-share" aria-label="LAN Brain Sharing">
-    <h3 class="lan-share__title">LAN Brain Sharing</h3>
+  <section
+    class="lan-share"
+    aria-label="LAN Brain Sharing"
+  >
+    <h3 class="lan-share__title">
+      LAN Brain Sharing
+    </h3>
 
     <!-- Error banner -->
-    <div v-if="store.error" class="lan-share__error" role="alert">
+    <div
+      v-if="store.error"
+      class="lan-share__error"
+      role="alert"
+    >
       {{ store.error }}
     </div>
 
@@ -50,7 +59,7 @@
             type="text"
             class="lan-share__input"
             placeholder="e.g., HR Company Rules"
-          />
+          >
         </label>
         <button
           class="lan-share__btn lan-share__btn--primary"
@@ -79,12 +88,21 @@
             <span class="lan-share__info-label">Access:</span>
             <span>{{ store.hostAuthMode === 'public_read_only' ? 'Public read-only' : 'Token required' }}</span>
           </div>
-          <div v-if="store.hostToken" class="lan-share__info-row">
+          <div
+            v-if="store.hostToken"
+            class="lan-share__info-row"
+          >
             <span class="lan-share__info-label">Token:</span>
-            <code class="lan-share__token" @click="copyToken">
+            <code
+              class="lan-share__token"
+              @click="copyToken"
+            >
               {{ tokenDisplay }}
             </code>
-            <button class="lan-share__btn lan-share__btn--small" @click="copyToken">
+            <button
+              class="lan-share__btn lan-share__btn--small"
+              @click="copyToken"
+            >
               Copy
             </button>
           </div>
@@ -94,7 +112,10 @@
               : 'Share this token with colleagues so they can connect to your brain.' }}
           </p>
         </div>
-        <button class="lan-share__btn lan-share__btn--danger" @click="handleStopHosting">
+        <button
+          class="lan-share__btn lan-share__btn--danger"
+          @click="handleStopHosting"
+        >
           Stop Sharing
         </button>
       </template>
@@ -124,7 +145,10 @@
         </button>
       </div>
 
-      <ul v-if="store.discovered.length" class="lan-share__list">
+      <ul
+        v-if="store.discovered.length"
+        class="lan-share__list"
+      >
         <li
           v-for="brain in store.discovered"
           :key="`${brain.host}:${brain.port}`"
@@ -132,7 +156,10 @@
         >
           <div class="lan-share__card-header">
             <strong>{{ brain.brain_name }}</strong>
-            <span class="lan-share__badge" :class="brain.read_only ? 'lan-share__badge--ro' : 'lan-share__badge--rw'">
+            <span
+              class="lan-share__badge"
+              :class="brain.read_only ? 'lan-share__badge--ro' : 'lan-share__badge--rw'"
+            >
               {{ brain.read_only ? 'Read-only' : 'Read/Write' }}
             </span>
           </div>
@@ -150,7 +177,10 @@
           </button>
         </li>
       </ul>
-      <p v-else-if="!store.loading && store.discovering" class="lan-share__empty">
+      <p
+        v-else-if="!store.loading && store.discovering"
+        class="lan-share__empty"
+      >
         No brains found on the network yet…
       </p>
     </fieldset>
@@ -161,23 +191,44 @@
       <div class="lan-share__form-row">
         <label class="lan-share__label">
           Host
-          <input v-model="connectHost" type="text" class="lan-share__input" placeholder="192.168.1.100" />
+          <input
+            v-model="connectHost"
+            type="text"
+            class="lan-share__input"
+            placeholder="192.168.1.100"
+          >
         </label>
         <label class="lan-share__label lan-share__label--small">
           Port
-          <input v-model.number="connectPort" type="number" class="lan-share__input" placeholder="7421" />
+          <input
+            v-model.number="connectPort"
+            type="number"
+            class="lan-share__input"
+            placeholder="7421"
+          >
         </label>
       </div>
       <label class="lan-share__label">
         Access Mode
-        <select v-model="manualAccessMode" class="lan-share__input">
+        <select
+          v-model="manualAccessMode"
+          class="lan-share__input"
+        >
           <option value="token_required">Token required</option>
           <option value="public_read_only">Public read-only</option>
         </select>
       </label>
-      <label v-if="manualAccessMode === 'token_required'" class="lan-share__label">
+      <label
+        v-if="manualAccessMode === 'token_required'"
+        class="lan-share__label"
+      >
         Token
-        <input v-model="connectToken" type="text" class="lan-share__input" placeholder="Bearer token from host" />
+        <input
+          v-model="connectToken"
+          type="text"
+          class="lan-share__input"
+          placeholder="Bearer token from host"
+        >
       </label>
       <button
         class="lan-share__btn"
@@ -189,7 +240,10 @@
     </fieldset>
 
     <!-- Connected Brains Section -->
-    <fieldset v-if="store.connections.length" class="lan-share__section">
+    <fieldset
+      v-if="store.connections.length"
+      class="lan-share__section"
+    >
       <legend>Connected Brains ({{ store.connectedCount }})</legend>
 
       <ul class="lan-share__list">
@@ -232,7 +286,7 @@
             class="lan-share__input"
             placeholder="Ask a question…"
             @keydown.enter="handleSearchAll"
-          />
+          >
         </label>
         <button
           class="lan-share__btn"
@@ -243,7 +297,10 @@
         </button>
       </div>
 
-      <ul v-if="searchResults.length" class="lan-share__results">
+      <ul
+        v-if="searchResults.length"
+        class="lan-share__results"
+      >
         <li
           v-for="(r, idx) in searchResults"
           :key="idx"
@@ -253,8 +310,13 @@
             <span class="lan-share__result-brain">{{ r.brain_name }}</span>
             <span class="lan-share__result-score">{{ (r.result.score * 100).toFixed(0) }}%</span>
           </div>
-          <p class="lan-share__result-content">{{ r.result.content }}</p>
-          <div v-if="r.result.tags" class="lan-share__result-tags">
+          <p class="lan-share__result-content">
+            {{ r.result.content }}
+          </p>
+          <div
+            v-if="r.result.tags"
+            class="lan-share__result-tags"
+          >
             {{ r.result.tags }}
           </div>
         </li>

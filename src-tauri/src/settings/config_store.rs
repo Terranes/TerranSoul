@@ -122,6 +122,8 @@ mod tests {
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -195,6 +197,8 @@ mod tests {
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -253,6 +257,8 @@ mod tests {
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         save(dir.path(), &s).unwrap();
 

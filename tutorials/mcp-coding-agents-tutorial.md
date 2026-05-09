@@ -39,7 +39,7 @@ Copilot, the headless runner for CI/automation, and the code tools.
 
 ## 1. Understanding MCP Ports
 
-![Diagram showing three MCP ports — 7421 release, 7422 dev, 7423 headless](screenshots/mcp-coding-agents/01-mcp-ports.png)
+![Brain panel showing MCP configuration](screenshots/mcp-coding-agents/01-brain-panel.png)
 
 TerranSoul runs MCP on three ports depending on context:
 
@@ -54,8 +54,6 @@ For coding work, use the **headless runner on port 7423** — it doesn't touch y
 ---
 
 ## 2. Quick Start (Headless MCP)
-
-![Terminal showing npm run mcp starting on port 7423 with health check](screenshots/mcp-coding-agents/02-headless-start.png)
 
 ### Step 1: Start the MCP Server
 
@@ -99,8 +97,6 @@ export TERRANSOUL_MCP_TOKEN_MCP=$(cat .vscode/.mcp-token)
 
 ## 3. VS Code Copilot Integration
 
-![VS Code MCP panel showing terransoul-brain-mcp connected](screenshots/mcp-coding-agents/03-vscode-copilot.png)
-
 ### Auto-Start (Recommended)
 
 TerranSoul's workspace includes a VS Code task that auto-starts MCP when you open the folder:
@@ -131,8 +127,6 @@ Copilot picks these up automatically. The environment variable for each:
 ---
 
 ## 4. Available Brain Tools
-
-![MCP tool list showing brain_search, brain_health, code_query etc.](screenshots/mcp-coding-agents/04-brain-tools.png)
 
 Once connected, coding agents can call these tools:
 
@@ -171,8 +165,6 @@ Once connected, coding agents can call these tools:
 
 ## 5. Using Brain Search in Practice
 
-![Copilot chat calling brain_search and getting relevant memories](screenshots/mcp-coding-agents/05-brain-search.png)
-
 ### Basic Search
 
 ```
@@ -200,8 +192,6 @@ Returns memories most relevant to the task you're about to work on.
 ---
 
 ## 6. Code Intelligence Setup
-
-![Code indexing progress showing symbols and edges being indexed](screenshots/mcp-coding-agents/06-code-intelligence.png)
 
 ### Index a Repository
 
@@ -234,8 +224,6 @@ Shows what would be affected by changing this function: callers, tests, dependen
 
 ## 7. Workflow for Coding Sessions
 
-![Session workflow diagram: health check → brain_search → implement → sync](screenshots/mcp-coding-agents/07-workflow.png)
-
 The recommended workflow for AI coding agents:
 
 1. **Session start:** Call `brain_health` to verify MCP is up.
@@ -253,8 +241,6 @@ MCP returns focused, relevant context instead of raw file content:
 ---
 
 ## 8. Stdio Transport (Direct Pipe)
-
-![Terminal showing stdio MCP connection via node scripts](screenshots/mcp-coding-agents/08-stdio-transport.png)
 
 For editors that prefer stdio over HTTP:
 
