@@ -1535,9 +1535,21 @@ WHERE gate.content LIKE 'MCP COMPLIANCE GATE (2026-05-07)%'
 -- src/memory/refine.rs covering prompt shape, parser robustness
 -- (fences, invented ids, missing content, garbage), stats accounting,
 -- DB-backed keyword retrieval, and the unreachable-brain fallback path.
-INSERT INTO memories (content, kind, importance, confidence, decay, tags, embedding, created_at, updated_at, last_accessed_at, access_count, source, metadata)
-VALUES (
-  'RAG WRITE-BACK REFINEMENT (2026-05-09): chat-extracted facts must go through memory::refine::save_facts_refined when a brain mode is configured. The refiner pulls up to DEFAULT_REFINE_CANDIDATES=3 keyword-similar entries via MemoryStore::hybrid_search, asks the LLM (BrainMode-routed via complete_via_mode) to return JSON {action: keep|update|new, id?, content?}, and applies keep/update/new via MemoryStore::update or add. Never hold the std::sync::MutexGuard<MemoryStore> across the LLM .await — refine_and_save_fact takes &Mutex<MemoryStore> and locks per phase. LLM failure or invalid JSON falls back to insert (FallbackInserted) so no fact is lost. extract_memories_from_session in commands/memory.rs now calls save_facts_refined for any brain mode; brain_memory::save_facts only runs in the no-brain bootstrap path. 16 unit tests in src/memory/refine.rs cover prompt building, parser hardening (fences, invented ids, missing fields), stats, keyword candidate retrieval, and the unreachable-brain fallback.',
-  'rule', 9, 0.97, 1.0, 'rag,memory,refine,dedup,llm-judge,knowledge-graph',
-  NULL, 1746748800000, 1746748800000, 1746748800000, 0, 'seed', '{"area":"memory/refine"}'
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'RAG WRITE-BACK REFINEMENT (2026-05-09): chat-extracted facts must go through memory::refine::save_facts_refined when a brain mode is configured. The refiner pulls up to DEFAULT_REFINE_CANDIDATES=3 keyword-similar entries via MemoryStore::hybrid_search, asks the LLM (BrainMode-routed via complete_via_mode) to return JSON {action: keep|update|new, id?, content?}, and applies keep/update/new via MemoryStore::update or add. Never hold the std::sync::MutexGuard<MemoryStore> across the LLM .await — refine_and_save_fact takes &Mutex<MemoryStore> and locks per phase. LLM failure or invalid JSON falls back to insert (FallbackInserted) so no fact is lost. extract_memories_from_session in commands/memory.rs now calls save_facts_refined for any brain mode; brain_memory::save_facts only runs in the no-brain bootstrap path. Added 16 unit tests in src/memory/refine.rs (prompt shape, parser hardening, stats, DB candidate retrieval, unreachable-brain fallback). Companion lesson: LocalOllama three-stream pump (src-tauri/src/commands/streaming.rs::spawn_event_pump) coalesces consecutive text Chunk events into one Tauri emit per producer wake-up while NEVER coalescing Animation or Pose events, cutting IPC fanout cost on chat+pet+subtitle webviews without losing any text byte or animation/pose timing. Three regression tests guard order, the coalescing collapse, and animation non-coalescing.',
+  'rag,memory,refine,dedup,llm-judge,streaming,event-pump,coalescing,three-streams,local-ollama,perf',
+  10, 'procedure', 1746748800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'RAG WRITE-BACK REFINEMENT (2026-05-09):%'
+);
+
+-- 2026-05-09: VRAM-aware online catalogue top-picks (companion to migration 017).
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'LESSON: VRAM-aware online catalogue top-picks (2026-05-09): src-tauri/src/brain/doc_catalogue.rs::build_top_picks must use a curated VRAM-aware tier-to-tag map (VeryHigh -> gemma4:e4b, High -> gemma3:4b, Medium/Low -> gemma3:1b, VeryLow -> tinyllama), NOT largest-fits-RAM. The latter promoted gemma4:31b (20 GB) on 32+ GB systems and the desktop FirstLaunchWizard then auto-pulled it on consumer 12 GB GPUs producing multi-second TTFT or OOM. load_cached_catalogue() runs sanitize_top_picks() which replaces any cached pick with required_ram_mb > 12288 by the largest fitting model so users on a stale cache self-heal on next launch. Doc TOP_PICKS table in docs/brain-advanced-design.md was updated to match. Regression tests: sanitize_top_picks_repairs_oversized_cached_pick, recommend_high_tier_picks_small_not_31b, build_top_picks_matches_hardcoded_recommend, build_top_picks_online_picks_correct_models.',
+  'lesson,perf,vram,ollama,model-selection,doc-catalogue,sanitize,first-launch-wizard,latency',
+  10, 'procedure', 1746748800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'LESSON: VRAM-aware online catalogue top-picks (2026-05-09):%'
 );

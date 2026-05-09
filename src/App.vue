@@ -542,6 +542,29 @@ onMounted(async () => {
     // Ignore — will fall through to auto-configure
   }
 
+  // If the user is on Local Ollama, verify the saved model is actually
+  // installed. A stale config (e.g. gemma4:31b after a catalogue fix that
+  // now picks gemma3:4b) causes warmup to fail and the first message to
+  // hit a cold-start. When the model is missing, re-pick the best fit.
+  if (brain.brainMode?.mode === 'local_ollama') {
+    try {
+      await brain.checkOllamaStatus();
+      if (brain.ollamaStatus.running) {
+        await brain.fetchInstalledModels();
+        const savedModel = brain.brainMode.model;
+        const isInstalled = brain.installedModels.some(
+          (m: { name: string }) => m.name === savedModel,
+        );
+        if (!isInstalled && brain.installedModels.length > 0) {
+          // Saved model is gone — upgrade to best available
+          await brain.maybeUpgradeToLocalOllama();
+        }
+      }
+    } catch {
+      // Best-effort — warmup below still fires with whatever model is saved
+    }
+  }
+
   // If the user is on Local Ollama, pre-warm the chat model into VRAM
   // immediately on launch so the first user reply is fast (<1s) instead
   // of paying a 10–20s cold-load on consumer GPUs. Fire-and-forget.

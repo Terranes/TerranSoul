@@ -521,30 +521,59 @@ async fn fetch_from_lm_studio(
 
 // ── Merge & cache ─────────────────────────────────────────────────────
 
-/// Assign the best top-pick model for each RAM tier from a sorted list.
+/// Assign the best top-pick model for each RAM tier.
+///
+/// **VRAM-aware policy** (mirrors `model_recommender::recommend()`):
+/// We do NOT pick the largest model that fits in system RAM, because
+/// system RAM is not the binding constraint for interactive chat —
+/// VRAM is. A 12 GB consumer GPU (RTX 3080 Ti) cannot host a 20 GB
+/// `gemma4:31b` weight at all, and even `gemma4:e4b` (8.9 GB) leaves
+/// only ~3 GB for the embedding model and KV cache, causing constant
+/// VRAM thrash and 5-15s latency spikes. The picks below were verified
+/// against the durable rule in
+/// `mcp-data/shared/migrations/015_local_llm_fast_chat_path.sql`:
+///
+/// - VeryHigh (≥32 GB RAM, heuristic for ≥24 GB VRAM) → `gemma4:e4b`
+/// - High (16-32 GB RAM, typical 8-12 GB VRAM)        → `gemma3:4b`
+/// - Medium (8-16 GB RAM, integrated GPUs)            → `gemma3:1b`
+/// - Low (4-8 GB RAM)                                 → `gemma3:1b`
+/// - VeryLow (<4 GB RAM)                              → `tinyllama`
+///
+/// We still validate the chosen tag is present in the parsed catalogue,
+/// and fall back to the largest fitting model only if the curated pick
+/// is missing (e.g. an experimental fork that drops Gemma).
 fn build_top_picks(local_models: &[ModelRecommendation]) -> HashMap<String, String> {
-    // For each tier, the budget is the FLOOR of that tier's RAM range
-    // (i.e. the minimum RAM any user in that tier can have).  This ensures
-    // the recommended model can actually run on the weakest machine in the
-    // tier — matching the logic in `RamTier::from_mb` and `recommend()`.
-    //
-    // VeryLow is special: floor is 0 but we use 4,095 (the tier's upper
-    // bound) so we always produce a pick for the smallest machines.
-    const TIERS: &[(&str, u64)] = &[
-        ("VeryLow", 4_095),   // tier spans 0–4095; use ceiling so *something* fits
-        ("Low", 4_096),       // tier floor — gemma3:1b (2048) fits
-        ("Medium", 8_192),    // tier floor — gemma4:e2b (8192) fits
-        ("High", 16_384),     // tier floor — gemma4:e4b (12288) fits
-        ("VeryHigh", 32_768), // tier floor — gemma4:31b (24576) fits
+    // Curated tier → model_tag map. Latency-optimised, NOT size-maximised.
+    const CURATED: &[(&str, &str, u64)] = &[
+        // (tier_name, preferred_tag, tier_floor_ram_mb)
+        ("VeryHigh", "gemma4:e4b", 32_768),
+        ("High", "gemma3:4b", 16_384),
+        ("Medium", "gemma3:1b", 8_192),
+        ("Low", "gemma3:1b", 4_096),
+        ("VeryLow", "tinyllama", 0),
     ];
     let mut picks = HashMap::new();
-    for (tier, budget) in TIERS {
-        if let Some(best) = local_models
+    for (tier, preferred, floor) in CURATED {
+        // Prefer the curated latency-optimal tag if present in the catalogue.
+        let chosen = local_models
             .iter()
-            .filter(|m| m.required_ram_mb <= *budget)
-            .max_by_key(|m| m.required_ram_mb)
-        {
-            picks.insert(tier.to_string(), best.model_tag.clone());
+            .find(|m| m.model_tag == *preferred && m.required_ram_mb <= *floor.max(&1))
+            .map(|m| m.model_tag.clone())
+            // Defensive fallback: if the curated tag was dropped from the
+            // catalogue, use the largest model that still fits the tier
+            // floor — but cap at 12 GB required_ram_mb so we never
+            // auto-pick a 20 GB weight that won't fit on consumer VRAM.
+            .or_else(|| {
+                local_models
+                    .iter()
+                    .filter(|m| {
+                        m.required_ram_mb <= *floor.max(&1) && m.required_ram_mb <= 12_288
+                    })
+                    .max_by_key(|m| m.required_ram_mb)
+                    .map(|m| m.model_tag.clone())
+            });
+        if let Some(tag) = chosen {
+            picks.insert(tier.to_string(), tag);
         }
     }
     picks
@@ -660,9 +689,53 @@ pub async fn fetch_online_catalogue(cache_dir: &Path) -> Result<ParsedCatalogue,
 }
 
 /// Load a previously-cached catalogue from disk.
+///
+/// **VRAM-aware self-heal:** older cached catalogues may have stored the
+/// pre-fix `gemma4:31b` top-pick for the VeryHigh tier (a 20 GB weight
+/// that won't fit on consumer VRAM). On load we sanity-check every
+/// top-pick against the local-model list and replace any pick whose
+/// `required_ram_mb` exceeds the safe-VRAM ceiling (12 GB) with the
+/// largest model that still fits, so users on a stale cache get the
+/// corrected pick on the very next launch — no manual cache delete.
 pub fn load_cached_catalogue(cache_dir: &Path) -> Option<ParsedCatalogue> {
     let markdown = std::fs::read_to_string(cache_dir.join("model-catalogue.md")).ok()?;
-    parse_catalogue(&markdown)
+    let mut catalogue = parse_catalogue(&markdown)?;
+    sanitize_top_picks(&mut catalogue);
+    Some(catalogue)
+}
+
+/// Replace any top-pick whose `required_ram_mb` exceeds the safe-VRAM
+/// ceiling (12 GB) with the largest local model that still fits. Mutates
+/// `cat.top_picks` in place. Idempotent.
+///
+/// This guards against stale online caches that recommended large
+/// weights based on system-RAM-fits-only logic.
+fn sanitize_top_picks(cat: &mut ParsedCatalogue) {
+    const SAFE_VRAM_CEILING_MB: u64 = 12_288;
+    let safe_alt: Option<String> = cat
+        .local_models
+        .iter()
+        .filter(|m| m.required_ram_mb <= SAFE_VRAM_CEILING_MB)
+        .max_by_key(|m| m.required_ram_mb)
+        .map(|m| m.model_tag.clone());
+    let Some(safe_alt) = safe_alt else {
+        return; // nothing safe in catalogue → leave picks untouched
+    };
+    let needs_repair: Vec<String> = cat
+        .top_picks
+        .iter()
+        .filter_map(|(tier, tag)| {
+            let entry = cat.local_models.iter().find(|m| &m.model_tag == tag)?;
+            if entry.required_ram_mb > SAFE_VRAM_CEILING_MB {
+                Some(tier.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    for tier in needs_repair {
+        cat.top_picks.insert(tier, safe_alt.clone());
+    }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────
@@ -715,6 +788,7 @@ mod tests {
 | gemma4:31b | Gemma 4 31B | Dense 30.7B flagship. | 24576 | false |
 | gemma4:e4b | Gemma 4 E4B | Edge 4.5B. | 12288 | false |
 | gemma4:e2b | Gemma 4 E2B | Edge 2.3B. | 8192 | false |
+| gemma3:4b | Gemma 3 4B | Compact multimodal. | 6144 | false |
 | gemma3:1b | Gemma 3 1B | Ultra-lightweight. | 2048 | false |
 | tinyllama | TinyLlama 1.1B | Minimal model. | 2048 | false |
 | kimi-k2.6:cloud | Kimi K2.6 (Cloud) | Cloud MoE. | 0 | true |
@@ -723,9 +797,9 @@ mod tests {
 <!-- BEGIN TOP_PICKS -->
 | tier | model_tag |
 |---|---|
-| VeryHigh | gemma4:31b |
-| High | gemma4:e4b |
-| Medium | gemma4:e2b |
+| VeryHigh | gemma4:e4b |
+| High | gemma3:4b |
+| Medium | gemma3:1b |
 | Low | gemma3:1b |
 | VeryLow | tinyllama |
 <!-- END TOP_PICKS -->
@@ -734,7 +808,7 @@ mod tests {
     #[test]
     fn parse_catalogue_extracts_models() {
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
-        assert_eq!(cat.local_models.len(), 5);
+        assert_eq!(cat.local_models.len(), 6);
         assert_eq!(cat.cloud_models.len(), 1);
         assert_eq!(cat.cloud_models[0].model_tag, "kimi-k2.6:cloud");
         assert!(cat.cloud_models[0].is_cloud);
@@ -744,7 +818,10 @@ mod tests {
     fn parse_catalogue_extracts_top_picks() {
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
         assert_eq!(cat.top_picks.len(), 5);
-        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:31b");
+        // VRAM-aware policy: VeryHigh tier prefers the latency-optimal
+        // gemma4:e4b, NOT the size-maximised gemma4:31b. See
+        // mcp-data/shared/migrations/015_local_llm_fast_chat_path.sql.
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:e4b");
         assert_eq!(cat.top_picks["Low"], "gemma3:1b");
     }
 
@@ -753,8 +830,11 @@ mod tests {
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
         let recs = recommend_from_catalogue(65_536, &cat);
         assert!(!recs.is_empty());
-        assert_eq!(recs[0].model_tag, "gemma4:31b");
-        assert!(recs[0].is_top_pick);
+        // VRAM-aware: top pick on a 64 GB system is still gemma4:e4b
+        // (fits any consumer GPU + leaves embedding headroom), NOT a
+        // 20 GB weight that won't fit on a 12 GB consumer GPU.
+        let top = recs.iter().find(|m| m.is_top_pick).unwrap();
+        assert_eq!(top.model_tag, "gemma4:e4b");
         // Cloud model should be at the end.
         assert!(recs.last().unwrap().is_cloud);
     }
@@ -762,9 +842,12 @@ mod tests {
     #[test]
     fn recommend_from_catalogue_medium_ram() {
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
+        // 12 GB system → Medium tier (8192-16383 per RamTier::from_mb).
+        // VRAM-aware top pick: gemma3:1b (815 MB) — fits any integrated
+        // GPU with embedding headroom.
         let recs = recommend_from_catalogue(12_000, &cat);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
-        assert_eq!(top.model_tag, "gemma4:e2b");
+        assert_eq!(top.model_tag, "gemma3:1b");
     }
 
     #[test]
@@ -813,24 +896,27 @@ mod tests {
     }
 
     #[test]
-    fn recommend_high_tier_picks_e4b_not_31b() {
+    fn recommend_high_tier_picks_small_not_31b() {
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
-        // 16 GB user is "High" tier — should get gemma4:e4b (12 GB),
-        // NOT gemma4:31b (24 GB) which won't fit.
+        // 16 GB user is "High" tier — VRAM-aware policy picks
+        // gemma3:4b (3.1 GB), NOT gemma4:31b (won't fit on the
+        // typical 8-12 GB consumer GPU paired with this RAM size).
         let recs = recommend_from_catalogue(16_384, &cat);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
-        assert_eq!(top.model_tag, "gemma4:e4b");
-        // gemma4:31b should NOT be in the list at all (24,576 > 16,384).
+        assert_eq!(top.model_tag, "gemma3:4b");
+        // gemma4:31b should NOT be in the candidate list at all
+        // (24,576 MB > 16,384 MB).
         assert!(!recs.iter().any(|m| m.model_tag == "gemma4:31b"));
     }
 
     #[test]
     fn build_top_picks_matches_hardcoded_recommend() {
-        // Online catalogue top-picks must agree with the hardcoded recommend().
+        // Online catalogue top-picks must agree with the VRAM-aware
+        // hardcoded recommend(). Latency-optimal, NOT size-maximised.
         let cat = parse_catalogue(SAMPLE_MD).unwrap();
-        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:31b");
-        assert_eq!(cat.top_picks["High"], "gemma4:e4b");
-        assert_eq!(cat.top_picks["Medium"], "gemma4:e2b");
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:e4b");
+        assert_eq!(cat.top_picks["High"], "gemma3:4b");
+        assert_eq!(cat.top_picks["Medium"], "gemma3:1b");
         assert_eq!(cat.top_picks["Low"], "gemma3:1b");
         assert_eq!(cat.top_picks["VeryLow"], "tinyllama");
     }
@@ -839,6 +925,10 @@ mod tests {
     fn build_top_picks_online_picks_correct_models() {
         // Simulate the online catalogue path where build_top_picks is called
         // (no explicit TOP_PICKS markers — the function must compute picks).
+        // The fixture intentionally OMITS the curated tags for High/Medium
+        // (gemma3:4b, gemma3:1b is present) to exercise the size-capped
+        // fallback: build_top_picks must NEVER auto-pick a >12 GB model
+        // even when one fits in system RAM.
         let models = vec![
             ModelRecommendation {
                 model_tag: "gemma4:31b".to_string(),
@@ -887,10 +977,55 @@ mod tests {
             },
         ];
         let picks = build_top_picks(&models);
-        // High tier user (16–32 GB) must get gemma4:e4b, NOT gemma4:31b
+        // VeryHigh: curated pick is gemma4:e4b (latency-optimal).
+        assert_eq!(picks["VeryHigh"], "gemma4:e4b");
+        // High: curated pick is gemma3:4b. Not in fixture → fallback
+        // must pick the largest model ≤12 GB → gemma4:e4b. Crucially
+        // it must NOT pick gemma4:31b (24 GB) even though it fits the
+        // 16 GB tier floor.
         assert_eq!(picks["High"], "gemma4:e4b");
-        assert_eq!(picks["VeryHigh"], "gemma4:31b");
-        assert_eq!(picks["Medium"], "gemma4:e2b");
+        assert_ne!(picks["High"], "gemma4:31b");
+        // Medium: curated pick gemma3:1b is in fixture → exact match.
+        assert_eq!(picks["Medium"], "gemma3:1b");
+    }
+
+    /// Regression: a stale online cache that promoted gemma4:31b to
+    /// VeryHigh must be auto-repaired on load. Users on a pre-fix cache
+    /// see the corrected pick on the very next launch — no manual
+    /// `model-catalogue.md` deletion required.
+    #[test]
+    fn sanitize_top_picks_repairs_oversized_cached_pick() {
+        // Build a catalogue whose TOP_PICKS still has the bad pick.
+        let stale_md = r#"
+<!-- BEGIN MODEL_CATALOGUE -->
+| model_tag | display_name | description | required_ram_mb | is_cloud |
+|---|---|---|---|---|
+| gemma4:31b | Gemma 4 31B | flagship | 24576 | false |
+| gemma4:e4b | Gemma 4 E4B | edge 4.5B | 12288 | false |
+| gemma3:4b | Gemma 3 4B | compact | 6144 | false |
+| tinyllama | TinyLlama | minimal | 2048 | false |
+<!-- END MODEL_CATALOGUE -->
+
+<!-- BEGIN TOP_PICKS -->
+| tier | model_tag |
+|---|---|
+| VeryHigh | gemma4:31b |
+| High | gemma4:e4b |
+| VeryLow | tinyllama |
+<!-- END TOP_PICKS -->
+"#;
+        let mut cat = parse_catalogue(stale_md).expect("stale catalogue parses");
+        // Pre-sanitize state: bad pick is present.
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:31b");
+        sanitize_top_picks(&mut cat);
+        // After sanitize: oversized pick replaced with the largest
+        // model ≤ 12 GB (gemma4:e4b). Other picks untouched.
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:e4b");
+        assert_eq!(cat.top_picks["High"], "gemma4:e4b");
+        assert_eq!(cat.top_picks["VeryLow"], "tinyllama");
+        // Idempotent: a second pass changes nothing.
+        sanitize_top_picks(&mut cat);
+        assert_eq!(cat.top_picks["VeryHigh"], "gemma4:e4b");
     }
 
     #[test]

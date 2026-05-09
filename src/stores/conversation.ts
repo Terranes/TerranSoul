@@ -1828,9 +1828,15 @@ export const useConversationStore = defineStore('conversation', () => {
         const abortSignal = activeAbortController?.signal;
         const syncInterval = setInterval(() => {
           streamingText.value = streaming.streamText;
-          // Sync isStreaming state with the streaming store
+          // Sync isStreaming state with the streaming store.
+          // Clear isThinking as soon as actual text arrives so the avatar
+          // transitions from "thinking" to "talking" immediately — without
+          // this, isThinking stayed true for the entire stream and the 3D
+          // model kept showing the thinking animation even while text was
+          // visibly rendering in the chat bubble.
           if (streaming.isStreaming && !isStreaming.value) {
             isStreaming.value = true;
+            isThinking.value = false;
           } else if (!streaming.isStreaming && isStreaming.value) {
             isStreaming.value = false;
           }

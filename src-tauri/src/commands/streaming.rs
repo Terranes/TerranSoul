@@ -30,13 +30,6 @@ enum StreamEvent {
 /// - a [`tokio::task::JoinHandle`] the caller awaits **after dropping the
 ///   sender** to guarantee every queued event has been emitted before the
 ///   function returns (so `done:true` is never lost).
-/// Spawn a background task that drains `rx` and emits Tauri events in order.
-///
-/// Returns:
-/// - the `UnboundedSender<StreamEvent>` used by the streaming loop, and
-/// - a [`tokio::task::JoinHandle`] the caller awaits **after dropping the
-///   sender** to guarantee every queued event has been emitted before the
-///   function returns (so `done:true` is never lost).
 ///
 /// ## Three-stream coalescing
 ///
@@ -1431,10 +1424,12 @@ mod tests {
         assert!(!should_skip_rag("Hi there explain things", 1000));
     }
 
-    /// Verify [`spawn_event_pump`] preserves the order in which events are
-    /// pushed by the streaming loop. Order matters for the frontend: text
-    /// chunks must arrive in generation order, and `done:true` must be the
-    /// last event so the UI's streaming watch fires exactly once.
+    /// Verify [`spawn_event_pump`] preserves the text content and order in
+    /// which events are pushed by the streaming loop. The pump now
+    /// *coalesces* consecutive text chunks (multiple tokens may collapse
+    /// into a single `llm-chunk` emit), so we assert on the concatenated
+    /// text rather than the emit count. The `done:true` sentinel must
+    /// still arrive exactly once, as the final event.
     #[tokio::test]
     async fn event_pump_preserves_order_and_drains_on_close() {
         use tauri::test::{mock_builder, mock_context, noop_assets};
@@ -1445,7 +1440,7 @@ mod tests {
             .expect("mock_builder build");
         let handle = app.handle().clone();
 
-        let received: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+        let received: std::sync::Arc<std::sync::Mutex<Vec<LlmChunk>>> =
             std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
         let done = std::sync::Arc::new(tokio::sync::Notify::new());
 
@@ -1454,7 +1449,7 @@ mod tests {
         handle.listen("llm-chunk", move |event| {
             if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
                 let is_done = c.done;
-                received_cb.lock().unwrap().push(c.text);
+                received_cb.lock().unwrap().push(c);
                 if is_done {
                     done_cb.notify_one();
                 }
@@ -1463,10 +1458,13 @@ mod tests {
 
         let (tx, pump) = spawn_event_pump(handle.clone());
 
-        // Push 50 text events fast — the pump must keep them in order.
+        // Push 50 text events fast — the pump may coalesce them.
+        let mut expected_text = String::new();
         for i in 0..50 {
+            let t = format!("t{i}");
+            expected_text.push_str(&t);
             tx.send(StreamEvent::Chunk(LlmChunk {
-                text: format!("t{i}"),
+                text: t,
                 done: false,
             }))
             .expect("send chunk");
@@ -1489,11 +1487,145 @@ mod tests {
         }
 
         let observed = received.lock().unwrap().clone();
-        assert_eq!(observed.len(), 51, "expected 50 text + 1 done");
-        for (i, label) in observed.iter().take(50).enumerate() {
-            assert_eq!(label, &format!("t{i}"), "out-of-order at index {i}");
+        assert!(!observed.is_empty(), "expected at least one chunk emit");
+        // Coalescing should reduce 51 input events to far fewer emits.
+        assert!(
+            observed.len() <= 51,
+            "coalescing should not inflate event count, got {}",
+            observed.len()
+        );
+        // Concatenated text must match input order exactly.
+        let joined: String = observed.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            joined, expected_text,
+            "coalesced text must preserve content + order"
+        );
+        // done:true must be present exactly once, as the final emit.
+        let done_positions: Vec<usize> = observed
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.done)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(done_positions, vec![observed.len() - 1]);
+    }
+
+    /// Coalescing must collapse a tight burst of token chunks into far
+    /// fewer Tauri emits while preserving every byte of text. This is
+    /// the perf guard for the three-stream LocalOllama path.
+    #[tokio::test]
+    async fn event_pump_coalesces_consecutive_chunks() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let received: std::sync::Arc<std::sync::Mutex<Vec<LlmChunk>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received_cb = std::sync::Arc::clone(&received);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                received_cb.lock().unwrap().push(c);
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+        // Send a burst that should be in the channel before the pump
+        // task wakes — try_recv will drain them into one emit.
+        let mut expected = String::new();
+        for i in 0..200 {
+            let t = format!("[{i}]");
+            expected.push_str(&t);
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: t,
+                done: false,
+            }))
+            .expect("send");
         }
-        assert_eq!(observed[50], "", "done:true must be the final event");
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: String::new(),
+            done: true,
+        }))
+        .expect("send done");
+        drop(tx);
+        pump.await.expect("pump drain");
+
+        // Give the listener thread a moment to drain.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let observed = received.lock().unwrap().clone();
+        let joined: String = observed.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(joined, expected, "no text byte may be lost");
+        // 200 input chunks ⇒ should collapse to dramatically fewer emits.
+        // We allow up to 20 (a generous bound; in practice it is 1-3).
+        assert!(
+            observed.len() <= 20,
+            "expected coalescing to collapse 201 input events into ≤20 emits, got {}",
+            observed.len()
+        );
+    }
+
+    /// Animation events must NOT be coalesced — each command needs to
+    /// reach the renderer with its original timing. Verify that two
+    /// animation events between text bursts both arrive intact.
+    #[tokio::test]
+    async fn event_pump_does_not_coalesce_animations() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let anims: std::sync::Arc<std::sync::Mutex<Vec<AnimationCommand>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let anims_cb = std::sync::Arc::clone(&anims);
+        handle.listen("llm-animation", move |event| {
+            if let Ok(c) = serde_json::from_str::<AnimationCommand>(event.payload()) {
+                anims_cb.lock().unwrap().push(c);
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "before".to_string(),
+            done: false,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Animation(AnimationCommand {
+            emotion: Some("happy".to_string()),
+            motion: None,
+            intensity: None,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "middle".to_string(),
+            done: false,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Animation(AnimationCommand {
+            emotion: Some("surprised".to_string()),
+            motion: None,
+            intensity: None,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "after".to_string(),
+            done: true,
+        }))
+        .unwrap();
+        drop(tx);
+        pump.await.expect("pump drain");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let observed = anims.lock().unwrap().clone();
+        assert_eq!(observed.len(), 2, "both animation commands must arrive");
+        assert_eq!(observed[0].emotion.as_deref(), Some("happy"));
+        assert_eq!(observed[1].emotion.as_deref(), Some("surprised"));
     }
 
     /// Sending into the pump must be effectively instant relative to the
