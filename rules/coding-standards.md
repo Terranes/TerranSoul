@@ -452,6 +452,25 @@ blocker — they break the moment a font or padding changes.
 - Architecture Decision Records (ADRs) in `docs/adr/` for significant decisions
 - Update `rules/milestones.md` after each chunk is completed
 
+### Correctness Confirmation -> Self-Improve Write-Back (Mandatory)
+
+- When an agent confirms a solution is correct (for example: tests pass,
+  bug reproduction is gone, CI gate is green, or the user explicitly accepts
+  the fix), the agent **must trigger self-improve write-back** in the same
+  chunk before marking work done.
+- "Self-improve write-back" means:
+  1. Capture the durable lesson/rule that prevented or fixed the issue.
+  2. Persist it to MCP shared knowledge by updating
+     `mcp-data/shared/memory-seed.sql` in the same PR/commit.
+  3. If MCP is healthy, verify retrievability with `brain_search` or
+     `brain_suggest_context`; if MCP is blocked, record the exact blocker in
+     progress/final output.
+- Do not defer confirmed lessons to a later chunk. If correctness is proven
+  now, knowledge sync happens now.
+- Chunk completion is not finished until both are true:
+  1. Code/docs changes are validated.
+  2. Durable self-improve knowledge is written back.
+
 ---
 
 ## Tutorial Screenshots (Mandatory)
