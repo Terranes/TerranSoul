@@ -128,14 +128,14 @@ function init() {
           'background-color': 'data(colour)',
           width: (el: NodeSingular) => 20 + (el.data('importance') as number) * 8,
           height: (el: NodeSingular) => 20 + (el.data('importance') as number) * 8,
-          color: '#f1f5f9',
+          color: '#e0f0ff',
           'font-size': '11px',
           'text-valign': 'bottom',
           'text-margin-y': 4,
           'text-wrap': 'ellipsis',
           'text-max-width': '120px',
           'border-width': 2,
-          'border-color': '#1e293b',
+          'border-color': '#0f1d32',
         },
       },
       {
@@ -168,7 +168,7 @@ function init() {
           label: 'data(label)',
           color: '#cbd5f5',
           'font-size': '9px',
-          'text-background-color': '#0f172a',
+          'text-background-color': '#040a12',
           'text-background-opacity': 0.7,
           'text-background-padding': '2px',
           'text-rotation': 'autorotate',
@@ -205,7 +205,7 @@ watch(() => props.edgeMode, () => init());
 .memory-graph {
   width: 100%;
   height: 100%;
-  background: #0f172a;
+  background: var(--ts-bg-base, #040a12);
   border-radius: 8px;
 }
 </style>

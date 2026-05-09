@@ -34,10 +34,10 @@ export interface ThemeDefinition {
 export const THEME_DEFAULT: ThemeDefinition = {
   id: 'default',
   label: 'Adventurer',
-  description: 'The original dark RPG aesthetic — deep navy, violet accents, quest-style UI.',
-  icon: '⚔️',
+  description: 'Holographic HUD aesthetic — dark surfaces, cyan glow, translucent glass panels, technical precision.',
+  icon: '🔷',
   category: 'dark',
-  preview: { bg: '#0f172a', accent: '#7c6fff', text: '#f1f5f9' },
+  preview: { bg: '#040a12', accent: '#00d4ff', text: '#e0f0ff' },
 };
 
 export const THEME_CORPORATE: ThemeDefinition = {

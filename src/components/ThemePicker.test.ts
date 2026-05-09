@@ -48,7 +48,7 @@ describe('ThemePicker', () => {
     expect(labels.length).toBe(BUILTIN_THEMES.length);
     expect(icons.length).toBe(BUILTIN_THEMES.length);
     expect(labels[0].text()).toBe('Adventurer');
-    expect(icons[0].text()).toBe('⚔️');
+    expect(icons[0].text()).toBe('🔷');
   });
 
   it('shows color preview dots', () => {

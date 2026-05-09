@@ -11,101 +11,94 @@
 
 /* ═════════════════════════════════════════════════════════════════════════════
    Design Tokens — Adventurer (default) theme
+   J.A.R.V.I.S.-inspired: dark HUD with cyan holographic accents, clean
+   technical feel, subtle blue-white glow, translucent glass panels.
    All --ts-* values here are the fallback baseline. Non-default themes
    override only the tokens they change via html[data-theme="*"] blocks below.
    ═════════════════════════════════════════════════════════════════════════════ */
 :root {
   /* ── Surface Palette ── */
-  --ts-bg-base: #0f172a;
-  --ts-bg-surface: #1e293b;
-  --ts-bg-elevated: #283548;
-  --ts-bg-nav: #0b1120;
-  --ts-bg-overlay: rgba(8, 12, 24, 0.92);
-  --ts-bg-input: rgba(255, 255, 255, 0.06);
-  --ts-bg-hover: rgba(255, 255, 255, 0.10);
-  --ts-bg-card: rgba(30, 41, 59, 0.92);
-  --ts-bg-panel: rgba(15, 23, 42, 0.96);
-  --ts-bg-selected: rgba(34, 197, 94, 0.10);
+  --ts-bg-base: #040a12;
+  --ts-bg-surface: #0a1628;
+  --ts-bg-elevated: #0f1d32;
+  --ts-bg-nav: #030810;
+  --ts-bg-overlay: rgba(4, 10, 18, 0.94);
+  --ts-bg-input: rgba(0, 180, 255, 0.06);
+  --ts-bg-hover: rgba(0, 212, 255, 0.08);
+  --ts-bg-card: rgba(10, 22, 40, 0.92);
+  --ts-bg-panel: rgba(4, 10, 18, 0.96);
+  --ts-bg-selected: rgba(0, 212, 255, 0.10);
 
-  /* ── Brand Accent ── */
-  --ts-accent: #7c6fff;
-  --ts-accent-hover: #9589ff;
-  --ts-accent-glow: rgba(124, 111, 255, 0.22);
-  --ts-accent-blue: #60a5fa;
-  --ts-accent-blue-hover: #3b82f6;
-  --ts-accent-violet: #a78bfa;
-  --ts-accent-violet-hover: #8b5cf6;
-  --ts-accent-pink: #ec4899;
+  /* ── Brand Accent — holographic cyan ── */
+  --ts-accent: #00d4ff;
+  --ts-accent-hover: #33dfff;
+  --ts-accent-glow: rgba(0, 212, 255, 0.25);
+  --ts-accent-blue: #0099ff;
+  --ts-accent-blue-hover: #3db8ff;
+  --ts-accent-violet: #6e8eff;
+  --ts-accent-violet-hover: #8ba6ff;
+  --ts-accent-pink: #ff6b9d;
 
   /* ── Semantic Colors ── */
-  --ts-success: #34d399;
-  --ts-success-dim: #22c55e;
-  --ts-success-bg: rgba(52, 211, 153, 0.12);
-  --ts-warning: #fbbf24;
-  --ts-warning-bg: rgba(251, 191, 36, 0.12);
-  --ts-warning-text: #fbbf24;
-  --ts-error: #f87171;
-  --ts-error-bg: rgba(248, 113, 113, 0.12);
-  --ts-info: #38bdf8;
-  --ts-info-bg: rgba(56, 189, 248, 0.12);
+  --ts-success: #00e68a;
+  --ts-success-dim: #00cc7a;
+  --ts-success-bg: rgba(0, 230, 138, 0.10);
+  --ts-warning: #ffb520;
+  --ts-warning-bg: rgba(255, 181, 32, 0.10);
+  --ts-warning-text: #ffb520;
+  --ts-error: #ff4757;
+  --ts-error-bg: rgba(255, 71, 87, 0.10);
+  --ts-info: #00b4ff;
+  --ts-info-bg: rgba(0, 180, 255, 0.10);
 
-  /* ── Quest / RPG Accents ── */
-  --ts-quest-gold: #dcc36e;
-  --ts-quest-gold-bright: #ffd700;
-  --ts-quest-gold-dim: rgba(220, 195, 110, 0.25);
-  --ts-quest-gold-glow: rgba(220, 195, 110, 0.55);
-  --ts-quest-bg: linear-gradient(135deg, rgba(20, 18, 40, 0.85), rgba(12, 10, 28, 0.92));
-  --ts-quest-border: rgba(180, 160, 100, 0.25);
-  --ts-quest-text: #f0e8c8;
-  --ts-quest-muted: rgba(180, 180, 200, 0.55);
+  /* ── Quest / RPG Accents — HUD blue ── */
+  --ts-quest-gold: #00d4ff;
+  --ts-quest-gold-bright: #66e5ff;
+  --ts-quest-gold-dim: rgba(0, 212, 255, 0.15);
+  --ts-quest-gold-glow: rgba(0, 212, 255, 0.40);
+  --ts-quest-bg: linear-gradient(135deg, rgba(4, 10, 18, 0.92), rgba(8, 18, 32, 0.96));
+  --ts-quest-border: rgba(0, 212, 255, 0.20);
+  --ts-quest-text: #d0e8ff;
+  --ts-quest-muted: rgba(120, 160, 200, 0.55);
 
   /* ── Text Hierarchy ── */
-  --ts-text-primary: #f1f5f9;
-  --ts-text-secondary: #94a3b8;
-  --ts-text-muted: #8494a7;
-  --ts-text-dim: rgba(255, 255, 255, 0.45);
-  --ts-text-on-accent: #ffffff;
-  --ts-text-bright: #e2e8f0;
-  --ts-text-link: #8ec8f6;
+  --ts-text-primary: #e0f0ff;
+  --ts-text-secondary: #8ab4d8;
+  --ts-text-muted: #5a8aaa;
+  --ts-text-dim: rgba(224, 240, 255, 0.40);
+  --ts-text-on-accent: #040a12;
+  --ts-text-bright: #f0f8ff;
+  --ts-text-link: #00d4ff;
 
   /* ── Brain mode accents (free / paid / local providers) ── */
-  --ts-mode-free: #7be0b3;
-  --ts-mode-paid: #7cc8ff;
-  --ts-mode-local: #c8a4ff;
+  --ts-mode-free: #00e68a;
+  --ts-mode-paid: #00b4ff;
+  --ts-mode-local: #6e8eff;
 
-  /* ── Border ── */
-  --ts-border: rgba(255, 255, 255, 0.10);
-  --ts-border-subtle: rgba(255, 255, 255, 0.06);
-  --ts-border-medium: #334155;
+  /* ── Border — subtle cyan tint ── */
+  --ts-border: rgba(0, 180, 255, 0.12);
+  --ts-border-subtle: rgba(0, 180, 255, 0.06);
+  --ts-border-medium: rgba(0, 180, 255, 0.18);
   --ts-border-focus: var(--ts-accent);
-  --ts-border-strong: rgba(255, 255, 255, 0.16);
+  --ts-border-strong: rgba(0, 212, 255, 0.25);
 
-  /* ── Body gradient — static linear base; the animated 3D scene layers
-     (gradients, particles, parallax) are rendered by BackgroundScene.vue
-     using per-theme rules in the "BackgroundScene" section below.  The
-     legacy --ts-aura-c1 / --ts-aura-c2 tokens below are kept for back-compat
-     with anything that still reads them, but the scene no longer uses them. ── */
-  /* Adventurer (default): deep cosmic purple & blue nebula over dark navy */
-  --ts-aura-c1:    rgba(124, 111, 255, 0.22);
-  --ts-aura-c2:    rgba(96,  165, 250, 0.16);
-  --ts-bg-gradient: linear-gradient(170deg, #03071a 0%, #0d1530 45%, #111e40 75%, #0a1228 100%);
-  /* Shader palette (BackgroundScene) — Adventurer cosmic nebula */
-  --ts-bg-c1:     #03071a;
-  --ts-bg-c2:     #1a2350;
-  --ts-bg-c3:     #4338ca;
-  --ts-bg-accent: #a78bfa;
+  /* ── Body gradient — deep space HUD base ── */
+  --ts-aura-c1:    rgba(0, 212, 255, 0.12);
+  --ts-aura-c2:    rgba(0, 153, 255, 0.08);
+  --ts-bg-gradient: linear-gradient(170deg, #020810 0%, #061020 40%, #0a1830 70%, #040c18 100%);
+  /* Shader palette (BackgroundScene) — dark HUD with cyan glow */
+  --ts-bg-c1:     #020810;
+  --ts-bg-c2:     #0a1830;
+  --ts-bg-c3:     #004080;
+  --ts-bg-accent: #00d4ff;
 
   /* ── Backdrop ── */
-  --ts-bg-backdrop: rgba(0, 0, 0, 0.6);
+  --ts-bg-backdrop: rgba(0, 0, 0, 0.65);
 
-  /* ── Viewport overlays (floating labels over the 3D canvas) ──────────────
-   * Dark themes default to white text on a transparent bg (avatar is dark).
-   * Light themes (corporate, pastel) override these to add a dark scrim so
-   * text remains legible regardless of avatar color.
-   * ─────────────────────────────────────────────────────────────────────── */
-  --ts-viewport-text:     rgba(255, 255, 255, 0.92);
-  --ts-viewport-text-dim: rgba(255, 255, 255, 0.55);
-  --ts-viewport-text-med: rgba(255, 255, 255, 0.80);
+  /* ── Viewport overlays ── */
+  --ts-viewport-text:     rgba(224, 240, 255, 0.92);
+  --ts-viewport-text-dim: rgba(224, 240, 255, 0.50);
+  --ts-viewport-text-med: rgba(224, 240, 255, 0.78);
   --ts-viewport-bg:       transparent;
 
   /* ── Radius ── */
@@ -122,19 +115,19 @@
   --ts-space-lg: 16px;
   --ts-space-xl: 24px;
 
-  /* ── Shadows ── */
-  --ts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --ts-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --ts-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.55);
-  --ts-shadow-glow: 0 0 20px rgba(124, 111, 255, 0.15), 0 0 60px rgba(124, 111, 255, 0.05);
-  --ts-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* ── Shadows — cyan-tinted HUD glow ── */
+  --ts-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --ts-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --ts-shadow-lg: 0 12px 48px rgba(0, 0, 0, 0.6);
+  --ts-shadow-glow: 0 0 20px rgba(0, 212, 255, 0.15), 0 0 60px rgba(0, 153, 255, 0.06);
+  --ts-shadow-inset: inset 0 1px 0 rgba(0, 212, 255, 0.06);
 
-  /* ── Glass / Frosted surfaces ── */
-  --ts-glass-bg: rgba(15, 23, 42, 0.72);
-  --ts-glass-bg-focus: rgba(15, 23, 42, 0.88);
-  --ts-glass-border: rgba(255, 255, 255, 0.08);
+  /* ── Glass / Frosted surfaces — dark HUD panels ── */
+  --ts-glass-bg: rgba(4, 10, 18, 0.78);
+  --ts-glass-bg-focus: rgba(4, 10, 18, 0.92);
+  --ts-glass-border: rgba(0, 180, 255, 0.10);
   --ts-glass-blur: 20px;
-  --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --ts-glass-highlight: inset 0 1px 0 rgba(0, 212, 255, 0.08);
 
   /* ── Transitions ── */
   --ts-transition-fast: 0.15s ease;
@@ -174,9 +167,9 @@
   --ts-text-lg: 1.1rem;
   --ts-text-xl: 1.35rem;
 
-  /* ── Gradients (composed from accent tokens — keep components token-only) ── */
-  --ts-gradient-accent: linear-gradient(135deg, var(--ts-accent-violet), var(--ts-accent));
-  --ts-gradient-accent-bar: linear-gradient(90deg, var(--ts-accent), var(--ts-accent-violet));
+  /* ── Gradients (composed from accent tokens) ── */
+  --ts-gradient-accent: linear-gradient(135deg, var(--ts-accent-blue), var(--ts-accent));
+  --ts-gradient-accent-bar: linear-gradient(90deg, var(--ts-accent), var(--ts-accent-blue));
   --ts-gradient-progress: linear-gradient(90deg, var(--ts-accent), var(--ts-success));
   --ts-gradient-danger: linear-gradient(135deg, var(--ts-error), #b91c1c);
 }
