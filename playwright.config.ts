@@ -25,7 +25,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    // In CI we run Vite directly (no Tauri shell) — the e2e tests drive
+    // the app through Chromium, and `tauri dev` requires native GTK/WebKit
+    // build dependencies that the playwright-e2e job does not install.
+    // Locally `npm run dev` (full Tauri) is fine and gives faster reload.
+    command: process.env.CI ? 'npm run dev:vite' : 'npm run dev',
     env: {
       ...process.env,
       TERRANSOUL_E2E_LOCAL_LLM: '1',
@@ -35,6 +39,6 @@ export default defineConfig({
     },
     url: 'http://localhost:1420',
     reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
+    timeout: 120_000,
   },
 });
