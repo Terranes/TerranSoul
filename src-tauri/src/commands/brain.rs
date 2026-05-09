@@ -195,7 +195,7 @@ pub async fn warmup_local_ollama(
     let body = serde_json::json!({
         "model": resolved,
         "messages": [{ "role": "user", "content": " " }],
-        "options": { "num_predict": 1 },
+        "options": { "num_predict": 1, "num_ctx": 2048 },
         "stream": false,
         "keep_alive": "30m",
     });

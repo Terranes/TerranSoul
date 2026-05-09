@@ -640,7 +640,7 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
         } else {
           items.push({
             icon: '🧠',
-            label: `Brain connected (${mode?.provider_id ?? 'cloud'} — free cloud, local unavailable)`,
+            label: `Brain connected (${(mode && 'provider_id' in mode ? mode.provider_id : null) ?? 'cloud'} — free cloud, local unavailable)`,
           });
           logDebug('Local upgrade failed — keeping existing cloud config');
         }

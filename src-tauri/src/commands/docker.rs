@@ -127,3 +127,18 @@ pub async fn auto_setup_local_llm_with_runtime(
 
     Ok(result)
 }
+
+/// Download and install Docker Desktop. Returns a summary message.
+/// On Windows: downloads + silent install. macOS: error (manual). Linux: get.docker.com.
+#[tauri::command]
+pub async fn install_docker_desktop() -> Result<String, String> {
+    container::install_docker_desktop(|_phase, _pct| {}).await
+}
+
+/// Download and install Podman. Returns a summary message.
+/// On Windows: downloads from GitHub releases + silent install.
+/// macOS: brew install. Linux: apt/dnf.
+#[tauri::command]
+pub async fn install_podman() -> Result<String, String> {
+    container::install_podman(|_phase, _pct| {}).await
+}

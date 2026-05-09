@@ -342,12 +342,19 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
             .clone()
     };
 
-    // Build conversation history (last 20 messages)
+    // Build conversation history. LocalOllama/LM Studio use a shorter
+    // window (10 messages) so prompt evaluation stays fast — every extra
+    // history turn adds prompt-eval latency on consumer GPUs.
+    let is_local = matches!(
+        brain_mode,
+        Some(BrainMode::LocalOllama { .. }) | Some(BrainMode::LocalLmStudio { .. })
+    );
+    let history_limit = if is_local { 10 } else { 20 };
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
         conv.iter()
             .rev()
-            .take(20)
+            .take(history_limit)
             .rev()
             .map(|m| (m.role.clone(), m.content.clone()))
             .collect()
@@ -799,14 +806,27 @@ async fn stream_ollama<R: tauri::Runtime>(
         content: system_prompt,
     };
     let mut messages = vec![system_msg];
+    // Cap individual history messages to avoid a single long response
+    // consuming the entire context window. ~200 chars ≈ 50 tokens.
+    const MAX_HISTORY_MSG_CHARS: usize = 800;
     for (role, content) in history {
+        let trimmed = if content.len() > MAX_HISTORY_MSG_CHARS {
+            format!("{}…", &content[..MAX_HISTORY_MSG_CHARS])
+        } else {
+            content.clone()
+        };
         messages.push(ChatMessage {
             role: role.clone(),
-            content: content.clone(),
+            content: trimmed,
         });
     }
 
     let url = format!("{OLLAMA_BASE_URL}/api/chat");
+    // CRITICAL: Use a fixed num_ctx (2048) for ALL Ollama chat requests.
+    // Changing num_ctx between requests forces Ollama to reallocate the
+    // KV cache and reload the model weights — adding 2-3s per request.
+    // 2048 is enough for 10-message history + system prompt + persona.
+    let max_tokens: u32 = if skip_rag { 256 } else { 512 };
     let body = serde_json::json!({
         "model": model,
         "messages": messages,
@@ -815,6 +835,8 @@ async fn stream_ollama<R: tauri::Runtime>(
         "keep_alive": "30m",
         "options": {
             "temperature": 0.7,
+            "num_ctx": 2048,
+            "num_predict": max_tokens,
         },
     });
 
@@ -974,12 +996,12 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
         }
     };
 
-    // Build conversation history (last 20 messages)
+    // Build conversation history (10 messages — self-RAG is local-only)
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
         conv.iter()
             .rev()
-            .take(20)
+            .take(10)
             .rev()
             .map(|m| (m.role.clone(), m.content.clone()))
             .collect()
@@ -1051,6 +1073,7 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
             "keep_alive": "30m",
             "options": {
                 "num_predict": 150,
+                "num_ctx": 2048,
                 "temperature": 0.7,
             },
         });
@@ -1605,7 +1628,7 @@ mod tests {
             "messages": [{ "role": "user", "content": "hi" }],
             "stream": false,
             "think": false,
-            "options": { "num_predict": 1 },
+            "options": { "num_predict": 1, "num_ctx": 2048 },
             "keep_alive": "30m",
         });
         let warm_status = client

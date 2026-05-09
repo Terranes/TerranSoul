@@ -15,6 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::process::Command;
 
 /// Which container runtime to use.
@@ -195,6 +196,296 @@ pub fn detect_docker_desktop_installed() -> bool {
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         false
+    }
+}
+
+// ── Container runtime installers ──────────────────────────────────────────
+
+/// Download and install Docker Desktop silently.
+///
+/// - **Windows**: downloads the official `Docker Desktop Installer.exe`
+///   and runs it with `install --quiet --accept-license`.
+/// - **macOS**: directs the user to download manually (DMG requires UI).
+/// - **Linux**: runs the official convenience script (`get.docker.com`).
+pub async fn install_docker_desktop<F>(progress: F) -> Result<String, String>
+where
+    F: Fn(&str, u32) + Send + Sync,
+{
+    progress("Checking Docker Desktop...", 0);
+
+    if detect_docker_desktop_installed() {
+        return Ok("Docker Desktop is already installed".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let temp_dir = std::env::temp_dir();
+        let installer_path = temp_dir.join("DockerDesktopInstaller.exe");
+
+        progress("Downloading Docker Desktop installer...", 5);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(300))
+            .build()
+            .map_err(|e| format!("HTTP client: {e}"))?;
+
+        let url = "https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe";
+        let resp = client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| format!("Download request failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Download HTTP {}", resp.status()));
+        }
+
+        let total = resp.content_length().unwrap_or(0);
+        let mut downloaded: u64 = 0;
+        let mut stream = resp.bytes_stream();
+        use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
+
+        let mut file = tokio::fs::File::create(&installer_path)
+            .await
+            .map_err(|e| format!("Failed to create installer file: {e}"))?;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("Write error: {e}"))?;
+            downloaded += chunk.len() as u64;
+            if let Some(pct_raw) = (downloaded * 60).checked_div(total) {
+                let pct = pct_raw as u32 + 5;
+                progress("Downloading Docker Desktop installer...", pct.min(65));
+            }
+        }
+        file.flush().await.ok();
+        drop(file);
+
+        progress("Running Docker Desktop installer (this may take a few minutes)...", 70);
+
+        let output = Command::new(&installer_path)
+            .args(["install", "--quiet", "--accept-license"])
+            .output()
+            .await
+            .map_err(|e| format!("Installer exec failed: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Docker Desktop installer failed: {stderr}"));
+        }
+
+        progress("Docker Desktop installed — verifying...", 90);
+
+        if !detect_docker_desktop_installed() {
+            return Err("Installation completed but Docker Desktop not found".to_string());
+        }
+
+        progress("Docker Desktop installed successfully", 100);
+        Ok("Docker Desktop installed".to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let _ = progress;
+        Err("Automatic Docker Desktop install on macOS is not supported. Please download from https://www.docker.com/products/docker-desktop/".to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        progress("Running Docker Engine installer (get.docker.com)...", 10);
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg("curl -fsSL https://get.docker.com | sh")
+            .output()
+            .await
+            .map_err(|e| format!("Docker installer failed: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Docker install failed: {stderr}"));
+        }
+
+        progress("Docker Engine installed successfully", 100);
+        Ok("Docker Engine installed via get.docker.com".to_string())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = progress;
+        Err("Docker Desktop install not supported on this platform".to_string())
+    }
+}
+
+/// Download and install Podman silently.
+///
+/// - **Windows**: downloads the official Podman Setup MSI and runs it via
+///   `msiexec /i ... /qn`.
+/// - **macOS**: directs the user to use `brew install podman`.
+/// - **Linux**: uses the system package manager.
+pub async fn install_podman<F>(progress: F) -> Result<String, String>
+where
+    F: Fn(&str, u32) + Send + Sync,
+{
+    progress("Checking Podman...", 0);
+
+    if run_silent("podman", &["--version"]).await.is_ok() {
+        return Ok("Podman is already installed".to_string());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let temp_dir = std::env::temp_dir();
+        let installer_path = temp_dir.join("podman-setup.exe");
+
+        progress("Downloading Podman installer...", 5);
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(180))
+            .build()
+            .map_err(|e| format!("HTTP client: {e}"))?;
+
+        // Use GitHub releases API to find the latest Podman release for Windows
+        let url = "https://api.github.com/repos/containers/podman/releases/latest";
+        let release_resp = client
+            .get(url)
+            .header("User-Agent", "TerranSoul")
+            .send()
+            .await
+            .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+        if !release_resp.status().is_success() {
+            return Err(format!("GitHub API HTTP {}", release_resp.status()));
+        }
+
+        let release: serde_json::Value = release_resp
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse release JSON: {e}"))?;
+
+        let download_url = release["assets"]
+            .as_array()
+            .and_then(|assets| {
+                assets.iter().find(|a| {
+                    let name = a["name"].as_str().unwrap_or("");
+                    name.ends_with("-setup.exe") && name.contains("podman")
+                })
+            })
+            .and_then(|a| a["browser_download_url"].as_str())
+            .ok_or_else(|| "Could not find Podman Windows installer in latest release".to_string())?
+            .to_string();
+
+        progress("Downloading Podman installer...", 10);
+        let resp = client
+            .get(&download_url)
+            .send()
+            .await
+            .map_err(|e| format!("Download failed: {e}"))?;
+
+        if !resp.status().is_success() {
+            return Err(format!("Download HTTP {}", resp.status()));
+        }
+
+        let total = resp.content_length().unwrap_or(0);
+        let mut downloaded: u64 = 0;
+        let mut stream = resp.bytes_stream();
+        use futures_util::StreamExt;
+        use tokio::io::AsyncWriteExt;
+
+        let mut file = tokio::fs::File::create(&installer_path)
+            .await
+            .map_err(|e| format!("Failed to create installer file: {e}"))?;
+
+        while let Some(chunk) = stream.next().await {
+            let chunk = chunk.map_err(|e| format!("Download stream error: {e}"))?;
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| format!("Write error: {e}"))?;
+            downloaded += chunk.len() as u64;
+            if let Some(pct_raw) = (downloaded * 55).checked_div(total) {
+                let pct = pct_raw as u32 + 10;
+                progress("Downloading Podman installer...", pct.min(65));
+            }
+        }
+        file.flush().await.ok();
+        drop(file);
+
+        progress("Running Podman installer...", 70);
+
+        let output = Command::new(&installer_path)
+            .args(["/install", "/quiet", "/norestart"])
+            .output()
+            .await
+            .map_err(|e| format!("Installer exec failed: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("Podman installer failed: {stderr}"));
+        }
+
+        progress("Podman installed — verifying...", 90);
+
+        // Give PATH a moment to propagate
+        tokio::time::sleep(Duration::from_secs(2)).await;
+
+        progress("Podman installed successfully", 100);
+        Ok("Podman installed via official Windows installer".to_string())
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        progress("Installing Podman via Homebrew...", 10);
+        let output = Command::new("brew")
+            .args(["install", "podman"])
+            .output()
+            .await
+            .map_err(|e| format!("brew install failed: {e}"))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!("brew install podman failed: {stderr}"));
+        }
+
+        progress("Podman installed successfully", 100);
+        Ok("Podman installed via Homebrew".to_string())
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        progress("Installing Podman via package manager...", 10);
+
+        // Try apt first (Debian/Ubuntu), then dnf (Fedora/RHEL)
+        let apt_result = Command::new("apt-get")
+            .args(["install", "-y", "podman"])
+            .output()
+            .await;
+
+        if let Ok(output) = apt_result {
+            if output.status.success() {
+                progress("Podman installed successfully", 100);
+                return Ok("Podman installed via apt".to_string());
+            }
+        }
+
+        let dnf_result = Command::new("dnf")
+            .args(["install", "-y", "podman"])
+            .output()
+            .await;
+
+        if let Ok(output) = dnf_result {
+            if output.status.success() {
+                progress("Podman installed successfully", 100);
+                return Ok("Podman installed via dnf".to_string());
+            }
+        }
+
+        Err("Could not install Podman. Please install manually: https://podman.io/docs/installation".to_string())
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = progress;
+        Err("Podman install not supported on this platform".to_string())
     }
 }
 

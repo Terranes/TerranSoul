@@ -17,10 +17,10 @@ describe('ChatInput', () => {
     expect(wrapper.find('.send-btn').exists()).toBe(true);
   });
 
-  it('disables input and button when disabled prop is true', () => {
+  it('disables send button but keeps input enabled when disabled prop is true', () => {
     const wrapper = mountChatInput({ disabled: true });
     const input = wrapper.find('.chat-input').element as HTMLInputElement;
-    expect(input.disabled).toBe(true);
+    expect(input.disabled).toBe(false);
     const button = wrapper.find('.send-btn').element as HTMLButtonElement;
     expect(button.disabled).toBe(true);
   });

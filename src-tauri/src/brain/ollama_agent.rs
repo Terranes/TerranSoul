@@ -63,7 +63,7 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1 },
+            "options": { "num_predict": 1, "num_ctx": 2048 },
             "stream": false,
             "keep_alive": "30m",
         });
@@ -177,6 +177,8 @@ struct ChatRequest {
 struct ChatOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     num_predict: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
 }
@@ -319,6 +321,7 @@ impl OllamaAgent {
             think: Some(false),
             options: Some(ChatOptions {
                 num_predict: Some(150),
+                num_ctx: Some(2048),
                 temperature: Some(0.7),
             }),
             keep_alive: Some("30m".to_string()),

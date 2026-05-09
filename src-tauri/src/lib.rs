@@ -110,8 +110,8 @@ use commands::{
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
-        ensure_ollama_container, get_runtime_preference, set_runtime_preference,
-        start_docker_desktop, stop_docker_desktop, wait_for_docker,
+        ensure_ollama_container, get_runtime_preference, install_docker_desktop, install_podman,
+        set_runtime_preference, start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
     github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
@@ -1163,7 +1163,7 @@ pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1 },
+            "options": { "num_predict": 1, "num_ctx": 2048 },
             "keep_alive": "30m",
             "stream": false,
         });
@@ -1793,6 +1793,8 @@ pub fn run() {
             docker_pull_model,
             auto_setup_local_llm,
             auto_setup_local_llm_with_runtime,
+            install_docker_desktop,
+            install_podman,
             ingest_document,
             cancel_ingest_task,
             resume_ingest_task,

@@ -774,17 +774,102 @@ export const useBrainStore = defineStore('brain', () => {
         }
       }
 
-      // If still not running after install/start attempts, fall back to cloud.
+      // If still not running after native install/start attempts,
+      // try Docker/Podman-based Ollama before falling back to cloud.
+      // Priority: Docker Desktop > Podman. Auto-install if neither present.
       if (!ollamaStatus.value.running) {
-        report('Could not get Ollama running — using free cloud AI...');
-        await autoConfigureForDesktop();
-        return {
-          mode: 'cloud',
-          model: 'Pollinations AI',
-          pulled: false,
-          ollamaInstalled,
-          ollamaStarted,
-        };
+        report('Native Ollama unavailable — checking container runtimes...');
+        let dockerFallbackOk = false;
+        try {
+          type RuntimeDetection = {
+            docker_cli: boolean;
+            docker_daemon: boolean;
+            docker_desktop_installed: boolean;
+            podman_cli: boolean;
+            podman_working: boolean;
+            auto_pick: string | null;
+            both_available: boolean;
+          };
+          let runtimes = await invoke<RuntimeDetection>('detect_container_runtimes');
+
+          // No runtime at all — install one
+          if (!runtimes.docker_cli && !runtimes.docker_desktop_installed && !runtimes.podman_cli) {
+            report('No container runtime found — installing Docker Desktop...');
+            try {
+              await invoke<string>('install_docker_desktop');
+              report('Docker Desktop installed');
+              runtimes = await invoke<RuntimeDetection>('detect_container_runtimes');
+            } catch (dockerInstErr) {
+              report(`Docker Desktop install failed: ${dockerInstErr} — trying Podman...`);
+              try {
+                await invoke<string>('install_podman');
+                report('Podman installed');
+                runtimes = await invoke<RuntimeDetection>('detect_container_runtimes');
+              } catch (podmanInstErr) {
+                report(`Podman install also failed: ${podmanInstErr}`);
+              }
+            }
+          }
+
+          // Now try to use whichever runtime is available (prefer Docker)
+          if (runtimes.docker_cli || runtimes.docker_desktop_installed) {
+            if (!runtimes.docker_daemon && runtimes.docker_desktop_installed) {
+              report('Starting Docker Desktop...');
+              await invoke<string>('start_docker_desktop');
+              const ready = await invoke<boolean>('wait_for_docker', { timeoutSecs: 90 });
+              if (!ready) {
+                report('Docker Desktop did not start in time');
+              }
+            }
+            // Re-check daemon after potential start
+            const recheckDocker = await invoke<{ cli_found: boolean; daemon_running: boolean; desktop_installed: boolean }>('check_docker_status');
+            if (recheckDocker.daemon_running) {
+              const modelToSetup = topRecommendation.value?.model_tag
+                || ramAwareFallback(systemInfo.value?.total_ram_mb);
+              report(`Setting up Ollama via Docker (model: ${modelToSetup})...`);
+              await invoke<string>('auto_setup_local_llm', { modelName: modelToSetup });
+              await checkOllamaStatus();
+              if (ollamaStatus.value.running) {
+                dockerFallbackOk = true;
+                report('Ollama running via Docker');
+                await fetchInstalledModels();
+              }
+            }
+          } else if (runtimes.podman_cli) {
+            // Use Podman as container runtime
+            const modelToSetup = topRecommendation.value?.model_tag
+              || ramAwareFallback(systemInfo.value?.total_ram_mb);
+            report(`Setting up Ollama via Podman (model: ${modelToSetup})...`);
+            try {
+              await invoke<string>('auto_setup_local_llm_with_runtime', {
+                modelName: modelToSetup,
+                preference: 'podman',
+              });
+              await checkOllamaStatus();
+              if (ollamaStatus.value.running) {
+                dockerFallbackOk = true;
+                report('Ollama running via Podman');
+                await fetchInstalledModels();
+              }
+            } catch (e) {
+              report(`Podman-based Ollama setup failed: ${e}`);
+            }
+          }
+        } catch (e) {
+          report(`Container-based Ollama setup failed: ${e}`);
+        }
+
+        if (!dockerFallbackOk) {
+          report('Could not get Ollama running — using free cloud AI...');
+          await autoConfigureForDesktop();
+          return {
+            mode: 'cloud',
+            model: 'Pollinations AI',
+            pulled: false,
+            ollamaInstalled,
+            ollamaStarted,
+          };
+        }
       }
     }
 

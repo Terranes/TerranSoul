@@ -32,7 +32,6 @@
       <button
         type="button"
         class="attach-btn"
-        :disabled="disabled"
         aria-label="Attach file"
         @click="openFilePicker"
       >
@@ -51,7 +50,6 @@
         type="text"
         class="chat-input"
         placeholder="Type a message…"
-        :disabled="disabled"
         autocomplete="off"
         @focus="handleFocus"
         @blur="handleBlur"
