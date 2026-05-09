@@ -218,6 +218,7 @@
       :visible="selfImproveDialogOpen"
       :has-coding-llm="selfImprove.isConfigured"
       :provider-label="selfImproveProviderLabel"
+      :card-style="selfImproveDialogCardStyle"
       @confirm="onConfirmSelfImprove"
       @cancel="selfImproveDialogOpen = false"
     />
@@ -324,7 +325,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted, type CSSProperties } from 'vue';
 import { storeToRefs } from 'pinia';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
@@ -370,6 +371,13 @@ const selfImprovePanelOpen = ref(false);
 const workflowsPanelOpen = ref(false);
 const charismaPanelOpen = ref(false);
 const teachableCapabilitiesPanelOpen = ref(false);
+const petModalOpen = computed(
+  () => selfImproveDialogOpen.value ||
+    selfImprovePanelOpen.value ||
+    workflowsPanelOpen.value ||
+    charismaPanelOpen.value ||
+    teachableCapabilitiesPanelOpen.value,
+);
 
 const selfImproveProviderLabel = computed(() => {
   const c = selfImprove.codingLlm;
@@ -377,7 +385,19 @@ const selfImproveProviderLabel = computed(() => {
   return `${c.provider} · ${c.model || 'default'}`;
 });
 
+const selfImproveDialogCardStyle = computed<CSSProperties>(() => {
+  const bounds = getMonitorBounds(menuX.value, menuY.value);
+  return {
+    position: 'fixed',
+    left: `${(bounds.left + bounds.right) / 2}px`,
+    top: `${(bounds.top + bounds.bottom) / 2}px`,
+    transform: 'translate(-50%, -50%)',
+  };
+});
+
 function onRequestSelfImprove() {
+  windowStore.setCursorPassthrough(false);
+  lastPassthrough = false;
   selfImproveDialogOpen.value = true;
 }
 
@@ -687,6 +707,40 @@ const menuVisible = ref(false);
 const menuX = ref(0);
 const menuY = ref(0);
 
+function getMonitorBounds(clickX: number, clickY: number): { left: number; top: number; right: number; bottom: number } {
+  const monitors = windowStore.monitors ?? [];
+  const dpr = window.devicePixelRatio || 1;
+
+  if (!monitors.length) {
+    return { left: 0, top: 0, right: window.innerWidth, bottom: window.innerHeight };
+  }
+
+  const minX = Math.min(...monitors.map((m) => m.x));
+  const minY = Math.min(...monitors.map((m) => m.y));
+  const clickPhysX = clickX * dpr + minX;
+  const clickPhysY = clickY * dpr + minY;
+
+  let monitor = monitors[0];
+  for (const m of monitors) {
+    if (
+      clickPhysX >= m.x &&
+      clickPhysX < m.x + m.width &&
+      clickPhysY >= m.y &&
+      clickPhysY < m.y + m.height
+    ) {
+      monitor = m;
+      break;
+    }
+  }
+
+  return {
+    left: (monitor.x - minX) / dpr,
+    top: (monitor.y - minY) / dpr,
+    right: (monitor.x + monitor.width - minX) / dpr,
+    bottom: (monitor.y + monitor.height - minY) / dpr,
+  };
+}
+
 function onCharacterContextMenu(e: MouseEvent) {
   menuX.value = e.clientX;
   menuY.value = e.clientY;
@@ -786,6 +840,17 @@ function isPointOverInteractive(x: number, y: number): boolean {
 }
 
 function handleCursorPos(payload: { x: number; y: number; inside: boolean }) {
+  // Teleported modal surfaces live outside `.pet-character`, so the canvas
+  // alpha hit-test cannot see them. Keep the OS window interactive while any
+  // pet-mode modal is open or its buttons become click-through on Windows.
+  if (petModalOpen.value) {
+    if (lastPassthrough) {
+      windowStore.setCursorPassthrough(false);
+      lastPassthrough = false;
+    }
+    return;
+  }
+
   // When the context menu is open its backdrop covers the whole window,
   // so we always need to accept clicks to let the user dismiss/use it.
   if (menuVisible.value) {
@@ -817,6 +882,13 @@ function handleCursorPos(payload: { x: number; y: number; inside: boolean }) {
     lastPassthrough = true;
   }
 }
+
+watch(petModalOpen, (open) => {
+  if (open && lastPassthrough) {
+    windowStore.setCursorPassthrough(false);
+    lastPassthrough = false;
+  }
+});
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const recentMessages = computed(() => conversationStore.messages.slice(-20));
@@ -983,14 +1055,16 @@ const emotionBubbleStyle = computed(() => {
 
 /** Whether the chat bubble should appear on the left side of the character. */
 const chatOnLeft = computed(() => {
-  // Chat panel is ~300px wide.  If the character's right side + panel width
-  // exceeds the available screen width, flip to the left.
+  // Chat panel is ~300px wide. If placing it beside the projected head would
+  // exceed the available screen width, flip to the left.
   const monitors = windowStore.monitors ?? [];
   const dpr = window.devicePixelRatio || 1;
   const CHAT_WIDTH = 300;
-  const charRight = charX.value + charW.value + CHAT_WIDTH + 16;
+  const CHAT_GAP = 75;
+  const headCenterPx = headScreenX.value * charW.value;
+  const chatRightIfRight = charX.value + headCenterPx + CHAT_GAP + CHAT_WIDTH;
   if (!monitors.length) {
-    return charRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
+    return chatRightIfRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
   }
   const minX = Math.min(...monitors.map(m => m.x));
   const minY = Math.min(...monitors.map(m => m.y));
@@ -1005,7 +1079,7 @@ const chatOnLeft = computed(() => {
     }
   }
   const monRight = (monitor.x + monitor.width - minX) / dpr;
-  return charRight > monRight;
+  return chatRightIfRight > monRight;
 });
 
 const petChatClasses = computed(() => ({
@@ -1016,7 +1090,10 @@ const petChatStyle = computed(() => {
   // Anchor the chat beside the character's head bone, like a speech bubble.
   // Clamp vertically so the panel never extends beyond the visible monitor.
   const CHAT_MAX_H = 400; // matches CSS max-height
+  const CHAT_WIDTH = 300; // matches CSS width
+  const CHAT_GAP = 75;
   const headTopPx = headY.value * charH.value;
+  const headCenterPx = headScreenX.value * charW.value;
   const chatAbsTop = charY.value + headTopPx;
   const screenH = typeof window !== 'undefined' ? window.innerHeight : 1080;
 
@@ -1034,15 +1111,11 @@ const petChatStyle = computed(() => {
     top: `${topPx}px`,
   };
   if (chatOnLeft.value) {
-    // Position to the left of the character container
-    style.right = '100%';
-    style.left = 'auto';
-    style.marginRight = '12px';
-  } else {
-    // Position to the right of the character container
-    style.left = '100%';
+    style.left = `${Math.round(headCenterPx - CHAT_GAP - CHAT_WIDTH)}px`;
     style.right = 'auto';
-    style.marginLeft = '12px';
+  } else {
+    style.left = `${Math.round(headCenterPx + CHAT_GAP)}px`;
+    style.right = 'auto';
   }
   return style;
 });
