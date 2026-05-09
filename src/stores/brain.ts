@@ -412,6 +412,27 @@ export const useBrainStore = defineStore('brain', () => {
     activeBrain.value = modelName;
   }
 
+  /**
+   * Pre-load the active local Ollama chat model into VRAM with a long
+   * `keep_alive` so the next user reply lands in milliseconds instead of
+   * paying a 10–20s cold-load on consumer GPUs.
+   *
+   * Fire-and-forget: returns immediately. Errors are swallowed (the chat
+   * path will still work, just with a one-time cold-start). Call after
+   * installing a recommended model, on app start when LocalOllama is
+   * active, and on brain-mode change to LocalOllama.
+   */
+  async function warmupLocalOllama(model?: string): Promise<number | null> {
+    try {
+      const ms = await invoke<number>('warmup_local_ollama', {
+        model: model ?? null,
+      });
+      return ms;
+    } catch {
+      return null;
+    }
+  }
+
   async function clearActiveBrain(): Promise<void> {
     await invoke('clear_active_brain');
     activeBrain.value = null;
@@ -524,6 +545,9 @@ export const useBrainStore = defineStore('brain', () => {
     // Update legacy activeBrain for backwards compatibility
     if (mode.mode === 'local_ollama') {
       activeBrain.value = mode.model;
+      // Pre-warm chat model into VRAM in the background so the first
+      // user reply is fast. Fire-and-forget — no await.
+      void warmupLocalOllama(mode.model);
     } else {
       activeBrain.value = null;
     }
@@ -1082,6 +1106,7 @@ export const useBrainStore = defineStore('brain', () => {
     fetchLmStudioModels,
     pullModel,
     setActiveBrain,
+    warmupLocalOllama,
     clearActiveBrain,
     factoryReset,
     downloadLmStudioModel,

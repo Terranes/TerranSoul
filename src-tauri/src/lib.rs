@@ -65,6 +65,7 @@ use commands::{
         resolve_provider_for_task, select_provider_with_constraints, set_active_brain,
         set_agent_route, set_brain_mode, set_failover_policy, set_provider_policy,
         set_provider_task_override, switch_embedding_model, unload_lm_studio_model,
+        warmup_local_ollama,
     },
     character::load_vrm,
     charisma::{
@@ -1157,9 +1158,12 @@ pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
     let label = label.to_string();
     tauri::async_runtime::spawn(async move {
         let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
+        // 1-token real chat forces Ollama to actually load the weights
+        // into VRAM. An empty `messages: []` body sometimes no-ops.
         let body = serde_json::json!({
             "model": model,
-            "messages": [],
+            "messages": [{ "role": "user", "content": " " }],
+            "options": { "num_predict": 1 },
             "keep_alive": "30m",
             "stream": false,
         });
@@ -1570,6 +1574,7 @@ pub fn run() {
             check_ollama_status,
             get_ollama_models,
             pull_ollama_model,
+            warmup_local_ollama,
             check_lm_studio_status,
             get_lm_studio_models,
             download_lm_studio_model,

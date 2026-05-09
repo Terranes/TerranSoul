@@ -542,6 +542,13 @@ onMounted(async () => {
     // Ignore — will fall through to auto-configure
   }
 
+  // If the user is on Local Ollama, pre-warm the chat model into VRAM
+  // immediately on launch so the first user reply is fast (<1s) instead
+  // of paying a 10–20s cold-load on consumer GPUs. Fire-and-forget.
+  if (brain.brainMode?.mode === 'local_ollama') {
+    void brain.warmupLocalOllama(brain.brainMode.model);
+  }
+
   // Load voice config from backend
   try {
     await voice.initialise();

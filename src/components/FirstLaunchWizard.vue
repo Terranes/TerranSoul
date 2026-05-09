@@ -574,6 +574,13 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
             label: `Brain connected (Local — ${result.model}${pullNote})${installNote}`,
           });
           logDebug(`Brain configured: local ${result.model}${pullNote}${installNote}`);
+
+          // Pre-warm the chat model into VRAM so the first user reply
+          // lands in milliseconds instead of paying a 10–20s cold-load.
+          // Fire-and-forget — the wizard does not block on this.
+          void brain.warmupLocalOllama(result.model).then((ms) => {
+            if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+          });
         } else if (result.pullFailed) {
           // Download was attempted but failed — show as error.
           logDebug(`Model download failed: ${result.pullFailed}`, 'error');
@@ -607,6 +614,10 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
       if (mode?.mode === 'local_ollama') {
         items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
         logDebug(`Brain already configured: local ${mode.model}`);
+        // Pre-warm even on returning launches so the first reply is fast.
+        void brain.warmupLocalOllama(mode.model).then((ms) => {
+          if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+        });
       } else if (mode?.mode === 'free_api') {
         items.push({ icon: '🧠', label: `Brain connected (${mode.provider_id} — free cloud)` });
         logDebug(`Brain already configured: ${mode.provider_id}`);

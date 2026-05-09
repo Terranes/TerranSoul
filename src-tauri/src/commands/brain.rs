@@ -153,6 +153,68 @@ pub async fn install_ollama(app: AppHandle) -> Result<String, String> {
     .await
 }
 
+/// Pre-load the active local Ollama chat model into VRAM with a long
+/// `keep_alive`, so the next user reply lands in milliseconds instead of
+/// paying a 10–20 s cold-load.
+///
+/// Called from the frontend at:
+/// - First-launch wizard, immediately after the recommended model is pulled.
+/// - App start (when LocalOllama is the active mode).
+/// - Brain-mode change to LocalOllama.
+///
+/// Resolves the model from the explicit `model` argument, the active
+/// brain mode, or the registered chat model — in that order. No-op if
+/// none is available. Awaitable so UIs can show "Warming up…" progress.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn warmup_local_ollama(
+    state: State<'_, AppState>,
+    model: Option<String>,
+) -> Result<u64, String> {
+    let resolved = model
+        .filter(|m| !m.trim().is_empty())
+        .or_else(|| state.active_brain.lock().ok().and_then(|m| m.clone()))
+        .or_else(|| {
+            state.brain_mode.lock().ok().and_then(|m| match m.clone() {
+                Some(brain::BrainMode::LocalOllama { model }) => Some(model),
+                _ => None,
+            })
+        })
+        .or_else(brain::ollama_agent::registered_chat_model_for_warmup)
+        .ok_or_else(|| "no local Ollama model configured".to_string())?;
+
+    // Register so every future embed call re-warms this model.
+    brain::ollama_agent::set_chat_model_for_warmup(&resolved);
+    // Push the chat-activity quiet window so the embedding worker does not
+    // race the warm-up to load nomic-embed-text and evict the chat model.
+    state.mark_chat_activity_now();
+
+    let client = state.ollama_client.clone();
+    let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
+    // 1-token real chat forces Ollama to actually load the weights into
+    // VRAM. An empty `messages: []` body sometimes no-ops.
+    let body = serde_json::json!({
+        "model": resolved,
+        "messages": [{ "role": "user", "content": " " }],
+        "options": { "num_predict": 1 },
+        "stream": false,
+        "keep_alive": "30m",
+    });
+    let started = std::time::Instant::now();
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("warm-up request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("warm-up returned status {}", resp.status()));
+    }
+    let _ = resp.bytes().await;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    eprintln!("[warmup_local_ollama] {resolved} loaded in {elapsed_ms} ms");
+    Ok(elapsed_ms)
+}
+
 /// List all Ollama models installed on this machine.
 #[tauri::command]
 pub async fn get_ollama_models(

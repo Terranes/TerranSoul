@@ -58,9 +58,12 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
         else {
             return;
         };
+        // 1-token real chat forces Ollama to actually load the weights
+        // into VRAM. An empty `messages: []` body sometimes no-ops.
         let body = serde_json::json!({
             "model": model,
-            "messages": [],
+            "messages": [{ "role": "user", "content": " " }],
+            "options": { "num_predict": 1 },
             "stream": false,
             "keep_alive": "30m",
         });
