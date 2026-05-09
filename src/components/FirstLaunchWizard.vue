@@ -610,8 +610,41 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
         logDebug('Brain configured: Pollinations AI');
       }
     } else {
+      // Brain is already configured from a prior session. If the user chose
+      // the recommended setup and we're currently on a cloud fallback, try to
+      // upgrade to local — the user may have installed Ollama since last time.
       const mode = brain.brainMode;
-      if (mode?.mode === 'local_ollama') {
+      const preferLocal = settingsStore.settings.prefer_local_brain !== false;
+      const isLocal = mode?.mode === 'local_ollama';
+
+      if (!isLocal && preferLocal) {
+        logDebug('Brain is cloud but prefer_local_brain is true — attempting local upgrade...');
+        const result = await brain.autoConfigureLocalFirst({
+          onProgress: (msg: string) => {
+            setupMessage.value = msg;
+            logDebug(msg);
+          },
+        });
+        autoConfigured.push('brain');
+
+        if (result.mode === 'local') {
+          const pullNote = result.pulled ? ' — just downloaded' : '';
+          items.push({
+            icon: '🧠',
+            label: `Brain upgraded to local (${result.model}${pullNote})`,
+          });
+          logDebug(`Brain upgraded: local ${result.model}${pullNote}`);
+          void brain.warmupLocalOllama(result.model).then((ms) => {
+            if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+          });
+        } else {
+          items.push({
+            icon: '🧠',
+            label: `Brain connected (${mode?.provider_id ?? 'cloud'} — free cloud, local unavailable)`,
+          });
+          logDebug('Local upgrade failed — keeping existing cloud config');
+        }
+      } else if (isLocal && mode) {
         items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
         logDebug(`Brain already configured: local ${mode.model}`);
         // Pre-warm even on returning launches so the first reply is fast.
