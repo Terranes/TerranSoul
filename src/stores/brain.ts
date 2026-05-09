@@ -638,9 +638,10 @@ export const useBrainStore = defineStore('brain', () => {
   /** RAM-aware fallback when the catalogue/recommendations are unavailable. */
   function ramAwareFallback(totalRamMb?: number): string {
     const ram = totalRamMb ?? 0;
-    if (ram >= 32_768) return 'gemma4:31b';
-    if (ram >= 16_384) return 'gemma4:e4b';
-    if (ram >= 8_192) return 'gemma4:e2b';
+    // Optimised for sub-1 s first-token latency on consumer GPUs.
+    if (ram >= 32_768) return 'gemma4:e4b';
+    if (ram >= 16_384) return 'gemma3:4b';
+    if (ram >= 8_192) return 'gemma3:1b';
     if (ram >= 4_096) return 'gemma3:1b';
     return 'tinyllama';
   }

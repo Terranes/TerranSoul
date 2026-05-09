@@ -5,6 +5,15 @@ import type { BgmTrack } from '../composables/useBgmPlayer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** A user-defined folder scanned for knowledge ingestion. */
+export interface ContextFolder {
+  path: string;
+  label: string;
+  enabled: boolean;
+  last_synced_at: number;
+  last_file_count: number;
+}
+
 export interface AppSettings {
   /** Schema version — used for migration/corruption detection. */
   version: number;
@@ -91,6 +100,8 @@ export interface AppSettings {
   code_index_cache_mb?: number;
   /** SQLite mmap window for code_index.sqlite (MiB). Default 32. Takes effect on restart. */
   code_index_mmap_mb?: number;
+  /** User-defined context folders for knowledge ingestion (brute-force scan, not recommended for large trees). */
+  context_folders?: ContextFolder[];
 }
 
 const MIN_MAX_MEMORY_GB = 1;
@@ -164,6 +175,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
   code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
   code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+  context_folders: [],
 };
 
 // ── Store ─────────────────────────────────────────────────────────────────────

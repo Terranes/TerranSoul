@@ -62,7 +62,7 @@
   /* ── Text Hierarchy ── */
   --ts-text-primary: #f1f5f9;
   --ts-text-secondary: #94a3b8;
-  --ts-text-muted: #64748b;
+  --ts-text-muted: #8494a7;
   --ts-text-dim: rgba(255, 255, 255, 0.45);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright: #e2e8f0;
@@ -131,6 +131,7 @@
 
   /* ── Glass / Frosted surfaces ── */
   --ts-glass-bg: rgba(15, 23, 42, 0.72);
+  --ts-glass-bg-focus: rgba(15, 23, 42, 0.88);
   --ts-glass-border: rgba(255, 255, 255, 0.08);
   --ts-glass-blur: 20px;
   --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -191,6 +192,7 @@ html[data-theme="corporate"] {
 
   /* Glass tokens for corporate light */
   --ts-glass-bg: rgba(255, 255, 255, 0.82);
+  --ts-glass-bg-focus: rgba(255, 255, 255, 0.95);
   --ts-glass-border: rgba(0, 0, 0, 0.06);
   --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   --ts-shadow-glow: 0 0 20px rgba(91, 95, 199, 0.08), 0 0 60px rgba(91, 95, 199, 0.03);
@@ -297,6 +299,7 @@ html[data-theme="corporate-dark"] {
 
   /* Glass tokens for corporate dark */
   --ts-glass-bg: rgba(30, 30, 30, 0.78);
+  --ts-glass-bg-focus: rgba(30, 30, 30, 0.92);
   --ts-glass-border: rgba(255, 255, 255, 0.06);
   --ts-glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
   --ts-shadow-glow: 0 0 20px rgba(91, 155, 213, 0.12), 0 0 60px rgba(91, 155, 213, 0.04);
@@ -322,7 +325,7 @@ html[data-theme="corporate-dark"] {
 
   --ts-text-primary:   #cccccc;
   --ts-text-secondary: #9d9d9d;
-  --ts-text-muted:     #6f6f6f;
+  --ts-text-muted:     #888888;
   --ts-text-dim:       rgba(204, 204, 204, 0.40);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright:    #ffffff;
@@ -398,7 +401,7 @@ html[data-theme="cat"] {
 
   --ts-text-primary:   #fef3e2;
   --ts-text-secondary: #c8b89a;
-  --ts-text-muted:     #8d7b66;
+  --ts-text-muted:     #a89478;
   --ts-text-dim:       rgba(255, 243, 226, 0.40);
   /* Amber #f59e0b: contrast with #fff = 2.1:1 (WCAG fail). Use near-black. */
   --ts-text-on-accent: #1a1410;
@@ -475,7 +478,7 @@ html[data-theme="sakura"] {
 
   --ts-text-primary:   #fdf2f8;
   --ts-text-secondary: #d4a0b9;
-  --ts-text-muted:     #9a7189;
+  --ts-text-muted:     #b48da4;
   --ts-text-dim:       rgba(253, 242, 248, 0.40);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright:    #fdf2f8;
@@ -553,7 +556,7 @@ html[data-theme="kids"] {
 
   --ts-text-primary:   #f8fafc;
   --ts-text-secondary: #a5b4fc;
-  --ts-text-muted:     #7c82b8;
+  --ts-text-muted:     #9198d0;
   --ts-text-dim:       rgba(255, 255, 255, 0.45);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright:    #f8fafc;
@@ -635,7 +638,7 @@ html[data-theme="brain"] {
 
   --ts-text-primary:   #d0f0e8;
   --ts-text-secondary: #6eb8a0;
-  --ts-text-muted:     #3d7a66;
+  --ts-text-muted:     #5a9e88;
   --ts-text-dim:       rgba(208, 240, 232, 0.40);
   /* Teal #00e6b4: relative luminance ≈0.60 → contrast with white = 1.6:1 (WCAG fail). Use dark. */
   --ts-text-on-accent: #0a0f14;
@@ -711,8 +714,8 @@ html[data-theme="midnight"] {
   --ts-info-bg:      rgba(122, 162, 247, 0.10);
 
   --ts-text-primary:   #c0caf5;
-  --ts-text-secondary: #7982a9;
-  --ts-text-muted:     #4a506b;
+  --ts-text-secondary: #8d96bf;
+  --ts-text-muted:     #6d7494;
   --ts-text-dim:       rgba(192, 202, 245, 0.35);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright:    #d5daf8;
@@ -783,7 +786,7 @@ html[data-theme="aurora"] {
 
   --ts-text-primary:   #e0f2f1;
   --ts-text-secondary: #80cbc4;
-  --ts-text-muted:     #4d8a82;
+  --ts-text-muted:     #6aaa9f;
   --ts-text-dim:       rgba(224, 242, 241, 0.40);
   /* Green #34d399: relative luminance ≈0.51 → contrast with white = 1.9:1 (WCAG fail). Use dark. */
   --ts-text-on-accent: #0c1a1e;
@@ -834,6 +837,10 @@ html[data-theme="pastel"] {
   --ts-bg-panel:    rgba(250, 248, 245, 0.98);
   --ts-bg-selected: rgba(168, 139, 250, 0.10);
 
+  --ts-glass-bg:       rgba(250, 248, 245, 0.82);
+  --ts-glass-bg-focus: rgba(255, 255, 255, 0.95);
+  --ts-glass-border:   rgba(0, 0, 0, 0.08);
+
   --ts-accent:              #a78bfa;
   --ts-accent-hover:        #8b5cf6;
   --ts-accent-glow:         rgba(168, 139, 250, 0.15);
@@ -855,8 +862,8 @@ html[data-theme="pastel"] {
   --ts-info-bg:      rgba(99, 102, 241, 0.08);
 
   --ts-text-primary:   #3f3f46;
-  --ts-text-secondary: #71717a;
-  --ts-text-muted:     #a1a1aa;
+  --ts-text-secondary: #636369;
+  --ts-text-muted:     #8a8a92;
   --ts-text-dim:       rgba(0, 0, 0, 0.30);
   --ts-text-on-accent: #ffffff;
   --ts-text-bright:    #27272a;

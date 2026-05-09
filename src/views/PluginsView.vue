@@ -191,14 +191,14 @@
 
         <!-- ── Settings (Chunk 22.6) ─────────────────────────────────── -->
         <div
-          v-if="plugin.manifest.contributes.settings.length > 0"
+          v-if="(plugin.manifest.contributes.settings ?? []).length > 0"
           class="pv-settings"
           :data-testid="`pv-settings-${plugin.manifest.id}`"
         >
           <h4>Settings</h4>
           <ul class="pv-setting-list">
             <li
-              v-for="setting in plugin.manifest.contributes.settings"
+              v-for="setting in (plugin.manifest.contributes.settings ?? [])"
               :key="setting.key"
               class="pv-setting-item"
             >
@@ -399,7 +399,7 @@ async function writeSetting(pluginId: string, key: string, value: unknown) {
 }
 async function loadSettingsForPlugin(plugin: InstalledPlugin) {
   const id = plugin.manifest.id;
-  for (const setting of plugin.manifest.contributes.settings) {
+  for (const setting of plugin.manifest.contributes.settings ?? []) {
     const fullKey = `${id}.${setting.key}`;
     try {
       const v = await store.getSetting(fullKey);

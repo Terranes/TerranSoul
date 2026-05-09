@@ -156,12 +156,7 @@ pub fn request_permission(
     conn.execute(
         "INSERT INTO safety_decisions (action, decision, decided_at, decided_via)
          VALUES (?1, ?2, ?3, ?4)",
-        params![
-            action.as_str(),
-            decision.as_str(),
-            now,
-            reason
-        ],
+        params![action.as_str(), decision.as_str(), now, reason],
     )?;
 
     Ok(matches!(tier, Tier::Tier1))
@@ -176,9 +171,7 @@ pub fn consecutive_approvals(conn: &rusqlite::Connection, action: Action) -> Sql
          LIMIT 100",
     )?;
 
-    let rows = stmt.query_map(params![action.as_str()], |row| {
-        row.get::<_, String>(0)
-    })?;
+    let rows = stmt.query_map(params![action.as_str()], |row| row.get::<_, String>(0))?;
 
     let mut count = 0u32;
     for row in rows.flatten() {

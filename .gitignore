@@ -9,6 +9,7 @@ src-tauri/gen/
 src-tauri/code_index.sqlite
 test-results/
 playwright-report/
+real-e2e-report/
 /.claude/worktrees
 
 # Headless MCP "pet mode" data dir — created by `npm run mcp`.
@@ -46,3 +47,4 @@ test-output.txt
 /crates/hive-relay/target
 /mcp-data/wiki
 scripts/*.py
+/target-test

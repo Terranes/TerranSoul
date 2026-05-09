@@ -268,10 +268,7 @@ fn is_pid_alive(pid: u32) -> bool {
 // ---------------------------------------------------------------------------
 
 /// Run the garden tool: check which maintenance jobs are due and return them.
-pub fn garden(
-    scheduler_state: &SchedulerState,
-    config: &AmbientConfig,
-) -> Vec<MaintenanceJob> {
+pub fn garden(scheduler_state: &SchedulerState, config: &AmbientConfig) -> Vec<MaintenanceJob> {
     let now = now_ms() as u64;
     maintenance_scheduler::jobs_due(scheduler_state, &config.maintenance, now)
 }
@@ -279,11 +276,7 @@ pub fn garden(
 /// Check whether proactive work is allowed based on decision history.
 pub fn is_mature(conn: &Connection, config: &AmbientConfig) -> bool {
     let total: u32 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM safety_decisions",
-            [],
-            |r| r.get(0),
-        )
+        .query_row("SELECT COUNT(*) FROM safety_decisions", [], |r| r.get(0))
         .unwrap_or(0);
     total >= config.maturity_threshold
 }
@@ -296,8 +289,7 @@ pub fn gate_action(
     config: &AmbientConfig,
     reason: &str,
 ) -> Result<bool, String> {
-    safety::request_permission(conn, action, &config.safety, reason)
-        .map_err(|e| e.to_string())
+    safety::request_permission(conn, action, &config.safety, reason).map_err(|e| e.to_string())
 }
 
 /// End a cycle: record feedback, check promotions for all actions.
@@ -323,10 +315,7 @@ pub fn end_cycle(
         Action::DropTable,
     ]
     .iter()
-    .filter(|&&a| {
-        safety::check_promotion(conn, a, &config.safety)
-            .unwrap_or(false)
-    })
+    .filter(|&&a| safety::check_promotion(conn, a, &config.safety).unwrap_or(false))
     .copied()
     .collect();
     Ok(promotable)
@@ -449,10 +438,7 @@ mod tests {
     fn pid_guard_acquire_and_release() {
         // Use a unique temp directory to avoid interference from parallel tests
         // or leftover state from previous runs.
-        let dir = std::env::temp_dir().join(format!(
-            "ambient_test_pid_{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("ambient_test_pid_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         let _ = fs::create_dir_all(&dir);
         {

@@ -26,7 +26,7 @@ pub fn production_pragmas() -> &'static str {
             "PRAGMA journal_mode=WAL;\n",
             "PRAGMA synchronous=NORMAL;\n",
             "PRAGMA foreign_keys=ON;\n",
-            "PRAGMA cache_size=-16384;\n", // 16 MiB
+            "PRAGMA cache_size=-16384;\n",  // 16 MiB
             "PRAGMA mmap_size=67108864;\n", // 64 MiB
             "PRAGMA temp_store=MEMORY;\n",
             "PRAGMA busy_timeout=5000;\n",
@@ -59,7 +59,7 @@ fn mobile_pragmas() -> &'static str {
         "PRAGMA journal_mode=WAL;\n",
         "PRAGMA synchronous=NORMAL;\n",
         "PRAGMA foreign_keys=ON;\n",
-        "PRAGMA cache_size=-16384;\n", // 16 MiB
+        "PRAGMA cache_size=-16384;\n",  // 16 MiB
         "PRAGMA mmap_size=33554432;\n", // 32 MiB
         "PRAGMA temp_store=MEMORY;\n",
         "PRAGMA busy_timeout=5000;\n",
@@ -196,8 +196,7 @@ mod tests {
         assert_eq!(mode.to_lowercase(), "wal");
 
         // Run canonical schema
-        super::super::schema::create_canonical_schema(&conn)
-            .expect("schema migration");
+        super::super::schema::create_canonical_schema(&conn).expect("schema migration");
 
         // Insert a memory row
         conn.execute(

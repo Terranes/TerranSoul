@@ -856,10 +856,22 @@ function syncSittingProps(playing: boolean) {
 }
 
 // Wire VRMA playback state to the animator + lazy-load sitting props.
+// When a non-looping mood animation finishes, return the character to idle
+// so the idle VRMA loop restarts and the character doesn't appear frozen.
 vrmaManager.onPlaybackChange((playing) => {
   animator.setVrmaPlaying(playing);
   poseAnimator.setVrmaPlaying(playing);
   syncSittingProps(playing);
+
+  if (!playing) {
+    // A VRMA clip just ended — if the character is in an emotional state
+    // (not idle/talking/thinking) that means a one-shot mood animation finished.
+    // Transition back to idle so the idle loop restarts.
+    const s = characterStore.state;
+    if (s !== 'idle' && s !== 'talking' && s !== 'thinking') {
+      characterStore.setState('idle');
+    }
+  }
 });
 
 // Expose the avatar state machine for direct mutation by ChatView (coarse state bridge)
@@ -1696,9 +1708,9 @@ async function loadModelIntoScene(newPath: string | undefined) {
   width: 100%;
   padding: 7px 28px 7px 10px;
   border-radius: var(--ts-radius-md);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ts-viewport-text);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
   font-size: 0.82rem;
   cursor: pointer;
   outline: none;
@@ -1706,10 +1718,15 @@ async function loadModelIntoScene(newPath: string | undefined) {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.7)'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
-  transition: border-color var(--ts-transition-fast);
+  transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast);
 }
 .model-selector:hover {
-  border-color: rgba(108, 99, 255, 0.5);
+  border-color: var(--ts-accent);
+  background: var(--ts-bg-hover);
+}
+.model-selector:focus-visible {
+  border-color: var(--ts-accent);
+  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.3);
 }
 .model-selector option {
   background: var(--ts-bg-surface);

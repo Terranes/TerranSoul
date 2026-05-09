@@ -11,32 +11,17 @@ use crate::brain::OllamaAgent;
 use crate::AppState;
 
 /// System prompt used by `send_message_stream` (streaming LLM).
-/// Extends the default brain system prompt with emotion tag instructions.
-pub const SYSTEM_PROMPT_FOR_STREAMING: &str = r#"You are TerranSoul, a friendly AI companion with a 3D character avatar. You live inside the TerranSoul desktop app and serve as the user's intelligent assistant.
+pub const SYSTEM_PROMPT_FOR_STREAMING: &str = r#"You are TerranSoul, a friendly AI companion. Keep replies short — 1-3 sentences for casual chat, longer only when the user asks a detailed question.
 
-Your capabilities:
-- Helpful conversation and answering questions on any topic
-- Recommending AI tools and software based on the user's needs
-- Guiding users through installing packages via the TerranSoul Package Manager
-- Quest system — TerranSoul has an RPG-style skill tree with quests. When users ask "What should I do?", "Where can I start?", "What's next?", or any getting-started question, recommend they start a quest. The app will automatically show quest options as interactive buttons.
-
-Animation: When expressing an emotion or gesture, output a JSON block on its own line before the related text:
+Animation (use sparingly, only when emotion clearly fits):
 <anim>{"emotion":"happy"}</anim>
-<anim>{"emotion":"happy","motion":"clap"}</anim>
-Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
-Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
-Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
-Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
-Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
+<anim>{"emotion":"happy","motion":"wave"}</anim>
+Emotions: happy, sad, angry, relaxed, surprised, neutral.
+Motions: idle, walk, wave, clap, peace, spin, pose, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
 
-Body pose (advanced): For subtle posture cues that a VRMA clip cannot express, you may also emit a `<pose>` block:
-<pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose>
-Bones: head, neck, spine, chest, hips, leftUpperArm, rightUpperArm, leftLowerArm, rightLowerArm, leftShoulder, rightShoulder.
-Values are Euler XYZ angles in radians; use small numbers (±0.3 max). The renderer hard-clamps anything beyond ±0.5 rad.
-Optional fields: `duration_s` (0.05–10s, default 2), `easing` ("linear" | "ease-in-out" | "spring", default "spring"), `expression` (face weights 0–1).
-Use `<pose>` only when no `<anim>` motion fits — they don't combine.
+Quest system: When users ask "What should I do?" or "What's next?", suggest starting a quest.
 
-Keep responses concise and warm."#;
+Be concise, warm, and natural."#;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -198,6 +183,30 @@ async fn retrieve_prompt_memories(
     reranked
 }
 
+fn retrieve_local_ollama_keyword_memories(
+    app_state: &AppState,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let threshold = app_state
+        .app_settings
+        .lock()
+        .map(|settings| settings.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
+
+    let store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+    let memory_count = store.count();
+    if crate::commands::streaming::should_skip_rag(query, memory_count) {
+        return Ok(Vec::new());
+    }
+
+    Ok(store
+        .hybrid_search_with_threshold(query, None, 5, threshold)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.content)
+        .collect())
+}
+
 /// Retrieve relevant judgment rules for the current message and format
 /// them as a prompt injection block.
 fn retrieve_judgment_block(app_state: &AppState, query: &str) -> String {
@@ -216,6 +225,8 @@ pub async fn process_message(
     if message.trim().is_empty() {
         return Err("Message cannot be empty".to_string());
     }
+
+    app_state.mark_chat_activity_now();
 
     let user_msg = Message {
         id: Uuid::new_v4().to_string(),
@@ -404,20 +415,7 @@ pub async fn process_message(
             (model.clone(), text, Sentiment::Neutral)
         }
         Some(BrainMode::LocalOllama { model }) => {
-            let memory_entries: Vec<crate::memory::MemoryEntry> = {
-                let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-                mem_store.get_all().unwrap_or_default()
-            };
-            let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
-                &model,
-                message,
-                &memory_entries,
-                5,
-            )
-            .await
-            .into_iter()
-            .map(|e| e.content)
-            .collect();
+            let memories = retrieve_local_ollama_keyword_memories(app_state, message)?;
             let agent = OllamaAgent::new(&model);
             let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
@@ -425,20 +423,7 @@ pub async fn process_message(
         None => {
             // Legacy path: check active_brain for Ollama, otherwise stub.
             if let Some(ref model) = model_opt {
-                let memory_entries: Vec<crate::memory::MemoryEntry> = {
-                    let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-                    mem_store.get_all().unwrap_or_default()
-                };
-                let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
-                    model,
-                    message,
-                    &memory_entries,
-                    5,
-                )
-                .await
-                .into_iter()
-                .map(|e| e.content)
-                .collect();
+                let memories = retrieve_local_ollama_keyword_memories(app_state, message)?;
                 let agent = OllamaAgent::new(model);
                 let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
                 (agent.name().to_string(), text, sent)

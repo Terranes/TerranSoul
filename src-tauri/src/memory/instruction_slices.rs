@@ -54,10 +54,7 @@ pub fn chunk_by_heading(source_file: &str, text: &str) -> Vec<InstructionSlice> 
                     level: current_level,
                 });
             }
-            current_heading = trimmed
-                .trim_start_matches('#')
-                .trim()
-                .to_string();
+            current_heading = trimmed.trim_start_matches('#').trim().to_string();
             current_level = level;
             current_content = format!("{line}\n");
         } else {
@@ -119,10 +116,7 @@ pub fn index_directory(
         if !path.is_file() {
             continue;
         }
-        let ext = path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         if ext != "md" {
             continue;
         }
@@ -214,7 +208,11 @@ pub fn index_repo_instructions(
         slices_skipped: 0,
     };
 
-    for (dir_name, prefix) in [("rules", "rules"), ("instructions", "instructions"), ("docs", "docs")] {
+    for (dir_name, prefix) in [
+        ("rules", "rules"),
+        ("instructions", "instructions"),
+        ("docs", "docs"),
+    ] {
         let dir = repo_root.join(dir_name);
         if dir.is_dir() {
             let r = index_directory(store, &dir, prefix)?;

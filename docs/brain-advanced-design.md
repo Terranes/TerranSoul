@@ -595,7 +595,7 @@ The column is intentionally nullable:
 
 ### 6-Signal Scoring Formula
 
-Every query triggers a hybrid search that combines six signals into a single relevance score:
+Contentful retrieval queries run a hybrid search that combines six signals into a single relevance score. Short content-light chat turns, such as greetings and acknowledgements, take the fast chat path and skip embedding/search entirely so LocalLLM replies are not delayed by model contention.
 
 ```
 final_score =
@@ -669,6 +669,8 @@ final_score =
 > the pipeline has been extended with:
 > - **Vector nearest-neighbor adapter** (Chunk 16.10, 2026-05 loader-hardening update) — default builds use a pure-Rust linear cosine index for stable headless/test runs; the `native-ann` feature enables persisted `usearch` HNSW for large local stores
 > - **Cloud embedding API** (Chunk 16.9) — vector RAG works in free/paid modes too
+> - **Fast chat path** (2026-05-09) — `should_skip_rag()` / `shouldUseFastChatPath()` skip embed + hybrid search for empty memory stores and short content-light turns, avoiding local embedding model swaps on greetings
+> - **LocalOllama VRAM guard** (2026-05-09) — production state starts with a 5-minute startup quiet window, pre-warms the chat model before the embedding queue starts, pauses local embedding ticks during active chat, sends `keep_alive: 0` on embed calls, `keep_alive: "30m"` on chat calls, and `think:false` on the hot stream so thinking models do not spend seconds silently before visible text
 > - **RRF fusion** (Chunk 1.8) — multiple retrieval signals fused via Reciprocal Rank Fusion (k=60)
 > - **HyDE** (Chunk 1.9) — LLM-hypothetical-document embedding for cold/abstract queries
 > - **Cross-encoder rerank** (Chunk 1.10 / 33.5) — LLM-as-judge scores (query, doc) pairs 0–10; RRF/HyDE search defaults rerank on and prunes below threshold 0.55 before prompt injection
@@ -688,6 +690,20 @@ final_score =
 User types: "What are the filing deadlines?"
                 │
                 ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│ Step 0: FAST-PATH GATE                                               │
+│                                                                      │
+│ If memory_count == 0, or the user turn is short/content-light        │
+│ (≤ 3 tokens and every token ≤ 5 chars), skip RAG entirely.           │
+│                                                                      │
+│ Examples: "Hi", "Hello", "OK", "who are you".                    │
+│ Result: no embedding call, no hybrid_search, no model swap.          │
+│ LocalOllama also keeps background embed ticks paused during startup   │
+│ and active chat, and the hot stream uses think:false for fast TTFT.   │
+│                                                                      │
+│ Contentful questions continue to Step 1.                             │
+└──────────────────────────┬───────────────────────────────────────────┘
+                           ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │ Step 1: EMBED QUERY                                                  │
 │                                                                      │
@@ -1601,9 +1617,9 @@ Every time TerranSoul starts, it copies `memory.db` → `memory.db.bak`:
 
 | tier | model_tag |
 |---|---|
-| VeryHigh | gemma4:31b |
-| High | gemma4:e4b |
-| Medium | gemma4:e2b |
+| VeryHigh | gemma4:e4b |
+| High | gemma3:4b |
+| Medium | gemma3:1b |
 | Low | gemma3:1b |
 | VeryLow | tinyllama |
 
@@ -1864,6 +1880,206 @@ Action:
 ```
 
 This is inspired by **Mem0's conflict resolution** approach — using the LLM itself to arbitrate when two memories say different things about the same topic.
+
+---
+
+## 12.5. Context Folders — Brute-Force Directory Ingestion
+
+Context Folders let users point TerranSoul at an entire directory and ingest
+every supported file as raw knowledge chunks. This is the simplest way to give
+the companion bulk context — ideal for project documentation, code repositories,
+legal filings, research papers, or any folder of reference material.
+
+### Warning: Brute-Force Nature
+
+Context-folder ingestion is intentionally **brute-force**. Every file matching
+supported extensions (`.txt`, `.md`, `.json`, `.rs`, `.ts`, `.vue`, `.css`,
+`.html`, `.toml`, `.yaml`, `.yml`, `.xml`, `.csv`, `.py`, `.js`, `.jsx`,
+`.tsx`, `.sql`, `.sh`, `.bat`, `.ps1`, `.cfg`, `.ini`, `.log`, `.c`, `.cpp`,
+`.h`, `.hpp`, `.java`, `.kt`, `.go`, `.rb`, `.php`, `.swift`, `.r`) is read,
+chunked, and stored. Large directories will produce many low-importance memory
+entries and consume embedding resources. Users should:
+
+- Start with small, focused folders (documentation, not the entire repo)
+- Use the **Convert to Knowledge** feature to consolidate raw chunks into
+  high-quality, compact knowledge entries after ingestion
+- Monitor token counts via the conversion stats panel
+
+### Configuration (UI)
+
+Context folders are configured in **Brain View → 📂 Context Folders**:
+
+1. **Add folder** — paste or type an absolute directory path and click ➕
+2. **Label** — derived from the last path component; used as a tag
+3. **Enable/disable** — toggle individual folders on/off without removing them
+4. **Sync** — re-scans all enabled folders, detecting new/changed/removed files
+   via SHA-256 content hashing (same as § 12.1 Source Hash Change Detection)
+5. **Metadata** — shows last sync time and file count per folder
+
+Settings are persisted in `AppSettings.context_folders` as:
+
+```rust
+pub struct ContextFolder {
+    pub path: String,            // absolute directory path
+    pub label: String,           // human-readable label (auto-derived)
+    pub enabled: bool,           // toggle without removing
+    pub last_synced_at: Option<i64>,  // epoch ms of last sync
+    pub last_file_count: Option<usize>, // files found on last scan
+}
+```
+
+### Ingestion Pipeline
+
+```
+Directory scan
+  ├── Filter by supported extensions
+  ├── Read file content (UTF-8, skip binary)
+  ├── SHA-256 hash for change detection
+  ├── Check existing memories by source_url + source_hash
+  │   ├── Hash match → SKIP (already ingested)
+  │   └── Hash mismatch or new → DELETE old + INSERT new chunks
+  ├── Semantic chunking via text-splitter
+  └── Store as MemoryType::Reference, importance=2,
+      tags="context-folder,<label>", source_url=file path
+```
+
+Each ingested file produces one or more memory entries at importance 2 (low),
+tagged `context-folder,<label>`. They participate in RAG retrieval but score
+below manually-created or converted knowledge entries.
+
+### Context ↔ Knowledge Conversion
+
+Raw context-folder chunks are useful for reference but suboptimal for RAG:
+they are numerous, low-importance, and may be fragmented across chunk boundaries.
+TerranSoul provides bidirectional conversion:
+
+#### Convert to Knowledge (chunks → consolidated entries)
+
+The `convert_context_to_knowledge` command:
+
+1. Finds all memories tagged `context-folder` (optionally filtered by label)
+2. Groups chunks by source file (using `source_url`)
+3. Sorts chunks by ID to preserve document order
+4. Concatenates chunks from the same file into a single document
+5. Creates a consolidated `MemoryType::Fact` entry at importance 4 (high),
+   tagged `knowledge,converted,<label>`
+6. Original context-folder chunks remain untouched — they serve as raw reference
+   while the converted entries power optimized retrieval
+
+```
+Before conversion:
+  file_a.md → [chunk_1 (imp=2), chunk_2 (imp=2), chunk_3 (imp=2)]
+  file_b.rs → [chunk_4 (imp=2), chunk_5 (imp=2)]
+
+After conversion:
+  file_a.md → [chunk_1, chunk_2, chunk_3] (unchanged)
+            + [knowledge_entry (imp=4, consolidated)]
+  file_b.rs → [chunk_4, chunk_5] (unchanged)
+            + [knowledge_entry (imp=4, consolidated)]
+```
+
+#### Export Knowledge to Files (memories → portable files)
+
+The `export_knowledge_to_folder` command reverses the flow:
+
+1. Queries memories by tag filter and minimum importance
+2. Renders each memory as a Markdown file with YAML frontmatter
+   (using the same `obsidian_export::render_markdown()` engine)
+3. Writes files to a user-specified output directory
+
+This enables:
+- **Backup**: export brain knowledge to version-controlled files
+- **Sharing**: portable knowledge files that can be imported on another device
+- **Editing**: modify exported files, then re-ingest the folder for updates
+
+### Recommended Workflow
+
+```
+1. Add context folder (Brain View → 📂 Context Folders → paste path)
+   ⚠️  Warning: brute-force — all supported files will be ingested
+
+2. Sync (click 🔄 Sync All)
+   → Raw chunks created at importance 2
+
+3. Review stats (conversion panel shows chunk counts + token usage)
+
+4. Convert to Knowledge (click 📚 Convert to Knowledge)
+   → Consolidated entries created at importance 4
+   → Better RAG retrieval — fewer, higher-quality entries
+
+5. (Optional) Export (click 💾 Export to Files)
+   → Portable Markdown files with frontmatter
+
+6. Re-sync periodically — SHA-256 hashing detects changes automatically
+```
+
+### Knowledge Graph ↔ Files
+
+Beyond flat context-folder chunks and consolidated knowledge, TerranSoul supports
+direct bidirectional conversion between the knowledge graph and file system:
+
+#### File → Knowledge Graph (`import_file_to_knowledge_graph`)
+
+Imports a single text file as a structured subgraph:
+
+1. Reads the file and splits into semantic chunks (markdown-aware or plain text)
+2. Creates a **root summary node** (`MemoryType::Summary`, importance + 1) with
+   the document title, source path, and a 300-char preview
+3. Stores each chunk as a `MemoryType::Fact` entry tagged `kg-import,<label>`
+4. Creates `contains` edges from root → each chunk
+5. Creates `follows` edges between consecutive chunks (preserving document order)
+
+```
+               root (Summary, imp=4)
+              ╱      │       ╲
+         contains contains  contains
+           ╱         │         ╲
+      chunk_1 ─follows→ chunk_2 ─follows→ chunk_3
+```
+
+The result is a navigable subgraph: the root node is a hub you can traverse
+from in the WikiPanel, and document order is preserved via `follows` edges.
+All edges carry `edge_source = "file-import:<normalised_path>"` for provenance
+tracking and batch cleanup.
+
+#### Knowledge Graph → Files (`export_kg_subtree`)
+
+Exports a KG subtree rooted at one or more memory IDs to a directory:
+
+1. BFS traversal from each root up to `max_hops` (default 2, max 5)
+2. Collects all nodes reachable within the hop limit
+3. Writes one `.md` file per node (YAML frontmatter + body + `## Graph Edges`
+   section listing connected nodes with direction, relation type, and confidence)
+4. Writes a `_graph.json` manifest containing:
+   - `nodes[]` with id, tags, importance, memory_type, content_file
+   - `edges[]` with src_id, dst_id, rel_type, confidence
+   - `root_ids` and `max_hops` for reproducibility
+
+The `_graph.json` manifest enables re-import: another TerranSoul instance (or
+a script) can read the manifest and reconstruct the exact subgraph structure.
+
+```
+output_dir/
+  42-user-prefers-python.md      ← node with frontmatter + edges section
+  78-building-neural-network.md
+  _graph.json                    ← full structure manifest
+```
+
+### Tauri Commands
+
+| Command | Parameters | Returns |
+|---|---|---|
+| `scan_context_folder` | `path: String` | `ScanResult { files, extensions }` |
+| `add_context_folder` | `path, label, state` | `Vec<ContextFolder>` |
+| `remove_context_folder` | `path, state` | `Vec<ContextFolder>` |
+| `toggle_context_folder` | `path, enabled, state` | `Vec<ContextFolder>` |
+| `list_context_folders` | `state` | `Vec<ContextFolder>` |
+| `sync_context_folders` | `state` | `SyncResult { folders_synced, files_ingested, errors }` |
+| `list_context_folder_memories` | `state` | `ContextFolderMemoryInfo { total_memories, total_tokens, by_folder }` |
+| `export_knowledge_to_folder` | `outputDir, tagFilter?, minImportance?, state` | `KnowledgeExportResult { files_written, output_dir }` |
+| `convert_context_to_knowledge` | `folderLabel?, state` | `ContextConversionResult { source_chunks, knowledge_entries_created, summary }` |
+| `import_file_to_knowledge_graph` | `filePath, label?, importance?, state` | `FileToKgResult { file_path, chunks_created, edges_created, root_id, summary }` |
+| `export_kg_subtree` | `rootIds, outputDir, maxHops?, state` | `KgSubtreeExportResult { root_ids, nodes_exported, edges_exported, files_written, output_dir }` |
 
 ---
 
@@ -2527,8 +2743,9 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 | 6 | **Local Ollama embedding model** | Pure code with cache | `OllamaAgent::resolve_embed_model` — try `nomic-embed-text`, else fall back to active chat model; cache result for 60s; mark unsupported permanently | `brain/ollama_agent.rs` | `nomic-embed-text` → chat model → skip vector signal entirely |
 | 7 | **Memory tier to write into** | User explicit + auto-promotion | `MemoryStore::add_memory(tier=Working/Long)`, `promote()` triggered by importance ≥ 4 | `memory/store.rs` | New entries default to Working |
 | 8 | **Memory tier to search** | Pure code | `hybrid_search` scans **all tiers**, applies `tier_priority` weight (working 1.0 → long 0.5 → short 0.3) | `memory/store.rs:574` | All tiers always considered |
-| 9 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command / phone-control stream) | Frontend calls `hybrid_search_memories` for explicit search; chat streams call hybrid retrieval for RAG injection | `commands/memory.rs` + `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | `hybrid_search` → degrades to keyword if embedding fails |
-| 10 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when nothing clears threshold |
+| 9 | **Search method** (`search` / `semantic_search` / `hybrid_search` / `multi_hop`) | Caller (frontend / streaming command / phone-control stream) | Frontend calls `hybrid_search_memories` for explicit search; chat streams call hybrid retrieval for RAG injection after the fast-path gate | `commands/memory.rs` + `commands/streaming.rs` + `src/stores/conversation.ts` + `ai_integrations/grpc/phone_control.rs` | Fast chat path skips retrieval; otherwise `hybrid_search` degrades to keyword if embedding fails |
+| 10 | **Top-k for RAG injection** | Pure code + user threshold | Top 5 after hybrid scoring, filtered by `AppSettings.relevance_threshold` | `commands/streaming.rs` + `ai_integrations/grpc/phone_control.rs` | Empty block when fast-path skips retrieval or nothing clears threshold |
+| 10a | **Intent-classifier fast path** | Pure code | Short content-light turns return `chat` without an LLM classifier request; contentful/setup turns still use the classifier | `brain/intent_classifier.rs::should_use_fast_chat_path` + `src/stores/conversation.ts::shouldUseFastChatPath` | Prevents LocalOllama classifier/chat contention on greetings |
 | 11 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
 | 12 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
 | 13 | **Cognitive kind** (episodic / semantic / procedural / judgment) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:* / judgment:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` + `src/utils/cognitive-kind.ts` | Defaults to `Semantic` |
@@ -2545,9 +2762,9 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 
 1. **Provider selection (rule 1, 2)** — Desktop frontend calls the `send_message_stream` Tauri command; iOS calls `PhoneControl.StreamChatMessage` through `RemoteHost`. Backend reads `state.brain_mode`. If `FreeApi`, the `ProviderRotator` (rule 2) picks the fastest healthy provider; if `LocalOllama`, the user-configured model is used (rule 4).
 2. **History assembly (rule 7)** — Last 20 messages from `state.conversation` (short-term memory) are loaded into the prompt verbatim — no LLM decision, just a FIFO slice.
-3. **Embedding model selection (rule 5)** — Backend calls `OllamaAgent::embed_text(query)`. The cached resolver picks `nomic-embed-text` if installed; otherwise the chat model; otherwise returns `None` and the vector signal is skipped (degrades to 60% RAG quality, see §17 FAQ).
+3. **Fast-path gate + embedding model selection (rule 5)** — Backend first skips RAG for empty memory stores or short content-light turns. Otherwise it calls `OllamaAgent::embed_text(query)`. The cached resolver picks `nomic-embed-text` if installed; otherwise the chat model; otherwise returns `None` and the vector signal is skipped (degrades to 60% RAG quality, see §17 FAQ).
 4. **Hybrid search (rule 7, 8, 9)** — `MemoryStore::hybrid_search(query, embedding, limit=5)` scans **every tier** of every stored memory, scoring each with the 6-signal formula (§4). The cognitive-kind classifier (rule 12) is **not** invoked at search time — it is computed at write time and stored derived.
-5. **Top-5 injection (rule 9)** — Top 5 entries are formatted into the `[LONG-TERM MEMORY]` block. There is currently **no relevance threshold** — even a weakly-matching memory at rank 5 is injected. This is a documented Phase 4 gap (§16); the user can preview what would be injected via the Brain hub "Active Selection" panel (§20.5).
+5. **Top-5 injection (rule 9)** — Top 5 entries above `AppSettings.relevance_threshold` are formatted into the `[LONG-TERM MEMORY]` block. Weak matches below threshold are not injected; the user can preview what would be injected via the Brain hub "Active Selection" panel (§20.5).
 6. **Provider call (rule 1)** — The chosen provider streams tokens back via `llm-chunk` events; `<anim>` blocks are split off into `llm-animation` (per repo memory `streaming architecture`).
 7. **Post-turn (rules 10, 11, 19)** — The chat turn is *not* automatically extracted as facts unless the auto-learn policy fires. The user can also click "Extract from session", click "Summarize", or type `/reflect`; `/reflect` runs both extraction and summarization, then stores a `session_reflection` summary with `derived_from` edges to the short-term turns it summarized.
 8. **Edge extraction (rule 13)** — Optional, user-triggered. `extract_edges_via_brain` asks the LLM to propose typed edges between newly-added memories, using the 17-type taxonomy. Free-form types are accepted; `normalise_rel_type` snaps near-matches.

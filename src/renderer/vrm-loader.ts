@@ -116,6 +116,18 @@ export async function loadVRM(
   // Encode spaces/special chars for HTTP paths; leave blob:/data: URLs untouched
   const url = path.startsWith('blob:') || path.startsWith('data:') ? path : encodeURI(path);
 
+  // Suppress known harmless warnings from three-vrm during VRM 0.0 loading:
+  // - "Curves of LookAtDegreeMap defined in VRM 0.0 are not supported"
+  // - "THREE.InterleavedBufferAttribute.clone(): Cloning an interleaved buffer attribute will de-interleave buffer data."
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && (
+      args[0].includes('LookAtDegreeMap') ||
+      args[0].includes('InterleavedBufferAttribute')
+    )) return;
+    origWarn.apply(console, args);
+  };
+
   const gltf = await loader.loadAsync(url, (event) => {
     if (onProgress && event.lengthComputable) {
       onProgress(event.loaded, event.total);
@@ -137,6 +149,9 @@ export async function loadVRM(
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   VRMUtils.combineSkeletons(gltf.scene);
   VRMUtils.combineMorphs(vrm);
+
+  // Restore original console.warn after load + post-processing
+  console.warn = origWarn;
 
   // Disable frustum culling to prevent clipping when parts are near screen edge;
   // also recompute bounding geometry for correct depth sorting.

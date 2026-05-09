@@ -726,10 +726,7 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     );
     if entries.len() != scale {
         report.status = String::from("failed_read_count");
-        report.failure = Some(format!(
-            "read {} rows but expected {scale}",
-            entries.len()
-        ));
+        report.failure = Some(format!("read {} rows but expected {scale}", entries.len()));
         return report;
     }
     if read_elapsed > read_target {
@@ -795,9 +792,7 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     let update_rps = scale as f64 / update_elapsed.max(f64::EPSILON);
     report.update_seconds = Some(update_elapsed);
     report.update_rows_per_second = Some(update_rps);
-    eprintln!(
-        "[bench] crud scale={scale}: update {update_elapsed:.2}s ({update_rps:.0} rows/s)"
-    );
+    eprintln!("[bench] crud scale={scale}: update {update_elapsed:.2}s ({update_rps:.0} rows/s)");
 
     // ── mixed_crud_workload (80/10/10 insert/update/delete) ───────────
     // Capped at 10k ops so this phase stays fast even at 1M scale.
@@ -891,7 +886,8 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
             let partial_ops = done + mixed_updates;
             report.mixed_op_count = Some(partial_ops);
             report.mixed_seconds = Some(partial_elapsed);
-            report.mixed_ops_per_second = Some(partial_ops as f64 / partial_elapsed.max(f64::EPSILON));
+            report.mixed_ops_per_second =
+                Some(partial_ops as f64 / partial_elapsed.max(f64::EPSILON));
             report.status = String::from("timeout_before_mixed_delete");
             report.failure = Some(format!(
                 "bench wall-clock exceeded {}s before mixed_delete phase",
@@ -936,7 +932,9 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
         ));
         return report;
     }
-    eprintln!("[bench] crud scale={scale}: bulk_delete via delete_many in batches of {batch_size}...");
+    eprintln!(
+        "[bench] crud scale={scale}: bulk_delete via delete_many in batches of {batch_size}..."
+    );
     let start = Instant::now();
     let mut deleted = 0usize;
     while deleted < scale {
@@ -972,9 +970,7 @@ fn run_crud_benchmark(scale: usize, system: &mut System) -> CrudReport {
     let delete_rps = scale as f64 / delete_elapsed.max(f64::EPSILON);
     report.delete_seconds = Some(delete_elapsed);
     report.delete_rows_per_second = Some(delete_rps);
-    eprintln!(
-        "[bench] crud scale={scale}: delete {delete_elapsed:.2}s ({delete_rps:.0} rows/s)"
-    );
+    eprintln!("[bench] crud scale={scale}: delete {delete_elapsed:.2}s ({delete_rps:.0} rows/s)");
 
     if report.failure.is_some() {
         // Write threshold failure already recorded.
@@ -1017,7 +1013,9 @@ fn main() {
             failed |= capacity_report.status.starts_with("failed");
             report.capacity.push(capacity_report);
         } else {
-            eprintln!("[bench] TS_BENCH_CRUD_ONLY=1 set; skipping HNSW and capacity for scale={scale}");
+            eprintln!(
+                "[bench] TS_BENCH_CRUD_ONLY=1 set; skipping HNSW and capacity for scale={scale}"
+            );
         }
 
         let crud_report = run_crud_benchmark(scale, &mut system);

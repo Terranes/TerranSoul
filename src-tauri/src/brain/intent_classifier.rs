@@ -40,7 +40,7 @@ use crate::brain::{BrainMode, OllamaAgent, ProviderRotator};
 /// long enough that Pollinations / Groq routinely reply (typical ~700 ms)
 /// but short enough that a hung connection never noticeably stalls a chat
 /// turn. Tune this in lockstep with the design doc.
-pub const CLASSIFY_TIMEOUT: Duration = Duration::from_secs(3);
+pub const CLASSIFY_TIMEOUT: Duration = Duration::from_millis(1500);
 
 /// How long to remember a previous classification for the exact same trimmed
 /// input. Avoids double-classifying when the user retries or when the
@@ -148,6 +148,19 @@ pub fn clear_cache() {
     if let Ok(mut map) = cache().lock() {
         map.clear();
     }
+}
+
+/// Short content-light turns should not spend a LocalLLM request on intent
+/// routing. They are ordinary chat by default, and letting the classifier run
+/// before/alongside the real stream can put the user reply behind another
+/// Ollama generation.
+pub fn should_use_fast_chat_path(text: &str) -> bool {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    tokens.len() <= 3 && tokens.iter().all(|token| token.chars().count() <= 5)
 }
 
 /// System prompt that forces the LLM to reply with a single JSON object
@@ -373,6 +386,10 @@ pub async fn classify_user_intent(
         return IntentDecision::Unknown;
     }
 
+    if should_use_fast_chat_path(trimmed) {
+        return IntentDecision::Chat;
+    }
+
     let key = cache_key(trimmed);
     if let Some(cached) = cache_get(&key) {
         return cached;
@@ -489,6 +506,20 @@ mod tests {
     }
 
     #[test]
+    fn fast_chat_path_skips_tiny_turns() {
+        assert!(should_use_fast_chat_path("Hi"));
+        assert!(should_use_fast_chat_path("Hello"));
+        assert!(should_use_fast_chat_path("OK"));
+        assert!(should_use_fast_chat_path("who are you"));
+        assert!(!should_use_fast_chat_path(
+            "explain Vietnamese contract law"
+        ));
+        assert!(!should_use_fast_chat_path(
+            "learn from my provided documents"
+        ));
+    }
+
+    #[test]
     fn missing_topic_falls_back_to_input() {
         let d = parse_decision(r#"{"kind":"learn_with_docs"}"#, "Learn X from my notes");
         assert_eq!(
@@ -590,12 +621,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn no_brain_mode_is_unknown() {
+    async fn fast_chat_path_returns_chat_without_brain() {
         clear_cache();
         let r = rotator();
         assert_eq!(
             classify_user_intent("hello", None, &r).await,
-            IntentDecision::Unknown
+            IntentDecision::Chat
         );
     }
 

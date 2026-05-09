@@ -349,6 +349,17 @@ pub struct AppSettings {
     /// Takes effect on next app restart.
     #[serde(default = "default_code_index_mmap_mb")]
     pub code_index_mmap_mb: u32,
+
+    /// User-defined context folders for knowledge ingestion. Each folder
+    /// is scanned recursively for supported file types (.md, .txt, .json,
+    /// .csv, .xml, .html, .rst, .adoc, .pdf, .log) and ingested into the
+    /// brain's long-term memory with `source_url = "ctx-folder:<path>"`.
+    ///
+    /// **Not recommended for large trees** — scanning is brute-force
+    /// (like Copilot / Claude workspace indexing) and can be slow for
+    /// folders with thousands of files. A warning is shown in the UI.
+    #[serde(default)]
+    pub context_folders: Vec<ContextFolder>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -357,6 +368,29 @@ pub enum ObsidianLayout {
     #[default]
     Flat,
     Para,
+}
+
+/// A user-defined folder that is scanned for documents and ingested
+/// into TerranSoul's brain memory. Similar to how Copilot / Claude
+/// index a workspace folder, but with explicit opt-in and a warning
+/// about brute-force cost.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextFolder {
+    /// Absolute path to the folder on disk.
+    pub path: String,
+    /// User-assigned label (defaults to the folder basename).
+    #[serde(default)]
+    pub label: String,
+    /// Whether this folder is currently active for sync. Disabled folders
+    /// are kept in settings but skipped during `sync_context_folders`.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Unix-ms timestamp of the last successful sync.
+    #[serde(default)]
+    pub last_synced_at: u64,
+    /// Number of files ingested in the last sync.
+    #[serde(default)]
+    pub last_file_count: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -533,6 +567,7 @@ impl Default for AppSettings {
             sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         }
     }
 }
@@ -715,6 +750,7 @@ mod tests {
             sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

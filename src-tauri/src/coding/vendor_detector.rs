@@ -469,20 +469,13 @@ const ASSET_EXTENSIONS: &[&str] = &[
     // Images
     "png", "jpg", "jpeg", "gif", "webp", "svg", "ico", "bmp", "tiff", "tif", "avif",
     // Fonts
-    "woff", "woff2", "ttf", "otf", "eot",
-    // Audio
-    "mp3", "wav", "ogg", "flac", "aac", "m4a",
-    // Video
-    "mp4", "webm", "avi", "mov", "mkv",
-    // Archives
-    "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
-    // Binary data
-    "bin", "dat", "db", "sqlite", "sqlite3",
-    // Documents (non-code)
-    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-    // 3D models / VRM
-    "vrm", "glb", "gltf", "fbx", "obj", "vrma",
-    // Other binary
+    "woff", "woff2", "ttf", "otf", "eot", // Audio
+    "mp3", "wav", "ogg", "flac", "aac", "m4a", // Video
+    "mp4", "webm", "avi", "mov", "mkv", // Archives
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar", // Binary data
+    "bin", "dat", "db", "sqlite", "sqlite3", // Documents (non-code)
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx", // 3D models / VRM
+    "vrm", "glb", "gltf", "fbx", "obj", "vrma", // Other binary
     "exe", "dll", "so", "dylib", "wasm",
 ];
 
@@ -554,7 +547,10 @@ mod tests {
     #[test]
     fn vendor_paths_detected() {
         let det = VendorDetector::empty();
-        assert_eq!(det.classify("node_modules/lodash/index.js"), FileTier::Vendor);
+        assert_eq!(
+            det.classify("node_modules/lodash/index.js"),
+            FileTier::Vendor
+        );
         assert_eq!(det.classify("vendor/autoload.php"), FileTier::Vendor);
         assert_eq!(det.classify("third_party/lib.c"), FileTier::Vendor);
         assert_eq!(det.classify("src/utils.min.js"), FileTier::Vendor);
@@ -569,7 +565,10 @@ mod tests {
         std::fs::write(dir.path().join("Cargo.toml"), "[package]").unwrap();
 
         let det = VendorDetector::new(dir.path());
-        assert_eq!(det.classify("node_modules/react/index.js"), FileTier::Vendor);
+        assert_eq!(
+            det.classify("node_modules/react/index.js"),
+            FileTier::Vendor
+        );
         assert_eq!(det.classify("target/debug/build/foo.rs"), FileTier::Vendor);
         assert_eq!(det.classify("src/main.rs"), FileTier::App);
     }

@@ -6,6 +6,36 @@ use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
 
+/// Decide whether to skip the RAG pipeline (embed + hybrid search) for a
+/// trivial query. Skipping saves 400-1500 ms on cold-embed paths because
+/// loading the embed model would otherwise evict the chat model from VRAM.
+///
+/// Skip when ANY of the following is true:
+///   - Memory store is empty (nothing to retrieve)
+///   - Query is a short greeting / acknowledgment with no content words
+///     (≤ 3 tokens AND every token is shorter than 5 chars), so no
+///     keyword would match anyway
+///
+/// Returns `true` when RAG should be SKIPPED.
+pub(crate) fn should_skip_rag(query: &str, memory_count: i64) -> bool {
+    if memory_count == 0 {
+        return true;
+    }
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    // Trivial greeting heuristic: very short input where no token is long
+    // enough to be a meaningful keyword. The hybrid scorer drops words
+    // shorter than 3 chars; words ≤ 5 are usually stop-words for greetings
+    // like "Hi", "Hello", "Thanks", "OK", "Yes", "No".
+    if tokens.len() <= 3 && tokens.iter().all(|t| t.chars().count() <= 5) {
+        return true;
+    }
+    false
+}
+
 /// A single streamed chunk emitted via Tauri events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LlmChunk {
@@ -278,6 +308,9 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         return Err("Message cannot be empty".to_string());
     }
 
+    // Mark chat activity so background LocalOllama embeddings stay paused.
+    state.mark_chat_activity_now();
+
     // Add user message to conversation
     let user_msg = crate::commands::chat::Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -535,18 +568,28 @@ async fn stream_openai_api<R: tauri::Runtime>(
     // get real vector RAG instead of keyword-only retrieval.
     // Memories below the user-tunable relevance threshold are skipped
     // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
+    //
+    // RAG gate (perf): skip embed + search for trivial queries to save a
+    // cloud round-trip on greetings and acknowledgments.
+    let memory_count = state.memory_store.lock().map(|s| s.count()).unwrap_or(0);
+    let skip_rag = should_skip_rag(user_query, memory_count);
+
     let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
     let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
-    let query_emb =
-        crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref())
-            .await;
+    let query_emb = if skip_rag {
+        None
+    } else {
+        crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref()).await
+    };
 
     let threshold = state
         .app_settings
         .lock()
         .map(|s| s.relevance_threshold)
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
-    let relevant: Vec<crate::memory::MemoryEntry> = {
+    let relevant: Vec<crate::memory::MemoryEntry> = if skip_rag {
+        vec![]
+    } else {
         match state.memory_store.lock() {
             Ok(store) => store
                 .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
@@ -696,22 +739,30 @@ async fn stream_ollama<R: tauri::Runtime>(
         .map(|(_, content)| content.as_str())
         .unwrap_or(_message);
 
-    // Hybrid search: vector similarity + keywords + recency + importance + decay.
-    // When embeddings exist, vector component dominates (weight 0.40).
-    // Falls back gracefully to keyword-only when no embeddings available.
-    // Memories below the user-tunable relevance threshold are skipped
-    // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
-    let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
+    // Hybrid search: keyword + recency + importance + decay scoring.
+    // IMPORTANT: For LocalOllama we NEVER call embed_text() in the
+    // streaming hot-path. Loading the embedding model (nomic-embed-text)
+    // would evict the chat model from VRAM, causing 5-15s cold-start
+    // on the next chat generation. Instead we rely on keyword-only
+    // hybrid search which is near-instant (<5ms) and avoids any model
+    // contention. This guarantees <1s TTFT for ALL messages.
+    let memory_count = state.memory_store.lock().map(|s| s.count()).unwrap_or(0);
+    // Skip RAG entirely for content-light turns (e.g. "Hi", "ok", "?")
+    // — they don't benefit from memory retrieval and any work here adds
+    // latency to the first chunk.
+    let skip_rag = should_skip_rag(user_query, memory_count);
 
     let threshold = state
         .app_settings
         .lock()
         .map(|s| s.relevance_threshold)
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
-    let relevant: Vec<crate::memory::MemoryEntry> = {
+    let relevant: Vec<crate::memory::MemoryEntry> = if skip_rag {
+        vec![]
+    } else {
         match state.memory_store.lock() {
             Ok(store) => store
-                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
+                .hybrid_search_with_threshold(user_query, None, 5, threshold)
                 .unwrap_or_default(),
             Err(_) => vec![],
         }
@@ -760,6 +811,11 @@ async fn stream_ollama<R: tauri::Runtime>(
         "model": model,
         "messages": messages,
         "stream": true,
+        "think": false,
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0.7,
+        },
     });
 
     let client = &state.ollama_client;
@@ -991,6 +1047,12 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
             "model": model,
             "messages": messages,
             "stream": true,
+            "think": false,
+            "keep_alive": "30m",
+            "options": {
+                "num_predict": 150,
+                "temperature": 0.7,
+            },
         });
 
         let client = &state.ollama_client;
@@ -1187,6 +1249,38 @@ fn store_assistant_message(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn skip_rag_when_memory_empty() {
+        assert!(should_skip_rag("Anything goes here", 0));
+    }
+
+    #[test]
+    fn skip_rag_for_short_greetings() {
+        assert!(should_skip_rag("Hi", 1000));
+        assert!(should_skip_rag("Hello", 1000));
+        assert!(should_skip_rag("Hey", 1000));
+        assert!(should_skip_rag("Yes", 1000));
+        assert!(should_skip_rag("No", 1000));
+        assert!(should_skip_rag("OK", 1000));
+        assert!(should_skip_rag("ok", 1000));
+        assert!(should_skip_rag("?", 1000));
+    }
+
+    #[test]
+    fn skip_rag_for_empty_or_whitespace() {
+        assert!(should_skip_rag("", 1000));
+        assert!(should_skip_rag("   ", 1000));
+    }
+
+    #[test]
+    fn run_rag_for_real_questions() {
+        // Has at least one ≥5-char content word — RAG runs
+        assert!(!should_skip_rag("explain Vietnamese contract law", 1000));
+        assert!(!should_skip_rag("what is HyDE retrieval", 1000));
+        assert!(!should_skip_rag("Hello there friend", 1000));
+        assert!(!should_skip_rag("Hi there explain things", 1000));
+    }
 
     #[test]
     fn llm_chunk_serializes() {
@@ -1486,6 +1580,92 @@ mod tests {
         assert_eq!(partial_prefix_len("hello<anim", "<anim>"), 5);
         assert_eq!(partial_prefix_len("hello", "<anim>"), 0);
         assert_eq!(partial_prefix_len("", "<anim>"), 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local Ollama with TERRANSOUL_TEST_OLLAMA_MODEL or gemma4:e4b"]
+    async fn local_ollama_hi_real_backend_first_chunk_under_1s() {
+        use crate::brain::brain_config::BrainMode;
+        use crate::brain::ollama_agent::OLLAMA_BASE_URL;
+        use crate::AppState;
+        use std::sync::{Arc, Mutex as StdMutex};
+        use std::time::{Duration, Instant};
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::{Listener, Manager};
+
+        let model = std::env::var("TERRANSOUL_TEST_OLLAMA_MODEL")
+            .unwrap_or_else(|_| "gemma4:e4b".to_string());
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(60))
+            .build()
+            .expect("reqwest client");
+
+        let warm_body = serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": "hi" }],
+            "stream": false,
+            "think": false,
+            "options": { "num_predict": 1 },
+            "keep_alive": "30m",
+        });
+        let warm_status = client
+            .post(format!("{OLLAMA_BASE_URL}/api/chat"))
+            .json(&warm_body)
+            .send()
+            .await
+            .expect("Ollama warm-up request failed")
+            .status();
+        assert!(warm_status.is_success(), "Ollama warm-up status {warm_status}");
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+        let state = AppState::for_test();
+        {
+            *state.brain_mode.lock().unwrap() = Some(BrainMode::LocalOllama {
+                model: model.clone(),
+            });
+            *state.active_brain.lock().unwrap() = Some(model.clone());
+        }
+        handle.manage(state);
+
+        let first_text_ms: Arc<StdMutex<Option<u128>>> = Arc::new(StdMutex::new(None));
+        let done_signal = Arc::new(tokio::sync::Notify::new());
+        let started = Instant::now();
+        let first_cb = Arc::clone(&first_text_ms);
+        let done_cb = Arc::clone(&done_signal);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(chunk) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                if !chunk.done && !chunk.text.is_empty() {
+                    let mut first = first_cb.lock().unwrap();
+                    if first.is_none() {
+                        *first = Some(started.elapsed().as_millis());
+                    }
+                }
+                if chunk.done {
+                    done_cb.notify_one();
+                }
+            }
+        });
+
+        let state_ref: tauri::State<'_, AppState> = handle.state();
+        run_chat_stream("Hi".to_string(), &handle, state_ref.inner())
+            .await
+            .expect("run_chat_stream");
+
+        tokio::select! {
+            _ = done_signal.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(10)) => panic!("timed out waiting for llm-chunk done"),
+        }
+
+        let first = *first_text_ms.lock().unwrap();
+        let first = first.expect("expected at least one non-empty llm-chunk");
+        eprintln!("[real-backend-hi] first_chunk={first}ms model={model}");
+        assert!(
+            first < 1_000,
+            "first real backend llm-chunk took {first}ms; expected <1000ms"
+        );
     }
 
     // ── Headless end-to-end stream verification (Linux only) ──────────────────

@@ -736,7 +736,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watchEffect } from 'vue';
 import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';

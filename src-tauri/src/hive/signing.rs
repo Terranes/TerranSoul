@@ -10,9 +10,8 @@ use super::protocol::{HiveEnvelope, MsgType, HIVE_PROTOCOL_VERSION};
 ///
 /// Format: `version (1) ∥ msg_type (1) ∥ sender_id (var) ∥ timestamp (8 LE) ∥ hlc_counter (8 LE) ∥ payload (var)`
 pub fn sign_input(envelope: &HiveEnvelope) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(
-        1 + 1 + envelope.sender_id.len() + 8 + 8 + envelope.payload.len(),
-    );
+    let mut buf =
+        Vec::with_capacity(1 + 1 + envelope.sender_id.len() + 8 + 8 + envelope.payload.len());
     buf.push(envelope.version);
     buf.push(envelope.msg_type as u8);
     buf.extend_from_slice(envelope.sender_id.as_bytes());
@@ -49,8 +48,8 @@ pub fn verify_envelope(envelope: &HiveEnvelope) -> Result<(), String> {
         .try_into()
         .map_err(|_| "Invalid public key length (expected 32 bytes)".to_string())?;
 
-    let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes)
-        .map_err(|e| format!("Invalid public key: {e}"))?;
+    let verifying_key =
+        VerifyingKey::from_bytes(&pubkey_bytes).map_err(|e| format!("Invalid public key: {e}"))?;
 
     let sig_bytes: [u8; 64] = envelope
         .signature
@@ -135,7 +134,9 @@ mod tests {
 
         let result = verify_envelope(&envelope);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Signature verification failed"));
+        assert!(result
+            .unwrap_err()
+            .contains("Signature verification failed"));
     }
 
     #[test]

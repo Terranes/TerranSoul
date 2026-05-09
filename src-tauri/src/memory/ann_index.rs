@@ -126,7 +126,10 @@ impl AnnIndex {
     }
 
     /// Create a new in-memory ANN index with specified quantization.
-    pub fn new_quantized(dimensions: usize, quantization: EmbeddingQuantization) -> Result<Self, String> {
+    pub fn new_quantized(
+        dimensions: usize,
+        quantization: EmbeddingQuantization,
+    ) -> Result<Self, String> {
         #[cfg(feature = "native-ann")]
         {
             let options = IndexOptions {
@@ -338,7 +341,8 @@ impl AnnIndex {
             if self.index.contains(id as u64) {
                 self.index.remove(id as u64).map_err(|e| e.to_string())?;
                 self.bump_dirty();
-                self.removed_since_compact.set(self.removed_since_compact.get() + 1);
+                self.removed_since_compact
+                    .set(self.removed_since_compact.get() + 1);
             }
         }
         #[cfg(not(feature = "native-ann"))]
@@ -346,7 +350,8 @@ impl AnnIndex {
             let mut mobile = self.mobile.borrow_mut();
             if mobile.remove(id) {
                 self.bump_dirty();
-                self.removed_since_compact.set(self.removed_since_compact.get() + 1);
+                self.removed_since_compact
+                    .set(self.removed_since_compact.get() + 1);
             }
         }
         Ok(())
@@ -993,8 +998,7 @@ mod tests {
         // Recall@10: count how many of f32 top-10 appear in i8 top-10.
         let f32_ids: std::collections::HashSet<i64> =
             f32_results.iter().map(|(id, _)| *id).collect();
-        let i8_ids: std::collections::HashSet<i64> =
-            i8_results.iter().map(|(id, _)| *id).collect();
+        let i8_ids: std::collections::HashSet<i64> = i8_results.iter().map(|(id, _)| *id).collect();
         let overlap = f32_ids.intersection(&i8_ids).count();
         // Budget: at least 9 of 10 should match (90% recall).
         assert!(

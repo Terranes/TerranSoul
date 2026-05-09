@@ -253,7 +253,11 @@ fn quantize_i8(vec: &[f32]) -> Vec<i8> {
 
 /// Approximate cosine similarity between two i8-quantized vectors.
 fn quantized_cosine(a: &[i8], a_norm: f32, b: &[i8], b_norm: f32) -> f32 {
-    let dot: i32 = a.iter().zip(b.iter()).map(|(&x, &y)| x as i32 * y as i32).sum();
+    let dot: i32 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| x as i32 * y as i32)
+        .sum();
     let denom = a_norm * b_norm;
     if denom == 0.0 {
         return 0.0;
@@ -277,11 +281,7 @@ fn l2_norm_from_i8(vec: &[i8]) -> f32 {
 // ── K-means ──────────────────────────────────────────────────────────────────
 
 /// Simple k-means: initialize centroids with k-means++ sampling, then iterate.
-fn kmeans_init_and_run(
-    data: &[(i64, Vec<f32>)],
-    k: usize,
-    dims: usize,
-) -> Vec<Vec<f32>> {
+fn kmeans_init_and_run(data: &[(i64, Vec<f32>)], k: usize, dims: usize) -> Vec<Vec<f32>> {
     if data.is_empty() || k == 0 {
         return vec![];
     }
@@ -466,7 +466,7 @@ mod tests {
         let quantized = quantize_i8(&original);
         // Check that max magnitude maps to ±127.
         assert_eq!(quantized[3], -127); // -1.0 is max abs
-        // Check direction is preserved.
+                                        // Check direction is preserved.
         assert!(quantized[0] > 0);
         assert!(quantized[1] < 0);
         assert!(quantized[4] == 0);

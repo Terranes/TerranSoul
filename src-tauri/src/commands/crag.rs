@@ -205,6 +205,8 @@ async fn call_llm_simple(
         "model": model,
         "messages": messages,
         "stream": false,
+        "think": false,
+        "keep_alive": "30m",
     });
 
     let resp = state

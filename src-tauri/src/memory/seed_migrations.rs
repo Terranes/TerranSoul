@@ -160,21 +160,15 @@ pub fn compiled_migrations() -> Vec<Migration> {
         ),
         (
             "007_phase_41_2_3_result",
-            include_str!(
-                "../../../mcp-data/shared/migrations/007_phase_41_2_3_result.sql"
-            ),
+            include_str!("../../../mcp-data/shared/migrations/007_phase_41_2_3_result.sql"),
         ),
         (
             "008_phase_41_audit_refresh",
-            include_str!(
-                "../../../mcp-data/shared/migrations/008_phase_41_audit_refresh.sql"
-            ),
+            include_str!("../../../mcp-data/shared/migrations/008_phase_41_audit_refresh.sql"),
         ),
         (
             "009_benchmark_doc_refresh",
-            include_str!(
-                "../../../mcp-data/shared/migrations/009_benchmark_doc_refresh.sql"
-            ),
+            include_str!("../../../mcp-data/shared/migrations/009_benchmark_doc_refresh.sql"),
         ),
         (
             "010_phase_41_plan_status_refresh",
@@ -184,14 +178,34 @@ pub fn compiled_migrations() -> Vec<Migration> {
         ),
         (
             "011_phase_41_5_cursor_reads",
-            include_str!(
-                "../../../mcp-data/shared/migrations/011_phase_41_5_cursor_reads.sql"
-            ),
+            include_str!("../../../mcp-data/shared/migrations/011_phase_41_5_cursor_reads.sql"),
         ),
         (
             "012_phase_41_6_reembed_on_update",
             include_str!(
                 "../../../mcp-data/shared/migrations/012_phase_41_6_reembed_on_update.sql"
+            ),
+        ),
+        (
+            "013_phase_41_7_worker_concurrency",
+            include_str!(
+                "../../../mcp-data/shared/migrations/013_phase_41_7_worker_concurrency.sql"
+            ),
+        ),
+        (
+            "014_phase_41_8_multi_model_embeddings",
+            include_str!(
+                "../../../mcp-data/shared/migrations/014_phase_41_8_multi_model_embeddings.sql"
+            ),
+        ),
+        (
+            "015_local_llm_fast_chat_path",
+            include_str!("../../../mcp-data/shared/migrations/015_local_llm_fast_chat_path.sql"),
+        ),
+        (
+            "016_local_ollama_vram_latency_guard",
+            include_str!(
+                "../../../mcp-data/shared/migrations/016_local_ollama_vram_latency_guard.sql"
             ),
         ),
     ];

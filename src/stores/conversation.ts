@@ -62,29 +62,24 @@ export function isStopTranslatorModeRequest(userInput: string): boolean {
 
 
 /**
- * Keyword-based sentiment detection from text content.
- * Used as a fallback when the LLM response doesn't include emotion tags.
- * Checks both user input and assistant response for emotional cues.
+ * Default sentiment when the LLM does not emit an `<anim>` emotion tag.
+ * The LLM decides emotion via `<anim>{"emotion":"..."}` in the stream;
+ * this function is only the last-resort fallback and always returns neutral.
  */
-export function detectSentiment(text: string): 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral' {
-  const lower = text.toLowerCase();
-
-  if (lower.includes('angry') || lower.includes('furious') || lower.includes('annoyed') || lower.includes('frustrat')) {
-    return 'angry';
-  }
-  if (lower.includes('surprise') || lower.includes('wow') || lower.includes('unexpected') || lower.includes('amazing') || lower.includes('whoa') || lower.includes('omg')) {
-    return 'surprised';
-  }
-  if (lower.includes('relax') || lower.includes('calm') || lower.includes('peaceful') || lower.includes('chill') || lower.includes('meditat')) {
-    return 'relaxed';
-  }
-  if (lower.includes('sad') || lower.includes('bad') || lower.includes('hate') || lower.includes('sorry') || lower.includes('cry')) {
-    return 'sad';
-  }
-  if (lower.includes('hello') || /\bhi\b/.test(lower) || lower.startsWith('hey') || lower.includes('happy') || lower.includes('great') || lower.includes('awesome') || lower.includes('love')) {
-    return 'happy';
-  }
+export function detectSentiment(_text: string): 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral' {
   return 'neutral';
+}
+
+/**
+ * Returns true for short content-light chat turns that should stay on the
+ * fastest possible path. These turns are too small to benefit from RAG or an
+ * LLM intent-classifier pass, and running either can contend with LocalLLM.
+ */
+export function shouldUseFastChatPath(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  const tokens = trimmed.split(/\s+/);
+  return tokens.length <= 3 && tokens.every((token) => Array.from(token).length <= 5);
 }
 
 /**
@@ -121,38 +116,15 @@ function applyWarningAsQuest(msg: Message, _warning: string): void {
   ];
 }
 
-/** Browser-side persona fallback when no brain is configured at all. */
-function createPersonaResponse(content: string): Message {
-  const sentiment = detectSentiment(content);
-  let response: string;
-
-  switch (sentiment) {
-    case 'angry':
-      response = "I can sense your frustration. Take a deep breath — I'm here to help. 🔥";
-      break;
-    case 'surprised':
-      response = "Wow, that's surprising! Tell me more! 😮";
-      break;
-    case 'relaxed':
-      response = "That sounds so peaceful. Let's take a moment to enjoy the calm. 🧘";
-      break;
-    case 'sad':
-      response = "I understand you're going through something difficult. I'm here for you. 💙";
-      break;
-    case 'happy':
-      response = "That's wonderful to hear! Your positive energy is contagious! ✨";
-      break;
-    default:
-      response = `Hello! I'm TerranSoul. Please configure a brain (free cloud API or paid API) in the Marketplace so I can have a real conversation with you!`;
-      break;
-  }
-
+/** Browser-side persona fallback when no brain is configured at all.
+ *  Without an LLM, no emotion inference is possible — always neutral. */
+function createPersonaResponse(_content: string): Message {
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
-    content: response,
+    content: 'Hello! I\'m TerranSoul. Please configure a brain (free cloud API or paid API) in the Marketplace so I can have a real conversation with you!',
     agentName: 'TerranSoul',
-    sentiment,
+    sentiment: 'neutral',
     timestamp: Date.now(),
   };
 }
@@ -1728,47 +1700,62 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
-    // ── LLM-powered intent classification ──────────────────────────────
-    // Replaces three regex detectors that used to short-circuit here.
-    // The configured brain (Free → Paid → Local) decides what to do;
-    // failure (no brain, timeout, malformed JSON) maps to `unknown` and
-    // falls back to the install-all path so future turns work offline.
-    const decision = await classifyIntent(content, brain.hasBrain);
-    switch (decision.kind) {
-      case 'gated_setup': {
-        messages.value.push(executeGatedSetupCommand({ type: decision.setup }));
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'learn_with_docs': {
-        startLearnDocsFlow(decision.topic);
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'teach_ingest': {
-        pushTeachScholarQuestForTopic(decision.topic);
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'unknown': {
-        // Classifier couldn't decide (no brain, timeout, malformed JSON).
-        // The safe default is to fall through to the streaming chat path —
-        // never assume the user wants to learn from documents just because
-        // the classifier failed. The persona-fallback UX will handle the
-        // turn if no brain is configured.
-        break;
-      }
-      case 'chat':
-      default:
-        // Fall through to the normal streaming chat path below.
-        break;
+    // ── LLM-powered intent classification (non-blocking) ─────────────
+    // Fire classification concurrently with the streaming path so casual
+    // chat messages (the ~95% case) don't pay a 0-3s classification
+    // penalty.  If the classifier comes back with a side-channel intent
+    // (learn_with_docs, teach_ingest, gated_setup) we abort the stream
+    // and handle it.  For `chat` / `unknown` the stream is already
+    // running — zero wasted time.
+    //
+    // For LocalOllama: SKIP the classifier entirely. The classifier
+    // uses the same Ollama model as chat, and concurrent requests to
+    // the same model serialize in Ollama — adding 1-3s of contention
+    // before the first chat token arrives. All messages go straight
+    // to streaming for guaranteed <1s TTFT.
+    const isLocalLlm = brain.brainMode?.mode === 'local_ollama' || brain.brainMode?.mode === 'local_lm_studio';
+    const classifyPromise: Promise<IntentDecision> = (isLocalLlm || shouldUseFastChatPath(content))
+      ? Promise.resolve({ kind: 'chat' })
+      : classifyIntent(content, brain.hasBrain);
+    let classifyDecision: IntentDecision | null = null;
+    // Check synchronously — if the cache already has the answer it
+    // resolves immediately (microtask), so we can short-circuit before
+    // even starting the stream for non-chat intents.
+    const quickDecision = await Promise.race([
+      classifyPromise.then((d) => d),
+      // 0ms timeout: only picks up already-resolved (cached) results
+      new Promise<null>((r) => setTimeout(() => r(null), 0)),
+    ]);
+    if (quickDecision && quickDecision.kind !== 'chat' && quickDecision.kind !== 'unknown') {
+      classifyDecision = quickDecision;
     }
+    if (classifyDecision) {
+      switch (classifyDecision.kind) {
+        case 'gated_setup': {
+          messages.value.push(executeGatedSetupCommand({ type: classifyDecision.setup }));
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+        case 'learn_with_docs': {
+          startLearnDocsFlow(classifyDecision.topic);
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+        case 'teach_ingest': {
+          pushTeachScholarQuestForTopic(classifyDecision.topic);
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+      }
+    }
+    // For non-cached results, classification continues in the background
+    // and is checked after streaming starts (see below).
 
 
     if (import.meta.env.VITE_E2E && !isTauriAvailable()) {
@@ -1808,8 +1795,35 @@ export const useConversationStore = defineStore('conversation', () => {
         // Don't set isStreaming immediately - wait for first chunk
         // Keep character in thinking state until text actually arrives
 
+        // Background classifier: if a non-chat intent arrives before any
+        // text has streamed, abort the stream and handle the intent.
+        let bgIntentHandled = false;
+        if (!classifyDecision) {
+          classifyPromise.then((d) => {
+            if (bgIntentHandled) return;
+            if (d.kind !== 'chat' && d.kind !== 'unknown' && !streaming.streamText) {
+              bgIntentHandled = true;
+              activeAbortController?.abort();
+              switch (d.kind) {
+                case 'gated_setup':
+                  messages.value.push(executeGatedSetupCommand({ type: d.setup }));
+                  break;
+                case 'learn_with_docs':
+                  startLearnDocsFlow(d.topic);
+                  break;
+                case 'teach_ingest':
+                  pushTeachScholarQuestForTopic(d.topic);
+                  break;
+              }
+              isThinking.value = false;
+              generationActive.value = false;
+              void drainQueue();
+            }
+          }).catch(() => { /* classifier errors are non-fatal */ });
+        }
+
         // While `invoke` blocks, mirror `streaming.streamText` into this
-        // store's `streamingText` at ~50ms intervals so reactive UI stays live.
+        // store's `streamingText` at ~16ms intervals so reactive UI stays live.
         // Also checks the abort signal for user-initiated stop.
         const abortSignal = activeAbortController?.signal;
         const syncInterval = setInterval(() => {
@@ -1820,9 +1834,9 @@ export const useConversationStore = defineStore('conversation', () => {
           } else if (!streaming.isStreaming && isStreaming.value) {
             isStreaming.value = false;
           }
-        }, 50);
+        }, 16);
 
-        const TAURI_STREAM_TIMEOUT_MS = 60_000; // 60s timeout
+        const TAURI_STREAM_TIMEOUT_MS = 180_000; // 180s timeout (large models need cold-start loading)
         let sendOk = false;
         let wasAborted = false;
         try {
@@ -1933,7 +1947,7 @@ export const useConversationStore = defineStore('conversation', () => {
       } catch {
         // Tauri streaming failed — fall back to non-streaming invoke with timeout
         try {
-          const FALLBACK_TIMEOUT_MS = 30_000;
+          const FALLBACK_TIMEOUT_MS = 120_000;
           const response = await Promise.race([
             invoke<Message>('send_message', {
               message: content,
@@ -1976,13 +1990,15 @@ export const useConversationStore = defineStore('conversation', () => {
 
         // RAG: fetch relevant memories from Tauri or browser-native storage.
         let memoryBlock = '';
-        try {
-          const results = await useMemoryStore().hybridSearch(content, 5);
-          if (results && results.length > 0) {
-            memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+        if (!shouldUseFastChatPath(content)) {
+          try {
+            const results = await useMemoryStore().hybridSearch(content, 5);
+            if (results && results.length > 0) {
+              memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+            }
+          } catch {
+            // No memories — continue without RAG.
           }
-        } catch {
-          // No memories — continue without RAG.
         }
 
         // Try the primary provider, then rotate to next healthy on rate-limit

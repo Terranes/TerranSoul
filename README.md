@@ -96,7 +96,7 @@ The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
 
 - **3D VRM Avatar** — lip sync, expressions, motion capture, spring-bone physics. Pet mode floats on your desktop.
 - **Multi-Provider Brain** — Free cloud (Pollinations/OpenRouter/Gemini), paid (OpenAI/Anthropic/Groq), or local Ollama. Switch anytime.
-- **Persistent Memory + RAG** — hybrid 6-signal search, RRF fusion, HyDE, cross-encoder reranker, knowledge graph with typed edges. 1M+ entries benchmarked.
+- **Persistent Memory + RAG** — hybrid 6-signal search, RRF fusion, HyDE, cross-encoder reranker, knowledge graph with typed edges, and a fast chat path that skips retrieval for greetings so LocalLLM replies stay under 1s when warm. 1M+ entries benchmarked.
 - **Knowledge Wiki** — `/digest`, `/spotlight`, `/serendipity`, `/revisit` commands for graph curation.
 - **Voice** — ASR (Web Speech, Groq Whisper, OpenAI Whisper) + TTS (Web Speech, OpenAI). Full lip-sync pipeline.
 - **Skill Tree** — 40+ skills across 5 categories. RPG-style quest progression, auto-detection, combo unlocks.
@@ -134,6 +134,10 @@ The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
 | **Free API** | Cloud (free-tier) | Zero config | Quick start, no cost |
 | **Paid API** | Cloud (your key) | API key | Best quality (GPT-4o, Claude, etc.) |
 | **Local Ollama** | Fully offline | ~2 GB download | Maximum privacy, no internet |
+
+Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions still use the full memory pipeline.
+
+Local Ollama hardware recommendations favor responsive interactive models by default; larger catalogue models remain selectable for users who prefer slower, heavier reasoning runs.
 
 ---
 
@@ -189,8 +193,8 @@ Ports: `7421` (release app), `7422` (dev), `7423` (headless `npm run mcp`).
 ## Development
 
 ```bash
-npm run dev                    # Vite dev server (:1420)
-cargo tauri dev                # Full app with hot-reload
+npm run dev                    # Kill all + start full Tauri app (Vite + Rust)
+npm run dev:vite               # Vite-only dev server (:1420)
 npx vitest run                 # Frontend tests (1738 passing)
 cargo test                     # Backend tests (2383 passing)
 cargo clippy -- -D warnings    # Lint

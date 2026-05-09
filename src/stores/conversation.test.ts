@@ -11,7 +11,12 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
-import { detectTranslatorModeRequest, isStopTranslatorModeRequest, useConversationStore } from './conversation';
+import {
+  detectTranslatorModeRequest,
+  isStopTranslatorModeRequest,
+  shouldUseFastChatPath,
+  useConversationStore,
+} from './conversation';
 import { useBrainStore } from './brain';
 import { useAiDecisionPolicyStore } from './ai-decision-policy';
 import { useSkillTreeStore } from './skill-tree';
@@ -61,14 +66,14 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.messages[0].content).toBe('hello');
     expect(store.messages[1].role).toBe('assistant');
     expect(store.messages[1].agentName).toBe('TerranSoul');
-    expect(store.messages[1].sentiment).toBe('happy'); // "hello" triggers happy
+    expect(store.messages[1].sentiment).toBe('neutral'); // "hello" is a greeting, not happy
   });
 
-  it('persona fallback detects sadness', async () => {
+  it('persona fallback is always neutral (no LLM = no emotion)', async () => {
     const store = useConversationStore();
     await store.sendMessage('I am sad today');
 
-    expect(store.messages[1].sentiment).toBe('sad');
+    expect(store.messages[1].sentiment).toBe('neutral');
   });
 
   it('persona fallback default message no longer echoes input', async () => {
@@ -88,11 +93,11 @@ describe('conversation store — no brain (persona fallback)', () => {
     expect(store.messages[0].content).toBe('hello');
     expect(store.messages[0].role).toBe('user');
     expect(store.messages[1].role).toBe('assistant');
-    expect(store.messages[1].sentiment).toBe('happy');
+    expect(store.messages[1].sentiment).toBe('neutral');
     expect(store.messages[2].content).toBe('I feel sad');
     expect(store.messages[2].role).toBe('user');
     expect(store.messages[3].role).toBe('assistant');
-    expect(store.messages[3].sentiment).toBe('sad');
+    expect(store.messages[3].sentiment).toBe('neutral');
   });
 
   it('isThinking is set and cleared during persona fallback', async () => {
@@ -400,6 +405,34 @@ describe('conversation store — Tauri backend available', () => {
     expect(store.isStreaming).toBe(false);
   });
 
+  it('does not invoke intent classifier for fast Tauri chat turns', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'gemma4:e4b' };
+
+    const { useStreamingStore } = await import('./streaming');
+    const streaming = useStreamingStore();
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') throw new Error('classifier should not run for Hi');
+      if (cmd === 'send_message_stream') {
+        streaming.handleChunk({ text: 'Hi there!', done: false });
+        streaming.handleChunk({ text: '', done: true });
+      }
+      if (cmd === 'evaluate_auto_learn') {
+        return { should_fire: false, reason: 'test', turns_remaining: 5 };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Hi');
+
+    const commands = mockInvoke.mock.calls.map((call) => call[0]);
+    expect(commands).toContain('send_message_stream');
+    expect(commands).not.toContain('classify_intent');
+    expect(store.messages[1].content).toBe('Hi there!');
+  });
+
   it('falls back to send_message on streaming failure', async () => {
     // First call (send_message_stream) rejects
     mockInvoke.mockRejectedValueOnce(new Error('stream not supported'));
@@ -502,48 +535,33 @@ describe('conversation store — getConversation', () => {
   });
 });
 
-describe('detectSentiment — keyword-based fallback', () => {
-  it('detects happy from greetings', async () => {
+describe('detectSentiment — always neutral (LLM decides via anim tags)', () => {
+  it('always returns neutral regardless of input', async () => {
     const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('Hello!')).toBe('happy');
-    expect(detectSentiment('Hey there')).toBe('happy');
-    expect(detectSentiment('hi')).toBe('happy');
-  });
-
-  it('detects happy from positive keywords', async () => {
-    const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('I feel happy today')).toBe('happy');
-    expect(detectSentiment('That was awesome')).toBe('happy');
-    expect(detectSentiment('I love this')).toBe('happy');
-  });
-
-  it('detects sad from negative keywords', async () => {
-    const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('I feel so sad today')).toBe('sad');
-    expect(detectSentiment('This is bad')).toBe('sad');
-  });
-
-  it('detects angry from frustration keywords', async () => {
-    const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('I am so angry!')).toBe('angry');
-    expect(detectSentiment('This is frustrating')).toBe('angry');
-  });
-
-  it('detects relaxed from calm keywords', async () => {
-    const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('I want to relax')).toBe('relaxed');
-    expect(detectSentiment('So calm and peaceful')).toBe('relaxed');
-  });
-
-  it('detects surprised from exclamation keywords', async () => {
-    const { detectSentiment } = await import('./conversation');
-    expect(detectSentiment('Wow that is so surprising!')).toBe('surprised');
-    expect(detectSentiment('That was amazing')).toBe('surprised');
-  });
-
-  it('returns neutral for unknown content', async () => {
-    const { detectSentiment } = await import('./conversation');
+    // Emotion is determined by the LLM via <anim> stream tags, not keywords.
+    expect(detectSentiment('Hello!')).toBe('neutral');
+    expect(detectSentiment('I feel happy today')).toBe('neutral');
+    expect(detectSentiment('I feel so sad today')).toBe('neutral');
+    expect(detectSentiment('I am so angry!')).toBe('neutral');
+    expect(detectSentiment('I want to relax')).toBe('neutral');
+    expect(detectSentiment('Wow that is so surprising!')).toBe('neutral');
     expect(detectSentiment('What is the weather like?')).toBe('neutral');
+  });
+});
+
+describe('shouldUseFastChatPath', () => {
+  it('fast-paths short content-light chat turns', () => {
+    expect(shouldUseFastChatPath('Hi')).toBe(true);
+    expect(shouldUseFastChatPath('Hello')).toBe(true);
+    expect(shouldUseFastChatPath('OK')).toBe(true);
+    expect(shouldUseFastChatPath('who are you')).toBe(true);
+  });
+
+  it('keeps contentful and setup-like turns on the classifier/RAG path', () => {
+    expect(shouldUseFastChatPath('explain Vietnamese contract law')).toBe(false);
+    expect(shouldUseFastChatPath('provide your own context')).toBe(false);
+    expect(shouldUseFastChatPath('upgrade to Gemini model')).toBe(false);
+    expect(shouldUseFastChatPath('Learn Vietnamese laws using my provided documents')).toBe(false);
   });
 });
 

@@ -150,9 +150,7 @@ pub fn branch_sync(
             let hash = content_hash(content);
 
             // Check if existing overlay already has same hash (no re-index needed).
-            let existing = existing_overlay_files
-                .iter()
-                .find(|f| f.file == *file_path);
+            let existing = existing_overlay_files.iter().find(|f| f.file == *file_path);
             if let Some(existing) = existing {
                 if existing.hash == hash {
                     result.files_unchanged += 1;
@@ -265,10 +263,7 @@ pub fn delete_branch_overlay(
 }
 
 /// List all active overlays for a repo.
-pub fn list_overlays(
-    conn: &Connection,
-    repo_id: i64,
-) -> Result<Vec<OverlaySummary>, IndexError> {
+pub fn list_overlays(conn: &Connection, repo_id: i64) -> Result<Vec<OverlaySummary>, IndexError> {
     let mut stmt = conn.prepare(
         "SELECT base_ref, branch_ref, COUNT(*) as file_count, MAX(indexed_at) as last_indexed
          FROM code_branch_overlays
@@ -334,8 +329,7 @@ pub fn query_symbols_with_overlay(
                 ))
             })?;
 
-            let all: Vec<(Symbol, Option<i64>)> =
-                rows.filter_map(|r| r.ok()).collect();
+            let all: Vec<(Symbol, Option<i64>)> = rows.filter_map(|r| r.ok()).collect();
 
             // Filter: include overlay rows for the active branch, and base
             // rows only for files NOT in the overlay.
@@ -553,10 +547,12 @@ fn parse_file_for_overlay(
     use super::parser_registry::Language;
 
     let mut parser = super::parser_registry::create_parser(lang);
-    let tree = parser.parse(source, None).ok_or_else(|| IndexError::Parse {
-        path: file_path.to_string(),
-        detail: "tree-sitter parse returned None".to_string(),
-    })?;
+    let tree = parser
+        .parse(source, None)
+        .ok_or_else(|| IndexError::Parse {
+            path: file_path.to_string(),
+            detail: "tree-sitter parse returned None".to_string(),
+        })?;
 
     let (symbols, edges) = match lang {
         Language::Rust => {
@@ -566,7 +562,9 @@ fn parse_file_for_overlay(
             super::symbol_index::extract_ts_symbols(source, tree.root_node(), file_path)
         }
         #[allow(unreachable_patterns)]
-        other => super::parser_registry::extract_symbols(other, source, tree.root_node(), file_path),
+        other => {
+            super::parser_registry::extract_symbols(other, source, tree.root_node(), file_path)
+        }
     };
     Ok((symbols, edges))
 }
@@ -608,11 +606,9 @@ mod tests {
         let (_dir, conn) = setup_test_db();
         // Verify the table exists.
         let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM code_branch_overlays",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM code_branch_overlays", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(count, 0);
 
@@ -641,9 +637,15 @@ mod tests {
             b"fn branch_fn() {}\nfn another() {}\n".to_vec(),
         )];
 
-        let result =
-            branch_sync(&conn, repo_id, "abc123", "def456", &changed_files, &file_contents)
-                .unwrap();
+        let result = branch_sync(
+            &conn,
+            repo_id,
+            "abc123",
+            "def456",
+            &changed_files,
+            &file_contents,
+        )
+        .unwrap();
 
         assert_eq!(result.base_ref, "abc123");
         assert_eq!(result.branch_ref, "def456");
@@ -667,11 +669,16 @@ mod tests {
 
         // Branch modifies src/main.rs with "new_fn".
         let changed_files = vec!["src/main.rs".to_string()];
-        let file_contents = vec![(
-            "src/main.rs".to_string(),
-            b"fn new_fn() {}\n".to_vec(),
-        )];
-        branch_sync(&conn, repo_id, "base1", "branch1", &changed_files, &file_contents).unwrap();
+        let file_contents = vec![("src/main.rs".to_string(), b"fn new_fn() {}\n".to_vec())];
+        branch_sync(
+            &conn,
+            repo_id,
+            "base1",
+            "branch1",
+            &changed_files,
+            &file_contents,
+        )
+        .unwrap();
 
         // Query "old_fn" with overlay context — should NOT find it (file is overlaid).
         let results =
@@ -703,19 +710,14 @@ mod tests {
 
         // Create overlay data.
         let changed_files = vec!["src/main.rs".to_string()];
-        let file_contents = vec![(
-            "src/main.rs".to_string(),
-            b"fn overlay_fn() {}\n".to_vec(),
-        )];
+        let file_contents = vec![("src/main.rs".to_string(), b"fn overlay_fn() {}\n".to_vec())];
         branch_sync(&conn, repo_id, "b1", "br1", &changed_files, &file_contents).unwrap();
 
         // Query without overlay context — only base symbols visible.
-        let results =
-            query_symbols_with_overlay(&conn, repo_id, "base_fn", None, None).unwrap();
+        let results = query_symbols_with_overlay(&conn, repo_id, "base_fn", None, None).unwrap();
         assert_eq!(results.len(), 1);
 
-        let results =
-            query_symbols_with_overlay(&conn, repo_id, "overlay_fn", None, None).unwrap();
+        let results = query_symbols_with_overlay(&conn, repo_id, "overlay_fn", None, None).unwrap();
         assert!(results.is_empty());
     }
 
@@ -729,7 +731,15 @@ mod tests {
             ("src/a.rs".to_string(), b"fn a() {}\n".to_vec()),
             ("src/b.rs".to_string(), b"fn b() {}\n".to_vec()),
         ];
-        branch_sync(&conn, repo_id, "base", "feat", &changed_files, &file_contents).unwrap();
+        branch_sync(
+            &conn,
+            repo_id,
+            "base",
+            "feat",
+            &changed_files,
+            &file_contents,
+        )
+        .unwrap();
 
         // Verify data exists.
         let overlays = list_overlays(&conn, repo_id).unwrap();
@@ -752,18 +762,20 @@ mod tests {
 
         // First sync: branch A.
         let changed_files = vec!["src/main.rs".to_string()];
-        let file_contents = vec![(
-            "src/main.rs".to_string(),
-            b"fn branch_a() {}\n".to_vec(),
-        )];
-        branch_sync(&conn, repo_id, "base", "branch-a", &changed_files, &file_contents).unwrap();
+        let file_contents = vec![("src/main.rs".to_string(), b"fn branch_a() {}\n".to_vec())];
+        branch_sync(
+            &conn,
+            repo_id,
+            "base",
+            "branch-a",
+            &changed_files,
+            &file_contents,
+        )
+        .unwrap();
 
         // Second sync: branch B (different branch, same base).
         let changed_files_b = vec!["src/main.rs".to_string()];
-        let file_contents_b = vec![(
-            "src/main.rs".to_string(),
-            b"fn branch_b() {}\n".to_vec(),
-        )];
+        let file_contents_b = vec![("src/main.rs".to_string(), b"fn branch_b() {}\n".to_vec())];
         branch_sync(
             &conn,
             repo_id,
@@ -779,35 +791,20 @@ mod tests {
         assert_eq!(overlays.len(), 2);
 
         // Query with branch-a context finds branch_a symbol.
-        let results = query_symbols_with_overlay(
-            &conn,
-            repo_id,
-            "branch_a",
-            Some("base"),
-            Some("branch-a"),
-        )
-        .unwrap();
+        let results =
+            query_symbols_with_overlay(&conn, repo_id, "branch_a", Some("base"), Some("branch-a"))
+                .unwrap();
         assert_eq!(results.len(), 1);
 
         // Query with branch-b context finds branch_b symbol, not branch_a.
-        let results = query_symbols_with_overlay(
-            &conn,
-            repo_id,
-            "branch_a",
-            Some("base"),
-            Some("branch-b"),
-        )
-        .unwrap();
+        let results =
+            query_symbols_with_overlay(&conn, repo_id, "branch_a", Some("base"), Some("branch-b"))
+                .unwrap();
         assert!(results.is_empty());
 
-        let results = query_symbols_with_overlay(
-            &conn,
-            repo_id,
-            "branch_b",
-            Some("base"),
-            Some("branch-b"),
-        )
-        .unwrap();
+        let results =
+            query_symbols_with_overlay(&conn, repo_id, "branch_b", Some("base"), Some("branch-b"))
+                .unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -842,11 +839,16 @@ mod tests {
 
         // Overlay replaces src/main.rs.
         let changed_files = vec!["src/main.rs".to_string()];
-        let file_contents = vec![(
-            "src/main.rs".to_string(),
-            b"fn overlay_fn() {}\n".to_vec(),
-        )];
-        branch_sync(&conn, repo_id, "base", "feat", &changed_files, &file_contents).unwrap();
+        let file_contents = vec![("src/main.rs".to_string(), b"fn overlay_fn() {}\n".to_vec())];
+        branch_sync(
+            &conn,
+            repo_id,
+            "base",
+            "feat",
+            &changed_files,
+            &file_contents,
+        )
+        .unwrap();
 
         // Query symbols in src/main.rs with overlay — only overlay symbols.
         let results = query_symbols_in_file_with_overlay(

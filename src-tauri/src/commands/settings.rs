@@ -113,6 +113,7 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -174,6 +175,7 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

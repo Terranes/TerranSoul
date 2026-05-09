@@ -259,7 +259,11 @@ pub async fn trigger_sync(state: &AppState) -> Result<(), String> {
     // Log outbound sync.
     drop(mgr);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-    let _ = store.log_sync(&peer_device_id, "outbound", memory_deltas.len() + edge_deltas.len());
+    let _ = store.log_sync(
+        &peer_device_id,
+        "outbound",
+        memory_deltas.len() + edge_deltas.len(),
+    );
     Ok(())
 }
 
@@ -574,7 +578,9 @@ mod tests {
 
         // Verify edge was inserted.
         let store = state.memory_store.lock().unwrap();
-        let edges = store.get_edges_for(1, crate::memory::edges::EdgeDirection::Both).unwrap();
+        let edges = store
+            .get_edges_for(1, crate::memory::edges::EdgeDirection::Both)
+            .unwrap();
         assert_eq!(edges.len(), 1);
         assert_eq!(edges[0].rel_type, "related_to");
     }

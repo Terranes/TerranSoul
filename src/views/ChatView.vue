@@ -2427,6 +2427,9 @@ onUnmounted(() => {
     font-size: 0.58rem;
     padding: 2px 8px;
   }
+  .brain-status-pill:hover {
+    transform: translateY(-1px);
+  }
   /* Music bar: below brain status */
   .music-bar-portal { top: 66px; left: 10px; }
   .brain-overlay { width: 92vw; }

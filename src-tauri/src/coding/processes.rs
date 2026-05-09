@@ -1106,13 +1106,16 @@ pub fn parse_port(s: &str) -> u16 {
         for i in 0..10 {
             let idx = graph.add_node(i);
             node_map.insert(i, idx);
-            sym_info.insert(i, SymInfo {
-                id: i,
-                name: format!("large_{i}"),
-                file: "src/large.rs".to_string(),
-                line: i as u32,
-                kind: "function".to_string(),
-            });
+            sym_info.insert(
+                i,
+                SymInfo {
+                    id: i,
+                    name: format!("large_{i}"),
+                    file: "src/large.rs".to_string(),
+                    line: i as u32,
+                    kind: "function".to_string(),
+                },
+            );
         }
         for i in 0..9 {
             let a = *node_map.get(&i).unwrap();
@@ -1124,13 +1127,16 @@ pub fn parse_port(s: &str) -> u16 {
         for i in 10..13 {
             let idx = graph.add_node(i);
             node_map.insert(i, idx);
-            sym_info.insert(i, SymInfo {
-                id: i,
-                name: format!("small_{i}"),
-                file: "src/small.rs".to_string(),
-                line: i as u32,
-                kind: "function".to_string(),
-            });
+            sym_info.insert(
+                i,
+                SymInfo {
+                    id: i,
+                    name: format!("small_{i}"),
+                    file: "src/small.rs".to_string(),
+                    line: i as u32,
+                    kind: "function".to_string(),
+                },
+            );
         }
         // Connect small cluster internally.
         let s0 = *node_map.get(&10).unwrap();
@@ -1171,23 +1177,46 @@ pub fn parse_port(s: &str) -> u16 {
         let mut sym_info: HashMap<i64, SymInfo> = HashMap::new();
 
         // Create 22 directories with 1000 nodes each.
-        let dirs = ["api", "auth", "billing", "cache", "config", "core",
-                    "crypto", "db", "email", "events", "gateway", "grpc",
-                    "health", "jobs", "logging", "metrics", "middleware",
-                    "parser", "queue", "router", "schema", "transport"];
+        let dirs = [
+            "api",
+            "auth",
+            "billing",
+            "cache",
+            "config",
+            "core",
+            "crypto",
+            "db",
+            "email",
+            "events",
+            "gateway",
+            "grpc",
+            "health",
+            "jobs",
+            "logging",
+            "metrics",
+            "middleware",
+            "parser",
+            "queue",
+            "router",
+            "schema",
+            "transport",
+        ];
 
         let mut sym_id: i64 = 0;
         for dir in &dirs {
             for j in 0..1000 {
                 let idx = graph.add_node(sym_id);
                 node_map.insert(sym_id, idx);
-                sym_info.insert(sym_id, SymInfo {
-                    id: sym_id,
-                    name: format!("fn_{dir}_{j}"),
-                    file: format!("src/{dir}/mod.rs"),
-                    line: j as u32,
-                    kind: "function".to_string(),
-                });
+                sym_info.insert(
+                    sym_id,
+                    SymInfo {
+                        id: sym_id,
+                        name: format!("fn_{dir}_{j}"),
+                        file: format!("src/{dir}/mod.rs"),
+                        line: j as u32,
+                        kind: "function".to_string(),
+                    },
+                );
                 sym_id += 1;
             }
         }
@@ -1245,13 +1274,16 @@ pub fn parse_port(s: &str) -> u16 {
         for i in 0..20i64 {
             let idx = graph.add_node(i);
             node_map.insert(i, idx);
-            sym_info.insert(i, SymInfo {
-                id: i,
-                name: format!("fn_{i}"),
-                file: "src/mod.rs".to_string(),
-                line: i as u32,
-                kind: "function".to_string(),
-            });
+            sym_info.insert(
+                i,
+                SymInfo {
+                    id: i,
+                    name: format!("fn_{i}"),
+                    file: "src/mod.rs".to_string(),
+                    line: i as u32,
+                    kind: "function".to_string(),
+                },
+            );
         }
         // Node 0 is a hub (high degree).
         for i in 1..15 {

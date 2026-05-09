@@ -327,14 +327,22 @@ pub async fn unload_lm_studio_model(
 
 /// Set the active brain model. Persists the choice to disk.
 /// After calling this, subsequent chat messages will be routed through Ollama.
+///
+/// Also fires a background warm-up so the very next user reply does not pay
+/// the 10-20 s cold-load cost when the user picks LocalOllama via the UI
+/// after app startup (the boot-time warm-up is a no-op when no LocalOllama
+/// brain mode is configured yet).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_active_brain(
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     brain::save_brain(&state.data_dir, &model_name)?;
-    let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
-    *brain = Some(model_name);
+    {
+        let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
+        *brain = Some(model_name);
+    }
+    crate::spawn_local_ollama_warmup(&state, "set-active-brain");
     Ok(())
 }
 
@@ -410,6 +418,11 @@ pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Resu
         let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
         *brain_mode = Some(mode);
     }
+
+    // If the user just switched to LocalOllama (e.g. picked it in the UI
+    // after app launch), fire the chat-model warm-up now so the next reply
+    // does not pay a 10-20 s cold-load. No-op for cloud providers.
+    crate::spawn_local_ollama_warmup(&state, "set-brain-mode");
 
     // The chosen embedding model and any "model X doesn't support
     // embeddings" memo from `brain::ollama_agent` are tied to whichever
@@ -1158,8 +1171,7 @@ pub async fn switch_embedding_model(
         }
 
         // Update registry progress.
-        let updated =
-            embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
+        let updated = embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
 
         let _ = app_handle.emit(
             "embedding-migration-progress",

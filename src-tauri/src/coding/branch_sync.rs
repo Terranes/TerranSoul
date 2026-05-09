@@ -56,7 +56,14 @@ pub fn execute_branch_sync(
     // Read file contents from the working tree (post-checkout, files are on disk).
     let file_contents = read_file_contents(repo_path, &changed_files);
 
-    branch_overlay::branch_sync(conn, repo_id, prev_ref, new_ref, &changed_files, &file_contents)
+    branch_overlay::branch_sync(
+        conn,
+        repo_id,
+        prev_ref,
+        new_ref,
+        &changed_files,
+        &file_contents,
+    )
 }
 
 /// Execute an index-commit: re-index files changed in the latest commit.
@@ -72,8 +79,7 @@ pub fn execute_index_commit(
     let repo_id = resolve_repo_id(conn, repo_path)?;
 
     // Get files changed in this commit vs its parent.
-    let parent = git_rev_parse(repo_path, &format!("{commit_sha}^"))
-        .unwrap_or_default();
+    let parent = git_rev_parse(repo_path, &format!("{commit_sha}^")).unwrap_or_default();
 
     if parent.is_empty() {
         return Ok(IndexCommitResult {
@@ -172,11 +178,7 @@ fn resolve_repo_id(conn: &Connection, repo_path: &Path) -> Result<i64, IndexErro
 }
 
 /// Run `git diff --name-only prev..new` in the repo.
-fn git_diff_name_only(
-    repo_path: &Path,
-    prev: &str,
-    new: &str,
-) -> Result<Vec<String>, IndexError> {
+fn git_diff_name_only(repo_path: &Path, prev: &str, new: &str) -> Result<Vec<String>, IndexError> {
     let output = Command::new("git")
         .args(["diff", "--name-only", &format!("{prev}..{new}")])
         .current_dir(repo_path)

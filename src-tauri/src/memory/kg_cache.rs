@@ -209,10 +209,7 @@ where
                 break;
             };
             let edges = get_edges(node_id, direction);
-            let edges_capped: Vec<MemoryEdge> = edges
-                .into_iter()
-                .take(MAX_FAN_OUT)
-                .collect();
+            let edges_capped: Vec<MemoryEdge> = edges.into_iter().take(MAX_FAN_OUT).collect();
 
             if edges_capped.len() >= MAX_FAN_OUT {
                 truncated = true;
@@ -252,8 +249,8 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::edges::EdgeSource;
+    use super::*;
 
     fn make_edge(id: i64, src: i64, dst: i64, rel: &str) -> MemoryEdge {
         MemoryEdge {
@@ -273,7 +270,10 @@ mod tests {
     #[test]
     fn bounded_bfs_single_hop() {
         // A -> B, A -> C
-        let edges = [make_edge(1, 10, 20, "related_to"), make_edge(2, 10, 30, "related_to")];
+        let edges = [
+            make_edge(1, 10, 20, "related_to"),
+            make_edge(2, 10, 30, "related_to"),
+        ];
         let result = bounded_bfs(10, 1, EdgeDirection::Both, |id, _dir| {
             edges
                 .iter()
@@ -292,7 +292,10 @@ mod tests {
     #[test]
     fn bounded_bfs_multi_hop() {
         // A -> B -> C (chain)
-        let edges = [make_edge(1, 10, 20, "related_to"), make_edge(2, 20, 30, "cites")];
+        let edges = [
+            make_edge(1, 10, 20, "related_to"),
+            make_edge(2, 20, 30, "cites"),
+        ];
         let result = bounded_bfs(10, 2, EdgeDirection::Both, |id, _dir| {
             edges
                 .iter()
@@ -302,7 +305,7 @@ mod tests {
         });
         assert_eq!(result.hops.len(), 2);
         assert_eq!(result.hops[0].edges.len(), 1); // A->B
-        // Hop 2 expands node 20: returns all incident edges (back to 10 + forward to 30)
+                                                   // Hop 2 expands node 20: returns all incident edges (back to 10 + forward to 30)
         assert_eq!(result.hops[1].edges.len(), 2);
         assert!(result.touched_ids.contains(&30));
     }
@@ -392,9 +395,21 @@ mod tests {
             touched_ids: HashSet::new(),
             truncated: false,
         };
-        let k1 = KgCacheKey { seed_id: 1, depth: 1, direction: EdgeDirection::Both };
-        let k2 = KgCacheKey { seed_id: 2, depth: 1, direction: EdgeDirection::Both };
-        let k3 = KgCacheKey { seed_id: 3, depth: 1, direction: EdgeDirection::Both };
+        let k1 = KgCacheKey {
+            seed_id: 1,
+            depth: 1,
+            direction: EdgeDirection::Both,
+        };
+        let k2 = KgCacheKey {
+            seed_id: 2,
+            depth: 1,
+            direction: EdgeDirection::Both,
+        };
+        let k3 = KgCacheKey {
+            seed_id: 3,
+            depth: 1,
+            direction: EdgeDirection::Both,
+        };
 
         cache.insert(k1.clone(), result.clone());
         cache.insert(k2.clone(), result.clone());
@@ -411,8 +426,16 @@ mod tests {
     #[test]
     fn invalidation_does_not_affect_unrelated_entries() {
         let cache = KgCache::new(4);
-        let k1 = KgCacheKey { seed_id: 1, depth: 1, direction: EdgeDirection::Both };
-        let k2 = KgCacheKey { seed_id: 2, depth: 1, direction: EdgeDirection::Both };
+        let k1 = KgCacheKey {
+            seed_id: 1,
+            depth: 1,
+            direction: EdgeDirection::Both,
+        };
+        let k2 = KgCacheKey {
+            seed_id: 2,
+            depth: 1,
+            direction: EdgeDirection::Both,
+        };
         let r1 = TraversalResult {
             hops: vec![],
             touched_ids: [1, 10].into_iter().collect(),

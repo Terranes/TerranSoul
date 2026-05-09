@@ -77,9 +77,8 @@ impl ShardManager {
     /// Discover existing shard files on disk and attach them all.
     pub fn attach_existing_shards(&mut self, conn: &Connection) -> SqlResult<()> {
         let pattern = "memory_long_";
-        let entries = std::fs::read_dir(&self.data_dir).map_err(|e| {
-            rusqlite::Error::ToSqlConversionFailure(Box::new(e))
-        })?;
+        let entries = std::fs::read_dir(&self.data_dir)
+            .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(e)))?;
 
         for entry in entries.flatten() {
             let name = entry.file_name();
@@ -211,11 +210,7 @@ impl ShardManager {
 
     /// Migrate existing long-tier memories older than the current quarter
     /// from main into their respective shards.
-    pub fn migrate_existing(
-        &mut self,
-        conn: &Connection,
-        batch_size: usize,
-    ) -> SqlResult<usize> {
+    pub fn migrate_existing(&mut self, conn: &Connection, batch_size: usize) -> SqlResult<usize> {
         let current = QuarterKey::from_epoch_ms(now_ms());
         let current_start_ms = quarter_start_ms(current.year, current.quarter);
 
@@ -225,11 +220,10 @@ impl ShardManager {
                     token_count, source_url, source_hash, expires_at
              FROM main.memories
              WHERE tier = 'long' AND created_at < ?1
-             LIMIT ?2"
+             LIMIT ?2",
         )?;
-        let rows: Vec<ShardRow> = stmt.query_map(
-            params![current_start_ms, batch_size as i64],
-            |row| {
+        let rows: Vec<ShardRow> = stmt
+            .query_map(params![current_start_ms, batch_size as i64], |row| {
                 Ok(ShardRow {
                     id: row.get(0)?,
                     content: row.get(1)?,
@@ -243,8 +237,8 @@ impl ShardManager {
                     source_hash: row.get(9)?,
                     expires_at: row.get(10)?,
                 })
-            },
-        )?.collect::<SqlResult<Vec<_>>>()?;
+            })?
+            .collect::<SqlResult<Vec<_>>>()?;
 
         if rows.is_empty() {
             return Ok(0);
@@ -477,7 +471,10 @@ mod tests {
         let _ = std::fs::create_dir_all(&tmp);
         let mut mgr = ShardManager::new(&tmp);
 
-        let key = QuarterKey { year: 2025, quarter: 3 };
+        let key = QuarterKey {
+            year: 2025,
+            quarter: 3,
+        };
         mgr.attach_shard(&conn, &key).unwrap();
         assert_eq!(mgr.shard_count(), 1);
 
@@ -490,7 +487,9 @@ mod tests {
 
         // Insert into shard.
         mgr.insert_into_shard(
-            &conn, &key, &ShardInsert {
+            &conn,
+            &key,
+            &ShardInsert {
                 content: "test content",
                 tags: "tag1",
                 importance: 3,
@@ -502,7 +501,8 @@ mod tests {
                 source_hash: None,
                 expires_at: None,
             },
-        ).unwrap();
+        )
+        .unwrap();
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM all_memories", [], |r| r.get(0))
@@ -554,7 +554,8 @@ mod tests {
                  access_count, tier, decay_score, token_count)
                  VALUES (?1, '', 3, 'fact', ?2, 0, 'long', 1.0, 10)",
                 params![format!("old memory {i}"), old_ts + i * 1000],
-            ).unwrap();
+            )
+            .unwrap();
         }
         // Insert a current-quarter memory (should NOT be migrated).
         let now_ts = now_ms();
@@ -563,7 +564,8 @@ mod tests {
              access_count, tier, decay_score, token_count)
              VALUES ('recent', '', 3, 'fact', ?1, 0, 'long', 1.0, 10)",
             params![now_ts],
-        ).unwrap();
+        )
+        .unwrap();
 
         let moved = mgr.migrate_existing(&conn, 100).unwrap();
         assert_eq!(moved, 5);
@@ -597,7 +599,10 @@ mod tests {
     #[test]
     fn shard_ann_key_file_stem() {
         let key = ShardAnnKey {
-            shard: Some(QuarterKey { year: 2026, quarter: 2 }),
+            shard: Some(QuarterKey {
+                year: 2026,
+                quarter: 2,
+            }),
             model_id: "nomic-embed-text".to_string(),
         };
         assert_eq!(key.file_stem(), "vectors_nomic-embed-text_2026q2");

@@ -121,6 +121,7 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -193,6 +194,7 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -250,6 +252,7 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
         };
         save(dir.path(), &s).unwrap();
 

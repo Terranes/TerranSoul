@@ -100,7 +100,11 @@ fn percentile_ms(buckets: &[u64; BUCKET_COUNT], total: u64, pct: f64) -> Option<
         cumulative += cnt;
         if cumulative >= target {
             // Lower bound of bucket i in µs.
-            let lower_us: f64 = if i == 0 { 0.0 } else { (1u64 << (i - 1)) as f64 };
+            let lower_us: f64 = if i == 0 {
+                0.0
+            } else {
+                (1u64 << (i - 1)) as f64
+            };
             return Some(lower_us / 1_000.0); // µs → ms
         }
     }

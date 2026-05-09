@@ -723,10 +723,7 @@ pub async fn set_ann_quantization(
 /// exceeds the threshold (20%). Returns the vector count after compaction,
 /// or 0 if compaction was not needed or no index exists.
 #[tauri::command]
-pub async fn compact_ann(
-    state: State<'_, AppState>,
-    force: Option<bool>,
-) -> Result<usize, String> {
+pub async fn compact_ann(state: State<'_, AppState>, force: Option<bool>) -> Result<usize, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     if !force.unwrap_or(false) && !store.ann_needs_compaction() {
         return Ok(0);

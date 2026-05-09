@@ -1923,13 +1923,23 @@ pub async fn code_extract_negatives(
 /// "do not", "avoid", "must not" indicators. Returns (rule_text, triggers).
 pub fn extract_negative_lines(text: &str) -> Vec<(String, Vec<String>)> {
     let negative_indicators = [
-        "never ", "don't ", "do not ", "avoid ", "must not ", "must never ",
-        "- no ", "forbidden", "anti-pattern",
+        "never ",
+        "don't ",
+        "do not ",
+        "avoid ",
+        "must not ",
+        "must never ",
+        "- no ",
+        "forbidden",
+        "anti-pattern",
     ];
 
     let mut results = Vec::new();
     for line in text.lines() {
-        let trimmed = line.trim().trim_start_matches("- ").trim_start_matches("* ");
+        let trimmed = line
+            .trim()
+            .trim_start_matches("- ")
+            .trim_start_matches("* ");
         if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with('|') {
             continue;
         }
@@ -2008,9 +2018,7 @@ pub async fn code_detect_harnesses() -> Result<Vec<DetectedHarness>, String> {
 /// structured turns for each session. The caller is responsible for
 /// feeding these through `brain_memory::extract_facts` if desired.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn code_import_sessions(
-    harness: String,
-) -> Result<Vec<ImportResult>, String> {
+pub async fn code_import_sessions(harness: String) -> Result<Vec<ImportResult>, String> {
     let h = parse_harness(&harness)?;
     let home = dirs::home_dir().ok_or_else(|| "cannot determine home directory".to_string())?;
     let dir = home.join(h.relative_dir());

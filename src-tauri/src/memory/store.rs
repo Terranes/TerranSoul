@@ -5,8 +5,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::metrics::{Timer, METRICS};
-use super::search_cache::SEARCH_CACHE;
 use super::schema;
+use super::search_cache::SEARCH_CACHE;
 
 pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
@@ -472,8 +472,7 @@ impl MemoryStore {
         }
         let tx = self.conn.unchecked_transaction()?;
         {
-            let mut stmt =
-                tx.prepare_cached("UPDATE memories SET content = ?1 WHERE id = ?2")?;
+            let mut stmt = tx.prepare_cached("UPDATE memories SET content = ?1 WHERE id = ?2")?;
             for (id, content) in items {
                 stmt.execute(params![content, id])?;
             }
@@ -884,7 +883,8 @@ impl MemoryStore {
             .map(|w| Box::new(w.to_lowercase()) as Box<dyn rusqlite::types::ToSql>)
             .collect();
         param_values.push(Box::new(pool as i64));
-        let refs: Vec<&dyn rusqlite::types::ToSql> = param_values.iter().map(|b| b.as_ref()).collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(&*refs, |row| row.get::<_, i64>(0))?;
         let _ = n_params; // suppress unused warning
         rows.collect()
@@ -895,7 +895,10 @@ impl MemoryStore {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let placeholders: String = (0..ids.len()).map(|i| format!("?{}", i + 1)).collect::<Vec<_>>().join(",");
+        let placeholders: String = (0..ids.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
                     tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, embedding, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
@@ -903,7 +906,10 @@ impl MemoryStore {
             placeholders
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(&*refs, row_to_entry_with_embedding)?;
         rows.collect()
@@ -914,7 +920,10 @@ impl MemoryStore {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let placeholders: String = (0..ids.len()).map(|i| format!("?{}", i + 1)).collect::<Vec<_>>().join(",");
+        let placeholders: String = (0..ids.len())
+            .map(|i| format!("?{}", i + 1))
+            .collect::<Vec<_>>()
+            .join(",");
         let sql = format!(
             "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
                     tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
@@ -922,7 +931,10 @@ impl MemoryStore {
             placeholders
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
+        let params: Vec<Box<dyn rusqlite::types::ToSql>> = ids
+            .iter()
+            .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+            .collect();
         let refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(&*refs, row_to_entry)?;
         rows.collect()
@@ -1355,7 +1367,11 @@ impl MemoryStore {
         // ── Cache check ───────────────────────────────────────────────────
         let cache_key = SearchCacheKey {
             query: query.to_string(),
-            mode: if query_embedding.is_some() { "rrf_vec".into() } else { "rrf".into() },
+            mode: if query_embedding.is_some() {
+                "rrf_vec".into()
+            } else {
+                "rrf".into()
+            },
             limit,
         };
         if let Some(cached) = SEARCH_CACHE.get(&cache_key) {
@@ -1367,10 +1383,8 @@ impl MemoryStore {
                 .into_iter()
                 .map(|e| (e.id, e))
                 .collect();
-            let results: Vec<MemoryEntry> = ids
-                .into_iter()
-                .filter_map(|id| by_id.remove(&id))
-                .collect();
+            let results: Vec<MemoryEntry> =
+                ids.into_iter().filter_map(|id| by_id.remove(&id)).collect();
             return Ok(results);
         }
 
@@ -1491,7 +1505,12 @@ impl MemoryStore {
             .map(|(pos, (id, score))| {
                 let adjusted = if let Some(entry) = by_id.get(&id) {
                     let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
-                    let factor = confidence_factor(&decay_cfg, Some(kind), entry.confidence, now - entry.created_at);
+                    let factor = confidence_factor(
+                        &decay_cfg,
+                        Some(kind),
+                        entry.confidence,
+                        now - entry.created_at,
+                    );
                     score * factor
                 } else {
                     score
@@ -1510,7 +1529,10 @@ impl MemoryStore {
         let cached_hits: Vec<CachedHit> = fused
             .iter()
             .take(limit)
-            .map(|(_, id, score)| CachedHit { memory_id: *id, score: *score })
+            .map(|(_, id, score)| CachedHit {
+                memory_id: *id,
+                score: *score,
+            })
             .collect();
         SEARCH_CACHE.put(cache_key, cached_hits);
 
@@ -1673,7 +1695,12 @@ impl MemoryStore {
         for (id, score) in fused.iter_mut() {
             if let Some(entry) = by_id.get(id) {
                 let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
-                let factor = confidence_factor(&decay_cfg, Some(kind), entry.confidence, now - entry.created_at);
+                let factor = confidence_factor(
+                    &decay_cfg,
+                    Some(kind),
+                    entry.confidence,
+                    now - entry.created_at,
+                );
                 *score *= factor;
             }
         }
@@ -2257,8 +2284,7 @@ impl MemoryStore {
         } else {
             super::ann_index::AnnIndex::new_quantized(dim, quant)?
         };
-        let count =
-            new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+        let count = new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
 
         // Replace the primary index. Because OnceCell doesn't support
         // overwrite, we can only do this if it wasn't set. If it was, the
@@ -3906,9 +3932,7 @@ mod tests {
         let store = MemoryStore::in_memory();
         let e = store.add(new_memory("reinforced fact")).unwrap();
 
-        store
-            .record_reinforcement(e.id, "sess-a", 0)
-            .unwrap();
+        store.record_reinforcement(e.id, "sess-a", 0).unwrap();
 
         let recs = store.get_reinforcements(e.id, 10).unwrap();
         assert_eq!(recs.len(), 1);
@@ -3936,7 +3960,9 @@ mod tests {
         let e = store.add(new_memory("limited")).unwrap();
 
         for i in 0..5 {
-            store.record_reinforcement(e.id, &format!("s{i}"), 0).unwrap();
+            store
+                .record_reinforcement(e.id, &format!("s{i}"), 0)
+                .unwrap();
         }
 
         let recs = store.get_reinforcements(e.id, 3).unwrap();

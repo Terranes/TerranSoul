@@ -688,11 +688,7 @@ impl BrainGateway for AppStateGateway {
                 if let Ok(store) = self.state.memory_store.lock() {
                     let session_id = format!("brain_search_{}", crate::memory::store::now_ms());
                     for (idx, entry) in reranked.iter().enumerate() {
-                        let _ = store.record_reinforcement(
-                            entry.id,
-                            &session_id,
-                            idx as i64,
-                        );
+                        let _ = store.record_reinforcement(entry.id, &session_id, idx as i64);
                     }
                 }
 
@@ -878,17 +874,11 @@ impl BrainGateway for AppStateGateway {
                 req.id,
                 req.depth,
                 dir,
-                |node_id, direction| {
-                    store
-                        .get_edges_for(node_id, direction)
-                        .unwrap_or_default()
-                },
+                |node_id, direction| store.get_edges_for(node_id, direction).unwrap_or_default(),
             );
             drop(store);
             // Cache the result.
-            self.state
-                .kg_cache
-                .insert(cache_key, traversal.clone());
+            self.state.kg_cache.insert(cache_key, traversal.clone());
             traversal
         };
 
@@ -1061,13 +1051,17 @@ impl BrainGateway for AppStateGateway {
                 .iter()
                 .enumerate()
                 .map(|(i, h)| {
-                    let score = if total > 0.0 { 1.0 - (i as f64 / total) } else { 0.0 };
+                    let score = if total > 0.0 {
+                        1.0 - (i as f64 / total)
+                    } else {
+                        0.0
+                    };
                     (h.id, score)
                 })
                 .collect();
 
-            let expanded = crate::memory::cascade::cascade_expand(&store.conn, &seeds, None)
-                .unwrap_or(seeds);
+            let expanded =
+                crate::memory::cascade::cascade_expand(&store.conn, &seeds, None).unwrap_or(seeds);
 
             // Materialize expanded entries as SearchHits.
             let expanded_total = expanded.len() as f64;
@@ -1958,18 +1952,19 @@ mod tests {
             .unwrap();
 
         // Mutate: add a new memory that matches the query.
-        {
+        let added_memory_id = {
             let store = state.memory_store.lock().unwrap();
             store
                 .add(NewMemory {
-                    content: "Rust's borrow checker prevents data races at compile time.".into(),
+                    content: "Rust borrow checker prevents data races at compile time.".into(),
                     tags: "rust,concurrency".into(),
                     importance: 4,
                     memory_type: MemoryType::Fact,
                     ..Default::default()
                 })
-                .unwrap();
-        }
+                .unwrap()
+                .id
+        };
 
         let after = gw
             .suggest_context(&GatewayCaps::default(), req)
@@ -1980,7 +1975,7 @@ mod tests {
             "fingerprint must change after new memory is added (cache invalidation)"
         );
         assert!(
-            after.hits.len() > before.hits.len(),
+            after.hits.iter().any(|hit| hit.id == added_memory_id),
             "new memory should appear in hits"
         );
     }

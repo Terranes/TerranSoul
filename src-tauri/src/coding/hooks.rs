@@ -282,8 +282,8 @@ mod tests {
     #[test]
     fn install_creates_three_hooks() {
         let dir = setup_fake_repo();
-        let result = install_hooks(dir.path(), McpTarget::Headless, ".vscode/.mcp-token", false)
-            .unwrap();
+        let result =
+            install_hooks(dir.path(), McpTarget::Headless, ".vscode/.mcp-token", false).unwrap();
 
         assert_eq!(result.installed.len(), 3);
         assert!(result.skipped.is_empty());
@@ -306,8 +306,8 @@ mod tests {
         let hook_path = dir.path().join(".git/hooks/post-checkout");
         fs::write(&hook_path, "#!/bin/sh\necho 'foreign hook'\n").unwrap();
 
-        let result = install_hooks(dir.path(), McpTarget::Dev, ".vscode/.mcp-token", false)
-            .unwrap();
+        let result =
+            install_hooks(dir.path(), McpTarget::Dev, ".vscode/.mcp-token", false).unwrap();
 
         assert_eq!(result.skipped, vec!["post-checkout"]);
         assert_eq!(result.installed.len(), 2); // post-merge + post-commit
@@ -323,8 +323,8 @@ mod tests {
         let hook_path = dir.path().join(".git/hooks/post-checkout");
         fs::write(&hook_path, "#!/bin/sh\necho 'foreign'\n").unwrap();
 
-        let result = install_hooks(dir.path(), McpTarget::Release, ".vscode/.mcp-token", true)
-            .unwrap();
+        let result =
+            install_hooks(dir.path(), McpTarget::Release, ".vscode/.mcp-token", true).unwrap();
 
         assert_eq!(result.installed.len(), 3);
         assert!(result.skipped.is_empty());
@@ -360,8 +360,8 @@ mod tests {
         install_hooks(dir.path(), McpTarget::Headless, ".vscode/.mcp-token", false).unwrap();
 
         // Install again — our own hooks get overwritten (same marker).
-        let result = install_hooks(dir.path(), McpTarget::Headless, ".vscode/.mcp-token", false)
-            .unwrap();
+        let result =
+            install_hooks(dir.path(), McpTarget::Headless, ".vscode/.mcp-token", false).unwrap();
         assert_eq!(result.installed.len(), 3);
         assert!(result.skipped.is_empty());
     }

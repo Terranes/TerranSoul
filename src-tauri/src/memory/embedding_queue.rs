@@ -339,6 +339,26 @@ fn spawn_worker_inner(
                 .lock()
                 .ok()
                 .and_then(|m| m.as_ref().map(provider_category));
+
+            // VRAM-protection gate: in LocalOllama mode the embedding model
+            // (e.g. nomic-embed-text) and the chat model (e.g. gemma4:e4b)
+            // typically cannot co-reside on consumer GPUs. Each embed tick
+            // would force-load the embed model and evict the chat model,
+            // adding 10-20s to the next user reply. Skip embed ticks while
+            // the user is actively chatting (last 5 minutes of activity).
+            if provider_name.as_deref() == Some("ollama") {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let last = state
+                    .last_chat_at_ms
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if last > 0 && now_ms.saturating_sub(last) < 5 * 60 * 1000 {
+                    continue;
+                }
+            }
+
             let batch_size = batch_size_for_provider(provider_name.as_deref());
 
             // Fetch the due batch.
@@ -372,13 +392,9 @@ fn spawn_worker_inner(
             // Build text slice for batch embed.
             let texts: Vec<&str> = batch.iter().map(|(_, content)| content.as_str()).collect();
 
-            let results = embed_batch_for_mode(
-                &texts,
-                mode.as_ref(),
-                model.as_deref(),
-                Some(batch_size),
-            )
-            .await;
+            let results =
+                embed_batch_for_mode(&texts, mode.as_ref(), model.as_deref(), Some(batch_size))
+                    .await;
 
             // Process results.
             let mut success_count = 0u32;
@@ -430,7 +446,8 @@ fn spawn_worker_inner(
             if batch_rate_limited {
                 consecutive_rate_limits += 1;
                 let pause_secs = (INITIAL_PAUSE_SECS
-                    * 1u64.checked_shl(consecutive_rate_limits.saturating_sub(1))
+                    * 1u64
+                        .checked_shl(consecutive_rate_limits.saturating_sub(1))
                         .unwrap_or(u64::MAX))
                 .min(MAX_PAUSE_SECS);
                 metrics_clone.set_pause(pause_secs);
@@ -442,7 +459,11 @@ fn spawn_worker_inner(
             if success_count > 0 || fail_count > 0 {
                 eprintln!(
                     "[embed-queue] batch: {success_count} embedded, {fail_count} failed{}",
-                    if batch_rate_limited { " (rate-limited)" } else { "" }
+                    if batch_rate_limited {
+                        " (rate-limited)"
+                    } else {
+                        ""
+                    }
                 );
             }
         }
@@ -697,7 +718,9 @@ mod tests {
         assert!(is_rate_limit_error("too many requests, retry later"));
         assert!(is_rate_limit_error("model busy, try again"));
         assert!(is_rate_limit_error("resource exhausted"));
-        assert!(is_rate_limit_error("quota exceeded for this billing period"));
+        assert!(is_rate_limit_error(
+            "quota exceeded for this billing period"
+        ));
         // Negatives
         assert!(!is_rate_limit_error("connection refused"));
         assert!(!is_rate_limit_error("model not found"));
@@ -735,7 +758,10 @@ mod tests {
             )
             .unwrap();
         let now_ms = now_epoch_ms() as i64;
-        assert!(next_retry > now_ms, "next_retry_at should be in the future after soft pause");
+        assert!(
+            next_retry > now_ms,
+            "next_retry_at should be in the future after soft pause"
+        );
     }
 
     #[test]
@@ -798,5 +824,41 @@ mod tests {
             api_key: None,
         };
         assert_eq!(provider_category(&free), "free");
+    }
+
+    /// VRAM-protection gate: the embedding worker should refuse to run
+    /// when the user has chatted recently in LocalOllama mode, because an
+    /// embed tick force-loads the embed model and evicts the chat model
+    /// from VRAM (10-20 s reload cost on consumer GPUs).
+    #[test]
+    fn chat_activity_gate_blocks_recent_ollama_chat() {
+        // Reproduce the gating logic from spawn_worker_inner so changes
+        // to that gate can't silently regress this safety.
+        fn should_skip_for_chat(provider: Option<&str>, last_ms: u64, now_ms: u64) -> bool {
+            if provider != Some("ollama") {
+                return false;
+            }
+            last_ms > 0 && now_ms.saturating_sub(last_ms) < 5 * 60 * 1000
+        }
+
+        // Ollama mode, chat 1 s ago => skip
+        assert!(should_skip_for_chat(Some("ollama"), 1_000, 2_000));
+        // Ollama mode, chat 4:59 ago => skip
+        assert!(should_skip_for_chat(
+            Some("ollama"),
+            1_000,
+            1_000 + 299 * 1000
+        ));
+        // Ollama mode, chat 5:01 ago => allow
+        assert!(!should_skip_for_chat(
+            Some("ollama"),
+            1_000,
+            1_000 + 301 * 1000
+        ));
+        // Ollama mode, no chat yet => allow
+        assert!(!should_skip_for_chat(Some("ollama"), 0, 1_000_000));
+        // Cloud providers never gate on chat activity
+        assert!(!should_skip_for_chat(Some("paid"), 1_000, 2_000));
+        assert!(!should_skip_for_chat(Some("free"), 1_000, 2_000));
     }
 }

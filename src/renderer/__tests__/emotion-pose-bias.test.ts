@@ -34,10 +34,12 @@ describe('emotion-pose-bias', () => {
     }
   });
 
-  it('happy lifts chest and head (negative X)', () => {
+  it('happy is facial-only — no postural bias (same as neutral)', () => {
     const m = emotionTargetBias('happy', 1);
-    expect(m.get('chest')![0]).toBeLessThan(0);
-    expect(m.get('head')![0]).toBeLessThan(0);
+    for (const bone of BIAS_BONES) {
+      const v = m.get(bone)!;
+      expect(v).toEqual([0, 0, 0]);
+    }
   });
 
   it('sad drops head forward (positive X)', () => {

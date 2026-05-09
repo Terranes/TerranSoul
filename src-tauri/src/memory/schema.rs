@@ -343,9 +343,7 @@ fn ensure_v20_tables(conn: &Connection) -> SqlResult<()> {
         }
     }
     if !has_confidence {
-        conn.execute_batch(
-            "ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
-        )?;
+        conn.execute_batch("ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")?;
     }
 
     // Create the four new tables (IF NOT EXISTS makes them idempotent)
@@ -676,13 +674,23 @@ mod tests {
         let conn = fresh_conn();
         create_canonical_schema(&conn).unwrap();
 
-        conn.execute("INSERT INTO memories (content, created_at) VALUES ('test', 100)", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO memories (content, created_at) VALUES ('test', 100)",
+            [],
+        )
+        .unwrap();
 
         let confidence: f64 = conn
-            .query_row("SELECT confidence FROM memories WHERE content = 'test'", [], |row| row.get(0))
+            .query_row(
+                "SELECT confidence FROM memories WHERE content = 'test'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert!((confidence - 1.0).abs() < f64::EPSILON, "default confidence should be 1.0");
+        assert!(
+            (confidence - 1.0).abs() < f64::EPSILON,
+            "default confidence should be 1.0"
+        );
     }
 
     #[test]
@@ -696,7 +704,10 @@ mod tests {
             "memory_gaps",
             "safety_decisions",
         ] {
-            assert!(object_exists(&conn, "table", table), "missing V20 table {table}");
+            assert!(
+                object_exists(&conn, "table", table),
+                "missing V20 table {table}"
+            );
         }
     }
 
@@ -709,10 +720,14 @@ mod tests {
         create_canonical_schema(&conn).unwrap();
         // We can't DROP COLUMN in older SQLite, so instead let's start
         // from a minimal V19-like memories table without confidence.
-        conn.execute_batch("DROP TABLE IF EXISTS memory_reinforcements").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS memory_trigger_patterns").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS memory_gaps").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS safety_decisions").unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_reinforcements")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_trigger_patterns")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_gaps")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS safety_decisions")
+            .unwrap();
 
         // Verify tables are gone
         assert!(!object_exists(&conn, "table", "memory_reinforcements"));
@@ -727,7 +742,10 @@ mod tests {
             "memory_gaps",
             "safety_decisions",
         ] {
-            assert!(object_exists(&conn, "table", table), "V20 upgrade missing table {table}");
+            assert!(
+                object_exists(&conn, "table", table),
+                "V20 upgrade missing table {table}"
+            );
         }
     }
 
@@ -736,14 +754,22 @@ mod tests {
         let conn = fresh_conn();
         create_canonical_schema(&conn).unwrap();
 
-        conn.execute("INSERT INTO memories (content, created_at) VALUES ('m1', 100)", []).unwrap();
+        conn.execute(
+            "INSERT INTO memories (content, created_at) VALUES ('m1', 100)",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO memory_reinforcements (memory_id, session_id, message_index, ts) VALUES (1, 'sess-1', 0, 200)",
             [],
         ).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_reinforcements WHERE memory_id = 1", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM memory_reinforcements WHERE memory_id = 1",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
     }

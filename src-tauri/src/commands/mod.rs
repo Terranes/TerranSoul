@@ -8,6 +8,7 @@ pub mod chat;
 pub mod coding;
 pub mod coding_sessions;
 pub mod consolidation;
+pub mod context_folder;
 pub mod crag;
 pub mod docker;
 pub mod emotion;

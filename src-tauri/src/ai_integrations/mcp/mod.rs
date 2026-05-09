@@ -217,7 +217,16 @@ pub async fn start_server(
     lan_enabled: bool,
     lan_public_read_only: bool,
 ) -> Result<McpServerHandle, String> {
-    start_server_full(state, port, token, lan_enabled, lan_public_read_only, None, 0).await
+    start_server_full(
+        state,
+        port,
+        token,
+        lan_enabled,
+        lan_public_read_only,
+        None,
+        0,
+    )
+    .await
 }
 
 /// Start the MCP HTTP server and optionally emit live activity events to
@@ -230,7 +239,16 @@ pub async fn start_server_with_activity(
     lan_public_read_only: bool,
     app: Option<tauri::AppHandle>,
 ) -> Result<McpServerHandle, String> {
-    start_server_full(state, port, token, lan_enabled, lan_public_read_only, app, 0).await
+    start_server_full(
+        state,
+        port,
+        token,
+        lan_enabled,
+        lan_public_read_only,
+        app,
+        0,
+    )
+    .await
 }
 
 /// Start the MCP HTTP server with optional idle timeout.
@@ -335,9 +353,7 @@ pub async fn start_server_full(
         let idle_tx = shutdown_tx.clone();
         let idle_activity = activity.clone();
         let timeout = std::time::Duration::from_secs(idle_timeout_secs);
-        let poll_interval = std::time::Duration::from_secs(
-            (idle_timeout_secs / 4).clamp(5, 60),
-        );
+        let poll_interval = std::time::Duration::from_secs((idle_timeout_secs / 4).clamp(5, 60));
         Some(tokio::spawn(async move {
             loop {
                 tokio::time::sleep(poll_interval).await;
@@ -349,9 +365,7 @@ pub async fn start_server_full(
                     .as_millis() as u64;
                 let elapsed = std::time::Duration::from_millis(now_ms.saturating_sub(last_ms));
                 if elapsed >= timeout {
-                    eprintln!(
-                        "[mcp] idle timeout ({idle_timeout_secs}s) reached — shutting down"
-                    );
+                    eprintln!("[mcp] idle timeout ({idle_timeout_secs}s) reached — shutting down");
                     idle_activity.failed(format!(
                         "MCP server shutting down after {idle_timeout_secs}s idle timeout."
                     ));

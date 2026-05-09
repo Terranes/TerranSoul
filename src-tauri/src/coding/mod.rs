@@ -20,6 +20,9 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+pub mod ambient;
+pub mod ambient_scheduler;
+mod ambient_validation;
 pub mod apply_file;
 pub mod autostart;
 pub mod branch_overlay;
@@ -58,14 +61,11 @@ pub mod resolver;
 pub mod reviewer;
 pub mod rolling_log;
 pub mod safety;
-pub mod ambient;
-pub mod ambient_scheduler;
-mod ambient_validation;
 pub mod session_chat;
 pub mod session_import;
 pub mod session_names;
-pub mod session_replay;
 pub mod session_registry;
+pub mod session_replay;
 pub mod skills;
 pub mod snapshot;
 pub mod symbol_index;
@@ -450,20 +450,20 @@ mod tests {
 
     #[test]
     fn local_model_adapts_to_ram_tier() {
-        // VeryHigh → gemma4:31b
+        // VeryHigh → gemma4:e4b for sub-1 s interactive latency.
         let recs = coding_llm_recommendations(65_536);
-        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
-        assert_eq!(local.default_model, "gemma4:31b");
-
-        // High → gemma4:e4b
-        let recs = coding_llm_recommendations(24_000);
         let local = recs.iter().find(|r| r.is_top_pick).unwrap();
         assert_eq!(local.default_model, "gemma4:e4b");
 
-        // Medium → gemma4:e2b
+        // High → gemma3:4b.
+        let recs = coding_llm_recommendations(24_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma3:4b");
+
+        // Medium → gemma3:1b.
         let recs = coding_llm_recommendations(12_000);
         let local = recs.iter().find(|r| r.is_top_pick).unwrap();
-        assert_eq!(local.default_model, "gemma4:e2b");
+        assert_eq!(local.default_model, "gemma3:1b");
 
         // Low → gemma3:1b
         let recs = coding_llm_recommendations(6_000);

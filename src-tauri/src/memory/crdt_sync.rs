@@ -273,13 +273,12 @@ impl MemoryStore {
                         .unwrap_or(local_device_id);
 
                     // Detect concurrency: same counter, different devices.
-                    let is_concurrent = delta.hlc_counter == local_hlc
-                        && delta.origin_device != local_device;
+                    let is_concurrent =
+                        delta.hlc_counter == local_hlc && delta.origin_device != local_device;
 
                     // Total order: (hlc_counter, origin_device) lexicographic.
                     let remote_wins = delta.hlc_counter > local_hlc
-                        || (delta.hlc_counter == local_hlc
-                            && *delta.origin_device > *local_device);
+                        || (delta.hlc_counter == local_hlc && *delta.origin_device > *local_device);
 
                     if remote_wins {
                         // Archive the local state before overwriting.

@@ -267,9 +267,7 @@ fn resume_session_inner(
 
     // Try resolving as a memorable name first, then fall back to using
     // the name as a literal session ID.
-    let session_id = if let Ok(Some(entry)) =
-        coding::session_registry::resolve(data_dir, name)
-    {
+    let session_id = if let Ok(Some(entry)) = coding::session_registry::resolve(data_dir, name) {
         entry.session_id
     } else {
         // Check if it's a valid direct session ID (handoff or chat exists).
@@ -309,8 +307,8 @@ fn resume_session_inner(
         });
 
     let chat = coding::session_chat_summary(data_dir, &session_id).unwrap_or_default();
-    let messages = coding::session_chat_load(data_dir, &session_id, Some(message_limit))
-        .unwrap_or_default();
+    let messages =
+        coding::session_chat_load(data_dir, &session_id, Some(message_limit)).unwrap_or_default();
 
     Ok(CodingSessionResumeResult {
         entry: CodingSessionEntry { handoff, chat },
@@ -447,14 +445,9 @@ mod tests {
         let dir = tmp_dir("resume");
         // Create a session with a handoff + chat
         coding::save_handoff(&dir, &sample_handoff("sess-abc")).unwrap();
-        coding::session_chat_append(&dir, "sess-abc", &ChatMessage::now("user", "hello"))
+        coding::session_chat_append(&dir, "sess-abc", &ChatMessage::now("user", "hello")).unwrap();
+        coding::session_chat_append(&dir, "sess-abc", &ChatMessage::now("assistant", "world"))
             .unwrap();
-        coding::session_chat_append(
-            &dir,
-            "sess-abc",
-            &ChatMessage::now("assistant", "world"),
-        )
-        .unwrap();
 
         // Register a memorable name
         let mut reg = crate::coding::session_registry::load(&dir).unwrap();
@@ -477,8 +470,7 @@ mod tests {
     fn resume_falls_back_to_direct_session_id() {
         let dir = tmp_dir("resume-direct");
         coding::save_handoff(&dir, &sample_handoff("direct-id")).unwrap();
-        coding::session_chat_append(&dir, "direct-id", &ChatMessage::now("user", "test"))
-            .unwrap();
+        coding::session_chat_append(&dir, "direct-id", &ChatMessage::now("user", "test")).unwrap();
 
         let result = resume_session_inner(&dir, "direct-id", None).unwrap();
         assert_eq!(result.entry.handoff.session_id, "direct-id");

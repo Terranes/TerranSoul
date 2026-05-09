@@ -99,7 +99,10 @@ where
         let resp = dispatch_method(gw.as_ref(), &caps, &req.method, params, id).await;
         if let Ok(v) = serde_json::to_value(&resp) {
             if v.get("error").is_some_and(|e| !e.is_null()) {
-                eprintln!("MCP stdio dispatch error for method '{}': {}", req.method, v["error"]);
+                eprintln!(
+                    "MCP stdio dispatch error for method '{}': {}",
+                    req.method, v["error"]
+                );
             }
         }
         write_response(&mut writer, &resp).await?;

@@ -239,18 +239,18 @@ async function handleDrop(e: DragEvent) {
 
 .input-wrapper:focus-within {
   border-color: var(--ts-accent);
-  box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.15),
-              0 4px 20px rgba(124, 111, 255, 0.12),
+  box-shadow: 0 0 0 3px var(--ts-accent-glow, rgba(124, 111, 255, 0.15)),
+              0 4px 20px var(--ts-accent-glow, rgba(124, 111, 255, 0.12)),
               inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  background: rgba(15, 23, 42, 0.88);
+  background: var(--ts-glass-bg-focus, var(--ts-glass-bg, rgba(15, 23, 42, 0.88)));
   transform: translateY(-1px);
 }
 
 .input-wrapper.drag-over {
   border-color: var(--ts-accent);
-  background: rgba(124, 111, 255, 0.08);
-  box-shadow: 0 0 0 3px rgba(124, 111, 255, 0.2),
-              0 4px 20px rgba(124, 111, 255, 0.15);
+  background: var(--ts-accent-glow, rgba(124, 111, 255, 0.08));
+  box-shadow: 0 0 0 3px var(--ts-accent-glow, rgba(124, 111, 255, 0.2)),
+              0 4px 20px var(--ts-accent-glow, rgba(124, 111, 255, 0.15));
   transform: scale(1.01);
 }
 
@@ -273,7 +273,7 @@ async function handleDrop(e: DragEvent) {
 
 .attach-btn:hover:not(:disabled) {
   color: var(--ts-accent);
-  background: rgba(124, 111, 255, 0.12);
+  background: var(--ts-accent-glow, rgba(124, 111, 255, 0.12));
   transform: scale(1.1);
 }
 
