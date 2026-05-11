@@ -117,10 +117,15 @@
     >
       <div class="bubble-wrapper">
         <AgentBadge name="TerranSoul" />
+        <!--
+          Collapsed by default — VS Code Copilot style. The animated
+          chat-input placeholder hint tells the user they can expand
+          this section to see the reasoning trace. Keeping it closed
+          avoids reflow churn while tokens stream in.
+        -->
         <details
           v-if="streamingThinkingText"
           class="thinking-details"
-          :open="isThinkingPhase"
         >
           <summary class="thinking-summary">
             💭 {{ isThinkingPhase ? 'Thinking…' : 'Thought process' }}
@@ -620,8 +625,8 @@ watch(() => props.streamingText, scrollToBottom);
 
 /* Markdown styling inside bubbles */
 :deep(.md-code-block) {
-  background: rgba(0, 0, 0, 0.4);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input, rgba(0, 0, 0, 0.4));
+  border: 1px solid var(--ts-border-subtle, rgba(255, 255, 255, 0.06));
   border-radius: var(--ts-radius-md);
   padding: 10px 14px;
   margin: 8px 0;
@@ -634,8 +639,8 @@ watch(() => props.streamingText, scrollToBottom);
 }
 
 :deep(.md-inline-code) {
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input, rgba(0, 0, 0, 0.3));
+  border: 1px solid var(--ts-border-subtle, rgba(255, 255, 255, 0.06));
   border-radius: 4px;
   padding: 2px 6px;
   font-family: var(--ts-font-mono);
@@ -651,10 +656,10 @@ watch(() => props.streamingText, scrollToBottom);
 .thinking-summary {
   cursor: pointer;
   font-size: 0.8rem;
-  color: var(--ts-text-muted, rgba(255, 255, 255, 0.5));
+  color: var(--ts-text-muted);
   padding: 4px 8px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.04));
   user-select: none;
   list-style: none;
 }

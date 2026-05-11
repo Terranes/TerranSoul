@@ -302,7 +302,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.voice-setup { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2rem; min-height: 100%; background: var(--ts-bg-base); }
+.voice-setup { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2rem; height: 100%; min-height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; background: var(--ts-bg-base); }
 .vs-steps { display: flex; gap: 0.5rem; align-items: center; }
 .vs-step { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ts-text-muted); }
 .vs-step.active .vs-step-dot { background: var(--ts-accent-violet-hover); color: var(--ts-text-on-accent); }

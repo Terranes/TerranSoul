@@ -270,8 +270,7 @@ pub async fn refine_and_save_fact(
 
     // Ask the brain to decide between keep / update / new.
     let (system, user) = build_refine_prompt(trimmed, &candidates);
-    let reply =
-        super::brain_memory::complete_via_mode(brain_mode, &system, &user, rotator).await;
+    let reply = super::brain_memory::complete_via_mode(brain_mode, &system, &user, rotator).await;
 
     let valid_ids: Vec<i64> = candidates.iter().map(|(id, _)| *id).collect();
     let decision = match reply {
@@ -342,8 +341,7 @@ pub async fn save_facts_refined(
     let mut stats = RefineStats::default();
     for fact in facts {
         let outcome =
-            refine_and_save_fact(fact, brain_mode, rotator, store, DEFAULT_REFINE_CANDIDATES)
-                .await;
+            refine_and_save_fact(fact, brain_mode, rotator, store, DEFAULT_REFINE_CANDIDATES).await;
         stats.record(outcome);
     }
     stats
@@ -539,14 +537,9 @@ mod tests {
             model: "ts-refine-test-unreachable".to_string(),
         };
         let rotator = std::sync::Mutex::new(ProviderRotator::default());
-        let outcome = refine_and_save_fact(
-            "User mostly codes in Python 3",
-            &brain,
-            &rotator,
-            &store,
-            3,
-        )
-        .await;
+        let outcome =
+            refine_and_save_fact("User mostly codes in Python 3", &brain, &rotator, &store, 3)
+                .await;
         assert!(
             matches!(
                 outcome,

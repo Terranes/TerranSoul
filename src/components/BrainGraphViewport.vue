@@ -230,11 +230,14 @@ onBeforeUnmount(() => {
 
 // ── Build graph ──────────────────────────────────────────────────────────────
 function buildGraph() {
-  // Map memories → nodes
+  // Map memories → nodes (initialise x/y/z so d3-force-3d v3 has seed coords)
   const idSet = new Set(props.memories.map((m) => m.id));
-  nodes = props.memories.map((m) => ({
+  nodes = props.memories.map((m, i) => ({
     id: m.id,
     kind: classifyMemoryKind(m),
+    x: Math.cos(i * 2.399) * 20,
+    y: Math.sin(i * 1.618) * 20,
+    z: Math.sin(i * 3.14159 * 0.618) * 20,
   }));
 
   // Map edges → links (only if both endpoints exist)

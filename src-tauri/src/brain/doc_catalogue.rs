@@ -566,9 +566,7 @@ fn build_top_picks(local_models: &[ModelRecommendation]) -> HashMap<String, Stri
             .or_else(|| {
                 local_models
                     .iter()
-                    .filter(|m| {
-                        m.required_ram_mb <= *floor.max(&1) && m.required_ram_mb <= 12_288
-                    })
+                    .filter(|m| m.required_ram_mb <= *floor.max(&1) && m.required_ram_mb <= 12_288)
                     .max_by_key(|m| m.required_ram_mb)
                     .map(|m| m.model_tag.clone())
             });

@@ -32,17 +32,29 @@
 
 ## Next Chunk
 
-**Phase 46.1 — Agent-session lesson capture for self-improve.**
-See chunk row below.
+Next up: **Chunk 48.2 — Per-shard `usearch` index files (sharded HNSW)**
 
 ---
 
-## Phase 46 — Agent-session knowledge ingestion (closes self-improve gap discovered 2026-05-10)
+## Phase 48 — Billion-Scale Retrieval & Graph
 
-| Chunk | Title | Status | Goal |
+> See [`docs/billion-scale-retrieval-design.md`](../docs/billion-scale-retrieval-design.md)
+> for the full phased plan, honest physical limits, and acceptance criteria.
+> Phase 1 (foundation scaffold + paged-graph command + Lite/WebGL renderer)
+> is already complete and recorded in `completion-log.md`.
+
+| Chunk | Status | Title | Notes |
 |---|---|---|---|
-| 46.1 | Agent-session lesson detector + `brain_ingest_lesson` MCP tool | not-started | Add `src-tauri/src/coding/agent_session_lessons.rs` with `detect_lesson(message, role, prior_messages) -> Option<LessonChunk>` recognising user-corrective ("you should X instead of Y", "stop doing X") and agent-authored ("I learned X", "lesson:") patterns. Add `brain_ingest_lesson{content,tags,importance,category}` MCP tool that writes to `memories` table via the gateway AND appends an `INSERT` row to `mcp-data/shared/memory-seed.sql` so lessons survive DB reseed. Extend `coding/conversation_learning.rs` `DetectionReply` schema with a `lesson` category that routes to the new tool instead of `milestones.md`. Add CI check: when `mcp-data/shared/migrations/NNN_*.sql` is added, `lessons-learned.md` must change in the same commit. Tests: detection unit tests for both pattern families, MCP tool round-trip via `gateway` mock, CI check via shell script. Reference: migration `019_self_improve_agent_session_gap_lessons.sql`. |
-| 46.2 | Manual tutorial screenshot QA — sweep all 21 tutorials | not-started | Walk every tutorial step-by-step (one screenshot at a time), opening the exact target view, dismissing quest overlays, confirming 3D mode state, capturing, and visually verifying the resulting PNG before moving on. Fix any UI defect found and recapture immediately. Tutorials: `quick-start`, `brain-rag-setup`, `brain-rag-local-lm`, `advanced-memory-rag`, `knowledge-wiki`, `folder-to-knowledge-graph`, `context-folder-conversion`, `skill-tree-quests`, `voice-setup`, `charisma-teaching`, `teaching-animations-expressions-persona`, `device-sync-hive`, `hive-relay`, `lan-mcp-sharing`, `browser-mobile`, `mcp-coding-agents`, `multi-agent-workflows`, `openclaw-plugin`, `packages-plugins`, `self-improve-to-pr`, `mcp-server-integration-guide`. Will span multiple sessions; track progress via `/memories/session/tutorial-qa-progress.md`. **No batch scripts** — each capture must be human-verified per migration `018`. |
+| 48.2 | not-started | Per-shard `usearch` HNSW indexes | One index file per `ShardKey` under `<app-data>/vectors/<shard>.usearch`, with per-shard quantization sidecar. `ShardedHybridSearch` consults shards in parallel and merges via RRF. Adds `MemoryStore::rebalance_shards()` + background compaction. |
+| 48.3 | not-started | Coarse shard router (IVF-style centroids) | Build a small centroid index from a 1% sample of embeddings so each query only probes top-p shards instead of all 15. Stored alongside vectors. Falls back to "probe all" when the router is missing or stale. |
+| 48.4 | not-started | Disk-backed ANN (IVF-PQ / DiskANN-class) | For shards over `shard_max_entries` (default 50M) build IVF-PQ indexes (m=96, nbits=8). Memory-map shard files; refresh PQ codebooks during nightly compaction. Gated on the `native-ann` feature. |
+| 48.5 | not-started | FTS5 per-shard keyword index | Migrate BM25-lite from SQL `LIKE` to an FTS5 virtual table per shard (or `tantivy` if FTS5 hits limits). Add covering indexes for `last_accessed` / `decay_score` so recency signals never scan the full table. |
+| 48.6 | not-started | Paged knowledge graph at 1B | Move KG traversal off in-memory `Vec<MemoryEdge>` onto paged adjacency with covering indexes `(src_id, edge_type)` and `(dst_id, edge_type)`. Pre-aggregated `memory_graph_clusters` table refreshed during compaction. Frontend stays at ≤ 5k visible nodes via existing `memory_graph_page` LOD. |
+| 48.7 | not-started | Backpressure + hot-cache + health surface | Reject ingests that would push a shard past `shard_max_entries` (trigger split/rebalance instead of degrading search). Last-N query → top-K cache for ≤ 60 s. Per-shard health (index missing/corrupt/dirty) wired into `brain_health` so the search layer never silently returns partial results. |
 
 ---
+
+ 
+
+
 

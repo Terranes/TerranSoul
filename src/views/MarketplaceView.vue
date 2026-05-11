@@ -1581,7 +1581,7 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.marketplace-view { display: flex; flex-direction: column; height: 100%; padding: 1rem; gap: 0.75rem; overflow: hidden; }
+.marketplace-view { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 1rem; gap: 0.75rem; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
 .mp-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 .mp-header h2 { margin: 0; font-size: 1.25rem; }
 .mp-header-actions { display: flex; gap: 0.5rem; }

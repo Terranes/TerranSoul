@@ -17,6 +17,7 @@ pub mod ollama_lifecycle;
 pub mod openai_client;
 pub mod provider_policy;
 pub mod provider_rotator;
+pub mod providers;
 pub mod ram_budget;
 pub mod segmenter;
 pub mod selection;

@@ -1242,19 +1242,23 @@ async fn crawl_website_with_progress(
 
         visited.insert(url.clone());
 
-        emit_progress(
-            emitter,
-            task_id,
-            ((visited.len() * 25) / max_pages.max(1)) as u8,
-            &format!(
-                "Crawling {}/{}: {}",
+        emitter.emit(TaskProgressEvent {
+            id: task_id.to_string(),
+            kind: TaskKind::Crawl,
+            status: TaskStatus::Running,
+            progress: ((visited.len() * 25) / max_pages.max(1)) as u8,
+            description: format!(
+                "Crawling {}/{} (depth {}/{}): {}",
                 visited.len(),
                 max_pages,
+                depth,
+                max_depth,
                 truncate_url(&url)
             ),
-            visited.len(),
-            max_pages,
-        );
+            processed_items: visited.len(),
+            total_items: max_pages,
+            error: None,
+        });
 
         let response = match state
             .ollama_client

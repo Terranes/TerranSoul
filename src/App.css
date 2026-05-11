@@ -6,6 +6,55 @@
 .app-shell.pet-mode { background: transparent; }
 .app-shell.panel-window { display: block; }
 .panel-main { height: 100vh; height: 100dvh; overflow-y: auto; }
+.app-shell > :deep(.brain-setup),
+.app-main > :deep(.brain-view),
+.app-main > :deep(.skill-tree-view),
+.app-main > :deep(.memory-view),
+.app-main > :deep(.marketplace-view),
+.app-main > :deep(.mobile-pairing-view),
+.app-main > :deep(.voice-setup) {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ts-accent) color-mix(in srgb, var(--ts-bg-elevated) 82%, transparent);
+}
+.app-shell > :deep(.brain-setup)::-webkit-scrollbar,
+.app-main > :deep(.brain-view)::-webkit-scrollbar,
+.app-main > :deep(.skill-tree-view)::-webkit-scrollbar,
+.app-main > :deep(.memory-view)::-webkit-scrollbar,
+.app-main > :deep(.marketplace-view)::-webkit-scrollbar,
+.app-main > :deep(.mobile-pairing-view)::-webkit-scrollbar,
+.app-main > :deep(.voice-setup)::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.app-shell > :deep(.brain-setup)::-webkit-scrollbar-track,
+.app-main > :deep(.brain-view)::-webkit-scrollbar-track,
+.app-main > :deep(.skill-tree-view)::-webkit-scrollbar-track,
+.app-main > :deep(.memory-view)::-webkit-scrollbar-track,
+.app-main > :deep(.marketplace-view)::-webkit-scrollbar-track,
+.app-main > :deep(.mobile-pairing-view)::-webkit-scrollbar-track,
+.app-main > :deep(.voice-setup)::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--ts-bg-elevated) 72%, transparent);
+  border-radius: var(--ts-radius-pill);
+}
+.app-shell > :deep(.brain-setup)::-webkit-scrollbar-thumb,
+.app-main > :deep(.brain-view)::-webkit-scrollbar-thumb,
+.app-main > :deep(.skill-tree-view)::-webkit-scrollbar-thumb,
+.app-main > :deep(.memory-view)::-webkit-scrollbar-thumb,
+.app-main > :deep(.marketplace-view)::-webkit-scrollbar-thumb,
+.app-main > :deep(.mobile-pairing-view)::-webkit-scrollbar-thumb,
+.app-main > :deep(.voice-setup)::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--ts-accent) 72%, var(--ts-bg-elevated));
+  border: 2px solid color-mix(in srgb, var(--ts-bg-elevated) 72%, transparent);
+  border-radius: var(--ts-radius-pill);
+}
 
 .browser-app-window {
   position: fixed; inset: 0; margin: auto;
@@ -114,8 +163,21 @@
   overflow: hidden;
   transition: transform var(--ts-transition-spring, 0.4s cubic-bezier(0.34, 1.56, 0.64, 1));
 }
+.nav-logo-btn {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
 .nav-logo:hover {
   transform: scale(1.08);
+}
+.nav-logo-btn:focus-visible {
+  outline: 2px solid var(--ts-accent);
+  outline-offset: 2px;
+}
+.nav-logo-btn.active {
+  box-shadow: 0 0 14px var(--ts-accent-glow);
 }
 .nav-logo-img {
   width: 100%; height: 100%;
@@ -177,60 +239,7 @@
 }
 .nav-spacer { flex: 1; }
 .nav-brain-warn { color: var(--ts-warning); }
-/* ── Mode toggle toolbar (in-flow, inside .app-main) ── */
-.mode-toggle-toolbar {
-  position: absolute;
-  top: var(--ts-space-sm);
-  left: var(--ts-space-sm);
-  z-index: var(--ts-z-sticky);
-  pointer-events: auto;
-}
 
-/* ── 3-way segmented mode toggle ── */
-.mode-segmented {
-  display: inline-flex;
-  border-radius: var(--ts-radius-pill);
-  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
-  backdrop-filter: blur(16px) saturate(1.3);
-  -webkit-backdrop-filter: blur(16px) saturate(1.3);
-  box-shadow: var(--ts-shadow-md), var(--ts-glass-highlight, inset 0 1px 0 rgba(255, 255, 255, 0.06));
-  overflow: hidden;
-  padding: 3px;
-  gap: 2px;
-}
-.mode-seg-btn {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 7px 14px;
-  border: none;
-  border-radius: var(--ts-radius-pill);
-  background: transparent;
-  color: var(--ts-text-dim);
-  font-size: 0.74rem;
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-  white-space: nowrap;
-}
-.mode-seg-btn:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ts-text-bright, var(--ts-text-primary));
-  transform: scale(1.02);
-}
-.mode-seg-btn.active {
-  background: var(--ts-accent);
-  color: var(--ts-text-on-accent);
-  box-shadow: 0 2px 10px rgba(124, 111, 255, 0.3);
-}
-.mode-seg-btn + .mode-seg-btn {
-  /* gap handles spacing now — remove the old border separator */
-}
-.mode-seg-label {
-  display: inline;
-}
 .app-main { flex: 1; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; }
 
 /* ── Mobile bottom tab bar ── */
@@ -296,6 +305,13 @@
   .desktop-nav { display: none; }
   .mobile-bottom-nav { display: flex; }
   .app-main { flex: 1; min-height: 0; padding-bottom: var(--ts-mobile-nav-total-height); }
+  .app-main.app-main--chat-viewport {
+    flex: 0 0 100%;
+    height: 100%;
+    padding-bottom: 0;
+    --ts-chat-bottom-nav-offset: var(--ts-mobile-nav-total-height);
+    --ts-chat-footer-bottom-padding: 3px;
+  }
 }
 
 /* ── DEV badge (layout-aware, no fixed positioning) ── */
@@ -336,23 +352,9 @@
   .mobile-mcp-indicator { display: flex; }
 }
 
-/* Pet mode: inline top-left inside the pet-mode-wrapper */
+/* Pet mode: wrapper passes full size to PetOverlayView */
 .pet-mode-wrapper {
   position: relative;
   width: 100%;
   height: 100%;
-}
-.pet-dev-badge,
-.pet-mcp-badge {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  z-index: 10;
-  font-size: 0.6rem;
-  background: var(--ts-warning);
-  backdrop-filter: blur(4px);
-  border: 1px solid var(--ts-border);
-}
-.pet-mcp-badge {
-  background: var(--ts-info, #38bdf8);
 }

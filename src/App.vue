@@ -105,7 +105,7 @@
 
     <!-- Loading splash shown during app initialization -->
     <Transition name="splash-fade">
-      <SplashScreen v-if="appLoading" />
+      <SplashScreen v-if="appLoading && !(isPetMode && !windowStore.isMcpMode)" />
     </Transition>
 
     <!-- First-launch wizard (shown once, before the main app) -->
@@ -125,37 +125,27 @@
         v-if="isPetMode && !windowStore.isMcpMode"
         class="pet-mode-wrapper"
       >
-        <!-- Build-mode badge — inline in the pet mode layout, top-left. -->
-        <FloatingBadge
-          v-if="windowStore.isDevBuild"
-          class="pet-dev-badge"
-          tone="warning"
-          readonly
-          title="Development build — MCP on port 7422"
-        >
-          DEV
-        </FloatingBadge>
         <PetOverlayView />
       </div>
 
-      <!-- Normal mode (or MCP mode): Brain onboarding or tabbed UI -->
+      <!-- Normal mode (or MCP mode): tabbed UI -->
       <template v-else>
-        <!-- Brain onboarding: shown until a brain is configured -->
-        <BrainSetupView
-          v-if="!hasBrain && !skipSetup"
-          @done="onBrainDone"
-        />
-
-        <template v-else>
           <!-- Desktop side navigation -->
           <nav class="app-nav desktop-nav">
-            <div class="nav-logo">
+            <button
+              type="button"
+              class="nav-logo nav-logo-btn"
+              :class="{ active: activeTab === 'chat' }"
+              aria-label="Go to Chat"
+              title="Chat"
+              @click="activeTab = 'chat'"
+            >
               <img
                 :src="appIconUrl"
                 alt="TerranSoul"
                 class="nav-logo-img"
               >
-            </div>
+            </button>
             <button
               v-for="tab in tabs"
               :key="tab.id"
@@ -176,7 +166,7 @@
             <button
               v-if="!hasBrain"
               class="nav-btn nav-brain-warn"
-              @click="skipSetup = false"
+              @click="activeTab = 'brain'"
             >
               <span class="nav-icon">⚠</span>
               <span class="nav-label">Brain</span>
@@ -234,42 +224,16 @@
           </nav>
 
           <!-- Main area -->
-          <main class="app-main">
-            <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
-               Hidden on non-chat tabs and when quest constellation is open. -->
-            <div
-              v-if="activeTab === 'chat' && !questConstellationOpen"
-              class="mode-toggle-toolbar"
-            >
-              <div class="mode-segmented">
-                <button
-                  :class="['mode-seg-btn', { active: !isChatboxMode }]"
-                  title="3D character mode"
-                  @click="setDisplayMode('desktop')"
-                >
-                  🖥 <span class="mode-seg-label">3D</span>
-                </button>
-                <button
-                  :class="['mode-seg-btn', { active: isChatboxMode }]"
-                  title="Chat-only mode (no 3D character)"
-                  @click="setDisplayMode('chatbox')"
-                >
-                  💬 <span class="mode-seg-label">Chat</span>
-                </button>
-                <button
-                  class="mode-seg-btn"
-                  title="Switch to pet mode"
-                  @click="togglePetMode"
-                >
-                  🐾 <span class="mode-seg-label">Pet</span>
-                </button>
-              </div>
-            </div>
-
+          <main
+            class="app-main"
+            :class="{ 'app-main--chat-viewport': activeTab === 'chat' && !isChatboxMode }"
+          >
             <ChatView
               v-show="activeTab === 'chat'"
               :chatbox-mode="isChatboxMode"
               @navigate="handleSkillNavigate"
+              @set-display-mode="setDisplayMode"
+              @toggle-pet-mode="togglePetMode"
             />
             <SkillTreeView
               v-if="activeTab === 'skills'"
@@ -302,7 +266,6 @@
 
           <!-- Quest reward ceremony overlay (Chunk 132) -->
           <QuestRewardCeremony />
-        </template>
       </template>
     </div>
 
@@ -326,7 +289,7 @@ import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import MobilePairingView from './views/MobilePairingView.vue';
 import BrainView from './views/BrainView.vue';
-import BrainSetupView from './views/BrainSetupView.vue';
+// BrainSetupView removed — FirstLaunchWizard handles initial brain config
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
@@ -350,7 +313,6 @@ const mobileNotifications = useMobileNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
 const appLoading = ref(true);
-const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const browserMode = ref(false);
 const browserAppWindowOpen = ref(false);
@@ -381,18 +343,8 @@ const tabs = [
   { id: 'voice' as const, label: 'Voice' },
 ];
 
-async function onBrainDone() {
-  skipSetup.value = true;
-}
-
 function onFirstLaunchDone() {
   showFirstLaunchWizard.value = false;
-  // The wizard already configured brain + voice + quests.
-  // If the manual path was chosen and brain is still not set,
-  // show the BrainSetupView.
-  if (!brain.hasBrain) {
-    skipSetup.value = false;
-  }
 }
 
 async function togglePetMode() {
@@ -428,15 +380,11 @@ function handleSkillNavigate(target: string) {
     voice: 'voice',
     brain: 'brain',
     mobile: 'mobile',
-    'brain-setup': 'brain', // brain setup wizard re-opens from the Brain hub
+    'brain-setup': 'brain',
   };
   const tab = tabMap[target];
   if (tab) {
     activeTab.value = tab;
-  }
-  // 'brain-setup' target: re-open the brain wizard
-  if (target === 'brain-setup') {
-    skipSetup.value = false;
   }
 }
 
@@ -527,7 +475,6 @@ onMounted(async () => {
     }
     // Simulate MCP mode flag in browser/E2E when VITE_MCP_MODE is set
     await windowStore.loadMcpModeFlag();
-    skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();
     await skillTree.initialise();
@@ -591,20 +538,18 @@ onMounted(async () => {
   // Load settings to check first-launch flag
   await settingsStore.loadSettings();
 
-  // If brain is already set (either legacy or new mode), skip the onboarding.
-  if (brain.hasBrain) {
-    skipSetup.value = true;
-  } else if (settingsStore.settings.first_launch_complete) {
-    // Settings say we completed first launch before but brain is gone —
-    // re-configure silently (the user already chose their path).
-    await brain.autoConfigureForDesktop();
-    skipSetup.value = true;
-  } else {
-    // True first launch: show the wizard and let the user choose.
-    // Dismiss the splash immediately — the wizard has its own UI.
-    showFirstLaunchWizard.value = true;
-    skipSetup.value = true; // hide BrainSetupView while wizard is open
-    appLoading.value = false;
+  // If brain is already set, proceed normally.
+  if (!brain.hasBrain) {
+    if (settingsStore.settings.first_launch_complete) {
+      // Settings say we completed first launch before but brain is gone —
+      // re-configure silently (the user already chose their path).
+      await brain.autoConfigureForDesktop();
+    } else {
+      // True first launch: show the wizard and let the user choose.
+      // Dismiss the splash immediately — the wizard has its own UI.
+      showFirstLaunchWizard.value = true;
+      appLoading.value = false;
+    }
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS

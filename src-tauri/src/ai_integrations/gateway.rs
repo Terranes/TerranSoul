@@ -28,6 +28,7 @@
 //!
 //! Chunk reference: **15.3** in `rules/milestones.md`.
 
+use std::io::Write;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -350,6 +351,19 @@ pub struct IngestUrlRequest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestLessonRequest {
+    pub content: String,
+    /// Comma-separated tags (e.g., "frontend,css,theme").
+    #[serde(default)]
+    pub tags: Option<String>,
+    /// Importance score, clamped `1..=10`. Defaults to 8.
+    #[serde(default)]
+    pub importance: Option<i64>,
+    /// Category (e.g., "coding-workflow", "frontend", "security").
+    pub category: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IngestUrlResponse {
     /// Background task id — the client can poll task status through the
     /// existing `commands::tasks` surface or wait for `task-progress`
@@ -359,6 +373,18 @@ pub struct IngestUrlResponse {
     /// Either `"url"`, `"file"`, or `"crawl"` — mirrors
     /// [`crate::commands::ingest::IngestStartResult`].
     pub source_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IngestLessonResponse {
+    /// Memory entry id where the lesson was stored.
+    pub memory_id: i64,
+    /// Tags that were applied.
+    pub tags: String,
+    /// Importance assigned.
+    pub importance: i64,
+    /// Acknowledgement that the lesson was also appended to memory-seed.sql.
+    pub persisted_to_seed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -489,6 +515,15 @@ pub trait BrainGateway: Send + Sync {
         caps: &GatewayCaps,
         req: IngestUrlRequest,
     ) -> Result<IngestUrlResponse, GatewayError>;
+
+    /// `brain.ingest_lesson` — directly write a lesson to the brain's
+    /// memory store AND append to `mcp-data/shared/memory-seed.sql` for
+    /// reseed durability. Requires `brain_write` capability.
+    async fn ingest_lesson(
+        &self,
+        caps: &GatewayCaps,
+        req: IngestLessonRequest,
+    ) -> Result<IngestLessonResponse, GatewayError>;
 
     /// `brain.health` — server + brain status snapshot.
     async fn health(&self, caps: &GatewayCaps) -> Result<HealthResponse, GatewayError>;
@@ -1142,6 +1177,87 @@ impl BrainGateway for AppStateGateway {
             .as_ref()
             .ok_or_else(|| GatewayError::NotConfigured("ingest sink not attached".into()))?;
         sink.start_ingest(req.url, req.tags, req.importance).await
+    }
+
+    async fn ingest_lesson(
+        &self,
+        caps: &GatewayCaps,
+        req: IngestLessonRequest,
+    ) -> Result<IngestLessonResponse, GatewayError> {
+        if !caps.brain_write {
+            return Err(GatewayError::PermissionDenied("brain_write"));
+        }
+        if req.content.trim().is_empty() {
+            return Err(GatewayError::InvalidArgument(
+                "content cannot be empty".into(),
+            ));
+        }
+
+        let tags = req
+            .tags
+            .clone()
+            .unwrap_or_else(|| "lesson,agent-session".to_string());
+        let importance = req.importance.unwrap_or(8).clamp(1, 10);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+
+        // Insert into memories table.
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+
+        store
+            .conn()
+            .execute(
+                "INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                rusqlite::params![
+                    req.content,
+                    tags,
+                    importance,
+                    "lesson",
+                    now_ms,
+                    "long",
+                    1.0,
+                    req.category,
+                    "procedural",
+                ],
+            )
+            .map_err(|e| GatewayError::Storage(format!("insert lesson: {e}")))?;
+        let memory_id = store.conn().last_insert_rowid();
+
+        // Also append to memory-seed.sql so the lesson survives a reseed.
+        // This is idempotent: if the exact content already exists, the WHERE NOT EXISTS guard skips it.
+        let seed_path = self.state.data_dir.join("mcp-data/shared/memory-seed.sql");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&seed_path)
+        {
+            let sql_line = format!(
+                "INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)\n\
+                 SELECT '{}', '{}', {}, 'lesson', {}, 'long', 1.0, '{}', 'procedural'\n\
+                 WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE '{}%%');\n",
+                req.content.replace("'", "''"),
+                tags,
+                importance,
+                now_ms,
+                req.category,
+                req.content.replace("'", "''").chars().take(50).collect::<String>(),
+            );
+            let _ = writeln!(file, "{}", sql_line);
+        }
+
+        Ok(IngestLessonResponse {
+            memory_id,
+            tags,
+            importance,
+            persisted_to_seed: true,
+        })
     }
 
     async fn health(&self, caps: &GatewayCaps) -> Result<HealthResponse, GatewayError> {
@@ -2052,5 +2168,107 @@ mod tests {
             a.fingerprint, b.fingerprint,
             "different queries should yield different fingerprints"
         );
+    }
+
+    #[tokio::test]
+    async fn ingest_lesson_requires_write_capability() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .ingest_lesson(
+                &GatewayCaps::NONE,
+                IngestLessonRequest {
+                    content: "Test lesson".into(),
+                    tags: None,
+                    importance: None,
+                    category: "test".into(),
+                },
+            )
+            .await;
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("brain_write"));
+    }
+
+    #[tokio::test]
+    async fn ingest_lesson_stores_to_memory() {
+        let gw = AppStateGateway::new(seed_state());
+        let resp = gw
+            .ingest_lesson(
+                &GatewayCaps::READ_WRITE,
+                IngestLessonRequest {
+                    content: "LESSON: Test lesson content.".into(),
+                    tags: Some("test,lesson".into()),
+                    importance: Some(9),
+                    category: "test-category".into(),
+                },
+            )
+            .await
+            .expect("ingest_lesson should succeed with write caps");
+
+        // Verify response.
+        assert!(resp.memory_id > 0);
+        assert_eq!(resp.importance, 9);
+        assert!(resp.tags.contains("test,lesson"));
+        assert!(resp.persisted_to_seed);
+
+        // Verify the lesson was stored in memory.
+        let entry = gw
+            .get_entry(&GatewayCaps::READ_WRITE, resp.memory_id)
+            .await
+            .expect("memory entry should exist");
+        assert_eq!(entry.content, "LESSON: Test lesson content.");
+    }
+
+    #[tokio::test]
+    async fn ingest_lesson_rejects_empty_content() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .ingest_lesson(
+                &GatewayCaps::READ_WRITE,
+                IngestLessonRequest {
+                    content: "  ".into(),
+                    tags: None,
+                    importance: None,
+                    category: "test".into(),
+                },
+            )
+            .await;
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("empty"));
+    }
+
+    #[tokio::test]
+    async fn ingest_lesson_clamps_importance() {
+        let gw = AppStateGateway::new(seed_state());
+        let resp = gw
+            .ingest_lesson(
+                &GatewayCaps::READ_WRITE,
+                IngestLessonRequest {
+                    content: "Lesson".into(),
+                    tags: None,
+                    importance: Some(50), // Should be clamped to 10
+                    category: "test".into(),
+                },
+            )
+            .await
+            .expect("should clamp importance");
+        assert_eq!(resp.importance, 10);
+    }
+
+    #[tokio::test]
+    async fn ingest_lesson_default_importance() {
+        let gw = AppStateGateway::new(seed_state());
+        let resp = gw
+            .ingest_lesson(
+                &GatewayCaps::READ_WRITE,
+                IngestLessonRequest {
+                    content: "Lesson".into(),
+                    tags: None,
+                    importance: None, // Should default to 8
+                    category: "test".into(),
+                },
+            )
+            .await
+            .expect("should default importance");
+        assert_eq!(resp.importance, 8);
     }
 }

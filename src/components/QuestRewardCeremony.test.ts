@@ -81,7 +81,7 @@ describe('QuestRewardCeremony', () => {
     expect(document.body.textContent).toContain('Quest Complete');
   });
 
-  it('Continue button dismisses the ceremony and updates the high-water mark', async () => {
+  it('Close button dismisses the toast and updates the high-water mark', async () => {
     lastSeen.value = 1000;
     mount(QuestRewardCeremony, { attachTo: document.body });
     await nextTick();
@@ -99,7 +99,7 @@ describe('QuestRewardCeremony', () => {
     expect(mockStore.setLastSeenActivationTimestamp).toHaveBeenCalledWith(2000);
   });
 
-  it('renders stat-delta rows for the activated skill', async () => {
+  it('renders stat-delta chips for the activated skill', async () => {
     lastSeen.value = 1000;
     mount(QuestRewardCeremony, { attachTo: document.body });
     await nextTick();
@@ -109,8 +109,6 @@ describe('QuestRewardCeremony', () => {
     await nextTick();
     await nextTick();
 
-    expect(document.body.textContent).toContain('Stat Changes');
-    // TTS contributes to charisma
-    expect(document.body.textContent).toMatch(/CHA/);
+    expect(document.body.textContent).toMatch(/CHA.*\+/);
   });
 });

@@ -104,6 +104,8 @@ export interface AppSettings {
   context_folders?: ContextFolder[];
   /** Controls extended-thinking (chain-of-thought) depth for the LLM. Only affects models supporting Ollama's `think` parameter. */
   reasoning_effort?: ReasoningEffort;
+  /** When true, show karaoke-style subtitle dialog above chat controls during TTS playback. */
+  karaoke_dialog_enabled?: boolean;
   /** When true, verbose debug messages are printed (e.g. chat-rewarm timings). Default false. */
   debug_logging?: boolean;
 }
@@ -184,8 +186,31 @@ const DEFAULT_SETTINGS: AppSettings = {
   code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
   context_folders: [],
   reasoning_effort: 'off',
+  karaoke_dialog_enabled: true,
   debug_logging: false,
 };
+
+const KARAOKE_DIALOG_STORAGE_KEY = 'ts.karaokeDialogEnabled';
+
+function readKaraokeDialogPreference(): boolean {
+  try {
+    if (typeof window === 'undefined') return true;
+    const raw = window.localStorage.getItem(KARAOKE_DIALOG_STORAGE_KEY);
+    if (raw == null) return true;
+    return raw === '1';
+  } catch {
+    return true;
+  }
+}
+
+function writeKaraokeDialogPreference(enabled: boolean): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(KARAOKE_DIALOG_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // Best-effort persistence when localStorage is unavailable.
+  }
+}
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -203,7 +228,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value = await invoke<AppSettings>('get_app_settings');
     } catch {
       // Tauri unavailable — keep defaults
+      settings.value = { ...settings.value, karaoke_dialog_enabled: readKaraokeDialogPreference() };
     } finally {
+      const karaokeEnabled = settings.value.karaoke_dialog_enabled ?? readKaraokeDialogPreference();
+      settings.value = { ...settings.value, karaoke_dialog_enabled: karaokeEnabled };
+      writeKaraokeDialogPreference(karaokeEnabled);
       isLoading.value = false;
     }
   }
@@ -211,6 +240,9 @@ export const useSettingsStore = defineStore('settings', () => {
   async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
     const updated: AppSettings = { ...settings.value, ...patch };
     settings.value = updated;
+    if (Object.prototype.hasOwnProperty.call(patch, 'karaoke_dialog_enabled')) {
+      writeKaraokeDialogPreference(updated.karaoke_dialog_enabled !== false);
+    }
     try {
       await invoke('save_app_settings', { settings: updated });
     } catch {
@@ -238,6 +270,11 @@ export const useSettingsStore = defineStore('settings', () => {
   /** Toggle chatbox-only mode (hides the 3D character). */
   async function setChatboxMode(enabled: boolean): Promise<void> {
     await saveSettings({ chatbox_mode: enabled });
+  }
+
+  /** Toggle karaoke subtitle dialog visibility. */
+  async function setKaraokeDialogEnabled(enabled: boolean): Promise<void> {
+    await saveSettings({ karaoke_dialog_enabled: enabled });
   }
 
   async function saveMaxMemoryGb(gb: number): Promise<void> {
@@ -324,6 +361,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveCameraState,
     saveBgmState,
     setChatboxMode,
+    setKaraokeDialogEnabled,
     saveMaxMemoryGb,
     saveMaxMemoryMb,
     saveMaxLongTermEntries,

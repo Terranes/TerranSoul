@@ -522,7 +522,10 @@ function onCodeIndexMmapMbChange(e: Event) {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
+  min-width: 0;
   padding: 24px;
+  overflow-x: hidden;
   background: var(--ts-glass-bg, rgba(15, 15, 30, 0.7));
   border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--bcp-radius);
@@ -724,6 +727,7 @@ function onCodeIndexMmapMbChange(e: Event) {
   display: flex;
   align-items: center;
   gap: 10px;
+  min-width: 0;
 }
 
 .bcp-label {
@@ -735,6 +739,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-range {
   flex: 1;
+  min-width: 0;
   accent-color: var(--ts-accent, #7c5bff);
 }
 
@@ -748,6 +753,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-input {
   flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   font-size: 0.82rem;
   background: rgba(255, 255, 255, 0.06);
@@ -799,6 +805,7 @@ function onCodeIndexMmapMbChange(e: Event) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .bcp-toggle-text strong {
@@ -809,5 +816,36 @@ function onCodeIndexMmapMbChange(e: Event) {
 .bcp-toggle-text small {
   font-size: 0.75rem;
   color: var(--ts-text-muted, #888);
+}
+
+@media (max-width: 480px) {
+  .bcp {
+    gap: 14px;
+    padding: 14px;
+  }
+  .bcp-section {
+    padding: 12px;
+  }
+  .bcp-tiers,
+  .bcp-storage-row {
+    grid-template-columns: 1fr;
+  }
+  .bcp-field {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .bcp-label {
+    grid-column: 1 / -1;
+    min-width: 0;
+    white-space: normal;
+  }
+  .bcp-input:not(.bcp-input--sm) {
+    grid-column: 1 / -1;
+  }
+  .bcp-value {
+    min-width: 0;
+  }
 }
 </style>

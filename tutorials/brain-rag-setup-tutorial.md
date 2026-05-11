@@ -1,506 +1,281 @@
-# Brain + Memory + RAG — Pet Mode Walkthrough
+# Brain + Memory + RAG - Pet Mode Tutorial
 
-> **TerranSoul v0.1** · Last updated: 2026-05-09
+> **TerranSoul v0.1** · Last verified: 2026-05-10.
+> Follow the recommended setup path, switch to pet mode, ask TerranSoul to
+> learn from documents, upload sources through Scholar's Quest, and verify
+> RAG answers in multiple languages.
 >
-> Technical reference: [`BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md`](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
-> Architecture doc: [`docs/brain-advanced-design.md`](../docs/brain-advanced-design.md)
-
-End-to-end walkthrough: set up TerranSoul's brain, memory, and RAG
-pipeline entirely from **pet mode** — the transparent desktop overlay
-where your VRM companion floats on top of your workspace.
+> Technical reference: [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md) ·
+> Architecture doc: [docs/brain-advanced-design.md](../docs/brain-advanced-design.md)
 
 ---
 
-## Table of Contents
+## What You Are Building
 
-1. [Launch & Enter Pet Mode](#1-launch--enter-pet-mode)
-2. [Pet Mode Controls](#2-pet-mode-controls)
-3. [Open the Chat Panel](#3-open-the-chat-panel)
-4. [Configure the Brain — Auto-Install](#4-configure-the-brain--auto-install)
-5. [Ingest Documents via Chat](#5-ingest-documents-via-chat)
-6. [Ask Questions — RAG-Grounded Answers](#6-ask-questions--rag-grounded-answers)
-7. [Follow-Up Questions](#7-follow-up-questions)
-8. [Multilingual RAG](#8-multilingual-rag)
-9. [Check Brain Status via Panels](#9-check-brain-status-via-panels)
-10. [Check Memory via Panels](#10-check-memory-via-panels)
-11. [Context Menu — Full Feature Tour](#11-context-menu--full-feature-tour)
-12. [Slash Commands Reference](#12-slash-commands-reference)
-13. [Architecture Reference](#13-architecture-reference)
-14. [Troubleshooting](#14-troubleshooting)
+You will produce one working brain + memory + RAG setup:
 
----
+- Recommended first-launch setup accepted with **Auto-Accept All**.
+- Pet mode opened from the main 3D view.
+- Floating pet chat opened by clicking the character.
+- The message **Learn from my documents** routed through the backend intent classifier.
+- Scholar's Quest source upload completed with Vietnamese Civil Code sample documents.
+- RAG-grounded answers verified in English, Vietnamese, and Chinese.
 
-## 1. Launch & Enter Pet Mode
+The document-learning trigger is brain-owned. The frontend sends contentful
+messages through the backend `classify_intent` command, which retrieves app
+knowledge from the RAG store before deciding that **Learn from my documents**
+means `learn_with_docs`.
 
-![Fresh launch — Chat tab with welcome screen](screenshots/pet-mode/01-fresh-launch.png)
+Implementation surfaces reviewers can check:
 
-Launch TerranSoul. The app opens in **desktop mode** with the Chat tab
-and a welcome screen. The brain is already connected to a **Free cloud**
-provider (Pollinations AI / OpenRouter) — zero configuration required.
-
-The sidebar has six tabs: **Chat**, **Quests**, **Brain**, **Memory**,
-**Market**, **Voice**.
-
-Click the **🐾 Pet** toggle in the mode pill (top-right corner) to
-switch to pet mode.
-
-![Pet mode — character on transparent background](screenshots/quick-start/03-pet-mode.png)
-
-The app window becomes a **transparent always-on-top overlay** — the VRM
-character floats directly on your desktop. You can see your other
-applications through the transparent background.
-
-On first entry, a **welcome tooltip** appears with interaction hints:
-
-> - **Click** character to toggle chat
-> - **Drag** to move
-> - **Scroll wheel** to zoom in/out
-> - **Hold click + scroll** to rotate
-> - **Middle-click drag** to rotate
-> - **Right-click** for menu (mood, settings…)
-
-Click **Got it** to dismiss.
+- [src/stores/conversation.ts](../src/stores/conversation.ts) - chat send flow and quest-chain activation.
+- [src-tauri/src/commands/brain.rs](../src-tauri/src/commands/brain.rs) - `classify_intent` command and intent RAG context retrieval.
+- [src-tauri/src/brain/intent_classifier.rs](../src-tauri/src/brain/intent_classifier.rs) - LLM intent classifier prompt and parser.
+- [src/stores/skill-tree.ts](../src/stores/skill-tree.ts) - quest activation state.
+- [src/views/ChatView.vue](../src/views/ChatView.vue) - desktop chat surface and bottom action bar.
 
 ---
 
-## 2. Pet Mode Controls
+## Requirements
 
-The VRM character is your primary interaction point. Everything happens
-through direct interaction with the character:
-
-| Action | Effect |
-|---|---|
-| **Left-click** | Toggle the floating chat panel |
-| **Drag** | Move the character anywhere on screen |
-| **Scroll wheel** | Zoom in/out |
-| **Hold click + scroll** | Rotate camera |
-| **Middle-click drag** | Rotate camera |
-| **Right-click** | Open context menu |
-| **Escape** | Exit pet mode → return to desktop mode |
-
-The character responds with emotion bubbles — manga-style speech
-balloons that show the current emotional state (💖 happy, 😢 sad, 😠
-angry, 😌 relaxed, 😲 surprised).
+- TerranSoul desktop app, not browser-only mode. Pet mode and floating panels
+  require the Tauri desktop runtime.
+- A recommended setup path available on first launch. If you already completed
+  first launch, reset first-launch state before recapturing this exact flow.
+- A brain provider available through the recommended setup. The screenshots show
+  both a free fallback setup and an Ollama setup because they come from real
+  verification runs.
+- Document sources for the worked example:
+  - [`public/demo/vietnamese-civil-code.html`](../public/demo/vietnamese-civil-code.html) - Articles 351-468 sample of the 2015 Civil Code.
+  - [`public/demo/article-429-commentary.txt`](../public/demo/article-429-commentary.txt) - plain-text commentary on the contract limitation period.
+  - Web crawler example: `https://thuvienphapluat.vn/van-ban/Lao-dong-Tien-luong/Bo-Luat-lao-dong-2019-333670.aspx` - public Vietnamese 2019 Labour Code page, used to exercise the on-domain web crawler (depth 2, max 20 pages).
 
 ---
 
-## 3. Open the Chat Panel
+## Walkthrough
 
-![Pet chat panel expanded — manga-style speech bubble next to character](screenshots/pet-mode/03-chat-panel.png)
+### 1. Select Auto-Accept All Recommended Setup
 
-**Click** the character to open the floating chat panel. It appears as a
-manga-style speech bubble anchored near the character's head.
+![Auto-Accept All recommended setup option](screenshots/brain-rag-setup/01-auto-accept-recommended-setup.png)
 
-The chat panel includes:
-- **Message history** with timestamps and date separators
-- **Copy** button to copy chat history to clipboard
-- **Paste** button to paste clipboard into input
-- **Skip** button (visible during streaming/TTS) to stop current dialog
-- **Close** button (×) to collapse the panel
-- **Text input** with auto-resize and Enter-to-send
+On first launch, choose the recommended setup card labeled **Auto-Accept All**.
+The card includes the **RECOMMENDED** badge and activates the available brain,
+voice, avatar, and quest features automatically.
 
-When the character responds, you'll see:
-- Real-time **streaming text** as the LLM generates
-- **Emotion bubbles** reflecting the response sentiment
-- **Body animations** triggered by `<anim>` tags in the response
-- **Voice playback** if TTS is configured
+Use this path when you have not explicitly chosen a setup mode. In TerranSoul,
+an undefined setup mode defaults to the recommended setup.
 
----
+### 2. Wait For Setup
 
-## 4. Configure the Brain — Auto-Install
+![Recommended setup progress dialog](screenshots/brain-rag-setup/02-wait-recommended-setup.png)
 
-*The quest system guides you through brain setup with inline action buttons.*
+Wait while the **Setting Up...** dialog runs. The screenshot shows the setup
+starting Docker Desktop and exposing **Show Debug Log** for troubleshooting.
 
-TerranSoul starts with the free cloud brain pre-configured. To unlock
-the full RAG pipeline, the quest system guides you through setup.
+Do not close the app during this stage. The progress dialog is the expected
+state while TerranSoul configures the provider, voice, avatar, and quests.
 
-In the pet chat, type:
+### 3. Click Start Chatting
 
-> **Learn from my documents**
+![All Set confirmation with Start Chatting button](screenshots/brain-rag-setup/03-all-set-start-chatting.png)
 
-TerranSoul detects this as a document-learning intent and walks the
-**Scholar's Quest prerequisite chain**:
+When the dialog changes to **All Set!**, verify the checklist:
 
-```
-scholar-quest          ← Document ingestion pipeline
-  ↑ requires
-rag-knowledge          ← Sage's Library (6-signal hybrid RAG)
-  ↑ requires
-memory                 ← Long-Term Memory (SQLite store)
-  ↑ requires
-free-brain             ← Awaken the Mind (Free cloud AI)
+- Brain connected.
+- Voice enabled.
+- Avatar loaded.
+- Quests ready.
+
+Click **Start Chatting →** to enter the main app.
+
+### 4. Click Pet Mode
+
+![3D view with Pet mode toggle highlighted](screenshots/brain-rag-setup/04-click-pet-mode.png)
+
+In the main 3D view, use the top mode switch and click **Pet**. The tooltip
+reads **Switch to pet mode** when the cursor is over the pet-mode control.
+
+Pet mode turns the companion into a transparent desktop overlay. In the desktop
+app, this is a native Tauri window, so it is different from browser-only mode.
+
+### 5. Open Pet Chat And Type Learn From My Documents
+
+![Floating pet chat with Learn from my documents typed](screenshots/brain-rag-setup/05-pet-chat-learn-from-documents.png)
+
+Click the character to open the floating chat panel. The panel appears beside
+the character with **CHAT**, **Copy**, **Paste**, and close controls.
+
+Type:
+
+```text
+Learn from my documents
 ```
 
-A system message appears with three inline buttons:
+Then send the message. This must flow through the same backend classifier path
+used by normal chat. The expected intent is `learn_with_docs`, not a frontend
+regex shortcut.
 
-| Button | Action |
-|---|---|
-| ⚡ **Auto install all** | Activate every missing quest in order |
-| 📋 **Start chain quest** | Show individual buttons per quest |
-| ❌ **Cancel** | Dismiss |
+### 6. Trigger Scholar's Quest And Upload Documents
 
-Click **⚡ Auto install all**. TerranSoul activates all 4 quests:
+![Scholar's Quest gather sources step](screenshots/brain-rag-setup/06-scholar-quest-upload-documents.png)
 
-| # | Quest | What Gets Installed |
+TerranSoul starts the **Scholar's Quest — Step 1: Gather Sources** chain. The
+quest asks you to add URLs or local files and lists supported formats:
+`.md`, `.txt`, `.csv`, `.json`, `.xml`, `.html`, and `.pdf`.
+
+For this worked example, add these sources:
+
+1. [`public/demo/vietnamese-civil-code.html`](../public/demo/vietnamese-civil-code.html) - Articles 351-468, including liability and contracts. Use **📎 Attach File** and pick this file from the repo.
+2. [`public/demo/article-429-commentary.txt`](../public/demo/article-429-commentary.txt) - statute-of-limitations commentary. Use **📎 Attach File** and pick this file from the repo.
+3. `https://thuvienphapluat.vn/van-ban/Lao-dong-Tien-luong/Bo-Luat-lao-dong-2019-333670.aspx` - public Vietnamese 2019 Labour Code page. Paste this URL into the URL field, tick **🕸️ Crawl whole site**, then click **＋ Add URL**. The checkbox prefixes the source with `crawl:` so the backend follows same-domain links (depth 2, max 20 pages).
+
+Click **Start Learning** when the sources are ready. Use **Add more sources**
+if you need another document, or **Cancel** to stop the chain.
+
+After you start learning, the ingestion pipeline fetches, chunks, embeds, and
+stores the documents as long-term memories. The same flow is available from pet
+chat after the intent classifier opens the quest chain.
+
+### 6a. Monitor The Crawl Job
+
+You can watch crawler progress in two places at the same time:
+
+| Surface | What it shows | Where to find it |
 |---|---|---|
-| 1 | 🧠 **Awaken the Mind** | Free cloud LLM provider (auto-rotation) |
-| 2 | 📖 **Long-Term Memory** | SQLite memory store — persistent facts |
-| 3 | 📚 **Sage's Library** | Hybrid 6-signal RAG pipeline |
-| 4 | 📚 **Scholar's Quest** | Document ingestion pipeline |
+| **Scholar's Quest — Step 3 (Learning in Progress)** | Per-source progress card with description, percentage, and chunk count. Crawl rows include `Crawling N/M (depth D/MAX): URL` so you can see how many pages have been fetched and the current BFS depth. | Inside the open Knowledge Quest dialog after you click **⚡ Start Learning**. |
+| **TaskProgressBar** (`📄 Import` / `🕸️ Crawl`) | Global running-task panel mounted in both **Chat** view and **Brain** view. Each crawl task shows the kind label `🕸️ Crawl`, processed/total page count, percentage, and **Cancel** / **Resume** buttons. Tasks pause automatically after 30 minutes and can be resumed from a saved checkpoint. | Bottom of Chat view and inside Brain view (`TaskProgressBar.vue`). |
 
-After all 4 activate, the companion confirms:
+Crawler limits and behaviour:
 
-> 🎉 All 4 quests installed! Your brain is fully configured.
+- **Domain scope:** the crawler only follows links whose host matches the start URL's host (`thuvienphapluat.vn` in this example). Cross-domain links are dropped.
+- **Depth limit:** BFS depth is capped at `2` (start page = depth 0).
+- **Page limit:** at most `20` pages are fetched per crawl source.
+- **User-Agent:** `TerranSoul/0.1 WebCrawler`.
+- **Pause/Resume:** crawl state (visited URLs, queue, collected text) is checkpointed to the task manager; **Resume** continues from the last checkpoint.
+- **Cancel:** stops the crawl, saves a checkpoint, and marks the task `Cancelled`.
 
----
+Code references for reviewers:
 
-## 5. Ingest Documents via Chat
+- [src-tauri/src/commands/ingest.rs](../src-tauri/src/commands/ingest.rs) - `crawl_website_with_progress`, `save_crawl_checkpoint`, `emit_progress`.
+- [src/components/TaskProgressBar.vue](../src/components/TaskProgressBar.vue) - global progress panel reading the `task-progress` event.
+- [src/components/KnowledgeQuestDialog.vue](../src/components/KnowledgeQuestDialog.vue) - the **🕸️ Crawl whole site** toggle that prefixes the URL with `crawl:`.
 
-Pet mode supports document ingestion directly from the chat panel using
-**slash commands**. No need to switch to desktop mode.
+### 7. Ask A RAG Question In English
 
-### Ingest a URL
+![English RAG answer with source citations](screenshots/brain-rag-setup/07-ask-rag-question-english.png)
 
-Type in the pet chat:
+Ask:
 
-```
-/ingest https://example.com/vietnamese-civil-code.html
-```
-
-TerranSoul responds with the ingestion task:
-
-> 📥 Ingesting url: https://example.com/vietnamese-civil-code.html
-> Task: ingest-abc123
-
-### Digest Text
-
-Paste text directly into the brain:
-
-```
-/digest Article 429 of the 2015 Vietnamese Civil Code sets the statute
-of limitations for contractual disputes at three (3) years from the date
-the rights holder knew or should have known of the breach.
+```text
+What is the statute of limitations for contract disputes under Vietnamese law?
 ```
 
-TerranSoul responds:
+Expected answer: Article 429 of the 2015 Civil Code sets the limitation period
+at **three (3) years**, counted from when the claimant knew or should have known
+their lawful rights and interests were infringed.
 
-> ✅ Digested into memory #42.
+The answer should cite the uploaded sources, including `vietnamese-civil-code.html`
+and `article-429-commentary.txt`.
 
-### Digest a URL
+### 8. Ask The Same Question In Vietnamese
 
-The `/digest` command also accepts URLs:
+![Vietnamese RAG answer with source citations](screenshots/brain-rag-setup/08-ask-rag-question-vietnamese.png)
 
+Ask:
+
+```text
+Thời hiệu khởi kiện tranh chấp hợp đồng theo pháp luật Việt Nam là bao lâu?
 ```
-/digest https://example.com/article-429-commentary.txt
+
+Expected answer: TerranSoul answers in Vietnamese and preserves the same fact:
+the contract-dispute limitation period is **3 năm** under Article 429.
+
+This verifies cross-language retrieval. The query language changes, but the
+same uploaded memories are retrieved.
+
+### 9. Ask The Same Question In Chinese
+
+![Chinese RAG answer with source citations](screenshots/brain-rag-setup/09-ask-rag-question-chinese.png)
+
+Ask:
+
+```text
+越南法律中合同纠纷的诉讼时效是多长？
 ```
 
-> 📥 Ingesting url: https://example.com/article-429-commentary.txt
-> Task: ingest-def456
+Expected answer: TerranSoul answers in Chinese and again grounds the answer in
+Article 429, with the limitation period stated as **三（3）年**.
 
-### Ingestion Pipeline
+At this point, the RAG setup is working if all three answers agree on:
 
-Each source goes through the full pipeline (from
-`brain-advanced-design.md` §7):
-
-| Step | What Happens |
+| Check | Expected result |
 |---|---|
-| **Fetch** | Download URL content or read local file |
-| **Extract** | HTML → text via `scraper`, PDF → text, etc. |
-| **Chunk** | Semantic splitting (~500–800 tokens via `text-splitter`) |
-| **Dedup** | SHA-256 hash + cosine similarity > 0.97 = skip |
-| **Embed** | Cloud `/v1/embeddings` or Ollama `nomic-embed-text` (768-dim) |
-| **Store** | SQLite with `tier=long`, `importance=5`, source tags |
-
-Supported formats: `.md`, `.txt`, `.csv`, `.json`, `.xml`, `.html`,
-`.pdf`, `.log`, `.rst`, `.adoc`
+| Source | `vietnamese-civil-code.html` and `article-429-commentary.txt` |
+| Article | Article 429 |
+| Limitation period | Three years |
+| Language behavior | Answer language follows the user question |
 
 ---
 
-## 6. Ask Questions — RAG-Grounded Answers
+## What Happens Internally
 
-With documents ingested, ask questions in the pet chat:
+The visible flow is short, but the brain pipeline does several things in order:
 
-> **What is the statute of limitations for contract disputes under
-> Vietnamese law?**
+1. The chat store sends contentful user messages to `classify_intent`.
+2. `classify_intent` retrieves relevant app knowledge from memory/RAG context.
+3. The classifier returns `learn_with_docs` for the document-learning request.
+4. The conversation store starts the Scholar's Quest prerequisite chain.
+5. Scholar's Quest gathers sources and starts ingestion.
+6. Ingestion extracts text, chunks it, embeds it, and stores long-term memories.
+7. Later questions use hybrid retrieval and inject source memories into the LLM prompt.
 
-The **hybrid RAG pipeline** triggers:
-
-1. **Embed** the query via cloud `/v1/embeddings`
-2. **6-signal hybrid search** against all memories:
-
-$$\text{score} = 0.40 \times \text{vector} + 0.20 \times \text{keyword} + 0.15 \times \text{recency} + 0.10 \times \text{importance} + 0.10 \times \text{decay} + 0.05 \times \text{tier}$$
-
-3. **Top-5** results injected as `[LONG-TERM MEMORY]` block
-4. **LLM** generates answer grounded in ingested sources
-
-TerranSoul responds with a correct, source-grounded answer:
-
-> **Article 429** of the 2015 Civil Code sets the statute of limitations
-> at **three (3) years** from the date the claimant "knew or should have
-> known" of the breach.
->
-> 📚 Sources: `vietnamese-civil-code.html`
+Document ingestion uses the same memory/RAG architecture described in
+[docs/brain-advanced-design.md](../docs/brain-advanced-design.md): vector search,
+keyword matching, recency, importance, decay, and tier priority contribute to
+retrieval ranking.
 
 ---
 
-## 7. Follow-Up Questions
+## Screenshot Inventory
 
-Follow up naturally:
+All screenshots for this tutorial live in
+[tutorials/screenshots/brain-rag-setup](screenshots/brain-rag-setup/):
 
-> **Can a party claim both a penalty and damages for breach of contract?**
-
-TerranSoul retrieves the relevant articles from memory:
-
-> Under **Article 420**, if no agreement exists on the relationship
-> between penalty and compensation, the aggrieved party **may claim
-> both** the penalty AND full compensation for damages.
->
-> 📚 Sources: `vietnamese-civil-code.html` (Articles 419, 420)
-
-Every question hits the same RAG pipeline. Retrieval is O(log n) via
-HNSW ANN index (`usearch`), scaling to 1M+ entries at <50ms.
-
----
-
-## 8. Multilingual RAG
-
-Ask the same question in any language. The RAG pipeline retrieves the
-same source documents and the LLM translates the grounded answer:
-
-**Vietnamese:**
-> Thời hiệu khởi kiện tranh chấp hợp đồng theo pháp luật Việt Nam là bao lâu?
-
-**Chinese:**
-> 越南法律中合同纠纷的诉讼时效是多长？
-
-**Russian:**
-> Каков срок исковой давности по договорным спорам по вьетнамскому праву?
-
-**Japanese:**
-> ベトナム法における契約紛争の出訴期限はどのくらいですか？
-
-**Korean:**
-> 베트남 법률에서 계약 분쟁의 소멸시효는 얼마입니까?
-
-All five languages produce **factually identical answers** — only the
-output language changes.
-
-| Language | Article | Limitation Period | Source Match |
-|---|---|---|---|
-| 🇺🇸 English | Article 429 | 3 years | ✅ |
-| 🇻🇳 Vietnamese | Điều 429 | 3 năm | ✅ |
-| 🇨🇳 Chinese | 第429条 | 3年 | ✅ |
-| 🇷🇺 Russian | Статья 429 | 3 года | ✅ |
-| 🇯🇵 Japanese | 第429条 | 3年間 | ✅ |
-| 🇰🇷 Korean | 제429조 | 3년 | ✅ |
-
----
-
-## 9. Check Brain Status via Panels
-
-![Brain panel — opened from context menu showing brain configuration](screenshots/pet-mode/09-brain-panel.png)
-
-**Right-click** the character → **Panels** → **🧠 Brain** to open the
-Brain panel as a separate floating window.
-
-The Brain panel shows:
-- **Mode:** Free Cloud / Paid API / Local Ollama
-- **Model:** Current LLM model name
-- **Embedding:** Cloud `/v1/embeddings` or local `nomic-embed-text`
-- **Memory health:** Total memories, tier breakdown
-- **RAG:** 6-signal hybrid search status
-
-### Brain Modes
-
-| Mode | Setup | Embedding | RAG Quality | Best For |
-|---|---|---|---|---|
-| ☁️ **Free Cloud** | Zero config | Cloud `/v1/embeddings` | 60–100% | Getting started |
-| 💎 **Paid Cloud** | API key + model | OpenAI `/v1/embeddings` | 100% | Best quality |
-| 🖥 **Local LLM** | Ollama + model | `nomic-embed-text` | 100% | Full privacy |
-
----
-
-## 10. Check Memory via Panels
-
-![Memory panel — showing ingested memories with importance and decay](screenshots/pet-mode/10-memory-panel.png)
-
-**Right-click** → **Panels** → **💡 Memory** to open the Memory panel.
-
-All ingested chunks appear as long-term memories:
-
-| Column | Value |
-|---|---|
-| **Stats** | Total · Short · Working · Long · Tokens |
-| **Type** | `fact` (ingested), `preference` (auto-extracted) |
-| **Tier** | `long` — permanent knowledge base |
-| **Tags** | Source-based tags (e.g. `vietnamese-law`, `contract`) |
-| **Importance** | ⭐⭐⭐⭐⭐ (5/5) for ingested, ⭐⭐⭐ (3/5) for auto-extracted |
-| **Decay** | 0.83–0.97 (exponential forgetting curve) |
-
-You can search, filter, edit, and delete memories from this panel while
-the character stays visible on your desktop.
-
----
-
-## 11. Context Menu — Full Feature Tour
-
-**Right-click** the character to open the context menu:
-
-| Menu Item | Description |
-|---|---|
-| 🎭 **Mood** | Set character emotion (Happy, Sad, Angry, Relaxed, Surprised, Neutral) |
-| 🎭 **Model** | Switch VRM character model |
-| 💬 **Toggle chat** | Show/hide the floating chat panel |
-| 📋 **Panels** ▸ | Open floating windows (Brain, Memory, Quests, Marketplace, Voice) |
-| 🛠️ **Self-Improve** | Toggle AI self-improvement mode |
-| 📊 **Self-Improve progress…** | View self-improvement task history |
-| 🤖 **Multi-agent workflows…** | Configure multi-agent orchestration |
-| 🎭 **Charisma — Teach me…** | Train expressions, motions, and style |
-| ⚙ **Teachable capabilities…** | Define custom capabilities |
-| 🖥 **Switch to desktop mode** | Return to the full windowed app |
-| ↔ **Resize** | Toggle resize handles on the character |
-| ❌ **Exit** | Close the application |
-
-### Multi-Window Panels
-
-Each panel opens as its own **separate floating window**, always-on-top.
-You can have the Memory panel open next to the chat while working in
-other applications:
-
-| Panel | Opens |
-|---|---|
-| 🧠 **Brain** | Brain configuration + memory health |
-| 💡 **Memory** | Memory CRUD + search + visualization |
-| ⭐ **Quests** | Skill tree + quest progress |
-| 🏪 **Marketplace** | Agent marketplace + LLM configuration |
-| 🎙 **Voice** | TTS/ASR voice settings |
-
----
-
-## 12. Slash Commands Reference
-
-Pet mode chat supports these slash commands:
-
-| Command | Description |
-|---|---|
-| `/ingest <url>` | Fetch and ingest a URL or local file path into the brain |
-| `/digest <text>` | Digest pasted text directly into brain memory |
-| `/digest <url>` | Routes to ingest when a URL is detected |
-| `/help` | Show available slash commands |
-
-### Examples
-
-```
-/ingest https://example.com/document.html
-/ingest C:\Documents\notes.txt
-/digest The Civil Code sets limitations at 3 years for contract disputes.
-/help
-```
-
-Regular messages are sent to the LLM as normal chat with RAG context
-injection.
-
----
-
-## 13. Architecture Reference
-
-### Three-Tier Memory Model (from `brain-advanced-design.md` §2)
-
-```
- CONVERSATION
- ┌─────────┐     evict (FIFO, >20)     ┌───────────┐
- │  SHORT  │ ──────────────────────────>│  WORKING  │
- │  TERM   │     extract_facts()        │  MEMORY   │
- │         │     summarize()            │           │
- └─────────┘                            └─────┬─────┘
-      │                                       │
- lost on close                          promote()
-                                        (importance ≥ 4
-                                         or user action)
-                                              │
-                                        ┌─────▼─────┐
- MANUAL ENTRY ─────────────────────────>│   LONG    │
- DOCUMENT INGESTION ───────────────────>│   TERM    │
- LLM EXTRACTION ──────────────────────>│  MEMORY   │
-                                        └─────┬─────┘
-                                              │
-                                        decay < 0.05
-                                        AND importance ≤ 2
-                                              │
-                                        ┌─────▼─────┐
-                                        │  GARBAGE   │
-                                        │ COLLECTED  │
-                                        └───────────┘
-```
-
-### 6-Signal Hybrid RAG Scoring
-
-| Signal | Weight | Range | Source |
-|---|---|---|---|
-| **Vector similarity** | 40% | 0.0–1.0 | `nomic-embed-text` cosine or cloud embed |
-| **Keyword match** | 20% | 0.0–1.0 | Content + tags (case-insensitive) |
-| **Recency bias** | 15% | 0.0–1.0 | $e^{(-\text{hours}/24)}$ |
-| **Importance** | 10% | 0.2–1.0 | User-assigned 1–5 normalized |
-| **Decay score** | 10% | 0.01–1.0 | Exponential forgetting curve |
-| **Tier priority** | 5% | 0.3–1.0 | Working (1.0) > Long (0.7) > Short (0.3) |
-
-### Advanced RAG Features
-
-| Feature | Description | Status |
+| Step | File | Verified UI state |
 |---|---|---|
-| **RRF fusion** | Vector + keyword + freshness fused via Reciprocal Rank Fusion (k=60) | ✅ |
-| **HyDE** | LLM writes hypothetical answer, embeds *that* for retrieval | ✅ Optional |
-| **Cross-encoder rerank** | LLM-as-judge scores each (query, doc) pair 0–10 | ✅ Optional |
-| **HNSW ANN index** | O(log n) via `usearch` — scales to 1M+ entries | ✅ |
-| **Multi-hop search** | Traverse entity-relationship graph edges | ✅ V5 |
+| 1 | `01-auto-accept-recommended-setup.png` | First-launch recommended setup choice |
+| 2 | `02-wait-recommended-setup.png` | Setup progress dialog |
+| 3 | `03-all-set-start-chatting.png` | Setup complete dialog |
+| 4 | `04-click-pet-mode.png` | Main 3D view with Pet toggle |
+| 5 | `05-pet-chat-learn-from-documents.png` | Pet chat message entry |
+| 6 | `06-scholar-quest-upload-documents.png` | Scholar's Quest source upload |
+| 7 | `07-ask-rag-question-english.png` | English grounded answer |
+| 8 | `08-ask-rag-question-vietnamese.png` | Vietnamese grounded answer |
+| 9 | `09-ask-rag-question-chinese.png` | Chinese grounded answer |
 
-### Auto-Learn (Write-Back Loop)
-
-Auto-learn runs in the background for **all brain modes**:
-
-1. Every assistant message increments a turn counter
-2. Every **10 turns**, `extract_memories_from_session` asks the LLM to
-   extract up to 5 facts about the user
-3. Each fact is saved to SQLite with tag `auto-extracted`, importance 3,
-   tier `long`
-4. The Memory panel refreshes automatically
-
-### Implementation Map
-
-| Concern | File |
-|---|---|
-| Intent classification | `src-tauri/src/brain/intent_classifier.rs` |
-| Prerequisite chain | `src/stores/conversation.ts` — `getMissingPrereqQuests()` |
-| Auto-install engine | `src/stores/conversation.ts` — `runAutoInstall()` |
-| Skill-tree engine | `src/stores/skill-tree.ts` |
-| Pet overlay | `src/views/PetOverlayView.vue` |
-| Pet context menu | `src/components/PetContextMenu.vue` |
-| Pet chat ingest | `src/views/PetOverlayView.vue` — `handlePetIngestCommand()` |
-| Document ingestion | `src-tauri/src/commands/ingestion.rs` |
-| Hybrid 6-signal search | `src-tauri/src/memory/store.rs` — `hybrid_search()` |
-| RRF fusion | `src-tauri/src/memory/fusion.rs` |
-| HNSW ANN index | `src-tauri/src/memory/ann_index.rs` |
-| Semantic chunking | `src-tauri/src/memory/chunking.rs` |
-| Decay & GC | `src-tauri/src/memory/store.rs` — `apply_memory_decay()` |
-| Brain mode config | `src-tauri/src/brain/brain_config.rs` |
-| Provider rotation | `src-tauri/src/brain/provider_rotator.rs` |
+When recapturing, keep the numeric prefix and kebab-case label so the folder
+sorts in walkthrough order.
 
 ---
 
-## 14. Troubleshooting
+## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Can't click dialogs/buttons in pet mode | Windows DWM per-pixel alpha hit-testing on transparent WebView2 | Fixed in v0.1 — TerranSoul toggles WebView2 background alpha when interactive overlays are open |
-| `/ingest` command not recognized | Running older version without pet chat commands | Update to latest; `handlePetIngestCommand()` was added in pet mode v2 |
-| Memory tab empty after chat | Haven't reached 10 turns yet | Keep chatting, or use `/digest` to add memories manually |
-| "Install all" doesn't activate quests | Quest state already active | Right-click → Panels → Quests to check status |
-| No RAG sources in answer | No embedding model available | Use Free/Paid API for cloud embeddings, or install `nomic-embed-text` for Ollama |
-| Free API extraction fails | Provider rate-limited | Wait 30s and retry — `ProviderRotator` auto-fails over |
-| Pet mode not available | Running in browser mode | Pet mode requires the Tauri desktop app (`npm run tauri dev` or installed app) |
-| Character invisible after entering pet mode | Character position off-screen | Right-click anywhere → the context menu will still appear; drag to reposition |
-| Ingested documents don't appear in Memory panel | Ingestion runs async | Wait for the ingestion task to complete, then reopen the Memory panel |
-| Slow first chat | Provider latency not measured yet | Second message is faster (providers have latency data) |
-| Vector search returns nothing | Embedding model missing | Pull `nomic-embed-text` for Ollama, or use cloud mode |
-| Decay removed important memories | GC threshold too aggressive | Increase importance ≥ 3, or access memories to reset decay |
-| Pet mode panels don't open | Tauri multi-window API unavailable | Only works in the desktop app, not browser mode |
+| Recommended setup does not appear | First launch was already completed | Reset first-launch state before recapturing the onboarding screenshots |
+| Pet mode is unavailable | Running browser-only Vite mode | Use the Tauri desktop app; pet mode requires the native window runtime |
+| **Learn from my documents** acts like normal chat | Classifier or RAG context is unavailable | Check the `classify_intent` command and brain provider health |
+| Scholar's Quest does not show source buttons | Required quest state is already active or the chain was dismissed | Open Quests, confirm Scholar's Quest state, then send the document-learning request again |
+| No source citations in answers | Documents were not ingested or embeddings failed | Re-run **Start Learning** and confirm the Memory panel has long-term chunks |
+| Answers disagree across languages | Retrieval did not return the same memories | Check tags/source names and verify Article 429 chunks exist in memory |
+| Setup progress is stuck on Docker | Docker Desktop is not running or cannot start | Open **Show Debug Log** from the setup dialog and start Docker Desktop manually |
+
+---
+
+## Where To Next
+
+- [brain-rag-local-lm-tutorial.md](brain-rag-local-lm-tutorial.md) - run the same RAG flow with Local Ollama.
+- [advanced-memory-rag-tutorial.md](advanced-memory-rag-tutorial.md) - tune retrieval and memory settings.
+- [skill-tree-quests-tutorial.md](skill-tree-quests-tutorial.md) - understand quest activation and prerequisite chains.
+- [docs/brain-advanced-design.md](../docs/brain-advanced-design.md) - architecture details for memory, embeddings, and RAG.
+- [rules/tutorial-template.md](../rules/tutorial-template.md) - tutorial structure and screenshot governance.

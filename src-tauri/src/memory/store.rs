@@ -70,7 +70,7 @@ impl MemoryType {
 ///
 /// **Long-term**: Permanent storage. Vector-indexed. Subject to periodic
 /// consolidation (merge near-duplicates) and importance decay.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryTier {
     Short,
@@ -627,6 +627,34 @@ impl MemoryStore {
              ORDER BY importance DESC, decay_score DESC, created_at DESC",
         )?;
         let rows = stmt.query_map([], row_to_entry)?;
+        rows.collect()
+    }
+
+    /// Return user-customizable default system settings matching a tag.
+    ///
+    /// These rows are ordinary memories so users can edit or supersede them,
+    /// but category/tags let backend policy surfaces retrieve them reliably
+    /// without hardcoding examples in Rust prompts.
+    pub fn system_default_settings(&self, tag: &str, limit: usize) -> SqlResult<Vec<MemoryEntry>> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let tag_pattern = format!("%{}%", tag.trim().to_lowercase());
+        let mut stmt = self.conn.prepare(
+            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
+             FROM memories
+             WHERE valid_to IS NULL
+               AND tier IN ('working', 'long')
+               AND lower(tags) LIKE ?1
+               AND (
+                    category = 'system.default_system_setting'
+                 OR lower(tags) LIKE '%system:default-system-setting%'
+               )
+             ORDER BY importance DESC, protected DESC, COALESCE(updated_at, created_at) DESC, created_at DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![tag_pattern, limit as i64], row_to_entry)?;
         rows.collect()
     }
 
@@ -2679,6 +2707,45 @@ mod tests {
         store.add(new_memory("A")).unwrap();
         store.add(new_memory("B")).unwrap();
         assert_eq!(store.search("").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn system_default_settings_filter_by_category_or_tag() {
+        let store = MemoryStore::in_memory();
+        let tagged = store
+            .add(NewMemory {
+                content: "DEFAULT SYSTEM SETTING: Learn docs examples".to_string(),
+                tags: "system:default-system-setting,intent-classifier".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Preference,
+                ..Default::default()
+            })
+            .unwrap();
+        let categorized = store
+            .add(NewMemory {
+                content: "DEFAULT SYSTEM SETTING: Teach ingest examples".to_string(),
+                tags: "intent-classifier,teach-ingest".to_string(),
+                importance: 4,
+                memory_type: MemoryType::Preference,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET category = 'system.default_system_setting' WHERE id = ?1",
+                params![categorized.id],
+            )
+            .unwrap();
+        store.add(new_memory("ordinary classifier note")).unwrap();
+
+        let results = store
+            .system_default_settings("intent-classifier", 10)
+            .unwrap();
+        let ids: Vec<i64> = results.iter().map(|entry| entry.id).collect();
+        assert!(ids.contains(&tagged.id));
+        assert!(ids.contains(&categorized.id));
+        assert_eq!(results.len(), 2);
     }
 
     #[test]

@@ -22,7 +22,7 @@ import { test, expect } from '@playwright/test';
 import {
   collectConsoleErrors,
   assertNoCrashErrors,
-  waitForAppReady,
+  connectToDesktopApp,
   navigateToTab,
   TIMEOUTS,
 } from './helpers';
@@ -33,11 +33,10 @@ import {
 // `test('name', { timeout: … }, fn)` is silently ignored — the second
 // argument is `TestDetails` (tags / annotations only) in Playwright 1.59,
 // so the timeout MUST be set via `test.setTimeout()` from inside the body.
-test('memory: UI rendering and interaction flow', async ({ page }) => {
+test('memory: UI rendering and interaction flow', async () => {
   test.setTimeout(240_000);
+  const { page } = await connectToDesktopApp();
   const errors = collectConsoleErrors(page);
-  await page.goto('/');
-  await waitForAppReady(page);
 
   // Navigate to Memory tab
   await navigateToTab(page, 'Memory');
@@ -98,10 +97,16 @@ test('memory: UI rendering and interaction flow', async ({ page }) => {
   const shortChip = filterRow.locator('.mv-tier-chip', { hasText: 'short' });
   await shortChip.click();
   await expect(shortChip).toHaveClass(/active/);
-
-  // Deselect all
   await shortChip.click();
   await expect(shortChip).not.toHaveClass(/active/);
+
+  // Deselect all
+  await expect(async () => {
+    if ((await shortChip.getAttribute('class'))?.includes('active')) {
+      await shortChip.click({ force: true });
+    }
+    await expect(shortChip).not.toHaveClass(/active/, { timeout: 500 });
+  }).toPass({ timeout: 5_000 });
 
   // ── 5. Search input + action buttons present ──────────────────────────
   const searchRow = mv.locator('.mv-search-row');
@@ -125,7 +130,8 @@ test('memory: UI rendering and interaction flow', async ({ page }) => {
 
   // Clear search
   await searchInput.fill('');
-  await searchInput.press('Enter');
+  await searchRow.locator('button', { hasText: '🔍 Search' }).click();
+  await expect(searchInput).toHaveValue('');
 
   // ── 6. Add memory modal opens/closes ──────────────────────────────────
   const addBtn = mv.locator('button', { hasText: 'Add memory' });
@@ -195,18 +201,24 @@ test('memory: UI rendering and interaction flow', async ({ page }) => {
 
   // ── 9. Memory CRUD flow (conditional on Tauri backend) ────────────────
   if (hasTauri) {
+    const marker = `E2E test ${Date.now()}`;
+    const editedMarker = `E2E EDITED ${Date.now()}`;
+
     // Add a memory
     await addBtn.click();
     await expect(modal).toBeVisible({ timeout: TIMEOUTS.panel });
-    await modal.locator('textarea').fill('E2E test: user loves TypeScript');
+    await modal.locator('textarea').fill(`${marker}: user loves TypeScript`);
     await modal.locator('input').first().fill('test, e2e');
     await modal.locator('select').selectOption('preference');
     await modal.locator('input[type="range"]').fill('4');
     await modal.locator('button', { hasText: 'Save' }).click();
     await expect(modal).not.toBeVisible({ timeout: TIMEOUTS.panel });
 
+    await searchInput.fill(marker);
+    await searchRow.locator('button', { hasText: '🔍 Search' }).click();
+
     // Memory card appears
-    const testCard = mv.locator('.mv-card', { hasText: 'E2E test' });
+    const testCard = mv.locator('.mv-card', { hasText: marker }).first();
     await expect(testCard).toBeVisible({ timeout: 5_000 });
 
     // Card has expected elements
@@ -222,32 +234,34 @@ test('memory: UI rendering and interaction flow', async ({ page }) => {
     const editModal = page.locator('.mv-modal');
     await expect(editModal).toBeVisible({ timeout: TIMEOUTS.panel });
     await expect(editModal.locator('h3')).toContainText('Edit memory');
-    await editModal.locator('textarea').fill('E2E EDITED: user loves Rust');
+    await editModal.locator('textarea').fill(`${editedMarker}: user loves Rust`);
     await editModal.locator('button', { hasText: 'Save' }).click();
     await expect(editModal).not.toBeVisible({ timeout: TIMEOUTS.panel });
-    await expect(mv.locator('.mv-card', { hasText: 'EDITED' })).toBeVisible({ timeout: 5_000 });
+    await searchInput.fill(editedMarker);
+    await searchRow.locator('button', { hasText: '🔍 Search' }).click();
+    await expect(mv.locator('.mv-card', { hasText: editedMarker })).toBeVisible({ timeout: 5_000 });
 
     // Search for the edited memory
-    await searchInput.fill('Rust');
+    await searchInput.fill(editedMarker);
     await searchRow.locator('button', { hasText: '🔍 Search' }).click();
-    await expect(mv.locator('.mv-card', { hasText: 'EDITED' })).toBeVisible({ timeout: 5_000 });
-    await searchInput.fill('');
-    await searchInput.press('Enter');
+    await expect(mv.locator('.mv-card', { hasText: editedMarker })).toBeVisible({ timeout: 5_000 });
 
     // Type filter hides the memory
     await factChip.click();
-    await expect(mv.locator('.mv-card', { hasText: 'EDITED' })).not.toBeVisible();
+    await expect(mv.locator('.mv-card', { hasText: editedMarker })).not.toBeVisible();
     await factChip.click(); // deselect
 
     // Tier filter shows the memory (tier=long)
     await longChip.click();
-    await expect(mv.locator('.mv-card', { hasText: 'EDITED' })).toBeVisible();
+    await expect(mv.locator('.mv-card', { hasText: editedMarker })).toBeVisible();
     await longChip.click(); // deselect
 
-    // Delete the memory
-    page.on('dialog', (d) => d.accept());
-    await mv.locator('.mv-card', { hasText: 'EDITED' }).locator('button', { hasText: '🗑' }).click();
-    await expect(mv.locator('.mv-card', { hasText: 'EDITED' })).not.toBeVisible({ timeout: 5_000 });
+    // Delete the memory — WebView2 CDP auto-accepts confirm() dialogs,
+    // so we just click the delete button and verify the memory is gone.
+    await mv.locator('.mv-card', { hasText: editedMarker }).locator('button', { hasText: '🗑' }).click();
+    await searchInput.fill(editedMarker);
+    await searchRow.locator('button', { hasText: '🔍 Search' }).click();
+    await expect(mv.locator('.mv-card', { hasText: editedMarker })).not.toBeVisible({ timeout: 5_000 });
   }
 
   // ── 10. No critical console errors ────────────────────────────────────

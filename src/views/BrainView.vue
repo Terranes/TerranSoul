@@ -2200,6 +2200,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  width: 100%;
   padding: 1rem;
   height: 100%;
   overflow-y: auto;
@@ -2498,11 +2499,13 @@ onUnmounted(() => {
 }
 .bv-context-add {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ts-space-sm);
   margin-bottom: var(--ts-space-sm);
 }
 .bv-context-input {
   flex: 1;
+  min-width: 0;
   padding: var(--ts-space-xs) var(--ts-space-sm);
   background: var(--ts-bg-input);
   border: 1px solid var(--ts-border-medium);
@@ -2630,6 +2633,7 @@ onUnmounted(() => {
 }
 .bv-context-export-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ts-space-xs);
   align-items: center;
 }
@@ -2647,6 +2651,7 @@ onUnmounted(() => {
 .bv-kg-import-row,
 .bv-kg-export-row {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--ts-space-xs);
   align-items: center;
   margin-bottom: var(--ts-space-xs);
@@ -2968,5 +2973,17 @@ onUnmounted(() => {
   .bv-hero { padding: 0.85rem 0.75rem; gap: 0.75rem; }
   .bv-hero-title { font-size: 1.2rem; }
   .bv-section-title { font-size: 0.7rem; }
+  .bv-context-input,
+  .bv-context-export-input,
+  .bv-kg-ids-input {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .bv-kg-import-row .bv-btn,
+  .bv-kg-export-row .bv-btn,
+  .bv-context-export-row .bv-btn {
+    width: 100%;
+    white-space: normal;
+  }
 }
 </style>

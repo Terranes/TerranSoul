@@ -122,6 +122,14 @@
                     ＋ Add URL
                   </button>
                 </div>
+                <label class="kq-crawl-toggle">
+                  <input
+                    v-model="crawlWholeSite"
+                    type="checkbox"
+                    class="kq-crawl-checkbox"
+                  >
+                  <span>🕸️ Crawl whole site (follow same-domain links, up to depth 2 / 20 pages)</span>
+                </label>
                 <div class="kq-file-row">
                   <button
                     class="kq-file-btn"
@@ -404,13 +412,16 @@ async function verifyBrain() {
 
 // ── Step 2: Sources ──
 const urlInput = ref('');
+const crawlWholeSite = ref(false);
 const sources = ref<QuestSource[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 
 function addUrl() {
   const url = urlInput.value.trim();
   if (!url) return;
-  sources.value.push({ type: 'url', name: url, path: url });
+  const path = crawlWholeSite.value && /^https?:\/\//i.test(url) ? `crawl:${url}` : url;
+  const name = crawlWholeSite.value ? `🕸️ ${url} (crawl)` : url;
+  sources.value.push({ type: 'url', name, path });
   urlInput.value = '';
 }
 
@@ -500,6 +511,7 @@ watch(() => props.visible, (v) => {
     taskIds.value = [];
     sources.value = [];
     urlInput.value = '';
+    crawlWholeSite.value = false;
     verifyBrain();
   }
 });
@@ -748,6 +760,23 @@ watch(() => props.visible, (v) => {
 }
 .kq-url-add:hover:not(:disabled) { border-color: var(--ts-quest-gold); background: var(--ts-quest-gold-dim); }
 .kq-url-add:disabled { opacity: 0.4; cursor: default; }
+.kq-crawl-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 0.78rem;
+  color: var(--ts-text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.kq-crawl-toggle:hover { color: var(--ts-text-bright); }
+.kq-crawl-checkbox {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ts-quest-gold);
+  cursor: pointer;
+}
 .kq-file-row {
   display: flex;
 }

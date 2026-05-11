@@ -77,17 +77,20 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
     tokio::spawn(async move {
         let Ok(client) = Client::builder()
             .timeout(Duration::from_secs(60))
-            .build()
-        else {
+            .no_proxy()
+            .http1_only()
+            .pool_max_idle_per_host(0)
+            .build() else {
             return;
         };
-        // 1-token real chat forces Ollama to actually load the weights
-        // into VRAM. An empty `messages: []` body sometimes no-ops.
+        // 1-token streamed chat forces Ollama to load the weights and warm
+        // the same streaming endpoint used by the first real user reply.
         let body = serde_json::json!({
             "model": model,
-            "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
-            "stream": false,
+            "messages": [{ "role": "user", "content": "Hi" }],
+            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "stream": true,
+            "think": false,
             "keep_alive": "30m",
         });
         let started = Instant::now();
@@ -98,11 +101,13 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
             .await
         {
             Ok(resp) => {
+                let status = resp.status();
+                let _ = resp.bytes().await;
                 if is_debug_logging() {
                     eprintln!(
                         "[chat-rewarm:{reason}] {} status={} {}ms",
                         model,
-                        resp.status(),
+                        status,
                         started.elapsed().as_millis()
                     );
                 }

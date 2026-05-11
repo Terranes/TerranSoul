@@ -244,6 +244,22 @@ struct Attempt {
 
 async fn run_one_attempt(suite: &TestSuite, config: &TestRunConfig) -> Attempt {
     let (program, args, cwd) = command_for_suite(suite, &config.cwd);
+    let cmdline = if args.is_empty() {
+        program.clone()
+    } else {
+        format!("{} {}", program, args.join(" "))
+    };
+
+    if let Err(e) = super::sandbox::shell_preflight(&cwd, &cmdline) {
+        return Attempt {
+            green: false,
+            status: SuiteStatus::SpawnError,
+            exit_code: None,
+            stdout_tail: String::new(),
+            stderr_tail: String::new(),
+            spawn_error: Some(e),
+        };
+    }
 
     let mut cmd = tokio::process::Command::new(&program);
     cmd.args(&args).current_dir(&cwd);
@@ -254,9 +270,9 @@ async fn run_one_attempt(suite: &TestSuite, config: &TestRunConfig) -> Attempt {
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null());
-    // On Windows, kill_on_drop is a no-op for the process group, but for
-    // child processes spawned by cargo/vitest this at least kills the
-    // top-level. Good enough for the timeout path.
+    // Spawn in its own process group so a timeout kill covers the whole
+    // subtree (cargo spawns child processes, vitest spawns workers).
+    super::offload::configure_process_group(&mut cmd);
     cmd.kill_on_drop(true);
 
     let child = match cmd.spawn() {

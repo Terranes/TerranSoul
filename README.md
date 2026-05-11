@@ -9,11 +9,28 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app/)
 
-TerranSoul is a desktop/mobile AI companion with a 3D VRM avatar, persistent memory, semantic-search RAG, and a self-running MCP brain server that gives AI coding agents (Copilot, Claude Code, Cursor, Codex) project-wide knowledge, retrieval, and self-improvement — all local-first and offline-capable.
+TerranSoul is a desktop/mobile AI companion with a 3D VRM avatar, persistent memory, semantic-search RAG, and a self-running MCP brain server that gives AI coding agents (Copilot, Claude Code, Cursor, Codex) project-wide knowledge, retrieval, and self-improvement — all local-first and offline-capable. TerranSoul's 3D assistant is not only a chat UI + avatar layer. It is built on a coding harness and context-engineering stack that keeps agent work reliable over long sessions.
 
-If you want a personal AI that **remembers everything**, **runs on your hardware**, and **makes your other AI tools smarter by sharing its brain** — this is it.
+If you want a personal AI that **remembers everything**, **runs on your hardware**, **everything offline** and **makes your other AI tools smarter by sharing its brain** — this is it.
 
 [Tutorials](tutorials/) · [Architecture](docs/brain-advanced-design.md) · [Design](docs/DESIGN.md) · [Persona](docs/persona-design.md) · [Hive Protocol](docs/hive-protocol.md) · [Contributing](CONTRIBUTING.md)
+
+---
+
+## Why TerranSoul?
+
+Almost every dev, technical user, and even non-technical person now stitches together a **personal AI stack** out of pieces — a chat UI here, a RAG tool there, a voice assistant on the phone, a coding agent in the IDE, a workflow runner in the cloud, and a notes app pretending to be memory. Each one is great in isolation. None of them share a brain. None of them follow you across devices.
+
+**TerranSoul is the project that puts all of these into one open, local-first, MIT-licensed companion** — a 3D VRM avatar with voice, a persistent memory + RAG brain that you own, an MCP server that lets your coding agents share that brain, cross-device sync over CRDT, a skill tree that makes the system discoverable for non-technical users, and a plugin/agent harness for power users.
+
+The pitch is simple: every dev/tech person is already building a personal assistant out of duct tape and every non tech person need one but it is very complicated to setup by their own. **Why not build one that benefits everyone?** That's what TerranSoul is.
+
+If that resonates and wanna become contributor, contact me via:
+
+- 💬 Discord: <https://discord.gg/RzXcvsabKD>
+- ✉️ Email: [darren.bui@terransoul.com](mailto:darren.bui@terransoul.com)
+
+Contributions from devs, designers, VRM artists, prompt engineers, and non-technical testers are all welcome.
 
 ---
 
@@ -92,11 +109,33 @@ The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
 
 ---
 
+## Harness + Context Engineering
+
+TerranSoul's 3D assistant is not only a chat UI + avatar layer. It is built on a coding harness and context-engineering stack that keeps agent work reliable over long sessions.
+
+Core harness capabilities:
+- Deterministic coding workflow runner with typed output contracts
+- Milestone-driven DAG execution with explicit test/review gates
+- MCP-native project memory and code-intelligence tools for retrieval-first operation
+- Session replay, handoff seeding, and transcript repair for resilient resume
+
+Core context-engineering capabilities:
+- Policy-driven context loading from rules, instructions, and docs
+- Priority-based budget fitting before every coding task prompt
+- Rolling summarization hooks that mark stale messages out of active context
+- Cross-resume prompt-token seeding so compression behavior survives restarts
+
+This is what lets TerranSoul support long-running, multi-agent coding workflows while still staying inspectable and controllable by humans.
+
+> Design references: [Coding Workflow Design](docs/coding-workflow-design.md) · [Harness/Context Audit (2026-05)](docs/harness-context-engineering-audit-2026-05.md) · [Prompting Rules](rules/prompting-rules.md)
+
+---
+
 ## Highlights
 
 - **3D VRM Avatar** — lip sync, expressions, motion capture, spring-bone physics. Pet mode floats on your desktop.
 - **Multi-Provider Brain** — Free cloud (Pollinations/OpenRouter/Gemini), paid (OpenAI/Anthropic/Groq), or local Ollama. Switch anytime.
-- **Persistent Memory + RAG** — hybrid 6-signal search, RRF fusion, HyDE, cross-encoder reranker, knowledge graph with typed edges, and a fast chat path that skips retrieval for greetings so LocalLLM replies stay under 1s when warm. 1M+ entries benchmarked.
+- **Persistent Memory + RAG** — thresholded hybrid eligibility, RRF + query-intent prompt ordering for live chat, HyDE, cross-encoder reranker, knowledge graph with typed edges, RAG-contextual intent classification for setup/quest routing from user-customizable seeded system defaults, a deterministic shortcut for explicit onboarding phrases like "Learn from my documents", and a fast chat path that skips retrieval for greetings so LocalLLM replies stay under 1s when warm. 1M+ entries benchmarked.
 - **Knowledge Wiki** — `/digest`, `/spotlight`, `/serendipity`, `/revisit` commands for graph curation.
 - **Voice** — ASR (Web Speech, Groq Whisper, OpenAI Whisper) + TTS (Web Speech, OpenAI). Full lip-sync pipeline.
 - **Skill Tree** — 40+ skills across 5 categories. RPG-style quest progression, auto-detection, combo unlocks.
@@ -135,7 +174,7 @@ The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
 | **Paid API** | Cloud (your key) | API key | Best quality (GPT-4o, Claude, etc.) |
 | **Local Ollama** | Fully offline | ~2 GB download | Maximum privacy, no internet |
 
-Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions still use the full memory pipeline.
+Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Contentful setup requests still use the backend classifier in every brain mode, including Local Ollama; `classify_intent` retrieves app knowledge from the memory/RAG store and also preserves a small deterministic shortcut for explicit onboarding phrases like **"Learn from my documents"** so Scholar's Quest still opens when a local model returns `unknown` for the exact tutorial wording. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions use thresholded memory eligibility and RRF + query-intent prompt ordering; Local Ollama keeps this keyword/freshness-only on the hot path when embedding would swap models.
 
 Local Ollama hardware recommendations favor responsive interactive models by default; larger catalogue models remain selectable for users who prefer slower, heavier reasoning runs.
 
@@ -230,6 +269,8 @@ Rust Core (150+ commands)
 
 ## Contact
 
-**Darren Bui** — darren.bui@terransoul.com
+**Darren Bui** — [darren.bui@terransoul.com](mailto:darren.bui@terransoul.com)
+
+Interested in becoming a contributor? Join the Discord at <https://discord.gg/RzXcvsabKD> or email Darren directly. Devs, designers, VRM artists, prompt engineers, testers, and non-technical users are all welcome.
 
 Built for the community. MIT License.

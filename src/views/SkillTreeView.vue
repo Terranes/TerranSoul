@@ -301,6 +301,7 @@ function formatActivation(ts: number): string {
 
 <style scoped>
 .skill-tree-view {
+  width: 100%;
   padding: var(--ts-space-lg);
   max-width: 800px;
   margin: 0 auto;

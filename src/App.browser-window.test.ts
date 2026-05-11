@@ -29,7 +29,6 @@ async function mountBrowserApp() {
           template: '<button class="mock-chat" @click="$emit(\'navigate\', \'pet-mode\')">Chat</button>',
         },
         BackgroundScene: true,
-        BrainSetupView: true,
         BrainView: true,
         ComboToast: true,
         FirstLaunchWizard: true,

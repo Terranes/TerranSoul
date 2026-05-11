@@ -213,6 +213,12 @@
           :edge-mode="edgeMode"
           @select="onNodeSelect"
         />
+        <div
+          v-if="store.isLoading"
+          class="mv-graph-loading"
+        >
+          Loading {{ store.memories.length }} memories…
+        </div>
       </div>
       <aside
         v-if="selectedEntry"
@@ -1078,8 +1084,15 @@ onMounted(async () => {
   await settingsStore.loadSettings();
   maxMemoryGb.value = settingsStore.settings.max_memory_gb ?? 10;
   maxMemoryMb.value = settingsStore.settings.max_memory_mb ?? 10;
-  await store.fetchAll();
-  await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
+  // Fire all fetches in parallel so the graph renders as soon as memories
+  // arrive, without waiting for edges/stats to finish first.
+  await Promise.all([
+    store.fetchAll(),
+    store.fetchEdges(),
+    loadShortTerm(),
+    store.getStats(),
+    store.getEdgeStats(),
+  ]);
 });
 </script>
 

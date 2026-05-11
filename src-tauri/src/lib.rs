@@ -102,9 +102,9 @@ use commands::{
     consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
     context_folder::{
         add_context_folder, convert_context_to_knowledge, export_kg_subtree,
-        export_knowledge_to_folder, import_file_to_knowledge_graph,
-        list_context_folder_memories, list_context_folders, remove_context_folder,
-        scan_context_folder, sync_context_folders, toggle_context_folder,
+        export_knowledge_to_folder, import_file_to_knowledge_graph, list_context_folder_memories,
+        list_context_folders, remove_context_folder, scan_context_folder, sync_context_folders,
+        toggle_context_folder,
     },
     crag::crag_retrieve,
     docker::{
@@ -150,7 +150,8 @@ use commands::{
         graph_rag_detect_communities, graph_rag_search, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories, judgment_add, judgment_apply,
         judgment_list, list_memory_conflicts, list_memory_edges, list_relation_types,
-        matryoshka_search_memories, multi_hop_search_memories, obsidian_sync, obsidian_sync_start,
+        matryoshka_search_memories, memory_graph_page, multi_hop_search_memories, obsidian_sync,
+        obsidian_sync_start,
         obsidian_sync_stop, promote_memory, reflect_on_session, rerank_search_memories,
         resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
         set_ann_quantization, set_auto_learn_policy, summarize_session, temporal_query,
@@ -398,6 +399,9 @@ impl AppState {
             ollama_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(120))
+                .no_proxy()
+                .http1_only()
+                .pool_max_idle_per_host(0)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: data_dir.to_path_buf(),
@@ -468,6 +472,9 @@ impl AppState {
             ollama_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(120))
+                .no_proxy()
+                .http1_only()
+                .pool_max_idle_per_host(0)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: std::path::PathBuf::from("."),
@@ -824,7 +831,7 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
         return false;
     }
 
-    // Run versioned seed migrations
+    // Apply one-shot shared init seed
     let migration_shared_dir = shared_dir
         .as_deref()
         .map(std::path::Path::to_path_buf)
@@ -832,15 +839,15 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     match memory::seed_migrations::run_all(&conn, &migration_shared_dir) {
         Ok((applied, version)) => {
             if applied > 0 {
-                eprintln!("[mcp] seed migrations: applied {applied} new, now at v{version:03}");
+                eprintln!("[mcp] init seed applied (v{version:03})");
                 true
             } else {
-                eprintln!("[mcp] seed migrations: up to date at v{version:03}");
+                eprintln!("[mcp] init seed already applied (v{version:03})");
                 false
             }
         }
         Err(e) => {
-            eprintln!("[mcp] warning: seed migration failed: {e}");
+            eprintln!("[mcp] warning: init seed failed: {e}");
             // On first run, this is fatal-ish. On subsequent runs,
             // partial progress is still committed.
             first_run
@@ -1158,22 +1165,25 @@ pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
     let label = label.to_string();
     tauri::async_runtime::spawn(async move {
         let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
-        // 1-token real chat forces Ollama to actually load the weights
-        // into VRAM. An empty `messages: []` body sometimes no-ops.
+        // 1-token streamed chat forces Ollama to load the weights and warm
+        // the same streaming endpoint used by the first real user reply.
         let body = serde_json::json!({
             "model": model,
-            "messages": [{ "role": "user", "content": " " }],
-            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
+            "messages": [{ "role": "user", "content": "Hi" }],
+            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
             "keep_alive": "30m",
-            "stream": false,
+            "stream": true,
+            "think": false,
         });
         let started = std::time::Instant::now();
         match client.post(&url).json(&body).send().await {
             Ok(resp) => {
+                let status = resp.status();
+                let _ = resp.bytes().await;
                 eprintln!(
                     "[{label}] ollama warm-up done in {} ms (status {})",
                     started.elapsed().as_millis(),
-                    resp.status()
+                    status
                 );
             }
             Err(e) => {
@@ -1627,6 +1637,7 @@ pub fn run() {
             close_memory_edge,
             delete_memory_edge,
             list_memory_edges,
+            memory_graph_page,
             get_edges_for_memory,
             get_edge_stats,
             list_relation_types,
@@ -2095,10 +2106,6 @@ pub fn run() {
                     brain::mcp_auto_config::auto_configure_mcp_brain(&mcp_data_dir).await;
                     brain::mcp_auto_config::apply_config_to_state(&app_state_inner, &mcp_data_dir);
 
-                    if shared_seeded {
-                        backfill_mcp_seed_embeddings(&app_state_inner).await;
-                    }
-
                     let token = match ai_integrations::mcp::auth::load_or_create(&mcp_data_dir) {
                         Ok(t) => t,
                         Err(e) => {
@@ -2182,6 +2189,14 @@ pub fn run() {
                             *app_state_inner.mcp_server.lock().await = Some(handle);
                         }
                         Err(e) => eprintln!("[mcp-app] failed to start MCP server: {e}"),
+                    }
+
+                    // Do not block MCP server startup on background seed embedding backfill.
+                    if shared_seeded {
+                        let app_state_for_backfill = app_state_inner.clone();
+                        tauri::async_runtime::spawn(async move {
+                            backfill_mcp_seed_embeddings(&app_state_for_backfill).await;
+                        });
                     }
                 });
             } else if shared_seeded {

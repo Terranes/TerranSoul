@@ -52,6 +52,9 @@ pub struct ChatMessage {
     /// Optional discriminator (e.g. `"slash"`, `"run"`, `"chat"`).
     #[serde(default)]
     pub kind: String,
+    /// Optional prompt token usage recorded for assistant turns.
+    #[serde(default)]
+    pub prompt_tokens: Option<u32>,
 }
 
 impl ChatMessage {
@@ -62,6 +65,7 @@ impl ChatMessage {
             content: content.into(),
             ts_ms: now_unix_ms(),
             kind: String::new(),
+            prompt_tokens: None,
         }
     }
 
@@ -76,6 +80,7 @@ impl ChatMessage {
             content: content.into(),
             ts_ms: now_unix_ms(),
             kind: kind.into(),
+            prompt_tokens: None,
         }
     }
 }
@@ -104,6 +109,19 @@ pub const MAX_MESSAGE_BYTES: usize = 32 * 1024;
 /// disk — this only controls what the UI receives in one call.
 pub const DEFAULT_LOAD_LIMIT: usize = 500;
 
+const TOOL_CALLS_KIND: &str = "tool_calls";
+const TOOL_RESULT_KIND_PREFIX: &str = "tool_result:";
+const INTERRUPTED_TOOL_RESULT: &str =
+    "Tool execution was interrupted before a result could be recorded.";
+
+/// One planned tool call emitted by the assistant.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolCallRecord {
+    pub id: String,
+    pub name: String,
+    pub arguments: String,
+}
+
 fn chat_path(data_dir: &Path, session_id: &str) -> PathBuf {
     sessions_dir(data_dir).join(format!("{}.chat.jsonl", sanitize_session_id(session_id)))
 }
@@ -114,6 +132,9 @@ fn chat_path(data_dir: &Path, session_id: &str) -> PathBuf {
 /// with an `Err` if its rendered length exceeds [`MAX_MESSAGE_BYTES`] so
 /// callers cannot accidentally write multi-megabyte rows.
 pub fn append_message(data_dir: &Path, session_id: &str, msg: &ChatMessage) -> Result<(), String> {
+    if msg.role == "user" {
+        let _ = heal_orphaned_tool_calls(data_dir, session_id);
+    }
     let dir = sessions_dir(data_dir);
     fs::create_dir_all(&dir).map_err(|e| format!("create sessions dir: {e}"))?;
 
@@ -136,6 +157,60 @@ pub fn append_message(data_dir: &Path, session_id: &str, msg: &ChatMessage) -> R
         .map_err(|e| format!("write line: {e}"))?;
     f.write_all(b"\n").map_err(|e| format!("write nl: {e}"))?;
     Ok(())
+}
+
+/// Heal missing tool results for the latest assistant tool-call batch.
+///
+/// The current transcript format is JSONL, so we approximate the
+/// transaction requirement by rewriting the transcript in place with any
+/// missing synthetic tool results inserted immediately after the assistant
+/// tool-call message.
+pub fn heal_orphaned_tool_calls(data_dir: &Path, session_id: &str) -> Result<usize, String> {
+    let path = chat_path(data_dir, session_id);
+    if !path.exists() {
+        return Ok(0);
+    }
+
+    let mut messages = load_chat(data_dir, session_id, None)?;
+    let Some((assistant_index, tool_calls)) = latest_tool_call_batch(&messages) else {
+        return Ok(0);
+    };
+
+    let seen_tool_results: std::collections::HashSet<String> = messages
+        .iter()
+        .skip(assistant_index + 1)
+        .filter_map(tool_result_id)
+        .collect();
+
+    let missing: Vec<ToolCallRecord> = tool_calls
+        .into_iter()
+        .filter(|call| !seen_tool_results.contains(&call.id))
+        .collect();
+    if missing.is_empty() {
+        return Ok(0);
+    }
+
+    let mut repaired = Vec::with_capacity(messages.len() + missing.len());
+    for (index, message) in messages.drain(..).enumerate() {
+        repaired.push(message);
+        if index == assistant_index {
+            for (offset, call) in missing.iter().enumerate() {
+                repaired.push(ChatMessage {
+                    role: "tool".to_string(),
+                    content: INTERRUPTED_TOOL_RESULT.to_string(),
+                    ts_ms: repaired
+                        .last()
+                        .map(|m| m.ts_ms + offset as i64 + 1)
+                        .unwrap_or(1),
+                    kind: format!("{TOOL_RESULT_KIND_PREFIX}{}", call.id),
+                    prompt_tokens: None,
+                });
+            }
+        }
+    }
+
+    write_chat_messages(&path, &repaired)?;
+    Ok(missing.len())
 }
 
 /// Load the transcript for `session_id`, newest-last.
@@ -187,6 +262,78 @@ pub fn clear_chat(data_dir: &Path, session_id: &str) -> Result<bool, String> {
     }
     fs::remove_file(&path).map_err(|e| format!("delete chat file: {e}"))?;
     Ok(true)
+}
+
+/// Helper used by tests and future assistant adapters to persist a tool
+/// call batch in a JSONL-friendly form.
+pub fn tool_call_batch_message(calls: Vec<ToolCallRecord>) -> ChatMessage {
+    let content = serde_json::to_string(&calls).unwrap_or_else(|_| "[]".to_string());
+    ChatMessage {
+        role: "assistant".to_string(),
+        content,
+        ts_ms: now_unix_ms(),
+        kind: TOOL_CALLS_KIND.to_string(),
+        prompt_tokens: None,
+    }
+}
+
+/// Helper used by tests and future adapters to persist a tool result.
+pub fn tool_result_message(tool_call_id: &str, content: impl Into<String>) -> ChatMessage {
+    ChatMessage {
+        role: "tool".to_string(),
+        content: content.into(),
+        ts_ms: now_unix_ms(),
+        kind: format!("{TOOL_RESULT_KIND_PREFIX}{tool_call_id}"),
+        prompt_tokens: None,
+    }
+}
+
+/// Seed the rolling summarization counter from persisted assistant usage.
+///
+/// Reads the newest transcript entries and returns the first prompt-token
+/// value found on an assistant message. Supports both explicit
+/// `prompt_tokens` and common JSON usage payload shapes stored in
+/// `content`.
+pub fn seed_last_prompt_tokens(data_dir: &Path, session_id: &str) -> u32 {
+    let messages = match load_chat(data_dir, session_id, None) {
+        Ok(m) => m,
+        Err(_) => return 0,
+    };
+    for msg in messages.iter().rev() {
+        if msg.role != "assistant" {
+            continue;
+        }
+        if let Some(tokens) = msg.prompt_tokens {
+            return tokens;
+        }
+        if let Some(tokens) = extract_prompt_tokens_from_content(&msg.content) {
+            return tokens;
+        }
+    }
+    0
+}
+
+fn extract_prompt_tokens_from_content(content: &str) -> Option<u32> {
+    let value = serde_json::from_str::<serde_json::Value>(content).ok()?;
+    extract_prompt_tokens_value(&value)
+}
+
+fn extract_prompt_tokens_value(value: &serde_json::Value) -> Option<u32> {
+    let direct = ["prompt_tokens", "input_tokens"]
+        .iter()
+        .find_map(|key| value.get(*key).and_then(value_as_u32));
+    if direct.is_some() {
+        return direct;
+    }
+
+    let usage = value.get("usage")?;
+    ["prompt_tokens", "input", "input_tokens"]
+        .iter()
+        .find_map(|key| usage.get(*key).and_then(value_as_u32))
+}
+
+fn value_as_u32(value: &serde_json::Value) -> Option<u32> {
+    value.as_u64().and_then(|n| u32::try_from(n).ok())
 }
 
 /// Compute a [`ChatSummary`] for `session_id` without loading every
@@ -276,6 +423,46 @@ fn truncate_preview(s: &str, max_chars: usize) -> String {
     out
 }
 
+fn latest_tool_call_batch(messages: &[ChatMessage]) -> Option<(usize, Vec<ToolCallRecord>)> {
+    messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, message)| {
+            if message.role != "assistant" || message.kind != TOOL_CALLS_KIND {
+                return None;
+            }
+            serde_json::from_str::<Vec<ToolCallRecord>>(&message.content)
+                .ok()
+                .map(|calls| (index, calls))
+        })
+}
+
+fn tool_result_id(message: &ChatMessage) -> Option<String> {
+    message
+        .kind
+        .strip_prefix(TOOL_RESULT_KIND_PREFIX)
+        .map(|id| id.to_string())
+}
+
+fn write_chat_messages(path: &Path, messages: &[ChatMessage]) -> Result<(), String> {
+    let tmp_path = path.with_extension("chat.jsonl.tmp");
+    let mut f = fs::OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&tmp_path)
+        .map_err(|e| format!("open temp chat file: {e}"))?;
+    for msg in messages {
+        let line = serde_json::to_string(msg).map_err(|e| format!("serialise message: {e}"))?;
+        f.write_all(line.as_bytes())
+            .and_then(|_| f.write_all(b"\n"))
+            .map_err(|e| format!("write repaired transcript: {e}"))?;
+    }
+    drop(f);
+    fs::rename(&tmp_path, path).map_err(|e| format!("replace chat file: {e}"))
+}
+
 fn now_unix_ms() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -304,6 +491,7 @@ mod tests {
             content: content.into(),
             ts_ms: 1,
             kind: String::new(),
+            prompt_tokens: None,
         }
     }
 
@@ -313,6 +501,7 @@ mod tests {
             content: content.into(),
             ts_ms: 2,
             kind: String::new(),
+            prompt_tokens: None,
         }
     }
 
@@ -325,6 +514,52 @@ mod tests {
         assert_eq!(got.len(), 2);
         assert_eq!(got[0].content, "hi");
         assert_eq!(got[1].role, "assistant");
+    }
+
+    #[test]
+    fn heal_orphaned_tool_calls_inserts_missing_results() {
+        let dir = tmp_dir("heal");
+        append_message(&dir, "s", &user("start")).unwrap();
+        append_message(
+            &dir,
+            "s",
+            &tool_call_batch_message(vec![ToolCallRecord {
+                id: "call_1".into(),
+                name: "read_file".into(),
+                arguments: "{\"path\":\"README.md\"}".into(),
+            }]),
+        )
+        .unwrap();
+
+        let inserted = heal_orphaned_tool_calls(&dir, "s").unwrap();
+        assert_eq!(inserted, 1);
+
+        let got = load_chat(&dir, "s", None).unwrap();
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[2].role, "tool");
+        assert_eq!(got[2].kind, "tool_result:call_1");
+        assert_eq!(got[2].content, INTERRUPTED_TOOL_RESULT);
+    }
+
+    #[test]
+    fn user_append_heals_orphaned_tool_calls_before_write() {
+        let dir = tmp_dir("heal-append");
+        append_message(
+            &dir,
+            "s",
+            &tool_call_batch_message(vec![ToolCallRecord {
+                id: "call_2".into(),
+                name: "search".into(),
+                arguments: "{}".into(),
+            }]),
+        )
+        .unwrap();
+
+        append_message(&dir, "s", &user("next turn")).unwrap();
+        let got = load_chat(&dir, "s", None).unwrap();
+        assert_eq!(got.len(), 3);
+        assert_eq!(got[1].kind, "tool_result:call_2");
+        assert_eq!(got[2].role, "user");
     }
 
     #[test]
@@ -420,6 +655,36 @@ mod tests {
         assert_eq!(s, "line one line two");
         let s = truncate_preview(&"x".repeat(50), 10);
         assert_eq!(s, "xxxxxxxxxx…");
+    }
+
+    #[test]
+    fn seed_last_prompt_tokens_prefers_explicit_prompt_tokens_field() {
+        let dir = tmp_dir("seed-prompt-explicit");
+        append_message(&dir, "s", &assistant("plain")).unwrap();
+        let mut with_usage = assistant("answer");
+        with_usage.prompt_tokens = Some(4242);
+        append_message(&dir, "s", &with_usage).unwrap();
+
+        assert_eq!(seed_last_prompt_tokens(&dir, "s"), 4242);
+    }
+
+    #[test]
+    fn seed_last_prompt_tokens_parses_usage_payload_from_content_json() {
+        let dir = tmp_dir("seed-prompt-json");
+        let mut msg = assistant(r#"{"usage":{"prompt_tokens":7890,"completion_tokens":12}}"#);
+        msg.prompt_tokens = None;
+        append_message(&dir, "s", &msg).unwrap();
+
+        assert_eq!(seed_last_prompt_tokens(&dir, "s"), 7890);
+    }
+
+    #[test]
+    fn seed_last_prompt_tokens_returns_zero_when_no_assistant_usage_found() {
+        let dir = tmp_dir("seed-prompt-none");
+        append_message(&dir, "s", &user("hello")).unwrap();
+        append_message(&dir, "s", &assistant("no usage data")).unwrap();
+
+        assert_eq!(seed_last_prompt_tokens(&dir, "s"), 0);
     }
 
     #[test]

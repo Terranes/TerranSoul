@@ -4,16 +4,40 @@
  * Unlike the regular e2e/ helpers, these assume a REAL Tauri backend is
  * running. Ollama HTTP API is called directly for latency measurements.
  *
- * Uses Node.js `http` module instead of `fetch` to avoid IPv6 `localhost`
- * resolution issues on Windows (Ollama binds to 127.0.0.1 only).
+ * Uses explicit 127.0.0.1 URLs to avoid IPv6 `localhost` resolution issues
+ * on Windows (Ollama binds to 127.0.0.1 only).
  */
-import { expect, type Page } from '@playwright/test';
+import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import http from 'node:http';
+
+export const TAURI_CDP_ENDPOINT = process.env.TERRANSOUL_TAURI_CDP_ENDPOINT
+  ?? process.env.TERRANSOUL_TAURI_CDP
+  ?? 'http://127.0.0.1:9222';
+export const DESKTOP_URL_PREFIX = process.env.TERRANSOUL_DESKTOP_URL_PREFIX ?? 'http://localhost:1420';
 
 // ─── Ollama direct API ───────────────────────────────────────────────────────
 
 // Force IPv4 — Ollama binds 127.0.0.1, not [::1]
 export const OLLAMA_URL = process.env.OLLAMA_URL ?? 'http://127.0.0.1:11434';
+export const LOCAL_E2E_RESPONSE_LATENCY_BUDGET_MS = 2_000;
+
+function latencyFailureMessage(label: string, actualMs: number, metric: string) {
+  return [
+    `${label} ${metric} was ${Math.round(actualMs)}ms, above the local E2E budget of ${LOCAL_E2E_RESPONSE_LATENCY_BUDGET_MS}ms.`,
+    'Investigate and fix the latency path: model warmup, VRAM contention, RAG retrieval, embedding backfill, provider selection, or streaming first chunk.',
+    'Do not fix this by increasing Playwright timeouts or relaxing the latency assertion.',
+  ].join(' ');
+}
+
+export function assertLocalResponseLatency(
+  label: string,
+  actualMs: number,
+  metric = 'response latency',
+) {
+  expect(actualMs, latencyFailureMessage(label, actualMs, metric)).toBeLessThanOrEqual(
+    LOCAL_E2E_RESPONSE_LATENCY_BUDGET_MS,
+  );
+}
 
 export interface OllamaTiming {
   embedMs: number;
@@ -27,31 +51,30 @@ export interface OllamaTiming {
 /** Per-request timeout for Ollama calls (ms). */
 const OLLAMA_TIMEOUT = 30_000;
 
-/** Low-level HTTP POST using Node.js http module (avoids IPv6 issues). */
-function httpPost(url: string, body: string, timeout = OLLAMA_TIMEOUT): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const parsed = new URL(url);
-    const req = http.request(
-      {
-        hostname: parsed.hostname,
-        port: Number(parsed.port),
-        path: parsed.pathname,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-        timeout,
-      },
-      (res) => {
-        const chunks: Buffer[] = [];
-        res.on('data', (c) => chunks.push(c));
-        res.on('end', () => resolve(Buffer.concat(chunks).toString()));
-        res.on('error', reject);
-      },
-    );
-    req.on('timeout', () => { req.destroy(); reject(new Error(`Ollama timeout after ${timeout}ms`)); });
-    req.on('error', reject);
-    req.write(body);
-    req.end();
-  });
+/** Low-level HTTP POST. */
+async function httpPost(url: string, body: string, timeout = OLLAMA_TIMEOUT): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body,
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`Ollama HTTP ${response.status}: ${text.slice(0, 300)}`);
+    }
+    return text;
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Ollama timeout after ${timeout}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Low-level HTTP GET. */
@@ -102,7 +125,7 @@ export async function ollamaChat(
       messages,
       stream: false,
       think: false, // Gemma 4 thinking mode eats num_predict budget — disable for tests
-      options: { num_predict: numPredict },
+      options: { num_predict: numPredict, num_ctx: 1024 },
       keep_alive: '30m',
     }),
   );
@@ -143,7 +166,7 @@ export async function ragPipeline(
     [
       {
         role: 'system',
-        content: `You are TerranSoul, a helpful AI companion. Reply concisely.\n\n[LONG-TERM MEMORY]\n${memoryContext}\n[/LONG-TERM MEMORY]`,
+        content: `You are TerranSoul, a helpful AI companion. Answer using only the long-term memory block. Include the relevant Article number and numeric rule when applicable. For summary requests, name the document source or topic and summarize the major topics found in memory. Reply concisely.\n\n[LONG-TERM MEMORY]\n${memoryContext}\n[/LONG-TERM MEMORY]`,
       },
       { role: 'user', content: query },
     ],
@@ -192,7 +215,7 @@ export async function warmModels(
       messages: [{ role: 'user', content: 'hi' }],
       stream: false,
       think: false,
-      options: { num_predict: 1 },
+      options: { num_predict: 1, num_ctx: 1024 },
       keep_alive: '30m',
     }),
     warmTimeout,
@@ -206,6 +229,63 @@ export const TIMEOUTS = {
   panel: 5_000,
   response: 60_000,
 } as const;
+
+export async function connectToDesktopApp(): Promise<{ browser: Browser; page: Page }> {
+  let browser: Browser;
+  try {
+    browser = await chromium.connectOverCDP(TAURI_CDP_ENDPOINT);
+  } catch (err) {
+    throw new Error(
+      `Real desktop E2E requires the Tauri WebView CDP endpoint at ${TAURI_CDP_ENDPOINT}. `
+      + `Start the desktop app with npm run dev:desktop-e2e, then retry. Original error: ${String(err)}`,
+    );
+  }
+
+  const pages = browser
+    .contexts()
+    .flatMap((context) => context.pages())
+    .filter((page) => !page.url().startsWith('devtools://'));
+  const page = pages.find((candidate) => candidate.url().startsWith(DESKTOP_URL_PREFIX)) ?? pages[0];
+  if (!page) {
+    await browser.close();
+    throw new Error(`No Tauri WebView page found on ${TAURI_CDP_ENDPOINT}.`);
+  }
+
+  return { browser, page };
+}
+
+export async function completeFirstLaunchRecommendedIfPresent(page: Page): Promise<void> {
+  const wizard = page.locator('.flw-dialog').first();
+  if (!(await wizard.isVisible({ timeout: 500 }).catch(() => false))) return;
+
+  await wizard.locator('.flw-option--recommended').click();
+
+  const diskContinue = wizard.locator('.flw-done-btn', { hasText: 'Continue with Download' });
+  if (await diskContinue.isVisible({ timeout: 5_000 }).catch(() => false)) {
+    await diskContinue.click();
+  }
+
+  const doneButton = wizard.locator('.flw-done-btn', { hasText: /Start Chatting|Continue Anyway/ });
+  await expect(doneButton).toBeVisible({ timeout: 120_000 });
+  await doneButton.click();
+  await expect(page.locator('.flw-backdrop')).not.toBeVisible({ timeout: 5_000 });
+}
+
+export async function closeOpenDialogIfPresent(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const dialog = page.getByRole('dialog').first();
+    if (!(await dialog.isVisible({ timeout: 500 }).catch(() => false))) return;
+
+    const closeButton = dialog.getByRole('button', { name: /close/i }).first();
+    if (await closeButton.isVisible({ timeout: 500 }).catch(() => false)) {
+      await closeButton.click();
+    } else {
+      await page.keyboard.press('Escape');
+    }
+
+    await expect(dialog).not.toBeVisible({ timeout: 5_000 });
+  }
+}
 
 /** Wait for the Vue app to fully initialize. */
 export async function waitForAppReady(page: Page) {
@@ -252,28 +332,6 @@ export async function getPiniaState(page: Page, storeName: string) {
     if (!pinia) return null;
     return pinia.state.value[name] ?? null;
   }, storeName);
-}
-
-/** Patch Pinia store state. */
-export async function setPinia(
-  page: Page,
-  patch: Record<string, unknown>,
-) {
-  await page.evaluate((data) => {
-    const app = (document.querySelector('#app') as any)?.__vue_app__;
-    const pinia = app?.config?.globalProperties?.$pinia;
-    if (!pinia) return;
-    for (const [store, values] of Object.entries(data)) {
-      const s = pinia._s.get(store);
-      if (s) {
-        s.$patch(values as any);
-      } else {
-        if (!pinia.state.value[store]) pinia.state.value[store] = {};
-        Object.assign(pinia.state.value[store], values);
-      }
-    }
-  }, patch);
-  await page.waitForTimeout(300);
 }
 
 /** Collect console errors, ignoring known benign ones. */

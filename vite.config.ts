@@ -101,6 +101,12 @@ function e2eLocalLlmPlugin(): Plugin {
 
 const e2eLocalLlmEnabled = process.env.TERRANSOUL_E2E_LOCAL_LLM === "1";
 
+const generatedArtifactWatchIgnores = [
+  "**/src-tauri/**",
+  "**/target/**",
+  "**/target-*/**",
+];
+
 export default defineConfig({
   plugins: [
     ...(e2eLocalLlmEnabled ? [e2eLocalLlmPlugin()] : []),
@@ -124,7 +130,7 @@ export default defineConfig({
       },
     },
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: generatedArtifactWatchIgnores,
     },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],

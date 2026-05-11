@@ -49,9 +49,7 @@ pub struct ContextFolderSyncResult {
 /// Scan a folder and return a preview of the files that would be ingested.
 /// Does NOT ingest anything — use `sync_context_folders` for that.
 #[tauri::command(rename_all = "camelCase")]
-pub async fn scan_context_folder(
-    folder_path: String,
-) -> Result<ContextFolderScanResult, String> {
+pub async fn scan_context_folder(folder_path: String) -> Result<ContextFolderScanResult, String> {
     let path = std::path::Path::new(&folder_path);
     if !path.exists() {
         return Err(format!("Folder not found: {folder_path}"));
@@ -315,8 +313,8 @@ fn collect_recursive(
         return Ok(());
     }
 
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
+    let entries =
+        std::fs::read_dir(dir).map_err(|e| format!("Cannot read {}: {e}", dir.display()))?;
 
     for entry in entries {
         let entry = match entry {
@@ -336,14 +334,19 @@ fn collect_recursive(
 
         // Skip common large/irrelevant directories
         if path.is_dir() {
-            let name = path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             if matches!(
                 name,
-                "node_modules" | "target" | ".git" | "__pycache__" | "dist" | "build" | ".venv"
-                    | "venv" | ".next" | ".nuxt"
+                "node_modules"
+                    | "target"
+                    | ".git"
+                    | "__pycache__"
+                    | "dist"
+                    | "build"
+                    | ".venv"
+                    | "venv"
+                    | ".next"
+                    | ".nuxt"
             ) {
                 continue;
             }
@@ -456,8 +459,7 @@ pub async fn export_knowledge_to_folder(
     state: State<'_, AppState>,
 ) -> Result<KnowledgeExportResult, String> {
     let out_path = std::path::Path::new(&output_dir);
-    std::fs::create_dir_all(out_path)
-        .map_err(|e| format!("Cannot create output dir: {e}"))?;
+    std::fs::create_dir_all(out_path).map_err(|e| format!("Cannot create output dir: {e}"))?;
 
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     let all_entries = if let Some(ref filter) = tag_filter {
@@ -635,7 +637,10 @@ pub async fn convert_context_to_knowledge(
         match store.add(new_mem) {
             Ok(_) => {
                 created += 1;
-                summaries.push(format!("{basename}: {} chunks → 1 knowledge entry", chunks.len()));
+                summaries.push(format!(
+                    "{basename}: {} chunks → 1 knowledge entry",
+                    chunks.len()
+                ));
             }
             Err(e) => {
                 summaries.push(format!("{basename}: error — {e}"));
@@ -713,8 +718,7 @@ pub async fn export_kg_subtree(
         return Err("root_ids must not be empty".into());
     }
     let out_path = std::path::Path::new(&output_dir);
-    std::fs::create_dir_all(out_path)
-        .map_err(|e| format!("Cannot create output dir: {e}"))?;
+    std::fs::create_dir_all(out_path).map_err(|e| format!("Cannot create output dir: {e}"))?;
 
     let hops = max_hops.unwrap_or(2).clamp(0, 5);
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
@@ -790,11 +794,7 @@ pub async fn export_kg_subtree(
                 } else {
                     edge.src_id
                 };
-                let direction = if edge.src_id == node.id {
-                    "→"
-                } else {
-                    "←"
-                };
+                let direction = if edge.src_id == node.id { "→" } else { "←" };
                 md.push_str(&format!(
                     "- {} `{}` (id={}, confidence={:.2})\n",
                     direction, edge.rel_type, other, edge.confidence
@@ -891,8 +891,8 @@ pub async fn import_file_to_knowledge_graph(
         return Err(format!("File not found: {file_path}"));
     }
 
-    let content = std::fs::read_to_string(&path_buf)
-        .map_err(|e| format!("read {file_path}: {e}"))?;
+    let content =
+        std::fs::read_to_string(&path_buf).map_err(|e| format!("read {file_path}: {e}"))?;
     if content.trim().is_empty() {
         return Err("File is empty".into());
     }
@@ -902,7 +902,8 @@ pub async fn import_file_to_knowledge_graph(
         .and_then(|n| n.to_str())
         .unwrap_or("import");
     let label = label.unwrap_or_else(|| {
-        path_buf.file_stem()
+        path_buf
+            .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("import")
             .to_string()

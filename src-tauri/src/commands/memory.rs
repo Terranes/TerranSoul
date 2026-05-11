@@ -1944,6 +1944,60 @@ pub async fn judgment_apply(
     ))
 }
 
+/// Return a paged, LOD view of the memory knowledge graph.
+///
+/// The frontend graph viewport cannot render more than a few thousand
+/// nodes at once even with a WebGL renderer; at billion-node scale it
+/// cannot even hold them in JS memory. This command returns at most
+/// `limit` (default 2 000, hard cap 10 000) nodes plus the edges that
+/// connect them, with three LOD modes:
+///
+/// * `"overview"` — one supernode per cognitive kind.
+/// * `"cluster"` — real nodes inside `focus_kind`, supernodes for the rest.
+/// * `"detail"`  — real nodes near `focus_id`, ranked by degree / importance.
+///
+/// See `docs/billion-scale-retrieval-design.md` Phase 1.
+#[tauri::command]
+pub async fn memory_graph_page(
+    focus_id: Option<i64>,
+    focus_kind: Option<String>,
+    zoom: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::graph_page::GraphPageResponse, String> {
+    use crate::memory::graph_page::{build_graph_page, GraphPageRequest, GraphZoom};
+    use crate::memory::CognitiveKind;
+
+    let zoom = match zoom.as_deref().unwrap_or("detail") {
+        "overview" => GraphZoom::Overview,
+        "cluster" => GraphZoom::Cluster,
+        _ => GraphZoom::Detail,
+    };
+    let focus_kind = focus_kind.as_deref().and_then(|s| match s {
+        "episodic" => Some(CognitiveKind::Episodic),
+        "semantic" => Some(CognitiveKind::Semantic),
+        "procedural" => Some(CognitiveKind::Procedural),
+        "judgment" => Some(CognitiveKind::Judgment),
+        "negative" => Some(CognitiveKind::Negative),
+        _ => None,
+    });
+
+    let (entries, edges) = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let entries = store.get_all().map_err(|e| e.to_string())?;
+        let edges = store.list_edges().map_err(|e| e.to_string())?;
+        (entries, edges)
+    };
+
+    let req = GraphPageRequest {
+        focus_id,
+        focus_kind,
+        zoom,
+        limit,
+    };
+    Ok(build_graph_page(&entries, &edges, &req))
+}
+
 #[cfg(all(test, feature = "wasm-sandbox"))]
 mod tests {
     use super::*;

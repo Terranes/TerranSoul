@@ -32,7 +32,7 @@ export default defineConfig({
     // the app through Chromium, and `tauri dev` requires native GTK/WebKit
     // build dependencies that the playwright-e2e job does not install.
     // Locally `npm run dev` (full Tauri) is fine and gives faster reload.
-    command: process.env.CI ? 'npm run dev:vite' : 'npm run dev',
+    command: process.env.CI ? 'npm run dev:vite' : 'npm run dev:desktop-e2e',
     env: {
       ...process.env,
       TERRANSOUL_E2E_LOCAL_LLM: '1',

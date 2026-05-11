@@ -21,6 +21,16 @@ Entries are in **reverse chronological order** (newest first).
 
 | Entry | Date |
 |-------|------|
+| [Chunk 48.1 — Billion-scale retrieval & graph Phase 1 (paged graph + sharded retrieval scaffold + Lite/WebGL renderer)](#chunk-481--billion-scale-retrieval--graph-phase-1) | 2026-05-11 |
+| [Chunk 46.2 — Manual tutorial screenshot QA sweep all 21 tutorials](#chunk-462--manual-tutorial-screenshot-qa-sweep-all-21-tutorials) | 2026-05-10 |
+| [Chunk 47.7 — Verify-before-claim discipline in multi-agent prompts](#chunk-477--verify-before-claim-discipline-in-multi-agent-prompts) | 2026-05-10 |
+| [Chunk 47.6 — Provider tool-schema sanitization for free-mode Gemini](#chunk-476--provider-tool-schema-sanitization-for-free-mode-gemini) | 2026-05-10 |
+| [Chunk 47.5 — Sandbox secrets-denylist + tokenised shell pre-flight](#chunk-475--sandbox-secrets-denylist--tokenised-shell-pre-flight) | 2026-05-10 |
+| [Chunk 47.4 — Rolling-window summarization hook + cross-resume token seeding](#chunk-474--rolling-window-summarization-hook--cross-resume-token-seeding) | 2026-05-10 |
+| [Chunk 47.3 — Runtime `AgentHook` trait + `wrap_tool_call` chain skeleton](#chunk-473--runtime-agenthook-trait--wrap_tool_call-chain-skeleton) | 2026-05-10 |
+| [Chunk 47.2 — Three-point interrupt + orphaned tool-call healing](#chunk-472--three-point-interrupt--orphaned-tool-call-healing) | 2026-05-10 |
+| [Chunk 47.1 — Tool-result + shell-output spill-to-disk](#chunk-471--tool-result--shell-output-spill-to-disk) | 2026-05-10 |
+| [Chunk 46.1 — Agent-session lesson detector + `brain_ingest_lesson` MCP tool](#chunk-461--agent-session-lesson-detector--brain_ingest_lesson-mcp-tool) | 2026-05-10 |
 | [Chunk 45.6 — Cross-repo contract drift across PR / main](#chunk-456--cross-repo-contract-drift-across-pr--main) | 2026-05-07 |
 | [Chunk 45.5 — Cluster fragmentation guard + visualisation sampling](#chunk-455--cluster-fragmentation-guard--visualisation-sampling) | 2026-05-07 |
 | [Chunk 45.4 — Vendor / asset detection + tiered indexing](#chunk-454--vendor--asset-detection--tiered-indexing) | 2026-05-07 |
@@ -368,6 +378,370 @@ Entries are in **reverse chronological order** (newest first).
 | [Chunk 002 — Chat UI Polish & Vitest Component Tests](#chunk-002--chat-ui-polish--vitest-component-tests) | 2026-04-10 |
 | [CI Restructure](#ci-restructure--consolidate-jobs--eliminate-double-firing) | 2026-04-10 |
 | [Chunk 001 — Project Scaffold](#chunk-001--project-scaffold) | 2026-04-10 |
+
+---
+
+## Chunk 48.1 — Billion-scale retrieval & graph Phase 1
+
+**Status:** Complete
+**Date:** 2026-05-11
+
+**Goal:** Land the Phase 1 foundation for handling 1B+ memories on a single
+machine: an honest scope/design doc, a shard-aware retrieval scaffold, a
+paged/LOD knowledge-graph endpoint so the frontend never holds the full
+graph in memory, and a Lite/WebGL render-mode toggle for `MemoryGraph` that
+keeps Canvas2D as the always-works default.
+
+**Architecture / files touched:**
+
+- **Design doc** — `docs/billion-scale-retrieval-design.md` (new). Captures
+  the physical limits (RAM/disk math for 1B × 768-dim vectors, screen-pixel
+  argument against rendering all nodes), the five-phase plan, the
+  cross-cutting rules (no global locks during search, bounded rerank, hot
+  cache, backpressure, no silent fallbacks), and Phase 1 acceptance.
+- **Sharded retrieval scaffold** — `src-tauri/src/memory/sharded_retrieval.rs`
+  (new): `ShardKey = (MemoryTier, CognitiveKind)` with `as_path_token` for
+  Phase 2 file naming; `ShardKey::all()` enumerates the 15-slot grid;
+  `partition_by_shard`; `merge_shard_rankings` via Reciprocal Rank Fusion
+  (k=60) with cap; `cap_rerank_pool` (default `DEFAULT_RERANK_CAP = 50`) so
+  LLM-as-judge rerank cost is bounded regardless of query `limit`.
+- **Paged graph** — `src-tauri/src/memory/graph_page.rs` (new): pure
+  `build_graph_page(entries, edges, request) -> GraphPageResponse` with
+  `GraphZoom { Overview, Cluster, Detail }`, `DEFAULT_GRAPH_LIMIT = 2_000`,
+  hard cap `MAX_GRAPH_NODES = 10_000`. Overview collapses memories to one
+  supernode per `cognitive_kind` with aggregated cross-kind super-edges.
+  Cluster keeps the focus kind as real nodes and other kinds as supernodes
+  with weighted boundary edges. Detail ranks focus + 1-hop neighbours then
+  `degree desc / importance / recency`, and drops edges whose endpoints
+  fall outside the page so the frontend never sees dangling references.
+- **Tauri command** — `commands/memory.rs::memory_graph_page(focus_id,
+  focus_kind, zoom, limit)` reads `MemoryStore::get_all()` +
+  `list_edges()`, calls `build_graph_page`, returns `GraphPageResponse`.
+  Registered alongside `list_memory_edges` in `src-tauri/src/lib.rs`.
+- **Frontend renderer** — `src/components/MemoryGraph.vue`: added a
+  `Lite` / `GPU` toggle button in the Obsidian-style topbar.
+   - **Lite (default, no GPU required)** — keeps the existing Canvas2D +
+     `d3-force-3d` path. Vitest/jsdom always uses this branch.
+   - **WebGL** — lazy-imports `sigma` + `graphology`, probes for
+     WebGL2/WebGL context, populates a sigma graph from the same in-memory
+     `nodes` / `links`, click → emit `select`. Falls back to Lite when
+     WebGL isn't available or sigma fails to load. Mode is persisted in
+     `localStorage` under `terransoul:memory-graph:render-mode`.
+- **Required derive additions** — `Hash + Copy` on `MemoryTier`
+  (`memory/store.rs`) and `Hash` on `CognitiveKind`
+  (`memory/cognitive_kind.rs`) so they can serve as `HashMap` keys.
+- **Pre-existing test fix** — `ai_integrations/mcp/integration_tests.rs`
+  was asserting the old tool count/positions; `brain_failover_status` had
+  been inserted ahead of the wiki block earlier in the branch, shifting
+  every later index by 1 and bumping `tools.len()` from 33 to 34.
+  Updated the assertions to match the actual tool order.
+
+**Tests:**
+
+- `cargo test --lib`: 2698 passed, 0 failed (15 new tests across
+  `memory::graph_page` and `memory::sharded_retrieval`).
+- `npx vitest run`: 1801 passed (138 files).
+- `npx vue-tsc --noEmit`: clean.
+
+**Out of scope / explicitly deferred to Phase 2–5 in milestones.md (Phase
+48):** per-shard `usearch` files, IVF/centroid coarse router, IVF-PQ /
+DiskANN on-disk indexes, FTS5 per-shard keyword index, paged adjacency +
+cluster precomputation tables. Phase 1 only delivers the abstractions and
+the user-visible LOD/paging command on which those phases build.
+
+**MCP self-improve sync:** durable lesson ingested as memory id `1093`
+(`persisted_to_seed: true`), tags `billion-scale,rag,graph,sharding,sigma,
+webgl,canvas2d,lite-mode,phase-1,memory_graph_page,sharded_retrieval,rrf`.
+
+---
+
+## Chunk 46.2 — Manual tutorial screenshot QA sweep all 21 tutorials
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Complete the manual screenshot QA sweep workflow for all 21 tutorial surfaces and close the long-running in-progress chunk.
+
+**Architecture / assets touched:**
+- `tutorials/screenshots/quick-start/03-pet-mode.png`
+  - Replaced with a validated desktop pet-overlay capture.
+- `tutorials/screenshots/quick-start/06-send-first-message.png`
+  - Replaced with a validated app-view capture showing active chat input.
+- `tutorials/quick-start-tutorial.md`
+  - Updated quick-start screenshot captions to match corrected visual states.
+- `/memories/session/tutorial-qa-progress.md`
+  - Marked quick-start checklist items complete with manual visual verification notes.
+
+**Validation:**
+- Manual per-image visual verification in the editor for corrected quick-start screenshots.
+- Confirmed referenced quick-start screenshot files exist and align with updated tutorial captions.
+
+---
+
+## Chunk 47.7 — Verify-before-claim discipline in multi-agent prompts
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Enforce verify-before-claim behavior in multi-agent role prompts and rules so member/lead agents cannot claim success from unchecked or failed tool outputs.
+
+**Architecture:**
+- `src-tauri/src/coding/multi_agent.rs`
+  - Added explicit, reusable verify-before-claim phrase constants:
+    - `VERIFY_BEFORE_CLAIM_MEMBER_PHRASE`
+    - `VERIFY_BEFORE_CLAIM_MEMBER_FOLLOWUP_PHRASE`
+    - `VERIFY_BEFORE_CLAIM_LEAD_PHRASE`
+  - Updated role prompt preambles (`AgentRole::system_preamble`) so:
+    - all member-style roles include the member tool-result and post-mutation follow-up rules,
+    - orchestrator (lead role) also includes the lead sanity-check rule.
+  - Added regression test `verify_before_claim_phrases_are_present_in_role_prompts` asserting the exact phrases exist in role prompts.
+- `rules/prompting-rules.md`
+  - Added `Verify-Before-Claim Discipline (Multi-Agent)` section codifying the three required rules:
+    1. members must read every tool result and never claim success on tool error,
+    2. state-mutating calls require immediate cheap follow-up read (`ls`/`read`) before completion claims,
+    3. lead must sanity-check member done claims with a cheap read when feasible.
+
+**Tests:**
+- `coding::multi_agent` unit tests (21 total) including the new exact-phrase regression guard.
+
+**Validation:**
+- `cargo test --lib coding::multi_agent`
+
+---
+
+## Chunk 47.6 — Provider tool-schema sanitization for free-mode Gemini
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Sanitize MCP tool input schemas for Gemini/Vertex free-mode compatibility by flattening `$ref`/`$defs` and stripping unsupported JSON Schema keywords, while leaving non-Gemini providers unchanged.
+
+**Architecture:**
+- `src-tauri/src/brain/providers.rs`
+  - Added `sanitize_tool_schema_for_gemini(schema: &mut Value)` that recursively:
+    - inlines local `$ref` values from `$defs`,
+    - removes `$defs`,
+    - strips Gemini-rejected keys (`discriminator`, `const`, `exclusiveMinimum`, `exclusiveMaximum`, `additionalProperties`, `$schema`, `$id`, `$ref`, `contentEncoding`, `contentMediaType`).
+  - Added `adapt_tool_schema_for_free_provider(provider_id, schema)` that gates sanitization to Gemini/Vertex provider IDs.
+  - Added tests for ref-flattening, key stripping, and non-Gemini passthrough.
+- `src-tauri/src/brain/mod.rs`
+  - Exported new provider schema adapter module (`pub mod providers;`).
+- `src-tauri/src/ai_integrations/mcp/tools.rs`
+  - Added `definitions_for_free_provider(caps, provider_id)` and adapter helper to sanitize each tool `inputSchema` for Gemini/Vertex.
+  - Added tests verifying adapted definitions sanitize for Gemini and remain untouched for other providers.
+  - Updated existing tool-count/order assertions to include current `brain_ingest_lesson` tool set.
+- `src-tauri/src/ai_integrations/mcp/router.rs`
+  - Wired live `tools/list` dispatch to use `definitions_for_free_provider` when active `BrainMode` is `FreeApi`, so sanitization is applied in the real MCP response path.
+
+**Tests:**
+- `brain::providers` sanitizer unit tests (3).
+- `ai_integrations::mcp::tools` definitions/adapter tests (11).
+- `ai_integrations::mcp::router` dispatch/auth tests (10, regression safety after tools/list wiring).
+
+**Validation:**
+- `cargo test --lib brain::providers`
+- `cargo test --lib ai_integrations::mcp::tools`
+- `cargo test --lib ai_integrations::mcp::router`
+- `cargo check`
+
+---
+
+## Chunk 47.5 — Sandbox secrets-denylist + tokenised shell pre-flight
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Add repository-level denylist and shell command preflight checks so coding workflows reject obvious secret-path access attempts before command/file execution.
+
+**Architecture:**
+- `src-tauri/src/coding/sandbox.rs`
+  - Added `SecretsDenylist` with default denied patterns:
+    - `**/.env`, `**/.env.*`, `**/secrets/**`, `**/*.pem`, `**/id_rsa*`, `**/*.key`.
+  - Added `is_rel_path_denied` for path-level checks.
+  - Added `shell_preflight(worktree, cmd)` using `shlex::split` and path-like token resolution for denylist rejection.
+- `src-tauri/src/coding/apply_file.rs`
+  - `validate_path` now denies writes targeting denylisted paths.
+- `src-tauri/src/coding/repo.rs`
+  - `run_git` now applies shell preflight before command execution.
+- `src-tauri/src/coding/test_runner.rs`
+  - Test suite command execution now applies shell preflight and returns `SpawnError` when blocked.
+- `src-tauri/src/coding/mod.rs`
+  - Exported `sandbox` module.
+- `src-tauri/Cargo.toml`
+  - Added `shlex = "1"` dependency.
+
+**Tests:**
+- `coding::sandbox` (denylist defaults + shell token preflight allow/deny behavior).
+- `coding::apply_file` (path validation integration).
+- `coding::repo` (command preflight integration).
+- `coding::test_runner` (suite preflight integration).
+
+**Validation:**
+- `cargo test --lib coding::sandbox`
+- `cargo test --lib coding::apply_file`
+- `cargo test --lib coding::repo`
+- `cargo test --lib coding::test_runner`
+- `cargo check`
+
+---
+
+## Chunk 47.4 — Rolling-window summarization hook + cross-resume token seeding
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Add a rolling-window summarization hook on the runtime-hook framework and persist/reseed prompt-token usage so resumed runs can continue threshold-based context compression.
+
+**Architecture:**
+- `src-tauri/src/coding/summarization_hook.rs`
+  - Added `SummarizationHook` implementing `AgentHook::before_model`.
+  - Hook behavior: when `state.usage.last_prompt_tokens >= threshold`, mark older messages as `exclude_from_context`, inject one synthetic `summary` message, and rebuild the request with active messages only.
+  - Added shared settings cascade helpers:
+    - `load_shared_summarization_settings(data_dir)` reads `mcp-data/shared/coding_summarization.toml`.
+    - `resolve_summarization_threshold(data_dir, session_override)` applies precedence: session override -> shared config -> default (`100000`).
+- `src-tauri/src/coding/runtime_hooks.rs`
+  - Extended runtime data model with:
+    - `AgentUsage { last_prompt_tokens }`
+    - `AgentMessage { role, content, kind, exclude_from_context }`
+    - `AgentState::active_messages()` for context rebuild after exclusions.
+  - `ModelRequest` now carries `Vec<AgentMessage>` and preserves rebuild semantics for before-model hooks.
+- `src-tauri/src/coding/session_chat.rs`
+  - Added optional `ChatMessage.prompt_tokens`.
+  - Added `seed_last_prompt_tokens(data_dir, session_id) -> u32` to recover the last assistant prompt token count from persisted transcript usage (explicit field or JSON usage payload in content).
+- `src-tauri/src/coding/engine.rs`
+  - Before each chunk execution, seeds last prompt tokens from session transcript using `session_chat_seed_last_prompt_tokens` and emits a context-seed progress event.
+- `src-tauri/src/coding/mod.rs`
+  - Exported `summarization_hook` module symbols and `session_chat_seed_last_prompt_tokens`.
+- `mcp-data/shared/coding_summarization.toml`
+  - New shared default config with `threshold = 100000`.
+
+**Tests:**
+- `coding::summarization_hook::tests::hook_is_noop_below_threshold`
+- `coding::summarization_hook::tests::hook_summarizes_once_above_threshold`
+- `coding::summarization_hook::tests::threshold_cascade_prefers_session_then_file_then_default`
+- `coding::session_chat::tests::seed_last_prompt_tokens_prefers_explicit_prompt_tokens_field`
+- `coding::session_chat::tests::seed_last_prompt_tokens_parses_usage_payload_from_content_json`
+- `coding::session_chat::tests::seed_last_prompt_tokens_returns_zero_when_no_assistant_usage_found`
+
+**Validation:** `cargo test --lib summarization_hook`, `cargo test --lib session_chat`, `cargo test --lib runtime_hooks`, and `cargo check` all green.
+
+---
+
+## Chunk 47.3 — Runtime `AgentHook` trait + `wrap_tool_call` chain skeleton
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Add a reusable runtime hook framework for coding workflows so model/tool phases can be composed instead of hard-coded, and make tool-result offload the first hook in the chain.
+
+**Architecture:**
+- `src-tauri/src/coding/runtime_hooks.rs` — new hook framework with:
+  - `RunContext` (immutable run identity + worktree path)
+  - `AgentState` (mutable messages/metadata)
+  - `ModelRequest` snapshot with `with_messages()` rebuild support
+  - `ToolCall` / `ToolCallResult` value types
+  - `AgentHook` trait exposing `before_model`, `after_model`, `wrap_tool_call`, `on_chunk`
+  - chain runners `run_before_model_hooks`, `run_after_model_hooks`, `run_tool_call_hooks`, `run_on_chunk_hooks`
+  - `OffloadHook` that wraps tool execution and calls `coding::offload::maybe_offload_tool_result()` as the first hook in the tool chain
+  - `safe_invoke()` panic isolation so a buggy hook returns an error instead of crashing the turn
+- `src-tauri/src/coding/mod.rs` — exported `runtime_hooks` and its core types/helpers.
+
+**Tests:**
+- `before_model_chain_rebuilds_request`
+- `panicking_hook_is_caught`
+- `offload_hook_spills_large_results`
+- Doctest on `AgentHook` for the before-model rebuild contract
+
+**Validation:** `cargo check`, `cargo test --lib runtime_hooks`, `cargo test --doc runtime_hooks`, and `cargo clippy -- -D warnings` all green.
+
+---
+
+## Chunk 47.2 — Three-point interrupt + orphaned tool-call healing
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Replace the self-improve loop's coarse cancellation polling with a prompt watch-channel path and add a durable repair step for interrupted tool-call transcripts.
+
+**Architecture:**
+- `src-tauri/src/coding/engine.rs`
+  - `SelfImproveEngine` now owns a `tokio::sync::watch::Sender<bool>` alongside the legacy atomic flag.
+  - `start()` resets both signals and subscribes a receiver for the running loop.
+  - `execute_chunk_dag_with_retry()` and `execute_chunk_dag()` now consult the watch receiver before each DAG node and after the plan stage, and `sleep_cancellable()` wakes early on `changed()` instead of waiting for the next polling slice.
+- `src-tauri/src/coding/session_chat.rs`
+  - Added `ToolCallRecord`, `tool_call_batch_message()`, `tool_result_message()`, and `heal_orphaned_tool_calls()`.
+  - Transcript repair is JSONL-based because the current session store is JSONL, so the helper rewrites the file atomically and inserts synthetic `tool_result:<id>` messages with the interrupted-result advisory.
+  - `append_message()` heals orphans before appending the next user turn, approximating the requested "heal on next user insert" behavior in the current storage model.
+- `src-tauri/src/commands/coding_sessions.rs`
+  - `coding_session_load_chat()` and `coding_session_resume()` now call `heal_orphaned_tool_calls()` before returning transcript data.
+- `src-tauri/src/coding/mod.rs`
+  - Re-exported `heal_orphaned_tool_calls` for the commands layer.
+
+**Files modified:**
+- `src-tauri/src/coding/engine.rs`
+- `src-tauri/src/coding/session_chat.rs`
+- `src-tauri/src/commands/coding_sessions.rs`
+- `src-tauri/src/coding/mod.rs`
+
+**Test counts:** 13 `coding::session_chat` tests green, plus `coding::engine::tests::request_stop_clears_running_flag` green, and `cargo clippy -- -D warnings` clean.
+
+---
+
+## Chunk 47.1 — Tool-result + shell-output spill-to-disk
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Keep oversized tool results and shell output out of the conversation window by spilling them to workspace files and returning compact previews.
+
+**Architecture:**
+- `src-tauri/src/coding/offload.rs` — spill-to-disk helpers for tool results and shell output, plus process-group configuration for child processes.
+- `src-tauri/src/coding/mod.rs` — added `pub mod offload`.
+- `src-tauri/src/coding/test_runner.rs` — calls `offload::configure_process_group(&mut cmd)` before spawning suite commands.
+
+**Files created:**
+- `src-tauri/src/coding/offload.rs`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs`
+- `src-tauri/src/coding/test_runner.rs`
+- `src-tauri/src/ai_integrations/gateway.rs` — clippy-only cleanup: removed an unnecessary cast on `memory_id`
+
+**Test counts:** 11 `coding::offload` tests green; `cargo check` and `cargo clippy -- -D warnings` clean.
+
+---
+
+## Chunk 46.1 — Agent-session lesson detector + `brain_ingest_lesson` MCP tool
+
+**Status:** Complete
+**Date:** 2026-05-10
+
+**Goal:** Close the self-improve gap where interactive coding agent sessions had no path to durably store procedural lessons discovered during a session.
+
+**Architecture:**
+- New `src-tauri/src/coding/agent_session_lessons.rs` — pure-Rust lesson detector with two pattern families:
+  - *User-corrective*: recognises "instead of", "stop doing", "don't do" phrasings
+  - *Agent-authored*: recognises "I learned", "lesson:", "LESSON:", "RULE:" markers
+- Extended `DetectionReply` in `coding/conversation_learning.rs` with public fields + `reply_type: String` field for lesson routing (routes to `brain_ingest_lesson` instead of `milestones.md`)
+- New `IngestLessonRequest` / `IngestLessonResponse` gateway types in `ai_integrations/gateway.rs`
+- New `ingest_lesson(caps, req)` method on `BrainGateway` trait + `AppStateGateway` impl:
+  - Writes lesson to `memories` table via `last_insert_rowid()`
+  - Appends idempotent INSERT row to `mcp-data/shared/memory-seed.sql` for reseed durability
+  - Requires `brain_write` capability
+- New `brain_ingest_lesson` MCP tool definition + dispatch in `ai_integrations/mcp/tools.rs`
+- New CI check script `scripts/ci-check-migrations-sync.mjs` — fails when a migration SQL in `mcp-data/shared/migrations/` has no corresponding entry in `lessons-learned.md`
+
+**Files created:**
+- `src-tauri/src/coding/agent_session_lessons.rs`
+- `scripts/ci-check-migrations-sync.mjs`
+
+**Files modified:**
+- `src-tauri/src/coding/mod.rs` — added `pub mod agent_session_lessons`
+- `src-tauri/src/coding/conversation_learning.rs` — `DetectionReply` made public + `reply_type` field added
+- `src-tauri/src/ai_integrations/gateway.rs` — `IngestLessonRequest`, `IngestLessonResponse`, `ingest_lesson` trait + impl, 5 new tests
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — `brain_ingest_lesson` tool definition + dispatch
+
+**Test counts:** 7 detection unit tests + 5 gateway round-trip tests = **12 new tests** (all green)
 
 ---
 
@@ -1094,9 +1468,9 @@ for the hot RRF path.
 
 | File | What |
 |------|------|
-| `.github/workflows/terransoul-ci.yml` | New `rust-postgres` job: `pgvector/pgvector:pg16` service, `cargo clippy --features postgres`, `cargo test --features postgres -- --include-ignored` with `TEST_POSTGRES_URL` env |
 | `docs/brain-advanced-design.md` | New §27 "Backend Test Matrix — CI Parity": table of backends, cadences, feature flags, coverage gap note for MSSQL/Cassandra weekly-only schedule |
 
+---
 ### Verification
 
 - CI YAML syntax valid (jobs + services + steps)
@@ -1110,16 +1484,12 @@ for the hot RRF path.
 
 **Status:** Complete
 **Date:** 2026-05-07
-**Goal:** Add native pgvector HNSW vector search to the PostgreSQL backend, replacing in-process cosine similarity for `vector_search`, `find_duplicate`, and the RRF vector retriever.
 
 ### Changes
 
 | File | What |
 |------|------|
 | `src-tauri/src/memory/postgres.rs` | V9 migration (pgvector extension, `vec_embedding vector(768)` column, HNSW index with m=16 ef_construction=64); `embedding_to_pgvector_literal()` helper; `set_embedding()` writes both BYTEA + pgvector; native `vector_search()` via `ORDER BY <=>` (cosine distance); native `find_duplicate()` with distance threshold; RRF vector retriever uses server-side HNSW instead of loading all embeddings; `supports_native_vector_search()` → `true`; new test `vector_search_native_pgvector` |
-
-### Verification
-
 - `cargo check --features postgres` — clean
 - `cargo clippy --features postgres -- -D warnings` — clean  
 - `cargo test --lib` — 2352 tests passing
@@ -1134,7 +1504,6 @@ for the hot RRF path.
 **Goal:** Port the SQLite memory features to PostgreSQL for distributed deployments — native FTS via `tsvector` GIN index, RRF fusion, KG edges with recursive CTE traversal, and contextual retrieval prefix on insert.
 
 ### Changes
-
 | File | What |
 |------|------|
 | `src-tauri/src/memory/postgres.rs` | V5–V8 migrations (FTS tsvector+GIN+trigger, memory_edges table, CRDT columns, RRF indexes); native `search()` via FTS `@@`; `hybrid_search_rrf()` override with 3-retriever RRF (FTS rank + vector cosine + freshness composite, k=60); `add_edge()`, `get_edges_for()`, `traverse_from()` (recursive CTE BFS), `delete_edge()`, `edge_count()`; `add_with_context()` for contextual retrieval prefix; `row_to_entry` updated with `hlc_counter`; `row_to_edge` helper; 5 ignored integration tests |

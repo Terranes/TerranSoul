@@ -22,9 +22,9 @@ import { normaliseTranslatorLanguage, type TranslatorLanguage } from '../utils/t
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
-// Replaces the three legacy regex detectors (`detectLearnWithDocsIntent`,
-// `detectTeachIntent`, `detectGatedSetupCommand`) on the live message path
-// — they are now only used as deterministic test fixtures.
+// Mirrors the wire format emitted by the `classify_intent` Tauri command.
+// Contentful side-channel routing is owned by the backend brain classifier
+// for every brain mode; the frontend only handles the returned decision.
 export type GatedSetupKind = 'upgrade_gemini' | 'provide_context';
 export type IntentDecision =
   | { kind: 'chat' }
@@ -80,6 +80,14 @@ export function shouldUseFastChatPath(text: string): boolean {
   if (!trimmed) return true;
   const tokens = trimmed.split(/\s+/);
   return tokens.length <= 3 && tokens.every((token) => Array.from(token).length <= 5);
+}
+
+function shouldRunIntentClassifierForTurn(
+  text: string,
+  brain: ReturnType<typeof useBrainStore>,
+): boolean {
+  if (shouldUseFastChatPath(text)) return false;
+  return brain.hasBrain || isTauriAvailable();
 }
 
 /**
@@ -159,15 +167,10 @@ async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDe
   } catch {
     // Pinia not active — fall through to default-on behaviour.
   }
-  // No brain configured → classifier has no provider to ask. We deliberately
-  // return `chat` (not `unknown`) here so the existing persona-fallback UX
-  // handles the turn — that fallback already prompts the user to install a
-  // brain and is friendlier than the install-all overlay for someone who's
-  // just exploring the UI.  In real-world flows the free brain auto-
-  // configures on first launch, so `hasBrain` is true by the time the user
-  // ever types a real message; the install-all overlay is reserved for the
-  // documented "free LLM was tried but couldn't decide" failure mode below.
-  if (!hasBrain) return { kind: 'chat' };
+  // In the desktop app the Rust classifier owns deterministic shortcuts such
+  // as "Learn from my documents" even before a brain provider is configured.
+  // Browser-only/unit-test runtimes still keep the old persona fallback.
+  if (!hasBrain && !isTauriAvailable()) return { kind: 'chat' };
   try {
     const decision = await invoke<IntentDecision>('classify_intent', { text });
     if (decision && typeof decision === 'object' && 'kind' in decision) {
@@ -300,10 +303,6 @@ const QUEST_MATCH_STOP_WORDS = new Set([
 /**
  * Push the Scholar's Quest message for an explicit teach/ingest intent
  * with the topic already extracted (by the LLM intent classifier).
- *
- * Kept separate from `maybeShowScholarQuestFromTeachIntent` (the legacy
- * regex-driven entry point) so the new classifier-driven path doesn't
- * need to re-run the brittle regex.
  */
 function pushTeachScholarQuestForTopic(topic: string): void {
   const conversation = useConversationStore();
@@ -323,54 +322,6 @@ function pushTeachScholarQuestForTopic(topic: string): void {
       { label: 'No thanks', value: 'dismiss', icon: '💤' },
     ],
   });
-}
-
-/**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect an explicit "teach the AI" instruction from the user.
- *
- * We only fire Scholar's Quest on phrases that clearly request ingestion of
- * new source material.  A plain question like *"I want to learn about X"* is
- * NOT an instruction to ingest — it's a question the LLM should answer
- * directly, so it must NOT match here.
- *
- * Matching phrases (case-insensitive):
- *   "remember the following law: …"
- *   "remember this law …"
- *   "learn the following …"
- *   "memori(s|z)e this …"
- *   "ingest this …" / "import this document/file/url …"
- *   "provide your own context" / "provide my own context"
- *   "here is the context/source/document …"
- */
-export function detectTeachIntent(userInput: string): { topic: string } | null {
-  const trimmed = userInput.trim();
-
-  const patterns: Array<{ re: RegExp; capture: number }> = [
-    // "remember/learn (the|this) following [law|article|rule|text|content|…]: …"
-    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following(?:\s+\w+)?\s*[:\-–]\s*(.+)$/i, capture: 1 },
-    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following\b(.*)$/i, capture: 1 },
-    // "remember/memorize this law/article/rule/fact: …"
-    { re: /^(?:please\s+)?(?:remember|memori[sz]e)\s+this\s+(?:law|article|rule|fact|statute|regulation|text|document)\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "ingest/import this/the following document/file/url: …"
-    { re: /^(?:please\s+)?(?:ingest|import)\s+(?:this|the\s+following)\s*(?:document|file|url|page)?\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
-    { re: /^(?:i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "here is / here's (the|my) context/source/document/article"
-    { re: /^here\s*(?:'s|is)\s+(?:the|my)\s+(?:context|source|document|article|law|text)\b[:\s\-–]*(.*)$/i, capture: 1 },
-  ];
-
-  for (const { re, capture } of patterns) {
-    const m = trimmed.match(re);
-    if (m) {
-      const topic = (m[capture] ?? '').trim() || 'the provided content';
-      return { topic };
-    }
-  }
-  return null;
 }
 
 /**
@@ -434,44 +385,12 @@ function maybeShowDontKnowPrompt(responseText: string): void {
 }
 
 /**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect the two gated setup commands the user can type after a
- * "don't-know" prompt.  These are literal confirmations — we only fire the
- * matching setup flow when the user explicitly types one.
- */
-export function detectGatedSetupCommand(userInput: string):
-  | { type: 'upgrade_gemini' }
-  | { type: 'provide_context' }
-  | null {
-  const lower = userInput.toLowerCase().trim();
-
-  // "upgrade to gemini [model]"  (typo-tolerant: gem(i)?ni)
-  if (/^(?:please\s+)?upgrade\s+to\s+gem[i]?ni(?:\s+model)?\s*[.!]?$/i.test(lower)
-    || /^switch\s+to\s+gem[i]?ni(?:\s+model)?\s+(?:for\s+)?(?:google\s+)?search\b/i.test(lower)
-    || /^use\s+gem[i]?ni\s+(?:for|with)\s+(?:google\s+)?search\b/i.test(lower)) {
-    return { type: 'upgrade_gemini' };
-  }
-
-  // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
-  if (/^(?:please\s+|i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\s*[.!]?$/i.test(lower)) {
-    return { type: 'provide_context' };
-  }
-
-  return null;
-}
-
-/**
  * Execute a gated setup command.  Returns the assistant message to push into
  * the conversation; the message carries quest choices that wire up into the
  * existing overlay so the user can proceed with a single click.
  *
- * The shape `{ type: 'upgrade_gemini' | 'provide_context' }` is shared by
- * both the legacy `detectGatedSetupCommand()` regex (test-only) and the
- * `IntentDecision::GatedSetup` branch returned by the LLM-powered
- * classifier.
+ * The shape `{ type: 'upgrade_gemini' | 'provide_context' }` mirrors the
+ * `IntentDecision::GatedSetup` branch returned by the backend classifier.
  */
 function executeGatedSetupCommand(
   cmd: { type: 'upgrade_gemini' } | { type: 'provide_context' },
@@ -517,32 +436,6 @@ function executeGatedSetupCommand(
 }
 
 // ── "Learn X using my documents" flow ────────────────────────────────────────
-
-/**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect an explicit "learn / study X using my documents" request.
- *
- * Examples that match:
- *   "Learn Vietnamese laws using my provided documents"
- *   "Study quantum physics with my files"
- *   "Learn about contract law from my notes"
- *
- * Returns the extracted topic, or null when the phrase doesn't match.
- */
-export function detectLearnWithDocsIntent(userInput: string): { topic: string } | null {
-  const trimmed = userInput.trim();
-  const re =
-    /^(?:please\s+|i\s+(?:want|would\s+like)\s+to\s+)?(?:learn|study)\s+(?:about\s+)?(.+?)\s+(?:using|with|from|via)\s+(?:my|the|our)\s+(?:own\s+|provided\s+)?(?:documents?|docs?|files?|sources?|notes?|materials?|pdfs?|articles?)\b[\s.!?]*$/i;
-  const m = trimmed.match(re);
-  if (m) {
-    const topic = (m[1] ?? '').trim();
-    if (topic) return { topic };
-  }
-  return null;
-}
 
 /**
  * Walk the prerequisite chain of `targetQuestId` and return the ordered list
@@ -1707,24 +1600,22 @@ export const useConversationStore = defineStore('conversation', () => {
     // (learn_with_docs, teach_ingest, gated_setup) we abort the stream
     // and handle it.  For `chat` / `unknown` the stream is already
     // running — zero wasted time.
-    //
-    // For LocalOllama: SKIP the classifier entirely. The classifier
-    // uses the same Ollama model as chat, and concurrent requests to
-    // the same model serialize in Ollama — adding 1-3s of contention
-    // before the first chat token arrives. All messages go straight
-    // to streaming for guaranteed <1s TTFT.
-    const isLocalLlm = brain.brainMode?.mode === 'local_ollama' || brain.brainMode?.mode === 'local_lm_studio';
-    const classifyPromise: Promise<IntentDecision> = (isLocalLlm || shouldUseFastChatPath(content))
-      ? Promise.resolve({ kind: 'chat' })
-      : classifyIntent(content, brain.hasBrain);
+    // Short content-light turns still bypass the classifier. Contentful setup
+    // requests, including LocalLLM turns, go through the backend classifier so
+    // the brain can use its app/RAG knowledge to route side-channel intents.
+    const classifyPromise: Promise<IntentDecision> = shouldRunIntentClassifierForTurn(content, brain)
+      ? classifyIntent(content, brain.hasBrain)
+      : Promise.resolve({ kind: 'chat' });
     let classifyDecision: IntentDecision | null = null;
     // Check synchronously — if the cache already has the answer it
     // resolves immediately (microtask), so we can short-circuit before
     // even starting the stream for non-chat intents.
     const quickDecision = await Promise.race([
       classifyPromise.then((d) => d),
-      // 0ms timeout: only picks up already-resolved (cached) results
-      new Promise<null>((r) => setTimeout(() => r(null), 0)),
+      // 0ms normally only picks up cached results. When the desktop app has no
+      // brain configured, wait briefly so backend-owned deterministic shortcuts
+      // can pre-empt the persona fallback before the streaming path fails.
+      new Promise<null>((r) => setTimeout(() => r(null), brain.hasBrain ? 0 : 500)),
     ]);
     if (quickDecision && quickDecision.kind !== 'chat' && quickDecision.kind !== 'unknown') {
       classifyDecision = quickDecision;
@@ -1795,30 +1686,35 @@ export const useConversationStore = defineStore('conversation', () => {
         // Don't set isStreaming immediately - wait for first chunk
         // Keep character in thinking state until text actually arrives
 
-        // Background classifier: if a non-chat intent arrives before any
-        // text has streamed, abort the stream and handle the intent.
+        // Background classifier: when a side-channel intent arrives, abort
+        // the stream and handle the intent. For document-learning and
+        // teach/ingest intents we always divert — even if some stream text
+        // has already arrived — because the user explicitly asked for a
+        // workflow, not a chat answer. For gated_setup we only divert when
+        // no text has streamed yet, since setup confirmations are less
+        // disruptive as a post-response prompt.
         let bgIntentHandled = false;
         if (!classifyDecision) {
           classifyPromise.then((d) => {
             if (bgIntentHandled) return;
-            if (d.kind !== 'chat' && d.kind !== 'unknown' && !streaming.streamText) {
-              bgIntentHandled = true;
-              activeAbortController?.abort();
-              switch (d.kind) {
-                case 'gated_setup':
-                  messages.value.push(executeGatedSetupCommand({ type: d.setup }));
-                  break;
-                case 'learn_with_docs':
-                  startLearnDocsFlow(d.topic);
-                  break;
-                case 'teach_ingest':
-                  pushTeachScholarQuestForTopic(d.topic);
-                  break;
-              }
-              isThinking.value = false;
-              generationActive.value = false;
-              void drainQueue();
+            if (d.kind === 'chat' || d.kind === 'unknown') return;
+            // gated_setup only pre-empts when no text has streamed yet.
+            if (d.kind === 'gated_setup' && streaming.streamText) return;
+            bgIntentHandled = true;
+            // Push the quest/setup flow first, then abort — the abort
+            // handler discards partial stream text and drains the queue.
+            switch (d.kind) {
+              case 'gated_setup':
+                messages.value.push(executeGatedSetupCommand({ type: d.setup }));
+                break;
+              case 'learn_with_docs':
+                startLearnDocsFlow(d.topic);
+                break;
+              case 'teach_ingest':
+                pushTeachScholarQuestForTopic(d.topic);
+                break;
             }
+            activeAbortController?.abort();
           }).catch(() => { /* classifier errors are non-fatal */ });
         }
 
@@ -1928,6 +1824,52 @@ export const useConversationStore = defineStore('conversation', () => {
         // but the LLM may still return JSON-wrapped text outside tags.
         const parsed = parseTags(streaming.streamText);
         const cleanText = parsed.text;
+
+        // ── Post-stream classifier check ──────────────────────────────
+        // With LocalOllama (NUM_PARALLEL=1) the classifier request is
+        // queued behind the chat stream in Ollama's request queue. The
+        // stream finishes before the classifier, so the background
+        // `.then()` handler can't abort in time. Now that the GPU is
+        // free, wait briefly for the classifier; if it returns a
+        // side-channel intent, show the quest flow instead of the chat
+        // response.
+        if (!bgIntentHandled) {
+          try {
+            const POST_STREAM_CLASSIFY_WAIT_MS = 5000;
+            const postDecision = await Promise.race([
+              classifyPromise,
+              new Promise<IntentDecision>((r) =>
+                setTimeout(() => r({ kind: 'chat' }), POST_STREAM_CLASSIFY_WAIT_MS),
+              ),
+            ]);
+            if (
+              postDecision.kind !== 'chat' &&
+              postDecision.kind !== 'unknown'
+            ) {
+              bgIntentHandled = true;
+              streaming.reset();
+              switch (postDecision.kind) {
+                case 'learn_with_docs':
+                  startLearnDocsFlow(postDecision.topic);
+                  break;
+                case 'teach_ingest':
+                  pushTeachScholarQuestForTopic(postDecision.topic);
+                  break;
+                case 'gated_setup':
+                  messages.value.push(
+                    executeGatedSetupCommand({ type: postDecision.setup }),
+                  );
+                  break;
+              }
+              // Skip the chat response — quest flow handles the turn.
+              // The finally block cleans up isThinking/isStreaming/etc.
+              return;
+            }
+          } catch {
+            // Classifier error — proceed with the normal chat response.
+          }
+        }
+
         if (cleanText) {
           // Emotion comes from the streaming store (set by llm-animation events).
           const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);

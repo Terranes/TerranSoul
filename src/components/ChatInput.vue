@@ -48,7 +48,8 @@
         ref="inputRef"
         v-model="inputText"
         class="chat-input"
-        placeholder="Type a message…  (Shift+Enter for newline)"
+        :class="{ 'is-thinking-hint': thinking && !inputText }"
+        :placeholder="activePlaceholder"
         rows="1"
         autocomplete="off"
         :style="{ height: textareaHeight }"
@@ -57,6 +58,29 @@
         @keydown="handleKeydown"
         @input="autoResize"
       />
+      <div
+        v-if="messageHistory.length > 0"
+        class="history-nav"
+      >
+        <button
+          type="button"
+          class="history-btn"
+          :disabled="historyIndex === 0 || (historyIndex === -1 && messageHistory.length === 0)"
+          aria-label="Previous message"
+          @click="navigateHistory(-1)"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
+        </button>
+        <button
+          type="button"
+          class="history-btn"
+          :disabled="historyIndex === -1"
+          aria-label="Next message"
+          @click="navigateHistory(1)"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/></svg>
+        </button>
+      </div>
       <button
         type="submit"
         class="send-btn"
@@ -84,11 +108,20 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { burstResetScroll } from '../utils/scroll-reset';
 import { usePromptCommandsStore } from '../stores/prompt-commands';
 
-const props = defineProps<{ disabled: boolean }>();
+const props = defineProps<{
+  disabled: boolean;
+  /**
+   * When true, replace the placeholder with an animated grey
+   * "Thinking[dots] - You can expand chat history to see thinking details"
+   * hint that cycles `.`/`..`/`...` every ~400 ms. The textarea stays
+   * usable so the user can queue the next message.
+   */
+  thinking?: boolean;
+}>();
 const emit = defineEmits<{ submit: [message: string]; focus: []; blur: [] }>();
 
 const inputText = ref('');
@@ -98,8 +131,59 @@ const dragOver = ref(false);
 const selectedSuggestionIdx = ref(0);
 const textareaHeight = ref('auto');
 
-/** Max number of visible rows before the textarea starts scrolling. */
-const MAX_TEXTAREA_ROWS = 6;
+/** ── Message history (up/down recall) ─────────────────────────────────── */
+const messageHistory = ref<string[]>([]);
+const historyIndex = ref(-1);
+const savedDraft = ref('');
+const MAX_HISTORY = 50;
+
+/** Default placeholder shown when the assistant is idle. */
+const IDLE_PLACEHOLDER = 'Type a message…  (Shift+Enter for newline)';
+
+/** Animated dots for the thinking hint — cycles 0→1→2→3 every 400 ms. */
+const dotCount = ref(0);
+let dotTimer: ReturnType<typeof setInterval> | null = null;
+
+watch(
+  () => props.thinking,
+  (active) => {
+    if (active) {
+      dotCount.value = 0;
+      if (!dotTimer) {
+        dotTimer = setInterval(() => {
+          dotCount.value = (dotCount.value + 1) % 4;
+        }, 400);
+      }
+    } else if (dotTimer) {
+      clearInterval(dotTimer);
+      dotTimer = null;
+      dotCount.value = 0;
+    }
+  },
+  { immediate: true },
+);
+
+onUnmounted(() => {
+  if (dotTimer) {
+    clearInterval(dotTimer);
+    dotTimer = null;
+  }
+});
+
+/**
+ * The placeholder shown in the textarea. While the assistant is thinking
+ * we surface a hint that the chat history can be expanded to inspect the
+ * reasoning trace; otherwise we fall back to the standard prompt.
+ */
+const activePlaceholder = computed(() => {
+  if (!props.thinking) return IDLE_PLACEHOLDER;
+  const dots = '.'.repeat(dotCount.value);
+  return `Thinking${dots} - Expand chat history for details`;
+});
+
+/** Default height and growth cap for the chat composer. */
+const MIN_TEXTAREA_ROWS = 1;
+const MAX_TEXTAREA_ROWS = 3;
 
 const promptCommandsStore = usePromptCommandsStore();
 
@@ -144,6 +228,34 @@ function handleKeydown(e: KeyboardEvent) {
     return;
   }
 
+  // ── Message history navigation (up/down) ──
+  if (!showSuggestions.value && messageHistory.value.length > 0) {
+    if (e.key === 'ArrowUp') {
+      const el = inputRef.value;
+      // Only navigate history when cursor is on the first line
+      if (el && el.selectionStart === el.selectionEnd) {
+        const textBefore = el.value.slice(0, el.selectionStart);
+        if (!textBefore.includes('\n')) {
+          e.preventDefault();
+          navigateHistory(-1);
+          return;
+        }
+      }
+    }
+    if (e.key === 'ArrowDown') {
+      const el = inputRef.value;
+      // Only navigate history when cursor is on the last line
+      if (el && el.selectionStart === el.selectionEnd) {
+        const textAfter = el.value.slice(el.selectionStart);
+        if (!textAfter.includes('\n')) {
+          e.preventDefault();
+          navigateHistory(1);
+          return;
+        }
+      }
+    }
+  }
+
   if (!showSuggestions.value || filteredSuggestions.value.length === 0) return;
 
   if (e.key === 'ArrowDown') {
@@ -177,10 +289,15 @@ function autoResize() {
   const lineHeight = parseFloat(styles.lineHeight) || 20;
   const paddingTop = parseFloat(styles.paddingTop) || 0;
   const paddingBottom = parseFloat(styles.paddingBottom) || 0;
+  const minHeight = lineHeight * MIN_TEXTAREA_ROWS + paddingTop + paddingBottom;
   const maxHeight = lineHeight * MAX_TEXTAREA_ROWS + paddingTop + paddingBottom;
-  const next = Math.min(el.scrollHeight, maxHeight);
+  const next = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight));
   textareaHeight.value = `${next}px`;
 }
+
+onMounted(() => {
+  void nextTick(autoResize);
+});
 
 watch(inputText, () => {
   void nextTick(autoResize);
@@ -189,8 +306,41 @@ watch(inputText, () => {
 function handleSubmit() {
   const text = inputText.value.trim();
   if (!text || props.disabled) return;
+  // Push to history (avoid duplicating the last entry)
+  if (messageHistory.value[messageHistory.value.length - 1] !== text) {
+    messageHistory.value.push(text);
+    if (messageHistory.value.length > MAX_HISTORY) messageHistory.value.shift();
+  }
+  historyIndex.value = -1;
+  savedDraft.value = '';
   emit('submit', text);
   inputText.value = '';
+}
+
+/** Navigate through message history. dir=-1 goes older, dir=+1 goes newer. */
+function navigateHistory(dir: number) {
+  const len = messageHistory.value.length;
+  if (len === 0) return;
+
+  if (historyIndex.value === -1) {
+    // Entering history — save current draft
+    if (dir > 0) return; // already at newest
+    savedDraft.value = inputText.value;
+    historyIndex.value = len - 1;
+  } else {
+    const next = historyIndex.value + dir;
+    if (next < 0) return; // already at oldest
+    if (next >= len) {
+      // Back to draft
+      historyIndex.value = -1;
+      inputText.value = savedDraft.value;
+      void nextTick(autoResize);
+      return;
+    }
+    historyIndex.value = next;
+  }
+  inputText.value = messageHistory.value[historyIndex.value];
+  void nextTick(autoResize);
 }
 
 function handleFocus() {
@@ -259,7 +409,7 @@ async function handleDrop(e: DragEvent) {
   background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
   border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
   border-radius: var(--ts-radius-lg, 16px);
-  padding: 5px 6px 5px 10px;
+  padding: 5px 6px 5px 6px;
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   box-shadow: var(--ts-shadow-sm),
@@ -288,7 +438,7 @@ async function handleDrop(e: DragEvent) {
 }
 
 .attach-btn {
-  width: 34px;
+  width: 30px;
   height: 34px;
   border-radius: 50%;
   border: none;
@@ -299,6 +449,7 @@ async function handleDrop(e: DragEvent) {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  margin-left: -2px;
   transition: color var(--ts-transition-normal),
               background var(--ts-transition-normal),
               transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -332,13 +483,26 @@ async function handleDrop(e: DragEvent) {
   min-width: 0;
   resize: none;
   overflow-y: auto;
-  max-height: calc(1.4em * 6 + 18px);
+  min-height: calc(1.4em * 1 + 18px);
+  max-height: calc(1.4em * 3 + 18px);
   scrollbar-width: thin;
   scrollbar-color: var(--ts-text-dim) transparent;
 }
 
 .chat-input::placeholder {
   color: var(--ts-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Greyed, italic placeholder while the assistant is thinking — gives the
+   user a visible cue without blocking input. The text content itself
+   ("Thinking. / Thinking.. / Thinking…") is animated in JS. */
+.chat-input.is-thinking-hint::placeholder {
+  color: rgba(148, 163, 184, 0.75); /* slate-400 @ 75% — neutral grey */
+  font-style: italic;
+  font-size: clamp(0.66rem, 1.5vw, 0.84rem);
 }
 
 .chat-input:disabled {
@@ -383,7 +547,7 @@ async function handleDrop(e: DragEvent) {
 /* Mobile refinements */
 @media (max-width: 640px) {
   .input-wrapper {
-    padding: 3px 3px 3px 12px;
+    padding: 3px 3px 3px 8px;
   }
 
   .chat-input {
@@ -467,5 +631,40 @@ async function handleDrop(e: DragEvent) {
 
 .chat-input-bar {
   position: relative;
+}
+
+/* ── History navigation arrows ── */
+.history-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
+.history-btn {
+  width: 22px;
+  height: 16px;
+  border: none;
+  background: transparent;
+  color: var(--ts-text-dim);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--ts-radius-sm, 4px);
+  padding: 0;
+  transition: color var(--ts-transition-fast),
+              background var(--ts-transition-fast);
+}
+
+.history-btn:hover:not(:disabled) {
+  color: var(--ts-text-primary);
+  background: var(--ts-bg-hover, rgba(124, 111, 255, 0.1));
+}
+
+.history-btn:disabled {
+  opacity: 0.25;
+  cursor: default;
 }
 </style>

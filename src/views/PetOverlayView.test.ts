@@ -200,6 +200,8 @@ describe('PetOverlayView', () => {
 
   it('skip button clears streaming state', async () => {
     const store = useConversationStore();
+    const windowStore = useWindowStore();
+    windowStore.monitors = [];
     store.isThinking = true;
     store.isStreaming = true;
     store.streamingText = 'stream';

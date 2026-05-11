@@ -433,6 +433,56 @@ describe('conversation store — Tauri backend available', () => {
     expect(store.messages[1].content).toBe('Hi there!');
   });
 
+  it('invokes intent classifier for non-fast local chat turns', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'gemma4:e4b' };
+
+    const { useStreamingStore } = await import('./streaming');
+    const streaming = useStreamingStore();
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') return { kind: 'chat' };
+      if (cmd === 'send_message_stream') {
+        streaming.handleChunk({ text: 'Sure — here is a normal answer.', done: false });
+        streaming.handleChunk({ text: '', done: true });
+      }
+      if (cmd === 'evaluate_auto_learn') {
+        return { should_fire: false, reason: 'test', turns_remaining: 5 };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Explain the difference between a statute and a regulation.');
+
+    const commands = mockInvoke.mock.calls.map((call) => call[0]);
+    expect(commands).toContain('send_message_stream');
+    expect(commands).toContain('classify_intent');
+    expect(store.messages[1].content).toContain('normal answer');
+  });
+
+  it('still invokes intent classifier for local docs/setup requests', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'gemma4:e4b' };
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'learn_with_docs', topic: 'the material in your documents' };
+      }
+      if (cmd === 'evaluate_auto_learn') {
+        return { should_fire: false, reason: 'test', turns_remaining: 5 };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Learn from my documents');
+
+    const commands = mockInvoke.mock.calls.map((call) => call[0]);
+    expect(commands).toContain('classify_intent');
+    expect(store.messages.some((m) => m.questId === 'learn-docs-missing' || m.questId === 'scholar-quest')).toBe(true);
+  });
+
   it('falls back to send_message on streaming failure', async () => {
     // First call (send_message_stream) rejects
     mockInvoke.mockRejectedValueOnce(new Error('stream not supported'));
@@ -624,51 +674,6 @@ describe('detectLlmCommand — chat-based LLM switching', () => {
   });
 });
 
-describe('detectTeachIntent — explicit teach-the-AI detection', () => {
-  it('triggers on "remember the following law: …"', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    const res = detectTeachIntent('Remember the following law: Article 429 says claims expire after 3 years.');
-    expect(res).not.toBeNull();
-    expect(res!.topic).toMatch(/article 429/i);
-  });
-
-  it('triggers on "please learn the following rule:"', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    const res = detectTeachIntent('please learn the following rule: no liability in force majeure');
-    expect(res).not.toBeNull();
-  });
-
-  it('triggers on "memorize this law: …"', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    const res = detectTeachIntent('memorize this law: Article 351 on civil liability');
-    expect(res).not.toBeNull();
-    expect(res!.topic).toMatch(/article 351/i);
-  });
-
-  it('triggers on "ingest this document: URL"', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    const res = detectTeachIntent('ingest this document: https://example.com/law.pdf');
-    expect(res).not.toBeNull();
-  });
-
-  it('triggers on "provide my own context"', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    const res = detectTeachIntent('provide my own context');
-    expect(res).not.toBeNull();
-  });
-
-  it('does NOT trigger on a plain "I want to learn about X" question', async () => {
-    const { detectTeachIntent } = await import('./conversation');
-    // This is the critical regression: a question about a topic should
-    // never be read as an instruction to ingest training material.
-    expect(detectTeachIntent('I want to learn about Vietnamese civil law')).toBeNull();
-    expect(detectTeachIntent('Teach me about contract liability')).toBeNull();
-    expect(detectTeachIntent('Can you study Vietnamese law with me?')).toBeNull();
-    expect(detectTeachIntent('What is the statute of limitations?')).toBeNull();
-    expect(detectTeachIntent('Tell me about Article 429')).toBeNull();
-  });
-});
-
 describe('detectDontKnow — uncertainty detection', () => {
   it('detects "I don\'t know"', async () => {
     const { detectDontKnow } = await import('./conversation');
@@ -709,57 +714,6 @@ describe('detectDontKnow — uncertainty detection', () => {
     const { detectDontKnow } = await import('./conversation');
     expect(detectDontKnow('The statute of limitations is 3 years under Article 429.')).toBe(false);
     expect(detectDontKnow('Article 351 governs civil liability for breach of contract.')).toBe(false);
-  });
-});
-
-describe('detectGatedSetupCommand — user confirmation commands', () => {
-  it('detects "upgrade to Gemini model"', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('upgrade to Gemini model');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('upgrade_gemini');
-  });
-
-  it('detects "upgrade to Gemini" without "model"', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('upgrade to Gemini');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('upgrade_gemini');
-  });
-
-  it('tolerates the "Gemni" typo', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('upgrade to Gemni model');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('upgrade_gemini');
-  });
-
-  it('detects "provide your own context"', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('provide your own context');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('provide_context');
-  });
-
-  it('detects "provide my own context"', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('provide my own context');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('provide_context');
-  });
-
-  it('tolerates the "provde" typo', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    const res = detectGatedSetupCommand('provde your own context');
-    expect(res).not.toBeNull();
-    expect(res!.type).toBe('provide_context');
-  });
-
-  it('returns null on unrelated text', async () => {
-    const { detectGatedSetupCommand } = await import('./conversation');
-    expect(detectGatedSetupCommand('What is the weather?')).toBeNull();
-    expect(detectGatedSetupCommand('I want to learn about X')).toBeNull();
-    expect(detectGatedSetupCommand('upgrade my computer')).toBeNull();
   });
 });
 
@@ -937,18 +891,24 @@ describe('conversation store — Learn-with-docs flow', () => {
     mockStreamChat.mockReset();
   });
 
-  it('detectLearnWithDocsIntent matches the canonical phrase', async () => {
-    const { detectLearnWithDocsIntent } = await import('./conversation');
-    expect(detectLearnWithDocsIntent('Learn Vietnamese laws using my provided documents'))
-      .toEqual({ topic: 'Vietnamese laws' });
-    expect(detectLearnWithDocsIntent('Study quantum physics with my files'))
-      .toEqual({ topic: 'quantum physics' });
-    expect(detectLearnWithDocsIntent('learn about contract law from my notes'))
-      .toEqual({ topic: 'contract law' });
-    // Plain question should NOT match — it's a chat, not an instruction.
-    expect(detectLearnWithDocsIntent('What is Vietnamese law?')).toBeNull();
-    // Bare "learn about X" without "documents" reference must not match.
-    expect(detectLearnWithDocsIntent('learn about Vietnamese laws')).toBeNull();
+  it('routes the exact document-learning phrase through the backend classifier', async () => {
+    const brain = useBrainStore();
+    brain.brainMode = { mode: 'local_ollama', model: 'gemma4:e4b' };
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'learn_with_docs', topic: 'the material in your documents' };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Learn from my documents');
+
+    expect(mockInvoke).toHaveBeenCalledWith('classify_intent', { text: 'Learn from my documents' });
+    expect(mockStreamChat).not.toHaveBeenCalled();
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].questId).toBe('learn-docs-missing');
+    expect(store.messages[1].content).toMatch(/material in your documents/i);
   });
 
   it('pushes the missing-components prompt with three choices', async () => {

@@ -759,7 +759,7 @@ final_score =
 > - **Cloud embedding API** — vector RAG works in free/paid modes too
 > - **Fast chat path** (2026-05-09) — `should_skip_rag` / `shouldUseFastChatPath` skip embed + hybrid search for empty memory stores and short content-light turns, avoiding local embedding model swaps on greetings
 > - **LocalOllama VRAM guard** (2026-05-09) — production state starts with a 5-minute startup quiet window, pre-warms the chat model before the embedding queue starts, pauses local embedding ticks during active chat, sends `keep_alive: 0` on embed calls, `keep_alive: "30m"` on chat calls, and `think:false` on the hot stream so thinking models do not spend seconds silently before visible text
-> - **RRF fusion** — multiple retrieval signals fused via Reciprocal Rank Fusion (k=60)
+> - **RRF fusion** — live desktop and paired-mobile chat use thresholded hybrid eligibility followed by Reciprocal Rank Fusion (k=60) + query-intent boosts for final prompt ordering
 > - **HyDE** — LLM-hypothetical-document embedding for cold/abstract queries
 > - **Cross-encoder rerank** — LLM-as-judge scores (query, doc) pairs 0–10; RRF/HyDE search defaults rerank on and prunes below threshold 0.55 before prompt injection
 > - **Relevance threshold** — only entries above a configurable score are injected
@@ -2855,7 +2855,7 @@ Quick reference for all diagrams in this document:
 
 **Reciprocal Rank Fusion utility** — `src-tauri/src/memory/fusion.rs` ships `reciprocal_rank_fuse(rankings, k)`, a pure stable function that takes any number of ranked candidate lists (e.g. vector-rank, keyword-rank, graph-rank) and returns a fused ranking by `Σ 1/(k + rank_i)` with `k = 60` per the original Cormack et al. paper. It is intentionally decoupled from `MemoryStore` so Phase 6 work (cross-encoder reranking, multi-retriever fusion, GraphRAG community vs entity-level fusion) can plug into it without further refactoring. Unit tests cover: stable ordering, missing-from-some-rankings handling, single-list passthrough, and tie behaviour.
 
-**RRF wired into hybrid_search** — `MemoryStore::hybrid_search_rrf(query, query_embedding, limit)` builds three independent rankings (vector cosine similarity over embeddings, keyword hit-count over content + tags, freshness composite of recency + importance + decay + tier) and fuses them with `reciprocal_rank_fuse` (`k = 60`). It is exposed as the Tauri command `hybrid_search_memories_rrf` alongside the legacy weighted-sum `hybrid_search_memories`. RRF is preferred when the underlying retrievers have incomparable score scales — the case for raw cosine, hit ratios and freshness composites — because it removes hand-tuned weight magic. The `StorageBackend` trait gains a default `hybrid_search_rrf` that delegates to `hybrid_search`, so non-default backends (Postgres / MSSQL / Cassandra) continue to compile and may opt into RRF natively later.
+**RRF wired into hybrid_search** — `MemoryStore::hybrid_search_rrf(query, query_embedding, limit)` builds three independent rankings (vector cosine similarity over embeddings, keyword hit-count over content + tags, freshness composite of recency + importance + decay + tier) and fuses them with `reciprocal_rank_fuse` (`k = 60`). It is exposed as the Tauri command `hybrid_search_memories_rrf` alongside the legacy weighted-sum `hybrid_search_memories`. RRF is preferred when the underlying retrievers have incomparable score scales — the case for raw cosine, hit ratios and freshness composites — because it removes hand-tuned weight magic. Live streamed chat and phone-control chat now call `retrieve_chat_rag_memories`, which uses weighted hybrid scoring only as a relevance-threshold eligibility gate, then asks `hybrid_search_rrf_with_intent` for final prompt order. The `StorageBackend` trait gains a default `hybrid_search_rrf` that delegates to `hybrid_search`, so non-default backends (Postgres / MSSQL / Cassandra) continue to compile and may opt into RRF natively later.
 
 **HyDE — Hypothetical Document Embeddings** — `src-tauri/src/memory/hyde.rs` ships `build_hyde_prompt(query) -> (system, user)` and `clean_hyde_reply(reply) -> Option<String>`; both are pure functions with full unit-test coverage of preamble stripping, whitespace collapsing, and too-short-input rejection. `OllamaAgent::hyde_complete(query)` orchestrates the LLM call, returning the cleaned hypothetical or `None` if the brain is unreachable. The Tauri command `hyde_search_memories(query, limit)` chains HyDE → embed → `hybrid_search_rrf`, with a three-stage fallback: if HyDE expansion fails, embed the raw query; if embedding fails, fall back to keyword + freshness ranking. This makes HyDE a drop-in upgrade over `hybrid_search_memories_rrf` for cold-query retrieval without changing caller code.
 
@@ -2993,7 +2993,7 @@ The Brain hub view (`src/views/BrainView.vue`) renders an **Active Selection** p
 │  Chat model   :  openrouter/owl-alpha                          │
 │  Embedding    :  ✗ unavailable (cloud mode — vector RAG off)   │
 │  Memory       :  3 tiers active · 1,247 long · 18 working      │
-│  Search       :  Hybrid 6-signal · top-5 injection · no threshold │
+│  Search       :  Thresholded hybrid eligibility · RRF+intent · top-5 │
 │  Storage      :  SQLite (WAL) · schema V6                      │
 │  Agents       :  1 registered (stub) · default = "auto" → stub │
 │  RAG quality  :  60 % (cloud APIs cannot compute embeddings)   │
@@ -3550,7 +3550,7 @@ Frontend callers do not talk directly to `invoke` or Connect clients. They depen
 
 The adapter currently exposes `Brain.Health`, unary `Brain.Search`, and server-streaming `Brain.StreamSearch`, plus the Phase 24 phone-control RPCs for system status, VS Code/Copilot session status, workflow progress/continue, chat, and paired devices. Search modes remain the backend modes (`rrf`, `hybrid`, `hyde`); the phone only selects a mode and streams results, while retrieval, ranking, persona context, and memory injection stay server-side.
 
- extends this same boundary to live chat. `PhoneControl.StreamChatMessage(ChatRequest) returns (stream ChatChunk)` runs on the desktop host and assembles the full system prompt there: `SYSTEM_PROMPT_FOR_STREAMING`, hybrid memory lookup above the relevance threshold, `[LONG-TERM MEMORY]`, persona block, and one-shot `[HANDOFF]` block. The stream reuses the Rust `StreamTagParser`, so `<anim>` / `<pose>` blocks are stripped before mobile receives text. The unary `SendChatMessage` remains as a fallback, but iOS chat uses `RemoteHost.streamChatMessage` from `src/stores/remote-conversation.ts`.
+ extends this same boundary to live chat. `PhoneControl.StreamChatMessage(ChatRequest) returns (stream ChatChunk)` runs on the desktop host and assembles the full system prompt there: `SYSTEM_PROMPT_FOR_STREAMING`, threshold-qualified memory lookup ordered by RRF + query intent, `[LONG-TERM MEMORY]`, persona block, and one-shot `[HANDOFF]` block. The stream reuses the Rust `StreamTagParser`, so `<anim>` / `<pose>` blocks are stripped before mobile receives text. The unary `SendChatMessage` remains as a fallback, but iOS chat uses `RemoteHost.streamChatMessage` from `src/stores/remote-conversation.ts`.
 
 Frontend routing is deliberately boring: `src/stores/chat-store-router.ts` selects the existing local `conversation.ts` store on desktop and `remote-conversation.ts` when `src/utils/runtime-target.ts` detects iOS, an explicit `remoteConversation` test override, or a saved browser LAN host from `src/utils/browser-lan.ts`. `ChatView.vue` binds to the shared store surface, so message lists, agent thread filtering, queue/stop controls, subtitles, and mobile breakpoints remain the same while the backing stream moves from in-process Tauri IPC to the paired or known-host desktop `RemoteHost`.
 
@@ -3566,12 +3566,15 @@ Adds local paired-mobile notifications for long-running desktop work without APN
 
 > Source: `src-tauri/src/brain/intent_classifier.rs` · Tauri command `classify_intent` · Frontend dispatch in `src/stores/conversation.ts` (`classifyIntent` + `sendMessage` switch)
 
-Every chat turn is routed through a structured **LLM-powered intent
-classifier** before being handed to the streaming chat path. This
-replaces three brittle regex detectors that used to live in
+Every contentful chat turn is routed through a structured
+**LLM-powered intent classifier** before being handed to the streaming
+chat path. Short content-light turns such as greetings keep the fast path
+and skip classifier/RAG work. The classifier replaces three brittle regex
+detectors that used to live in
 `conversation.ts` (`detectLearnWithDocsIntent`, `detectTeachIntent`,
 `detectGatedSetupCommand`) and that only matched exact English
-phrasings — they're now kept as deprecated test fixtures only.
+phrasings. Those detectors are removed from the frontend; all contentful
+side-channel routing now goes through the same backend classifier path.
 
 ### 25.1 Why an LLM, not regex?
 
@@ -3586,6 +3589,29 @@ all of these — so we let the brain decide.
 This also matches the project's "brain decides everything" posture
 (§ 10 Brain Modes, § 20 Brain Component Selection).
 
+The Tauri `classify_intent` command first retrieves user-customizable
+`system.default_system_setting` memories tagged `intent-classifier`, then
+merges query-matched records from the memory/RAG store with
+`hybrid_search_rrf(..., None, 5)`. The merged context is injected into the
+classifier system prompt as a standard `[RETRIEVED CONTEXT]` pack. This
+lets LocalLLM use durable app knowledge for routing instead of relying on
+frontend regexes or hardcoded Rust phrase lists.
+
+The seeded default settings include the document-learning phrases such as
+**"Learn from my documents"**, **"Learn my documents"**, **"Learn
+documents"**, and **"Please look at my provided documents and learn it"**.
+Those rows also define the default topic `"the material in your documents"`
+and the recommended Scholar's Quest prerequisite chain:
+`free-brain → memory → rag-knowledge → scholar-quest`.
+
+The runtime classifier still prefers those retrieved memories, but it also
+keeps a tiny deterministic shortcut for the exact onboarding phrase family
+above. That guard exists because some local models occasionally return
+`unknown` for the tutorial wording even when the retrieved settings are
+present. The shortcut is intentionally narrow: it only maps explicit
+first-party document-learning requests to `learn_with_docs` and otherwise
+falls back to the normal JSON classifier path.
+
 ### 25.2 JSON schema
 
 The classifier asks the LLM to reply with **exactly one** of:
@@ -3598,9 +3624,9 @@ The classifier asks the LLM to reply with **exactly one** of:
 ```
 
 Any malformed reply, unknown `kind`, or unknown `setup` value is
-mapped to `IntentDecision::Unknown` and the frontend triggers the
-install-all fallback. The system prompt is ~150 tokens so the call is
-cheap on free-tier providers (OpenRouter / Gemini / Pollinations / Groq).
+mapped to `IntentDecision::Unknown`; the frontend lets that turn continue
+as ordinary chat. Explicit setup/document/ingestion routing only happens
+when the classifier returns a concrete non-chat decision.
 
 ### 25.3 Provider rotation & timeouts
 
@@ -3612,47 +3638,43 @@ The classifier reuses the same `ProviderRotator` the chat path uses
 3. **Local Ollama** when installed and reachable.
 4. **Local LM Studio** when configured.
 
-A hard **3-second timeout** (`CLASSIFY_TIMEOUT`) bounds the call so a
+A hard **1.5-second timeout** (`CLASSIFY_TIMEOUT`) bounds the call so a
 slow free provider can never block the user's chat turn. Any timeout,
 network failure, HTTP non-2xx, or schema-violating reply maps to
 `IntentDecision::Unknown`.
 
 ### 25.4 Caching
 
-Identical *trimmed lowercase* inputs hit a process-global LRU
-(`CACHE_MAX_ENTRIES = 256`, `CACHE_TTL = 30 s`). This stops the user
-double-classifying when they retry, and avoids re-asking the LLM if
-the conversation store is recreated mid-session. The cache is cleared
-automatically by `set_brain_mode` because a different model may
+Identical *trimmed lowercase input + retrieved knowledge context* hits a
+process-global LRU (`CACHE_MAX_ENTRIES = 256`, `CACHE_TTL = 30 s`). This
+stops the user double-classifying when they retry, and avoids re-asking
+the LLM if the conversation store is recreated mid-session. The cache is
+cleared automatically by `set_brain_mode` because a different model may
 classify differently.
 
-### 25.5 The "unknown ⇒ trigger local install" guarantee
+### 25.5 Unknown Is Non-Destructive
 
-The frontend `sendMessage` switch maps `IntentDecision::Unknown` to
-`startLearnDocsFlow(content)` — the same install-all overlay the user
-gets when they type the canonical English phrase. Pressing "Auto
-install all" runs the existing prereq chain
-(`ollama-installed → free-llm → rag-knowledge → scholar-quest`),
-which installs a local Ollama brain. From that turn onward the
-classifier always has a working local provider, so it works offline
-forever.
-
-This means the worst case (no network, no local LLM, free LLM down)
-is **the same UX the user gets today** when they type the magic
-phrase — not a silent failure.
+The frontend `sendMessage` switch treats `IntentDecision::Unknown` like
+`chat`. This prevents a timeout or malformed classifier reply from
+silently launching a setup overlay the user did not ask for. The
+document-learning setup flow is triggered by a positive
+`learn_with_docs` decision from the backend classifier, which can use the
+same RAG knowledge as other brain paths.
 
 ### 25.6 Test surface
 
-- `intent_classifier.rs` — 20 Rust unit tests covering every
+- `intent_classifier.rs` — Rust unit tests covering every
   `IntentDecision` variant, malformed JSON, unknown kinds, prose /
   markdown-fence tolerance, nested-brace JSON extraction (including
   unbalanced-brace guard), cache round-trip + TTL eviction + capacity
-  eviction, empty input, and no-brain-mode short-circuit.
+  eviction, empty input, no-brain-mode short-circuit, retrieved knowledge
+  prompt injection, and the recommended default topic for no-topic
+  document-learning requests.
 - `conversation.test.ts` — every sendMessage flow that used to rely
   on a regex detector now mocks `invoke('classify_intent', …)` to
-  return the intended decision; one new integration test verifies
-  that returning `{kind:'unknown'}` enters the install-all flow with
-  the original user input as the topic.
+  return the intended decision. Unknown decisions fall through to normal
+  streaming chat; explicit `learn_with_docs`, `teach_ingest`, and
+  `gated_setup` decisions drive their quest/setup flows.
 - The three legacy `detect*Intent` helpers retain their unit tests
   as deterministic golden cases; they are no longer called from the
   live message path.
@@ -3874,6 +3896,7 @@ Desktop app connects only when `hive_url` setting is configured.
 
 ## Related Documents
 
+- [brain-advanced-design-mappings-features.md](brain-advanced-design-mappings-features.md) — Per-feature audit and daily-chatbox playbook for this design doc (what fires per turn, what is adjacent, verified gaps)
 - [AI-coding-integrations.md](../docs/AI-coding-integrations.md) — Full MCP / gRPC / A2A integration design
 - [brain-rag-setup-tutorial.md](../tutorials/brain-rag-setup-tutorial.md) — Quest-guided setup walkthrough (Free API, with screenshots)
 - [brain-rag-local-lm-tutorial.md](../tutorials/brain-rag-local-lm-tutorial.md) — Local LM Studio variant walkthrough (with screenshots)

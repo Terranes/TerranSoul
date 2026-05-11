@@ -112,6 +112,20 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "brain_ingest_lesson",
+            "description": "Ingest a lesson learned by an agent session directly into the brain memory store and memory-seed.sql for reseed durability. Requires write capability.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "content": { "type": "string", "description": "The lesson content (e.g., a procedure or rule learned)" },
+                    "tags": { "type": "string", "description": "Comma-separated tags (e.g., 'frontend,css,theme')" },
+                    "importance": { "type": "integer", "description": "Importance score 1-10 (default: 8)" },
+                    "category": { "type": "string", "description": "Category (e.g., 'coding-workflow', 'frontend', 'security')" }
+                },
+                "required": ["content", "category"]
+            }
+        }),
+        json!({
             "name": "brain_health",
             "description": "TerranSoul brain status: version, active provider, model, RAG quality, memory count, and descriptions explaining what the numbers mean.",
             "inputSchema": {
@@ -210,6 +224,24 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
     }
 
     defs
+}
+
+/// Return MCP tool definitions adapted for a specific free-mode provider.
+///
+/// Gemini/Vertex endpoints require stricter JSON Schema support, so this
+/// adapter sanitizes each tool input schema accordingly.
+pub fn definitions_for_free_provider(caps: &GatewayCaps, provider_id: &str) -> Vec<Value> {
+    let mut defs = definitions(caps);
+    adapt_tool_definitions_for_provider(&mut defs, provider_id);
+    defs
+}
+
+fn adapt_tool_definitions_for_provider(defs: &mut [Value], provider_id: &str) {
+    for def in defs {
+        if let Some(schema) = def.get_mut("inputSchema") {
+            crate::brain::providers::adapt_tool_schema_for_free_provider(provider_id, schema);
+        }
+    }
 }
 
 /// Dispatch a `tools/call` request to the appropriate gateway method.
@@ -326,6 +358,26 @@ pub async fn dispatch(
                 importance: args["importance"].as_i64(),
             };
             gw.ingest_url(caps, req)
+                .await
+                .map(|r| serde_json::to_string(&r).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "brain_ingest_lesson" => {
+            let content = args["content"]
+                .as_str()
+                .ok_or_else(|| "missing required param: content".to_string())?
+                .to_string();
+            let category = args["category"]
+                .as_str()
+                .ok_or_else(|| "missing required param: category".to_string())?
+                .to_string();
+            let req = IngestLessonRequest {
+                content,
+                tags: args["tags"].as_str().map(String::from),
+                importance: args["importance"].as_i64(),
+                category,
+            };
+            gw.ingest_lesson(caps, req)
                 .await
                 .map(|r| serde_json::to_string(&r).unwrap_or_default())
                 .map_err(|e| e.to_string())
@@ -1916,14 +1968,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 16);
+        assert_eq!(defs.len(), 17);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 33);
+        assert_eq!(defs.len(), 34);
     }
 
     #[test]
@@ -1951,6 +2003,7 @@ mod tests {
             "brain_summarize",
             "brain_suggest_context",
             "brain_ingest_url",
+            "brain_ingest_lesson",
             "brain_health",
             "brain_failover_status",
             "brain_wiki_audit",
@@ -1968,7 +2021,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[16..]
+        let code_names: Vec<&str> = defs[17..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();
@@ -2044,5 +2097,55 @@ mod tests {
                 "explore_cluster"
             ]
         );
+    }
+
+    #[test]
+    fn definitions_adapter_sanitizes_for_gemini() {
+        let mut defs = vec![serde_json::json!({
+            "name": "x",
+            "inputSchema": {
+                "type": "object",
+                "$defs": {
+                    "Inner": {
+                        "type": "object",
+                        "properties": {
+                            "q": { "type": "string", "const": "x" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                "properties": {
+                    "v": { "$ref": "#/$defs/Inner" }
+                }
+            }
+        })];
+
+        adapt_tool_definitions_for_provider(&mut defs, "gemini");
+        let schema = &defs[0]["inputSchema"];
+        assert!(schema.get("$defs").is_none());
+        assert!(schema["properties"]["v"].get("$ref").is_none());
+        assert!(schema["properties"]["v"]
+            .get("additionalProperties")
+            .is_none());
+        assert!(schema["properties"]["v"]["properties"]["q"]
+            .get("const")
+            .is_none());
+    }
+
+    #[test]
+    fn definitions_adapter_leaves_non_gemini_untouched() {
+        let original = serde_json::json!({
+            "name": "x",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "q": { "type": "string", "const": "x" }
+                }
+            }
+        });
+        let mut defs = vec![original.clone()];
+
+        adapt_tool_definitions_for_provider(&mut defs, "openrouter");
+        assert_eq!(defs[0], original);
     }
 }

@@ -13,10 +13,10 @@ const smoke = process.argv.includes('--smoke')
 const resumeIdx = process.argv.indexOf('--resume')
 const resumeName = resumeIdx >= 0 ? process.argv[resumeIdx + 1] ?? null : null
 
-// --idle-timeout <secs> : override the default 300s idle timeout.
-// 0 disables idle timeout entirely.
+// --idle-timeout <secs> : override the default idle timeout.
+// Default is 0 (no idle shutdown) so MCP stays available for coding sessions.
 const idleIdx = process.argv.indexOf('--idle-timeout')
-const idleTimeout = idleIdx >= 0 ? process.argv[idleIdx + 1] ?? '300' : '300'
+const idleTimeout = idleIdx >= 0 ? process.argv[idleIdx + 1] ?? '0' : '0'
 const maxLogBytes = 1024 * 1024
 const logPath = process.env.TERRANSOUL_MCP_LOG ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.log')
 const pidPath = process.env.TERRANSOUL_MCP_PID ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.pid')
@@ -29,6 +29,14 @@ const sourceRootsForFreshness = [
   path.join(repoRoot, 'src-tauri', 'src'),
   path.join(repoRoot, 'dist'),
 ]
+
+function buildTargetMcp(logFd) {
+  return spawnSync('cargo', ['build', '--release', '--no-default-features', '--features', 'headless-mcp', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
+    cwd: repoRoot,
+    env: process.env,
+    stdio: ['ignore', logFd, logFd],
+  })
+}
 
 function archivePath(filePath) {
   return `${filePath}.001`
@@ -140,12 +148,96 @@ function stopManagedMcpProcess() {
   return stopped
 }
 
-for (const appPort of [7421, 7422]) {
-  if (await isHealthy(appPort)) {
-    console.log(`[copilot-mcp] TerranSoul app MCP is already healthy on ${appPort}; reusing it.`)
-    process.exit(0)
+function stopStaleTargetMcpProcesses() {
+  if (process.platform !== 'win32') {
+    return false
   }
+
+  // Query Win32_Process for stable executable-path matching.
+  // Get-Process Path filtering is less reliable across escaping/casing variations.
+  const probe = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-Command',
+      `(Get-CimInstance Win32_Process -Filter "Name='terransoul.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -like '*target-mcp*release*terransoul.exe' } | Select-Object -ExpandProperty ProcessId) -join "\n"`,
+    ],
+    { cwd: repoRoot, env: process.env, encoding: 'utf8' },
+  )
+
+  if (probe.status !== 0) {
+    return false
+  }
+
+  const pids = (probe.stdout ?? '')
+    .split(/\r?\n/)
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+
+  if (pids.length === 0) {
+    return false
+  }
+
+  let stopped = false
+  for (const pid of pids) {
+    const kill = spawnSync('taskkill', ['/PID', String(pid), '/F'], {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: 'ignore',
+    })
+    if (kill.status === 0) {
+      stopped = true
+    }
+  }
+
+  return stopped
 }
+
+function stopPortOwner(targetPort) {
+  if (process.platform !== 'win32') {
+    return false
+  }
+
+  const probe = spawnSync(
+    'powershell',
+    [
+      '-NoProfile',
+      '-Command',
+      `(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ${targetPort} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join "\n"`,
+    ],
+    { cwd: repoRoot, env: process.env, encoding: 'utf8' },
+  )
+
+  if (probe.status !== 0) {
+    return false
+  }
+
+  const pids = (probe.stdout ?? '')
+    .split(/\r?\n/)
+    .map((s) => Number.parseInt(s.trim(), 10))
+    .filter((n) => Number.isFinite(n) && n > 0)
+
+  if (pids.length === 0) {
+    return false
+  }
+
+  let stopped = false
+  for (const pid of pids) {
+    const kill = spawnSync('taskkill', ['/PID', String(pid), '/F'], {
+      cwd: repoRoot,
+      env: process.env,
+      stdio: 'ignore',
+    })
+    if (kill.status === 0) {
+      stopped = true
+    }
+  }
+
+  return stopped
+}
+
+// Always launch/manage the dedicated MCP tray runtime on 7423 so its
+// lifecycle and tray visibility are deterministic for coding sessions.
 
 const targetOutdated = process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1' && isTargetMcpOutdated()
 
@@ -156,7 +248,7 @@ if (await isHealthy(port)) {
   }
 
   console.log('[copilot-mcp] detected stale target-mcp while MCP is running; terminating for rebuild/relaunch.')
-  if (!stopManagedMcpProcess()) {
+  if (!(stopManagedMcpProcess() || stopPortOwner(port))) {
     console.error('[copilot-mcp] target-mcp is stale but no managed pid could be terminated; stop MCP manually and retry.')
     process.exit(1)
   }
@@ -171,11 +263,29 @@ const log = fs.openSync(logPath, 'a')
 
 if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
   console.log(`[copilot-mcp] warming MCP Rust build (target-mcp) before startup; log=${logPath}`)
-  const build = spawnSync('cargo', ['build', '--release', '--no-default-features', '--features', 'headless-mcp', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
-    cwd: repoRoot,
-    env: process.env,
-    stdio: ['ignore', log, log],
-  })
+  let build = buildTargetMcp(log)
+  if (build.status !== 0) {
+    const tail1 = fs.existsSync(logPath)
+      ? fs.readFileSync(logPath, 'utf8').split('\n').slice(-120).join('\n')
+      : ''
+    const lockError =
+      process.platform === 'win32' &&
+      tail1.includes('failed to remove file') &&
+      tail1.includes('target-mcp\\release\\terransoul.exe') &&
+      tail1.includes('Access is denied')
+
+    if (lockError) {
+      console.log('[copilot-mcp] detected locked target-mcp binary on Windows; attempting managed MCP stop + rebuild retry.')
+      const stopped = stopManagedMcpProcess() || stopStaleTargetMcpProcesses() || stopPortOwner(port)
+      if (!stopped) {
+        console.error('[copilot-mcp] could not terminate managed/stale MCP process for rebuild retry.')
+      } else if (!(await waitForDown(port, 20))) {
+        console.error('[copilot-mcp] managed MCP process did not shut down in time for rebuild retry.')
+      } else {
+        build = buildTargetMcp(log)
+      }
+    }
+  }
   if (build.status !== 0) {
     const tail = fs.existsSync(logPath)
       ? fs.readFileSync(logPath, 'utf8').split('\n').slice(-80).join('\n')

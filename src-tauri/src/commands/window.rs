@@ -177,15 +177,25 @@ pub async fn set_pet_modal_backdrop(
     opaque: bool,
     app_handle: tauri::AppHandle,
 ) -> Result<(), String> {
-    let window = app_handle
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    let wv: &tauri::Webview = window.as_ref();
-    // alpha=1 is visually invisible but makes DWM treat the pixel as
-    // belonging to this window for hit-testing purposes.
-    let alpha = if opaque { 1 } else { 0 };
-    let _ = wv.set_background_color(Some(Color(0, 0, 0, alpha)));
-    Ok(())
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = opaque;
+        let _ = app_handle;
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let window = app_handle
+            .get_webview_window("main")
+            .ok_or("Main window not found")?;
+        let wv: &tauri::Webview = window.as_ref();
+        // alpha=1 is visually invisible but makes DWM treat the pixel as
+        // belonging to this window for hit-testing purposes.
+        let alpha = if opaque { 1 } else { 0 };
+        let _ = wv.set_background_color(Some(Color(0, 0, 0, alpha)));
+        Ok(())
+    }
 }
 
 /// Initiate a window drag operation from the frontend.

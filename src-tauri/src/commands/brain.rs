@@ -190,13 +190,14 @@ pub async fn warmup_local_ollama(
 
     let client = state.ollama_client.clone();
     let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
-    // 1-token real chat forces Ollama to actually load the weights into
-    // VRAM. An empty `messages: []` body sometimes no-ops.
+    // 1-token streamed chat forces Ollama to load the weights and warm
+    // the same streaming endpoint used by the first real user reply.
     let body = serde_json::json!({
         "model": resolved,
-        "messages": [{ "role": "user", "content": " " }],
-        "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
-        "stream": false,
+        "messages": [{ "role": "user", "content": "Hi" }],
+        "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+        "stream": true,
+        "think": false,
         "keep_alive": "30m",
     });
     let started = std::time::Instant::now();
@@ -718,9 +719,76 @@ pub async fn classify_intent(
     state: State<'_, AppState>,
 ) -> Result<IntentDecision, String> {
     let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-    let decision =
-        brain::classify_user_intent(&text, brain_mode.as_ref(), &state.provider_rotator).await;
+    let knowledge_context = retrieved_intent_context(&state, &text)?;
+    let decision = brain::classify_user_intent(
+        &text,
+        brain_mode.as_ref(),
+        &state.provider_rotator,
+        knowledge_context.as_deref(),
+    )
+    .await;
     Ok(decision)
+}
+
+fn retrieved_intent_context(state: &AppState, text: &str) -> Result<Option<String>, String> {
+    if brain::intent_classifier::should_use_fast_chat_path(text) {
+        return Ok(None);
+    }
+
+    let (settings, entries) = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let settings = store
+            .system_default_settings("intent-classifier", 8)
+            .map_err(|e| e.to_string())?;
+        let entries = store
+            .hybrid_search_rrf(text, None, 5)
+            .or_else(|_| store.search(text))
+            .map_err(|e| e.to_string())?;
+        (settings, entries)
+    };
+
+    if settings.is_empty() && entries.is_empty() {
+        return Ok(None);
+    }
+
+    let mut block = String::new();
+    let mut seen = std::collections::HashSet::new();
+
+    if !settings.is_empty() {
+        block.push_str("System/default settings (user-customizable):\n");
+        for entry in settings.iter().take(8) {
+            seen.insert(entry.id);
+            append_intent_context_entry(&mut block, entry);
+        }
+    }
+
+    let mut wrote_relevant_header = false;
+    for entry in entries.iter().take(5) {
+        if seen.contains(&entry.id) {
+            continue;
+        }
+        if !wrote_relevant_header {
+            if !block.is_empty() {
+                block.push('\n');
+            }
+            block.push_str("Relevant app/RAG knowledge:\n");
+            wrote_relevant_header = true;
+        }
+        append_intent_context_entry(&mut block, entry);
+    }
+
+    Ok(Some(crate::memory::format_retrieved_context_pack(&block)))
+}
+
+fn append_intent_context_entry(block: &mut String, entry: &crate::memory::store::MemoryEntry) {
+    block.push_str("- ");
+    if !entry.tags.trim().is_empty() {
+        block.push('[');
+        block.push_str(entry.tags.trim());
+        block.push_str("] ");
+    }
+    block.push_str(entry.content.trim());
+    block.push('\n');
 }
 
 /// Factory-reset the brain: undo auto-configured components (brain, voice,

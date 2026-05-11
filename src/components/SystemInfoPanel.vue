@@ -221,11 +221,13 @@ onMounted(async () => {
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
+  padding: 16px;
+  box-sizing: border-box;
 }
 
 .system-info-panel {
-  width: min(480px, 90vw);
-  max-height: 80vh;
+  width: min(480px, 100%);
+  max-height: min(84vh, calc(100dvh - 32px));
   background: var(--ts-bg-panel);
   border: 1px solid rgba(124, 111, 255, 0.3);
   border-radius: 12px;
@@ -267,7 +269,7 @@ onMounted(async () => {
 
 .panel-body {
   padding: 20px;
-  max-height: calc(80vh - 80px);
+  max-height: calc(min(84vh, 100dvh - 32px) - 80px);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -330,9 +332,18 @@ onMounted(async () => {
 
 /* Mobile adjustments */
 @media (max-width: 640px) {
+  .system-info-panel-overlay {
+    align-items: flex-start;
+    padding:
+      calc(env(safe-area-inset-top, 0px) + 8px)
+      12px
+      calc(env(safe-area-inset-bottom, 0px) + 84px)
+      12px;
+  }
+
   .system-info-panel {
-    width: 95vw;
-    max-height: 85vh;
+    width: 100%;
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 92px);
   }
   
   .panel-header,

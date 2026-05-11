@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use super::store::MemoryType;
 
 /// Cognitive memory kind — a third axis on top of [`MemoryType`] / [`MemoryTier`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CognitiveKind {
     /// Time- and place-anchored personal experiences.

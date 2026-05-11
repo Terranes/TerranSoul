@@ -4,6 +4,8 @@ qa-screenshots/
 .DS_Store
 *.local
 src-tauri/target/
+target/
+target-*/
 target-mcp/
 src-tauri/gen/
 src-tauri/code_index.sqlite

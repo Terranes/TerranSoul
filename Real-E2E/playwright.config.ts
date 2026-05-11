@@ -7,7 +7,7 @@
  *
  * Prerequisites:
  *   1. Ollama running with nomic-embed-text + gemma4:e4b (or your recommended model)
- *   2. `npm run dev` running (Tauri dev server on localhost:1420)
+ *   2. `npm run dev:desktop-e2e` running (Tauri WebView CDP on :9222)
  *   3. Run: `npx playwright test --config Real-E2E/playwright.config.ts`
  *      or:  `npm run test:e2e:real`
  */
@@ -23,7 +23,6 @@ export default defineConfig({
   // Real LLM calls can take a while — generous timeout
   timeout: 120_000,
   use: {
-    baseURL: 'http://localhost:1420',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
@@ -33,14 +32,7 @@ export default defineConfig({
       use: { browserName: 'chromium' },
     },
   ],
-  // No webServer — expects the dev server already running.
-  // Start with: VITE_E2E=1 npm run dev:vite
-  // Or just: npm run dev  (Tauri dev — sets up the full backend)
-  webServer: {
-    command: 'npm run dev:vite',
-    env: { ...process.env, VITE_E2E: '1' },
-    url: 'http://localhost:1420',
-    reuseExistingServer: true,
-    timeout: 30_000,
-  },
+  // No webServer: Real-E2E must attach to the running Tauri WebView through
+  // WebView2 CDP. Starting browser-mode Vite here would make desktop checks
+  // look valid while exercising the wrong UI surface.
 });

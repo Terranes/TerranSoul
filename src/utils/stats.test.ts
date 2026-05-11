@@ -34,19 +34,19 @@ describe('stats utility', () => {
   it('weights TTS heavily for charisma', () => {
     const before = computeStat('charisma', []);
     const after = computeStat('charisma', ['tts']);
-    expect(after - before).toBeGreaterThanOrEqual(40); // TTS weight 45
+    expect(after - before).toBeGreaterThanOrEqual(5); // scaled from weight 45
   });
 
   it('weights memory heavily for wisdom', () => {
     const before = computeStat('wisdom', []);
     const after = computeStat('wisdom', ['memory']);
-    expect(after - before).toBeGreaterThanOrEqual(45); // memory weight 50
+    expect(after - before).toBeGreaterThanOrEqual(6); // scaled from weight 50
   });
 
   it('weights hotwords for perception', () => {
     const before = computeStat('perception', []);
     const after = computeStat('perception', ['hotwords']);
-    expect(after - before).toBeGreaterThanOrEqual(20);
+    expect(after - before).toBeGreaterThanOrEqual(3);
   });
 
   it('weights bgm/pet-mode for endurance', () => {

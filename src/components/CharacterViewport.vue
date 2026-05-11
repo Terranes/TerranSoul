@@ -44,25 +44,7 @@
         </button>
       </div>
     </Transition>
-    <!-- Character name / author / settings — hidden in pet mode (which has
-         its own minimal chrome anchored at the app level). -->
-    <template v-if="!isPetMode">
-      <div class="character-name-overlay">
-        {{ characterName }}
-      </div>
-      <div
-        v-if="characterMetaText"
-        class="character-meta-overlay"
-      >
-        <span>{{ characterMetaText }}</span>
-      </div>
-    </template>
-
-    <!-- ── Corner cluster — Settings + AI state pill stacked via flex ──
-         Single absolutely-positioned wrapper containing both the Settings
-         trigger and the AI state pill.  Flex column + gap handles spacing
-         (no hand-tuned `top` values on individual children — see
-         `rules/coding-standards.md` § "UI Framework — No CSS Hacking"). ── -->
+    <!-- ── Top bubble strip — Settings (left), Model (middle), Status (right) ── -->
     <div
       v-if="!isPetMode"
       ref="settingsRef"
@@ -77,7 +59,7 @@
           interactive
           type="button"
           aria-label="Settings"
-          @click.stop="settingsOpen = !settingsOpen"
+          @click.stop="toggleSettingsDialog"
         >
           <svg
             width="18"
@@ -91,7 +73,7 @@
         </FloatingChip>
         <Transition name="dropdown">
           <FloatingMenu
-            v-if="settingsOpen"
+            v-if="settingsOpen && !props.hideSettingsDialog"
             class="settings-dropdown"
             @click.stop
           >
@@ -104,6 +86,39 @@
               >
                 &times;
               </button>
+            </div>
+            <!-- View mode selector — 3D / Chat / Pet -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">View Mode</label>
+              <div class="settings-mode-row">
+                <button
+                  class="settings-mode-btn"
+                  :class="{ active: !isPetMode }"
+                  @click="emit('set-display-mode', 'desktop'); settingsOpen = false"
+                >
+                  🖥 3D
+                </button>
+                <button
+                  class="settings-mode-btn"
+                  @click="emit('set-display-mode', 'chatbox'); settingsOpen = false"
+                >
+                  💬 Chat
+                </button>
+                <button
+                  class="settings-mode-btn"
+                  @click="emit('toggle-pet-mode'); settingsOpen = false"
+                >
+                  🐾 Pet
+                </button>
+              </div>
+            </div>
+            <!-- Quest progress — inline inside settings -->
+            <div class="dropdown-section">
+              <label class="dropdown-label">Quests</label>
+              <div
+                id="corner-cluster-portal"
+                class="settings-quest-portal"
+              />
             </div>
             <!-- Model selector -->
             <div class="dropdown-section">
@@ -202,7 +217,7 @@
                 <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
               </div>
               <select
-                v-if="bgmEnabled"
+                v-show="bgmEnabled"
                 class="model-selector"
                 :value="bgmTrackId"
                 @change="handleBgmTrackChange"
@@ -260,7 +275,6 @@
                 </div>
               </div>
               <div
-                v-if="bgmEnabled"
                 class="bgm-volume-row"
               >
                 <span class="bgm-vol-icon">🔈</span>
@@ -273,6 +287,21 @@
                   @input="handleBgmVolumeChange"
                 >
                 <span class="bgm-vol-icon">🔊</span>
+              </div>
+            </div>
+
+            <div class="dropdown-section">
+              <label class="dropdown-label">Karaoke Dialog</label>
+              <div class="bgm-toggle-row">
+                <label class="bgm-switch">
+                  <input
+                    type="checkbox"
+                    :checked="karaokeDialogEnabled"
+                    @change="handleKaraokeToggle"
+                  >
+                  <span class="bgm-slider" />
+                </label>
+                <span class="bgm-status">{{ karaokeDialogEnabled ? 'On' : 'Off' }}</span>
               </div>
             </div>
           
@@ -311,28 +340,6 @@
           @update:bgm-track-id="handleAudioBgmTrackChange"
         />
       </div> <!-- /.settings-host -->
-
-      <!-- AI state pill — flex-stacked beneath the Settings button, no
-           hand-tuned `top` magic numbers. -->
-      <FloatingChip
-        class="ai-state-pill"
-        readonly
-        :class="characterStore.state"
-      >
-        <span class="ai-state-dot" />
-        <span class="ai-state-label">{{ stateLabel }}</span>
-      </FloatingChip>
-
-      <!-- Portal target for the floating QuestBubble orb (and any future
-           corner widgets).  Using Vue's built-in `<Teleport>` API to attach
-           extras here keeps the corner stack a single flex container so
-           nothing overlaps — no hand-tuned `top: 44px` magic numbers
-           anywhere.  See `rules/coding-standards.md` § "UI Framework — No
-           CSS Hacking". -->
-      <div
-        id="corner-cluster-portal"
-        class="corner-cluster-portal"
-      />
     </div>
 
     <div
@@ -341,85 +348,6 @@
     >
       {{ backgroundStore.importError }}
     </div>
-    <!-- ── Floating Music Bar (teleported to left side of viewport) ──
-         Hidden in pet mode — music playback continues but the UI chrome is
-         desktop-mode only.  The Teleport is disabled in pet mode because
-         #music-bar-portal only exists inside ChatView; trying to teleport
-         to a missing target throws during Vue's component update phase and
-         breaks subsequent reactivity. -->
-    <Teleport
-      to="#music-bar-portal"
-      defer
-      :disabled="isPetMode"
-    >
-      <div
-        v-if="!isPetMode"
-        class="music-bar"
-        :class="{ expanded: bgmBarExpanded, playing: bgmEnabled }"
-      >
-        <button
-          class="music-bar-toggle"
-          :title="bgmBarExpanded ? 'Collapse' : 'Music'"
-          @click.stop="bgmBarExpanded = !bgmBarExpanded"
-        >
-          <span
-            class="music-bar-toggle-icon"
-            :class="{ open: bgmBarExpanded }"
-          >{{ bgmBarExpanded ? '▶' : '🎵' }}</span>
-        </button>
-        <Transition name="music-expand">
-          <div
-            v-if="bgmBarExpanded"
-            class="music-bar-panel"
-            @click.stop
-          >
-            <button
-              class="music-btn play-btn"
-              :title="bgmEnabled ? 'Stop music' : 'Play music'"
-              @click="toggleBgmFromBar"
-            >
-              {{ bgmEnabled ? '⏸' : '▶️' }}
-            </button>
-            <button
-              class="music-btn mute-btn"
-              :class="{ active: audioStore.muted }"
-              :title="audioStore.muted ? 'Unmute app (music + voice)' : 'Mute app (music + voice)'"
-              :aria-pressed="audioStore.muted"
-              @click="toggleAppMute"
-            >
-              {{ audioStore.muted ? '🔇' : '🔊' }}
-            </button>
-            <div class="music-track-info">
-              <span class="music-track-name">{{ currentTrackName }}</span>
-            </div>
-            <button
-              class="music-btn"
-              title="Next track"
-              @click="nextTrack"
-            >
-              ⏭
-            </button>
-            <input
-              type="range"
-              class="music-vol-slider"
-              min="0"
-              max="100"
-              :value="Math.round(bgmVolume * 100)"
-              title="Volume"
-              @input="handleBarVolumeChange"
-            >
-            <button
-              class="music-btn add-btn"
-              title="Add more music"
-              @click="emit('request-add-music')"
-            >
-              ➕
-            </button>
-          </div>
-        </Transition>
-      </div>
-    </Teleport>
-
     <!-- ── Add URL Dialog ── -->
     <Transition name="fade">
       <div
@@ -472,7 +400,6 @@
 import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useCharacterStore } from '../stores/character';
-import type { CharacterState } from '../types';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
 import { useAudioStore } from '../stores/audio';
@@ -498,13 +425,19 @@ import ThemePicker from './ThemePicker.vue';
 
 const emit = defineEmits<{
   'request-add-music': [];
+  'overlay-open': [open: boolean];
+  'set-display-mode': [mode: 'desktop' | 'chatbox'];
+  'toggle-pet-mode': [];
 }>();
 
 const props = withDefaults(defineProps<{
   /** Force transparent pet rendering even when the app window is in normal mode. */
   forcePet?: boolean;
+  /** Hide/close the settings dialog while chat history is expanded. */
+  hideSettingsDialog?: boolean;
 }>(), {
   forcePet: false,
+  hideSettingsDialog: false,
 });
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -517,58 +450,6 @@ const personaStore = usePersonaStore();
 /** Viewport behaves differently in pet mode: no background, no chrome,
  *  transparent clear colour, and pedestal hidden in the 3D scene. */
 const isPetMode = computed(() => props.forcePet || windowStoreLocal.mode === 'pet');
-
-/** Human-readable labels for the AI state pill rendered in the corner cluster. */
-const STATE_LABELS: Record<CharacterState, string> = {
-  idle: 'Idle',
-  thinking: 'Thinking…',
-  talking: 'Talking',
-  happy: 'Happy',
-  sad: 'Sad',
-  angry: 'Angry',
-  relaxed: 'Relaxed',
-  surprised: 'Surprised',
-};
-const stateLabel = computed(() => STATE_LABELS[characterStore.state] ?? characterStore.state);
-
-/**
- * Returns true when a string from VRM metadata is informative enough to
- * surface to the user.  VRM files frequently contain placeholder values
- * like `"Unknown"`, empty strings, or terse numeric strings such as
- * `"1"` (these come from authors who never filled in the real metadata
- * and previously rendered as the meaningless "by 1" overlay).
- */
-function isMeaningfulMetaValue(raw: string | undefined | null): boolean {
-  if (!raw) return false;
-  const trimmed = raw.trim();
-  if (trimmed.length < 2) return false;
-  const lower = trimmed.toLowerCase();
-  if (lower === 'unknown' || lower === 'n/a' || lower === 'none' || lower === 'null') {
-    return false;
-  }
-  // Pure-numeric strings up to 3 digits are almost always placeholders.
-  if (/^\d{1,3}$/.test(trimmed)) return false;
-  return true;
-}
-
-/**
- * Composes the secondary character overlay (under the title) from VRM
- * metadata.  Only includes meaningful parts — never renders "by 1" or
- * "by Unknown".  Returns an empty string when nothing meaningful exists,
- * which causes the overlay to be hidden entirely via `v-if`.
- */
-const characterMetaText = computed(() => {
-  const meta = characterStore.vrmMetadata;
-  if (!meta) return '';
-  const parts: string[] = [];
-  if (isMeaningfulMetaValue(meta.author)) {
-    parts.push(`by ${meta.author.trim()}`);
-  }
-  if (isMeaningfulMetaValue(meta.license)) {
-    parts.push(meta.license.trim());
-  }
-  return parts.join(' · ');
-});
 
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
@@ -585,10 +466,15 @@ const bgm = useBgmPlayer();
 const bgmEnabled = ref(false);
 const bgmVolume = ref(0.15);
 const bgmTrackId = ref('prelude');
-const bgmBarExpanded = ref(false);
 const bgmFileInputRef = ref<HTMLInputElement | null>(null);
 const showUrlDialog = ref(false);
 const urlInput = ref('');
+const karaokeDialogEnabled = computed(() => settingsStore.settings.karaoke_dialog_enabled !== false);
+
+function handleKaraokeToggle(e: Event) {
+  const checked = (e.target as HTMLInputElement).checked;
+  void settingsStore.setKaraokeDialogEnabled(checked);
+}
 
 function handleBgmToggle(e: Event) {
   const checked = (e.target as HTMLInputElement).checked;
@@ -666,46 +552,6 @@ function handleAudioBgmVolumeChange(volume: number) {
   if (bgmEnabled.value) {
     settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
   }
-}
-
-// ── Floating music bar helpers ────────────────────────────────────────────────
-const currentTrackName = computed(() => {
-  return bgm.allTracks.value.find(t => t.id === bgmTrackId.value)?.name ?? 'Music';
-});
-
-function toggleBgmFromBar() {
-  bgmEnabled.value = !bgmEnabled.value;
-  if (bgmEnabled.value) {
-    bgm.setVolume(bgmVolume.value);
-    bgm.play(bgmTrackId.value);
-  } else {
-    bgm.stop();
-  }
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
-
-function nextTrack() {
-  const tracks = bgm.allTracks.value;
-  const currentIdx = tracks.findIndex(t => t.id === bgmTrackId.value);
-  const nextIdx = (currentIdx + 1) % tracks.length;
-  bgmTrackId.value = tracks[nextIdx].id;
-  if (bgmEnabled.value) {
-    bgm.play(bgmTrackId.value);
-  }
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
-
-function handleBarVolumeChange(e: Event) {
-  const v = parseInt((e.target as HTMLInputElement).value, 10) / 100;
-  bgmVolume.value = v;
-  // Honour the global mute toggle: while muted, the slider only stores the
-  // intended volume — actual playback stays at zero until unmute.
-  bgm.setVolume(audioStore.muted ? 0 : v);
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
-
-function toggleAppMute() {
-  audioStore.toggleMuted();
 }
 
 // React to mute toggles — silence BGM immediately and restore prior volume
@@ -793,10 +639,6 @@ function handleAudioBgmTrackChange(trackId: string) {
     settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
   }
 }
-
-const characterName = computed(() => {
-  return characterStore.vrmMetadata?.title ?? 'TerranSoul';
-});
 
 const backgroundStyle = computed(() => {
   const bg = backgroundStore.currentBackground;
@@ -1016,6 +858,31 @@ function handleClickOutside(e: MouseEvent) {
     settingsOpen.value = false;
   }
 }
+
+function toggleSettingsDialog() {
+  if (props.hideSettingsDialog) return;
+  settingsOpen.value = !settingsOpen.value;
+}
+
+watch(
+  () => props.hideSettingsDialog,
+  (hidden) => {
+    if (hidden && settingsOpen.value) settingsOpen.value = false;
+  },
+  { immediate: true },
+);
+
+watch(
+  [settingsOpen, showSystemInfo, showAudioControls, showUrlDialog],
+  ([settingsDialogOpen, systemInfoOpen, audioControlsOpen, urlDialogOpen]) => {
+    const overlayOpen = (settingsDialogOpen && !props.hideSettingsDialog)
+      || systemInfoOpen
+      || audioControlsOpen
+      || urlDialogOpen;
+    emit('overlay-open', overlayOpen);
+  },
+  { immediate: true },
+);
 
 // WebGL context loss handlers (hoisted so onUnmounted can remove them)
 function handleContextLost(e: Event) {
@@ -1472,54 +1339,14 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
 }
 
-/* Top-left chrome shares a row with the floating mode-toggle pill that
- * App.vue renders at (left: 82px). To prevent overlap every
- * in-viewport overlay is nudged right to start after the pill + a gap.
- * The settings button sits in the top-right corner instead. */
-.character-name-overlay {
-  position: absolute;
-  top: 12px;
-  left: 280px;
-  font-size: var(--ts-text-lg);
-  font-weight: 700;
-  color: var(--ts-viewport-text);
-  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7), 0 0 20px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
-  letter-spacing: 0.05em;
-  background: var(--ts-viewport-bg);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.character-meta-overlay {
-  position: absolute;
-  top: 34px;
-  left: 280px;
-  font-size: 0.72rem;
-  color: var(--ts-viewport-text-dim);
-  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
-  pointer-events: none;
-  letter-spacing: 0.02em;
-  background: var(--ts-viewport-bg);
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-/* ── Corner cluster — Settings + AI state pill stacked via flex ──
-   A SINGLE absolutely-positioned wrapper owns the top-right corner.  Its
-   children flow naturally as flex column items with an explicit gap — no
-   hand-tuned `top: 56px` magic numbers on individual children, no risk of
-   overlap when font/padding/viewport changes.  See
-   `rules/coding-standards.md` § "UI Framework — No CSS Hacking". */
+/* ── Top bubble strip: single Settings button ── */
 .corner-cluster {
   position: absolute;
-  top: 12px;
+  top: 18px;
   right: 16px;
-  z-index: 20;
+  z-index: 40;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: flex-end;
+  align-items: center;
 }
 
 /* Settings host — own positioned wrapper so the dropdown anchors to the
@@ -1527,13 +1354,45 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .settings-host {
   position: relative;
   display: flex;
+  justify-self: start;
 }
 
-/* Portal target for QuestBubble (and any future corner widgets).  Uses
-   `display: contents` so the wrapper itself is invisible to layout — the
-   teleported children become direct flex items of `.corner-cluster`. */
-.corner-cluster-portal {
-  display: contents;
+/* Quest portal inside settings dropdown — no absolute positioning needed. */
+.settings-quest-portal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* View mode selector row inside settings dropdown */
+.settings-mode-row {
+  display: flex;
+  gap: 4px;
+}
+.settings-mode-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--ts-radius-pill, 999px);
+  background: transparent;
+  color: var(--ts-text-dim);
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+}
+.settings-mode-btn:hover {
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-bright, var(--ts-text-primary));
+}
+.settings-mode-btn.active {
+  background: var(--ts-accent, #7c6fff);
+  color: var(--ts-text-on-accent, #fff);
 }
 
 .settings-toggle {
@@ -1547,53 +1406,38 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
 .settings-dropdown {
   position: absolute;
-  top: 42px;
+  top: 44px;
   right: 0;
-  width: 280px;
-  max-width: min(280px, 90vw);
+  width: 260px;
+  max-width: min(260px, 90vw);
   max-height: min(500px, 70vh);
   overflow-y: auto;
-  padding: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--ts-accent, #7c6fff) transparent;
+  padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  z-index: 30;
+  gap: 10px;
+  z-index: 50;
 }
-
-/* ── AI state pill — flex child of `.corner-cluster`, no absolute positioning ── */
-.ai-state-pill {
-  gap: 7px;
-  padding: 6px 16px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ts-text-primary);
-  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease, box-shadow 0.4s ease;
+.settings-dropdown::-webkit-scrollbar { width: 5px; }
+.settings-dropdown::-webkit-scrollbar-track { background: transparent; }
+.settings-dropdown::-webkit-scrollbar-thumb {
+  background: var(--ts-accent, #7c6fff);
+  border-radius: 4px;
 }
-.ai-state-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  transition: background 0.4s ease;
-}
-.ai-state-pill.idle { background: rgba(37, 99, 235, 0.25); color: #93c5fd; border-color: rgba(147, 197, 253, 0.3); }
-.ai-state-pill.idle .ai-state-dot { background: #3b82f6; }
-.ai-state-pill.thinking { background: rgba(245, 158, 11, 0.3); color: var(--ts-warning-text); border-color: rgba(253, 230, 138, 0.35); }
-.ai-state-pill.thinking .ai-state-dot { background: #f59e0b; animation: pulse-dot 1.2s ease-in-out infinite; }
-.ai-state-pill.talking { background: rgba(22, 163, 74, 0.25); color: var(--ts-success); border-color: rgba(134, 239, 172, 0.3); }
-.ai-state-pill.talking .ai-state-dot { background: #22c55e; }
-.ai-state-pill.happy { background: rgba(8, 145, 178, 0.25); color: var(--ts-info); border-color: rgba(103, 232, 249, 0.3); }
-.ai-state-pill.happy .ai-state-dot { background: #06b6d4; }
-.ai-state-pill.sad { background: rgba(126, 34, 206, 0.25); color: var(--ts-accent-violet); border-color: rgba(216, 180, 254, 0.3); }
-.ai-state-pill.sad .ai-state-dot { background: #a855f7; }
-.ai-state-pill.angry { background: rgba(239, 68, 68, 0.25); color: var(--ts-error); border-color: rgba(252, 165, 165, 0.3); }
-.ai-state-pill.angry .ai-state-dot { background: #ef4444; }
-.ai-state-pill.relaxed { background: rgba(45, 212, 191, 0.2); color: var(--ts-success-dim); border-color: rgba(94, 234, 212, 0.25); }
-.ai-state-pill.relaxed .ai-state-dot { background: #14b8a6; }
-.ai-state-pill.surprised { background: rgba(251, 191, 36, 0.25); color: var(--ts-warning); border-color: rgba(253, 230, 138, 0.3); }
-.ai-state-pill.surprised .ai-state-dot { background: #f59e0b; }
+.settings-state-badge.talking { background: rgba(34, 197, 94, 0.15); color: var(--ts-success); }
+.settings-state-badge.talking .ai-state-dot { background: #22c55e; }
+.settings-state-badge.happy { background: rgba(6, 182, 212, 0.15); color: var(--ts-info); }
+.settings-state-badge.happy .ai-state-dot { background: #06b6d4; }
+.settings-state-badge.sad { background: rgba(168, 85, 247, 0.15); color: var(--ts-accent-violet); }
+.settings-state-badge.sad .ai-state-dot { background: #a855f7; }
+.settings-state-badge.angry { background: rgba(239, 68, 68, 0.15); color: var(--ts-error); }
+.settings-state-badge.angry .ai-state-dot { background: #ef4444; }
+.settings-state-badge.relaxed { background: rgba(20, 184, 166, 0.15); color: var(--ts-success-dim); }
+.settings-state-badge.relaxed .ai-state-dot { background: #14b8a6; }
+.settings-state-badge.surprised { background: rgba(245, 158, 11, 0.15); color: var(--ts-warning); }
+.settings-state-badge.surprised .ai-state-dot { background: #f59e0b; }
 
 @keyframes pulse-dot {
   0%, 100% { opacity: 1; transform: scale(1); }
@@ -1625,7 +1469,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 }
 .settings-close-btn:hover {
   color: var(--ts-text-primary);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-hover);
 }
 
 .dropdown-section {
@@ -1686,13 +1530,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
 }
 .mood-chip:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--ts-bg-hover);
   transform: translateY(-1px);
 }
 .mood-chip.active {
-  background: rgba(124, 111, 255, 0.85);
-  border-color: rgba(200, 210, 255, 0.85);
-  color: #fff;
+  background: var(--ts-accent, #7c6fff);
+  border-color: var(--ts-accent, #7c6fff);
+  color: var(--ts-text-on-accent, #fff);
 }
 .mood-chip-emoji {
   font-size: 1.05rem;
@@ -1726,7 +1570,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   cursor: pointer;
   outline: none;
   appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='rgba(255,255,255,0.7)'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239ca3af'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 10px center;
   transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast);
@@ -1760,12 +1604,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
 }
 .background-chip:hover {
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--ts-bg-hover);
   transform: translateY(-1px);
 }
 .background-chip.active {
-  background: rgba(124, 111, 255, 0.85);
-  border-color: rgba(200, 210, 255, 0.85);
+  background: var(--ts-accent, #7c6fff);
+  border-color: var(--ts-accent, #7c6fff);
+  color: var(--ts-text-on-accent, #fff);
 }
 
 .background-error-banner {
@@ -1824,7 +1669,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
   .corner-cluster {
     top: 6px;
     right: 10px;
-    gap: 6px;
   }
   /* Dropdown: narrower on mobile, already right-aligned */
   .settings-dropdown {
@@ -1832,13 +1676,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
     padding: 10px;
     gap: 10px;
   }
-  /* Compact AI state pill on small screens. */
-  .ai-state-pill {
-    padding: 2px 8px;
-    font-size: 0.58rem;
-    gap: 3px;
-  }
-  .ai-state-dot { width: 4px; height: 4px; }
 }
 .loading-overlay {
   position: absolute;
@@ -1857,8 +1694,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .loading-spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(255, 255, 255, 0.15);
-  border-top-color: rgba(108, 99, 255, 0.9);
+  border: 3px solid var(--ts-border, rgba(255, 255, 255, 0.15));
+  border-top-color: var(--ts-accent, rgba(108, 99, 255, 0.9));
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -1886,16 +1723,16 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .load-error-retry {
   margin-top: 4px;
   padding: 6px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
+  border: 1px solid var(--ts-accent, rgba(108, 99, 255, 0.5));
   border-radius: 6px;
-  background: rgba(108, 99, 255, 0.6);
-  color: #fff;
+  background: var(--ts-accent, rgba(108, 99, 255, 0.6));
+  color: var(--ts-text-on-accent, #fff);
   font-size: 0.8rem;
   cursor: pointer;
   transition: background 0.2s;
 }
 .load-error-retry:hover {
-  background: rgba(108, 99, 255, 0.85);
+  opacity: 0.85;
 }
 
 .fade-enter-active,
@@ -1916,7 +1753,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
 .bgm-status {
   font-size: 0.75rem;
-  color: var(--ts-viewport-text-med);
+  color: var(--ts-text-secondary);
   font-weight: 600;
 }
 
@@ -1936,7 +1773,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .bgm-slider {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.22);
+  background: var(--ts-border, rgba(255, 255, 255, 0.22));
   border-radius: 10px;
   transition: background 0.3s;
 }
@@ -1948,8 +1785,9 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 16px;
   left: 2px;
   bottom: 2px;
-  background: white;
+  background: #fff;
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
   transition: transform 0.3s;
 }
 
@@ -1970,7 +1808,8 @@ async function loadModelIntoScene(newPath: string | undefined) {
 
 .bgm-vol-icon {
   font-size: 0.7rem;
-  opacity: 0.7;
+  opacity: 1;
+  filter: contrast(1.2);
 }
 
 .bgm-volume-slider {
@@ -1978,7 +1817,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   height: 4px;
   -webkit-appearance: none;
   appearance: none;
-  background: rgba(255, 255, 255, 0.25);
+  background: var(--ts-border, rgba(255, 255, 255, 0.25));
   border-radius: 2px;
   outline: none;
   cursor: pointer;
@@ -2000,159 +1839,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
   border-radius: 50%;
   cursor: pointer;
   border: none;
-}
-
-/* ── Floating Music Bar (teleported to #music-bar-portal on the left) ── */
-.music-bar {
-  position: relative;
-  display: flex;
-  align-items: center;
-  flex-direction: row;
-  gap: 0;
-}
-
-.music-bar-toggle {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-overlay);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(8px);
-  transition: background 0.2s, transform 0.15s;
-  flex-shrink: 0;
-  z-index: 2;
-  box-shadow: var(--ts-shadow-md);
-}
-.music-bar-toggle:hover {
-  background: var(--ts-bg-hover);
-  transform: scale(1.1);
-}
-.music-bar-toggle-icon {
-  font-size: 0.85rem;
-  transition: transform 0.2s;
-}
-.music-bar-toggle-icon.open {
-  font-size: 0.7rem;
-}
-
-@keyframes music-pulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.15); }
-}
-
-.music-bar-panel {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-left: 6px;
-  padding: 6px 10px;
-  border-radius: 20px;
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-overlay);
-  backdrop-filter: blur(16px);
-  box-shadow: var(--ts-shadow-lg);
-}
-
-.music-btn {
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  border: none;
-  background: var(--ts-bg-input);
-  color: var(--ts-viewport-text);
-  font-size: 0.85rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s, transform 0.1s;
-  flex-shrink: 0;
-}
-.music-btn:hover {
-  background: var(--ts-accent-glow);
-  transform: scale(1.1);
-}
-.music-btn.play-btn {
-  background: var(--ts-accent-glow);
-  width: 34px;
-  height: 34px;
-}
-.music-btn.play-btn:hover {
-  background: color-mix(in srgb, var(--ts-accent-blue) 35%, transparent);
-}
-.music-btn.add-btn {
-  font-size: 0.9rem;
-}
-.music-btn.mute-btn.active {
-  background: var(--ts-danger, #ef4444);
-  color: #fff;
-}
-.music-btn.mute-btn.active:hover {
-  background: color-mix(in srgb, var(--ts-danger, #ef4444) 80%, transparent);
-}
-
-.music-track-info {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  max-width: 110px;
-}
-.music-track-name {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--ts-viewport-text);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: 0.02em;
-}
-
-.music-vol-slider {
-  width: 60px;
-  height: 3px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--ts-border-strong);
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.music-vol-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  background: var(--ts-accent-blue);
-  border-radius: 50%;
-  cursor: pointer;
-}
-.music-vol-slider::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: var(--ts-accent-blue);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-}
-
-/* Music bar expand transition */
-.music-expand-enter-active, .music-expand-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-.music-expand-enter-from, .music-expand-leave-to {
-  opacity: 0;
-  transform: translateX(12px) scale(0.9);
-}
-
-@media (max-width: 640px) {
-  .music-bar-toggle { width: 30px; height: 30px; }
-  .music-bar-panel { padding: 4px 8px; gap: 4px; }
-  .music-vol-slider { width: 44px; }
-  .music-track-info { max-width: 80px; }
 }
 
 /* ── BGM custom track controls ── */
@@ -2179,11 +1865,11 @@ async function loadModelIntoScene(newPath: string | undefined) {
   justify-content: space-between;
   padding: 3px 6px;
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-hover, rgba(255, 255, 255, 0.05));
 }
 .bgm-custom-name {
   font-size: 0.68rem;
-  color: var(--ts-viewport-text-med);
+  color: var(--ts-text-secondary, var(--ts-viewport-text-med));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2215,41 +1901,41 @@ async function loadModelIntoScene(newPath: string | undefined) {
   position: absolute;
   inset: 0;
   z-index: 50;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--ts-bg-backdrop, rgba(0, 0, 0, 0.5));
   display: flex;
   align-items: center;
   justify-content: center;
   backdrop-filter: blur(4px);
 }
 .url-dialog {
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: var(--ts-bg-overlay);
+  border: 1px solid var(--ts-border);
   border-radius: 12px;
   padding: 20px;
   min-width: 320px;
   max-width: 90%;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--ts-shadow-lg);
 }
 .url-dialog-label {
   display: block;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--ts-viewport-text);
+  color: var(--ts-text-primary);
   margin-bottom: 10px;
 }
 .url-dialog-input {
   width: 100%;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--ts-viewport-text);
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
   font-size: 0.8rem;
   outline: none;
   box-sizing: border-box;
 }
 .url-dialog-input:focus {
-  border-color: rgba(56, 189, 248, 0.5);
+  border-color: var(--ts-accent);
 }
 .url-dialog-actions {
   display: flex;
@@ -2267,21 +1953,22 @@ async function loadModelIntoScene(newPath: string | undefined) {
   transition: background 0.15s;
 }
 .url-dialog-btn.cancel {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--ts-viewport-text-dim);
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-muted);
 }
 .url-dialog-btn.cancel:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--ts-bg-input);
 }
 .url-dialog-btn.confirm {
-  background: rgba(56, 189, 248, 0.3);
-  color: rgba(56, 189, 248, 1);
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
 }
 .url-dialog-btn.confirm:hover {
-  background: rgba(56, 189, 248, 0.5);
+  opacity: 0.85;
 }
 .url-dialog-btn.confirm:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
+
 </style>

@@ -428,10 +428,14 @@ async fn build_phone_system_prompt(
         .memory_store
         .lock()
         .ok()
-        .and_then(|store| {
-            store
-                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
-                .ok()
+        .map(|store| {
+            crate::commands::streaming::retrieve_chat_rag_memories(
+                &store,
+                user_query,
+                query_emb.as_deref(),
+                5,
+                threshold,
+            )
         })
         .unwrap_or_default();
     if !relevant.is_empty() {

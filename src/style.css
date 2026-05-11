@@ -7,7 +7,8 @@
  * properties to Tailwind utilities; @variant light/dark provide theme-aware
  * CSS selectors for component styles.
  */
-@import "tailwindcss/utilities";
+@import "tailwindcss/utilities" source("../src");
+@source "../index.html";
 
 /* ═════════════════════════════════════════════════════════════════════════════
    Design Tokens — Adventurer (default) theme

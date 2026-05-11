@@ -188,6 +188,7 @@ pub async fn coding_session_load_chat(
     limit: Option<usize>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChatMessage>, String> {
+    let _ = coding::heal_orphaned_tool_calls(&state.data_dir, &session_id);
     coding::session_chat_load(&state.data_dir, &session_id, limit)
 }
 
@@ -307,6 +308,7 @@ fn resume_session_inner(
         });
 
     let chat = coding::session_chat_summary(data_dir, &session_id).unwrap_or_default();
+    let _ = coding::heal_orphaned_tool_calls(data_dir, &session_id);
     let messages =
         coding::session_chat_load(data_dir, &session_id, Some(message_limit)).unwrap_or_default();
 

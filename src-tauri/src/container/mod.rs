@@ -263,7 +263,10 @@ where
         file.flush().await.ok();
         drop(file);
 
-        progress("Running Docker Desktop installer (this may take a few minutes)...", 70);
+        progress(
+            "Running Docker Desktop installer (this may take a few minutes)...",
+            70,
+        );
 
         let output = Command::new(&installer_path)
             .args(["install", "--quiet", "--accept-license"])

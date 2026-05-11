@@ -26,6 +26,7 @@ use glob::Pattern;
 use serde::{Deserialize, Serialize};
 
 use super::client::client_from;
+use super::context_budget::BudgetConfig;
 use super::handoff::{
     build_handoff_block, emit_handoff_seed_instruction, parse_handoff_reply, HandoffState,
 };
@@ -195,7 +196,6 @@ pub async fn run_coding_task(
 
     // Append caller-supplied documents.
     documents.extend(task.extra_documents.iter().cloned().map(DocSnippet::from));
-    let context_doc_count = documents.len();
 
     // Build the prompt.
     let output: OutputShape = task.output_kind.clone().into();
@@ -228,6 +228,10 @@ pub async fn run_coding_task(
         assistant_prefill: prefill,
         error_handling: default_error_handling(),
     };
+    let assembled =
+        super::context_engineering::auto_budget_assembly(prompt, &BudgetConfig::default());
+    let prompt = assembled.prompt;
+    let context_doc_count = prompt.documents.len();
     let messages = prompt.build();
 
     // Call the LLM.

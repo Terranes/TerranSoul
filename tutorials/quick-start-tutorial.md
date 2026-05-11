@@ -43,7 +43,7 @@ switching display modes, and the floating Pet Mode overlay.
 
 ## 1. First Launch Wizard
 
-![First launch — desktop 3D view with sidebar](screenshots/quick-start/02-first-launch.png)
+![Post-setup home view — 3D scene with mode toolbar and chat controls](screenshots/quick-start/02-first-launch.png)
 
 When TerranSoul opens for the first time, the **First Launch Wizard** appears automatically.
 
@@ -86,7 +86,7 @@ Click any mode button to switch instantly.
 
 ## 3. Pet Mode (Desktop Familiar)
 
-![Pet mode — character rendered standalone with transparent background (on your desktop, the character floats over other windows)](screenshots/quick-start/03-pet-mode.png)
+![Pet mode overlay — desktop floating character with chat bubble/context controls](screenshots/quick-start/03-pet-mode.png)
 
 Pet Mode turns TerranSoul into a floating desktop companion:
 
@@ -150,7 +150,7 @@ Use the model dropdown at the top of the 3D viewport to switch between bundled a
 
 ## 5. Send Your First Message
 
-![Chat view with message input](screenshots/quick-start/06-send-first-message.png)
+![Chat view with message input](screenshots/quick-start/03-chat-welcome.png)
 
 1. Type a message in the chat input at the bottom.
 2. Press **Enter** or click the send button.

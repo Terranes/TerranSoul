@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="pet-overlay">
     <!-- Character container — positioned absolutely within the full-screen window.
          Dragging moves the CSS position.  Click toggles chat.  Right-click opens menu. -->
@@ -37,7 +37,14 @@
           @mousedown.stop
         >
           <div class="pet-chat-header">
-            <span class="pet-chat-title">Chat</span>
+            <div class="pet-chat-title-row">
+              <span class="pet-chat-title">Chat</span>
+              <span
+                v-if="windowStore.isDevBuild"
+                class="pet-chat-dev-pill"
+                title="Development build â€” MCP on port 7422"
+              >DEV</span>
+            </div>
             <div class="pet-chat-actions">
               <button
                 class="pet-chat-action-btn"
@@ -895,8 +902,11 @@ watch(petModalOpen, (open) => {
 // set_ignore_cursor_events(false) is active.  Toggle the WebView2
 // background alpha between 0 (click-through on blank areas) and 1
 // (visually invisible but hittable) so interactive overlays receive clicks.
+// IMPORTANT: keep this restricted to true full-screen overlays only.
+// Including `petChatExpanded` here can paint the whole desktop black on some
+// Windows/WebView2 configurations.
 const anyInteractiveOverlay = computed(
-  () => petModalOpen.value || menuVisible.value || petChatExpanded.value,
+  () => petModalOpen.value,
 );
 watch(anyInteractiveOverlay, (open) => {
   invoke('set_pet_modal_backdrop', { opaque: open }).catch(() => {});
@@ -1027,7 +1037,7 @@ const emotionOnLeft = computed(() => {
   const monitors = windowStore.monitors;
   const dpr = window.devicePixelRatio || 1;
   const charRight = charX.value + charW.value + 60;
-  if (!monitors.length) {
+  if (!monitors?.length) {
     return charRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
   }
   // Find which monitor contains the character's center
@@ -1474,6 +1484,25 @@ onMounted(async () => {
   // which physical screen the cursor is on and avoid crossing monitor edges.
   windowStore.loadMonitors();
 
+  // Enable cursor passthrough BEFORE brain loading so the window never blocks
+  // desktop clicks during Ollama/API init (which can take several seconds).
+  // The cursor poll dynamically flips passthrough OFF only when the cursor is
+  // over the character, chat panel, or bubble.
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
+      'pet-cursor-pos',
+      (event) => handleCursorPos(event.payload),
+    );
+    windowStore.startPetCursorPoll();
+    windowStore.setCursorPassthrough(true);
+    lastPassthrough = true;
+  } catch {
+    // No Tauri (browser / e2e) â€” passthrough off so the pet UI is interactable.
+    windowStore.setCursorPassthrough(false);
+    lastPassthrough = false;
+  }
+
   try {
     await brain.loadActiveBrain();
   } catch {
@@ -1489,15 +1518,17 @@ onMounted(async () => {
 
   try {
     const { listen } = await import('@tauri-apps/api/event');
-    unlistenLlmChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+    unlistenLlmChunk = await listen<{ text: string; done: boolean; thinking?: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
 
-      // Feed text into TTS (same as ChatView)
+      // Feed text into TTS (same as ChatView). Thinking chunks are
+      // reasoning traces and must NOT be spoken — only answer chunks
+      // reach the voice pipeline.
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
           streamTtsActive = false;
-        } else if (event.payload.text) {
+        } else if (event.payload.text && !event.payload.thinking) {
           if (!streamTtsActive) {
             // New AI response started: stop previous speech and only speak latest.
             tts.stop();
@@ -1524,21 +1555,8 @@ onMounted(async () => {
       }
     });
 
-    // Start cursor-position polling from Rust.  On each event we decide
-    // whether the cursor is over an interactive component and toggle
-    // set_ignore_cursor_events accordingly.
-    unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
-      'pet-cursor-pos',
-      (event) => handleCursorPos(event.payload),
-    );
-    windowStore.startPetCursorPoll();
-    // Default: pass-through ON so clicks on empty space go to the desktop.
-    windowStore.setCursorPassthrough(true);
-    lastPassthrough = true;
   } catch {
-    // No Tauri — browser fallback: passthrough off so we can interact.
-    windowStore.setCursorPassthrough(false);
-    lastPassthrough = false;
+    // No Tauri — LLM streaming unavailable in browser/e2e context.
   }
 
   // Hook into OrbitControls once the viewport is ready so the emotion
@@ -1636,7 +1654,8 @@ onUnmounted(() => {
 
 .pet-character {
   position: absolute;
-  cursor: grab;
+  /* Chat-bubble cursor while hovering the model body. */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23111827' stroke-width='1.5' d='M4.5 5.5h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4.6 3.8a.7.7 0 0 1-1.1-.55V17.5h-.8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") 4 4, pointer;
   user-select: none;
   -webkit-user-drag: none;
   overflow: visible;
@@ -1645,6 +1664,7 @@ onUnmounted(() => {
 }
 /* Allow text selection inside the chat panel */
 .pet-chat {
+  cursor: default;
   user-select: text;
 }
 .pet-character:active {
@@ -1723,6 +1743,26 @@ onUnmounted(() => {
   border-radius: 16px 16px 0 0;
   background: var(--ts-bg-panel);
 }
+.pet-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pet-chat-dev-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  background: var(--ts-warning, #fbbf24);
+  color: var(--ts-bg-base, #1a1b2e);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+}
 .pet-chat-actions {
   display: flex;
   align-items: center;
@@ -1773,6 +1813,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 8px;
   max-height: 280px;
+  cursor: text;
 }
 .pet-msg {
   padding: 8px 12px;
@@ -1781,6 +1822,7 @@ onUnmounted(() => {
   line-height: 1.4;
   max-width: 85%;
   word-wrap: break-word;
+  cursor: text;
 }
 .pet-msg.user {
   background: var(--ts-accent-glow);
@@ -1793,6 +1835,12 @@ onUnmounted(() => {
   border-radius: 12px 12px 12px 4px;
 }
 .pet-msg-text { color: var(--ts-text-bright, var(--ts-text-primary)); }
+
+.pet-msg-text,
+.pet-msg-time,
+.pet-date-sep {
+  cursor: text;
+}
 
 .pet-msg-time {
   display: block;
@@ -1834,7 +1882,7 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 0 12px 10px;
   border-top: 1px solid var(--ts-border);
 }
 .pet-chat-input textarea {
