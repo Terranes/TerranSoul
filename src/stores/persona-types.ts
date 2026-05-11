@@ -13,6 +13,84 @@
 /** Schema version; bumped only on breaking changes that need migration. */
 export const PERSONA_SCHEMA_VERSION = 1;
 
+export type PersonaVoiceGender = 'female' | 'male';
+export type PersonaVoiceAge = 'child' | 'teen' | 'young_adult' | 'adult' | 'middle_aged' | 'elderly';
+export type PersonaVoicePitch = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
+export type PersonaVoiceStyle = 'natural' | 'whisper';
+export type PersonaEnglishAccent = 'american' | 'british' | 'australian' | 'canadian' | 'indian' | 'irish' | 'scottish' | 'south_african';
+export type PersonaChineseDialect = 'mandarin' | 'sichuanese' | 'shaanxi' | 'cantonese' | 'taiwanese' | 'shanghainese' | 'hunanese' | 'none';
+
+export interface PersonaVoiceProfile {
+  /** Voice gender presented to the TTS engine or voice-design prompt. */
+  gender: PersonaVoiceGender;
+  /** Apparent speaker age bucket. */
+  age: PersonaVoiceAge;
+  /** Coarse pitch target for engines that expose voice design. */
+  pitch: PersonaVoicePitch;
+  /** Delivery style. `whisper` maps to OmniVoice-style voice design when supported. */
+  style: PersonaVoiceStyle;
+  /** English accent target for multilingual engines. */
+  englishAccent: PersonaEnglishAccent;
+  /** Chinese dialect target for multilingual engines. */
+  chineseDialect: PersonaChineseDialect;
+  /** Provider-specific voice id/name, e.g. a Web Speech voice or Edge-style neural voice name. */
+  voiceName: string;
+}
+
+export interface PersonaOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+export const PERSONA_VOICE_GENDER_OPTIONS: PersonaOption<PersonaVoiceGender>[] = [
+  { value: 'female', label: 'Female' },
+  { value: 'male', label: 'Male' },
+];
+
+export const PERSONA_VOICE_AGE_OPTIONS: PersonaOption<PersonaVoiceAge>[] = [
+  { value: 'child', label: 'Child' },
+  { value: 'teen', label: 'Teen' },
+  { value: 'young_adult', label: 'Young adult' },
+  { value: 'adult', label: 'Adult' },
+  { value: 'middle_aged', label: 'Middle-aged' },
+  { value: 'elderly', label: 'Elderly' },
+];
+
+export const PERSONA_VOICE_PITCH_OPTIONS: PersonaOption<PersonaVoicePitch>[] = [
+  { value: 'very_low', label: 'Very low' },
+  { value: 'low', label: 'Low' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'high', label: 'High' },
+  { value: 'very_high', label: 'Very high' },
+];
+
+export const PERSONA_VOICE_STYLE_OPTIONS: PersonaOption<PersonaVoiceStyle>[] = [
+  { value: 'natural', label: 'Natural' },
+  { value: 'whisper', label: 'Whisper' },
+];
+
+export const PERSONA_ENGLISH_ACCENT_OPTIONS: PersonaOption<PersonaEnglishAccent>[] = [
+  { value: 'american', label: 'American' },
+  { value: 'british', label: 'British' },
+  { value: 'australian', label: 'Australian' },
+  { value: 'canadian', label: 'Canadian' },
+  { value: 'indian', label: 'Indian' },
+  { value: 'irish', label: 'Irish' },
+  { value: 'scottish', label: 'Scottish' },
+  { value: 'south_african', label: 'South African' },
+];
+
+export const PERSONA_CHINESE_DIALECT_OPTIONS: PersonaOption<PersonaChineseDialect>[] = [
+  { value: 'mandarin', label: '普通话' },
+  { value: 'sichuanese', label: '四川话' },
+  { value: 'shaanxi', label: '陕西话' },
+  { value: 'cantonese', label: '粤语' },
+  { value: 'taiwanese', label: '台湾腔' },
+  { value: 'shanghainese', label: '上海话' },
+  { value: 'hunanese', label: '湖南话' },
+  { value: 'none', label: 'None' },
+];
+
 /** The single active persona's editable traits (see persona-design.md § 2). */
 export interface PersonaTraits {
   /** Schema version for forward compatibility. */
@@ -36,6 +114,8 @@ export interface PersonaTraits {
   exampleDialogue: string[];
   /** Whether the persona block is currently injected into the system prompt. */
   active: boolean;
+  /** Speaker identity and voice-design controls used by TTS-capable providers. */
+  voiceProfile: PersonaVoiceProfile;
   /** Last edit timestamp (ms epoch). */
   updatedAt: number;
 }
@@ -151,7 +231,20 @@ export function defaultPersona(): PersonaTraits {
     avoid: ['unsolicited medical, legal, or financial advice'],
     exampleDialogue: [],
     active: true,
+    voiceProfile: defaultPersonaVoiceProfile(),
     updatedAt: 0,
+  };
+}
+
+export function defaultPersonaVoiceProfile(): PersonaVoiceProfile {
+  return {
+    gender: 'female',
+    age: 'adult',
+    pitch: 'medium',
+    style: 'natural',
+    englishAccent: 'american',
+    chineseDialect: 'mandarin',
+    voiceName: 'en-US-AnaNeural',
   };
 }
 
@@ -173,8 +266,34 @@ export function migratePersonaTraits(raw: unknown): PersonaTraits {
   if (Array.isArray(r.avoid)) out.avoid = r.avoid.filter((x): x is string => typeof x === 'string');
   if (Array.isArray(r.exampleDialogue)) out.exampleDialogue = r.exampleDialogue.filter((x): x is string => typeof x === 'string');
   if (typeof r.active === 'boolean') out.active = r.active;
+  out.voiceProfile = migratePersonaVoiceProfile(r.voiceProfile);
   if (typeof r.updatedAt === 'number') out.updatedAt = r.updatedAt;
   return out;
+}
+
+export function migratePersonaVoiceProfile(raw: unknown): PersonaVoiceProfile {
+  const fresh = defaultPersonaVoiceProfile();
+  if (!raw || typeof raw !== 'object') return fresh;
+  const r = raw as Record<string, unknown>;
+  return {
+    gender: optionOrDefault(r.gender, PERSONA_VOICE_GENDER_OPTIONS, fresh.gender),
+    age: optionOrDefault(r.age, PERSONA_VOICE_AGE_OPTIONS, fresh.age),
+    pitch: optionOrDefault(r.pitch, PERSONA_VOICE_PITCH_OPTIONS, fresh.pitch),
+    style: optionOrDefault(r.style, PERSONA_VOICE_STYLE_OPTIONS, fresh.style),
+    englishAccent: optionOrDefault(r.englishAccent, PERSONA_ENGLISH_ACCENT_OPTIONS, fresh.englishAccent),
+    chineseDialect: optionOrDefault(r.chineseDialect, PERSONA_CHINESE_DIALECT_OPTIONS, fresh.chineseDialect),
+    voiceName: typeof r.voiceName === 'string' ? r.voiceName.trim().slice(0, 120) : fresh.voiceName,
+  };
+}
+
+function optionOrDefault<T extends string>(
+  value: unknown,
+  options: readonly PersonaOption<T>[],
+  fallback: T,
+): T {
+  return typeof value === 'string' && options.some(option => option.value === value)
+    ? value as T
+    : fallback;
 }
 
 // ── Persona drift detection (Chunk 14.8) ────────────────────────────────────

@@ -292,6 +292,26 @@ the Control Panel transport picker (Chunk 15.4).
   diff-able).
 - Entry name: `terransoul-brain`.
 
+### Hermes Agent (NousResearch)
+
+- Path: `~/.hermes/cli-config.yaml` (Linux/macOS/WSL2) or
+  `%LOCALAPPDATA%\hermes\cli-config.yaml` (native Windows when that
+  directory already exists).
+- Format: YAML — written via marker-comment upsert (no YAML parser
+  dependency). The TerranSoul block is wrapped in stable markers
+  (`# >>> TerranSoul MCP auto-config ... >>>` …
+  `# <<< TerranSoul MCP auto-config <<<`) so re-runs replace in place
+  and user-edited content outside the markers is preserved verbatim.
+- Entry name: `terransoul-brain`.
+- HTTP transport writes `url` + `Authorization: Bearer …` headers plus
+  per-server `timeout: 120` and `connect_timeout: 60`.
+- Stdio transport writes `command` + `args: ["--mcp-stdio"]`.
+- Tauri commands: `setup_hermes_mcp`, `setup_hermes_mcp_stdio`,
+  `remove_hermes_mcp`. Status reported by `list_mcp_clients` (marker
+  presence check).
+- See [hermes-vs-openclaw-analysis.md](hermes-vs-openclaw-analysis.md)
+  for the design decision and adoption rationale.
+
 All writers must:
 
 - Read existing config (preserve other servers).

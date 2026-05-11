@@ -22,8 +22,9 @@ Copilot, the headless runner for CI/automation, and the code tools.
 5. [Using Brain Search in Practice](#5-using-brain-search-in-practice)
 6. [Code Intelligence Setup](#6-code-intelligence-setup)
 7. [Workflow for Coding Sessions](#7-workflow-for-coding-sessions)
-8. [Stdio Transport (Direct Pipe)](#8-stdio-transport-direct-pipe)
-9. [Troubleshooting](#9-troubleshooting)
+8. [Containerized MCP for CI/Research](#8-containerized-mcp-for-ciresearch)
+9. [Stdio Transport (Direct Pipe)](#9-stdio-transport-direct-pipe)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -240,7 +241,33 @@ MCP returns focused, relevant context instead of raw file content:
 
 ---
 
-## 8. Stdio Transport (Direct Pipe)
+## 8. Containerized MCP for CI/Research
+
+Use the containerized MCP profile only when you need an isolated service for
+CI, automation, or research. The normal desktop app remains a native Tauri app;
+Docker is not required for everyday use.
+
+```bash
+npm run mcp:container          # build + start on 127.0.0.1:7423
+npm run mcp:container:config   # validate docker compose configuration
+npm run mcp:container:logs     # follow logs
+npm run mcp:container:stop     # stop and remove the service container
+```
+
+The container uses `Dockerfile.mcp`, `docker-compose.mcp.yml`, and the
+display-free `terransoul --mcp-http` entry point. Runtime state lives in the
+`terransoul-mcp-data` Docker volume, while seed knowledge comes from the
+checked-in `mcp-data/shared/` snapshot baked into the image.
+
+Verify health after startup:
+
+```bash
+curl http://127.0.0.1:7423/health
+```
+
+---
+
+## 9. Stdio Transport (Direct Pipe)
 
 For editors that prefer stdio over HTTP:
 
@@ -252,11 +279,13 @@ The binary reads JSON-RPC from stdin and writes responses to stdout. Same capabi
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | `npm run mcp` fails to build | Run `npm install` first. Check Node.js ≥ 18. |
+| `npm run mcp:container:config` fails | Check that Docker Compose is installed and that `docker compose` is available. |
+| MCP container is unhealthy | Run `npm run mcp:container:logs`; the service healthcheck calls `/health` on port 7423. |
 | Port 7423 already in use | Another MCP instance is running. The start script will reuse it if healthy. |
 | Token rejected | Re-read from `mcp-data/mcp-token.txt` (regenerated on each start). |
 | `brain_search` returns empty | Seed data may not be loaded. Check `mcp-data/shared/memory-seed.sql` exists. |

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { collectCharismaTurnAssets } from './charisma-turn-assets';
-import type { PersonaTraits } from '../stores/persona-types';
+import { defaultPersonaVoiceProfile, type PersonaTraits } from '../stores/persona-types';
 
 const traits: PersonaTraits = {
   version: 1,
@@ -12,6 +12,7 @@ const traits: PersonaTraits = {
   avoid: [],
   exampleDialogue: [],
   active: true,
+  voiceProfile: defaultPersonaVoiceProfile(),
   updatedAt: 0,
 };
 

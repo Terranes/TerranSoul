@@ -48,8 +48,9 @@ use commands::{
         roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
     },
     auto_setup::{
-        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_vscode_mcp, setup_claude_mcp,
-        setup_claude_mcp_stdio, setup_codex_mcp, setup_codex_mcp_stdio, setup_vscode_mcp,
+        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_hermes_mcp,
+        remove_vscode_mcp, setup_claude_mcp, setup_claude_mcp_stdio, setup_codex_mcp,
+        setup_codex_mcp_stdio, setup_hermes_mcp, setup_hermes_mcp_stdio, setup_vscode_mcp,
         setup_vscode_mcp_stdio,
     },
     brain::{
@@ -141,21 +142,23 @@ use commands::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
         audit_memory_tags, auto_promote_memories, backfill_embedding_model_id, backfill_embeddings,
         clear_all_data, close_memory_edge, compact_ann, count_memory_conflicts, daily_brief_query,
-        delete_memory, delete_memory_edge, dismiss_memory_conflict, enforce_memory_storage_limit,
+        delete_memory, delete_memory_edge, detach_memory_node, disk_ann_migration_status,
+        disk_ann_plan_preview, dismiss_memory_conflict, enforce_memory_storage_limit,
         evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
         get_memory_metrics, get_memory_provenance, get_memory_stats, get_relevant_memories,
-        get_schema_info, get_search_cache_stats, get_short_term_memory,
-        graph_rag_detect_communities, graph_rag_search, hybrid_search_memories,
+        get_schema_info, get_search_cache_stats, get_short_term_memory, get_top_degree_nodes,
+        graph_rag_detect_communities, graph_rag_search, graph_totals, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories, judgment_add, judgment_apply,
         judgment_list, list_memory_conflicts, list_memory_edges, list_relation_types,
         matryoshka_search_memories, memory_graph_page, multi_hop_search_memories, obsidian_sync,
-        obsidian_sync_start,
-        obsidian_sync_stop, promote_memory, reflect_on_session, rerank_search_memories,
-        resolve_memory_conflict, scan_edge_conflicts, search_memories, semantic_search_memories,
-        set_ann_quantization, set_auto_learn_policy, summarize_session, temporal_query,
-        update_memory,
+        obsidian_sync_start, obsidian_sync_stop, progressive_search_memories, promote_memory,
+        rebalance_ann_shards, rebuild_shard_router, reflect_on_session, refresh_graph_clusters,
+        rerank_search_memories, resolve_memory_conflict, router_health, run_disk_ann_migration,
+        scan_edge_conflicts, search_memories, semantic_search_memories, set_ann_quantization,
+        set_auto_learn_policy, shard_health, summarize_session, temporal_query, update_memory,
+        update_memory_edge,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
@@ -707,6 +710,115 @@ fn resolve_headless_mcp_port() -> u16 {
         .ok()
         .and_then(|s| s.trim().parse::<u16>().ok())
         .unwrap_or(HEADLESS_MCP_PORT)
+}
+
+fn resolve_headless_mcp_idle_timeout() -> u64 {
+    std::env::var("TERRANSOUL_MCP_IDLE_TIMEOUT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+/// Run TerranSoul as a repo-local MCP HTTP server without a Tauri UI.
+///
+/// This is intended for containers, CI/research services, and other
+/// no-display environments. The desktop and tray workflows still use
+/// `run()`/`--mcp-tray`; this path only constructs `AppState`, seeds the
+/// repo-local MCP dataset, starts the axum MCP transport, and waits for a
+/// process shutdown signal.
+pub fn run_mcp_http() -> std::io::Result<()> {
+    if let Some(label) = detect_running_terransoul_mcp() {
+        eprintln!(
+            "[mcp-http] TerranSoul {label} build is already serving MCP; refusing to shadow it."
+        );
+        return Ok(());
+    }
+
+    let data_dir = resolve_headless_mcp_data_dir();
+    let port = resolve_headless_mcp_port();
+    let idle_timeout_secs = resolve_headless_mcp_idle_timeout();
+
+    std::fs::create_dir_all(&data_dir)?;
+    ai_integrations::mcp::enable_mcp_pet_mode();
+    eprintln!("[mcp-http] data dir: {}", data_dir.display());
+    eprintln!("[mcp-http] port: {port}");
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+
+    runtime.block_on(async move {
+        let shared_seeded = seed_mcp_data(&data_dir);
+        brain::mcp_auto_config::auto_configure_mcp_brain(&data_dir).await;
+
+        let state = AppState::new(&data_dir);
+        {
+            let mut store = state.memory_store.lock().map_err(|err| {
+                std::io::Error::other(format!("failed to lock memory store: {err}"))
+            })?;
+            store.set_flush_handle(state.ann_flush_handle.clone());
+        }
+        brain::mcp_auto_config::apply_config_to_state(&state, &data_dir);
+
+        let token =
+            ai_integrations::mcp::auth::load_or_create(&data_dir).map_err(std::io::Error::other)?;
+
+        let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        if let Err(err) = write_mcp_token_file(&workspace_root, &token) {
+            eprintln!("[mcp-http] warning: failed to write .vscode/.mcp-token: {err}");
+        }
+
+        let handle = ai_integrations::mcp::start_server_full(
+            state.clone(),
+            port,
+            token.clone(),
+            false,
+            false,
+            None,
+            idle_timeout_secs,
+        )
+        .await
+        .map_err(std::io::Error::other)?;
+
+        eprintln!(
+            "[mcp-http] MCP server listening on http://127.0.0.1:{} (POST /mcp)",
+            handle.port
+        );
+        eprintln!("[mcp-http] bearer token: {token}");
+
+        if shared_seeded {
+            backfill_mcp_seed_embeddings(&state).await;
+        }
+
+        wait_for_headless_mcp_shutdown().await;
+        handle.stop();
+        let _ = handle.task.await;
+        eprintln!("[mcp-http] shutdown complete");
+        Ok(())
+    })
+}
+
+#[cfg(unix)]
+async fn wait_for_headless_mcp_shutdown() {
+    use tokio::signal::unix::{signal, SignalKind};
+
+    let terminate_signal = signal(SignalKind::terminate());
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {}
+        _ = async {
+            match terminate_signal {
+                Ok(mut stream) => {
+                    let _ = stream.recv().await;
+                }
+                Err(_) => std::future::pending::<()>().await,
+            }
+        } => {}
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_headless_mcp_shutdown() {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 /// Load a shared MCP seed file from a resolved shared seed directory,
@@ -1608,6 +1720,7 @@ pub fn run() {
             semantic_search_memories,
             hybrid_search_memories,
             hybrid_search_memories_rrf,
+            progressive_search_memories,
             hyde_search_memories,
             rerank_search_memories,
             matryoshka_search_memories,
@@ -1636,8 +1749,21 @@ pub fn run() {
             add_memory_edge,
             close_memory_edge,
             delete_memory_edge,
+            update_memory_edge,
+            detach_memory_node,
             list_memory_edges,
             memory_graph_page,
+            disk_ann_plan_preview,
+            disk_ann_migration_status,
+            run_disk_ann_migration,
+            // Shard health, router health, graph observability (Chunk 50.1)
+            shard_health,
+            router_health,
+            rebuild_shard_router,
+            rebalance_ann_shards,
+            refresh_graph_clusters,
+            get_top_degree_nodes,
+            graph_totals,
             get_edges_for_memory,
             get_edge_stats,
             list_relation_types,
@@ -1865,6 +1991,10 @@ pub fn run() {
             setup_vscode_mcp_stdio,
             setup_claude_mcp_stdio,
             setup_codex_mcp_stdio,
+            // Hermes Agent (NousResearch) — YAML, marker-managed
+            setup_hermes_mcp,
+            setup_hermes_mcp_stdio,
+            remove_hermes_mcp,
             remove_vscode_mcp,
             remove_claude_mcp,
             remove_codex_mcp,

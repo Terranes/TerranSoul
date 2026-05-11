@@ -345,7 +345,6 @@ import { useAudioStore } from '../stores/audio';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
-import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
@@ -505,8 +504,8 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
 const audioStore = useAudioStore();
 const { muted: audioMuted } = storeToRefs(audioStore);
 const tts = useTtsPlayback({
-  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
-  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  getBrowserPitch: () => characterStore.currentBrowserPitch(),
+  getBrowserRate: () => characterStore.currentBrowserRate(),
   mutedRef: audioMuted,
 });
 

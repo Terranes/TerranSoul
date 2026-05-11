@@ -32,27 +32,23 @@
 
 ## Next Chunk
 
-Next up: **Chunk 48.2 — Per-shard `usearch` index files (sharded HNSW)**
+Next up: **Chunk 117 — CI/research containerization support**
 
 ---
 
-## Phase 48 — Billion-Scale Retrieval & Graph
+## Phase 9 — Learned Features (From Reference Projects)
 
-> See [`docs/billion-scale-retrieval-design.md`](../docs/billion-scale-retrieval-design.md)
-> for the full phased plan, honest physical limits, and acceptance criteria.
-> Phase 1 (foundation scaffold + paged-graph command + Lite/WebGL renderer)
-> is already complete and recorded in `completion-log.md`.
+> Promoted from `rules/backlog.md` on 2026-05-11 by explicit user request.
+> Scope is constrained to CI/research/service containers; do **not** make the
+> Tauri desktop runtime depend on Docker.
 
 | Chunk | Status | Title | Notes |
 |---|---|---|---|
-| 48.2 | not-started | Per-shard `usearch` HNSW indexes | One index file per `ShardKey` under `<app-data>/vectors/<shard>.usearch`, with per-shard quantization sidecar. `ShardedHybridSearch` consults shards in parallel and merges via RRF. Adds `MemoryStore::rebalance_shards()` + background compaction. |
-| 48.3 | not-started | Coarse shard router (IVF-style centroids) | Build a small centroid index from a 1% sample of embeddings so each query only probes top-p shards instead of all 15. Stored alongside vectors. Falls back to "probe all" when the router is missing or stale. |
-| 48.4 | not-started | Disk-backed ANN (IVF-PQ / DiskANN-class) | For shards over `shard_max_entries` (default 50M) build IVF-PQ indexes (m=96, nbits=8). Memory-map shard files; refresh PQ codebooks during nightly compaction. Gated on the `native-ann` feature. |
-| 48.5 | not-started | FTS5 per-shard keyword index | Migrate BM25-lite from SQL `LIKE` to an FTS5 virtual table per shard (or `tantivy` if FTS5 hits limits). Add covering indexes for `last_accessed` / `decay_score` so recency signals never scan the full table. |
-| 48.6 | not-started | Paged knowledge graph at 1B | Move KG traversal off in-memory `Vec<MemoryEdge>` onto paged adjacency with covering indexes `(src_id, edge_type)` and `(dst_id, edge_type)`. Pre-aggregated `memory_graph_clusters` table refreshed during compaction. Frontend stays at ≤ 5k visible nodes via existing `memory_graph_page` LOD. |
-| 48.7 | not-started | Backpressure + hot-cache + health surface | Reject ingests that would push a shard past `shard_max_entries` (trigger split/rebalance instead of degrading search). Last-N query → top-K cache for ≤ 60 s. Per-shard health (index missing/corrupt/dirty) wired into `brain_health` so the search layer never silently returns partial results. |
+| 117 | not-started | CI/research containerization support | Keep desktop install native. Improve documented/containerized support for CI/research services and MCP/headless workflows using existing `Dockerfile.mcp`, `docker-compose.mcp.yml`, hive-relay compose files, and container-tooling conventions. Add tests/docs where practical; do not introduce a mandatory app runtime container. |
 
 ---
+
+
 
  
 

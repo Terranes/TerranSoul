@@ -33,6 +33,39 @@ export type IntentDecision =
   | { kind: 'gated_setup'; setup: GatedSetupKind }
   | { kind: 'unknown' };
 
+const DOCUMENT_LEARNING_EXACT_PHRASES = [
+  'learn from my documents',
+  'learn my documents',
+  'learn documents',
+  'learn from my docs',
+  'learn from my files',
+  'learn from my notes',
+  'learn using my documents',
+  'learn with my documents',
+  'study my documents',
+] as const;
+
+/**
+ * High-confidence side-channel phrases should wait for the classifier before
+ * streaming starts. Otherwise the user can hear a normal LLM answer while the
+ * visible UI is already switching to Scholar's Quest.
+ */
+export function shouldAwaitIntentBeforeStreaming(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normalized) return false;
+  if (DOCUMENT_LEARNING_EXACT_PHRASES.some((phrase) => normalized === phrase)) {
+    return true;
+  }
+  if (
+    normalized.includes('my provided documents') &&
+    /\b(learn|study)\b/.test(normalized)
+  ) {
+    return true;
+  }
+  return /\b(learn|study)\b/.test(normalized) &&
+    /\b(my|provided|own)\b.*\b(documents|docs|files|notes|pdfs|sources)\b/.test(normalized);
+}
+
 interface TranslatorModeState {
   active: boolean;
   source: TranslatorLanguage;
@@ -1607,16 +1640,19 @@ export const useConversationStore = defineStore('conversation', () => {
       ? classifyIntent(content, brain.hasBrain)
       : Promise.resolve({ kind: 'chat' });
     let classifyDecision: IntentDecision | null = null;
+    const shouldAwaitIntent = shouldAwaitIntentBeforeStreaming(content);
     // Check synchronously — if the cache already has the answer it
     // resolves immediately (microtask), so we can short-circuit before
     // even starting the stream for non-chat intents.
-    const quickDecision = await Promise.race([
-      classifyPromise.then((d) => d),
-      // 0ms normally only picks up cached results. When the desktop app has no
-      // brain configured, wait briefly so backend-owned deterministic shortcuts
-      // can pre-empt the persona fallback before the streaming path fails.
-      new Promise<null>((r) => setTimeout(() => r(null), brain.hasBrain ? 0 : 500)),
-    ]);
+    const quickDecision = shouldAwaitIntent
+      ? await classifyPromise
+      : await Promise.race([
+          classifyPromise.then((decision) => decision),
+          // 0ms normally only picks up cached results. When the desktop app has no
+          // brain configured, wait briefly so backend-owned deterministic shortcuts
+          // can pre-empt the persona fallback before the streaming path fails.
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), brain.hasBrain ? 0 : 500)),
+        ]);
     if (quickDecision && quickDecision.kind !== 'chat' && quickDecision.kind !== 'unknown') {
       classifyDecision = quickDecision;
     }

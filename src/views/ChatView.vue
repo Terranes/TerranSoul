@@ -577,8 +577,7 @@ import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
-import { GENDER_VOICES } from '../config/default-models';
-import type { CharacterState } from '../types';
+import type { CharacterState, Message } from '../types';
 import type { MemoryEdge, MemoryEntry } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
@@ -618,8 +617,8 @@ const { tryDispatchSlashCommand } = usePluginSlashDispatch();
 const { tryDispatchPromptCommand } = usePromptCommandDispatch();
 const promptCommandsStore = usePromptCommandsStore();
 const tts = useTtsPlayback({
-  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
-  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  getBrowserPitch: () => characterStore.currentBrowserPitch(),
+  getBrowserRate: () => characterStore.currentBrowserRate(),
   mutedRef: audioMuted,
 });
 const asr = useAsrManager({
@@ -841,6 +840,7 @@ function dismissHotseat() {
 // same choices, but DO show follow-up choices from the same quest.
 // Also trigger karaoke + TTS for quest messages pushed directly (not via LLM stream).
 let prevMessageCount = 0;
+let lastQuestSpeechMessageId: string | null = null;
 watch(() => conversationStore.messages.length, (count) => {
   const msgs = conversationStore.messages;
   for (let i = msgs.length - 1; i >= 0; i--) {
@@ -861,8 +861,7 @@ watch(() => conversationStore.messages.length, (count) => {
   if (count > prevMessageCount) {
     const last = msgs[msgs.length - 1];
     if (last?.role === 'assistant' && last.questChoices?.length) {
-      showSubtitle(last.content);
-      speakQuestText(last.content);
+      showAndSpeakQuestMessage(last);
     }
   }
   prevMessageCount = count;
@@ -1357,18 +1356,17 @@ async function handleSend(message: string) {
 
   // Show the AI's response as a floating subtitle
   if (lastMsg?.role === 'assistant') {
-    showSubtitle(lastMsg.content);
+    if (lastMsg.questChoices?.length) {
+      showAndSpeakQuestMessage(lastMsg);
+    } else {
+      showSubtitle(lastMsg.content);
+    }
 
     // Trigger VRMA body animation from the LLM's motion tag (if any).
     // For the Tauri streaming path the motion is applied live via llm-animation
     // events, but for browser-side streaming/fallback it arrives here.
     if (lastMsg.motion) {
       viewportRef.value?.playMotion(lastMsg.motion);
-    }
-
-    // Speak quest messages via TTS (they bypass LLM streaming so feedChunk is never called)
-    if (lastMsg.questChoices?.length) {
-      speakQuestText(lastMsg.content);
     }
 
     // Show emoji popup above character if the response included one
@@ -1548,6 +1546,13 @@ function speakQuestText(text: string) {
   tts.flush();
 }
 
+function showAndSpeakQuestMessage(message: Message) {
+  if (lastQuestSpeechMessageId === message.id) return;
+  lastQuestSpeechMessageId = message.id;
+  showSubtitle(message.content);
+  speakQuestText(message.content);
+}
+
 /** Trigger the first available quest from the welcome screen. */
 function handleStartQuest() {
   setChatDrawerExpanded(true);
@@ -1557,8 +1562,12 @@ function handleStartQuest() {
     // Speak the newly injected quest message
     const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
     if (lastMsg?.role === 'assistant') {
-      showSubtitle(lastMsg.content);
-      speakQuestText(lastMsg.content);
+      if (lastMsg.questChoices?.length) {
+        showAndSpeakQuestMessage(lastMsg);
+      } else {
+        showSubtitle(lastMsg.content);
+        speakQuestText(lastMsg.content);
+      }
     }
   }
 }
@@ -1693,8 +1702,12 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
   // Speak the follow-up quest response via TTS
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
   if (lastMsg?.role === 'assistant') {
-    showSubtitle(lastMsg.content);
-    speakQuestText(lastMsg.content);
+    if (lastMsg.questChoices?.length) {
+      showAndSpeakQuestMessage(lastMsg);
+    } else {
+      showSubtitle(lastMsg.content);
+      speakQuestText(lastMsg.content);
+    }
   }
 }
 

@@ -72,6 +72,23 @@ impl ShardKey {
         format!("{tier}__{}", self.kind.as_str())
     }
 
+    /// Reverse of `as_path_token`: reconstruct a `ShardKey` from a token string.
+    /// Returns `None` if the token is malformed or unknown.
+    pub fn from_path_token(token: &str) -> Option<Self> {
+        let parts: Vec<&str> = token.split("__").collect();
+        if parts.len() != 2 {
+            return None;
+        }
+        let tier = match parts[0] {
+            "short" => MemoryTier::Short,
+            "working" => MemoryTier::Working,
+            "long" => MemoryTier::Long,
+            _ => return None,
+        };
+        let kind = CognitiveKind::parse(parts[1])?;
+        Some(ShardKey { tier, kind })
+    }
+
     /// Enumerate every `ShardKey` that exists in the type system.
     /// Useful for shard-aware fan-out where we need a fixed set of slots.
     pub fn all() -> Vec<ShardKey> {
@@ -209,6 +226,26 @@ mod tests {
                 ch
             );
         }
+    }
+
+    #[test]
+    fn shard_key_from_path_token_reverses_as_path_token() {
+        let key = ShardKey {
+            tier: MemoryTier::Long,
+            kind: CognitiveKind::Semantic,
+        };
+        let token = key.as_path_token();
+        let recovered = ShardKey::from_path_token(&token).expect("failed to recover key");
+        assert_eq!(recovered.tier, key.tier);
+        assert_eq!(recovered.kind, key.kind);
+    }
+
+    #[test]
+    fn shard_key_from_path_token_rejects_malformed_tokens() {
+        assert!(ShardKey::from_path_token("no-separator").is_none());
+        assert!(ShardKey::from_path_token("long").is_none());
+        assert!(ShardKey::from_path_token("unknown__semantic").is_none());
+        assert!(ShardKey::from_path_token("long__unknown").is_none());
     }
 
     #[test]

@@ -2,6 +2,7 @@ use serde::Serialize;
 use tauri::State;
 
 use crate::link::{LinkPeer, LinkStatus};
+use crate::memory::embedding_queue;
 use crate::AppState;
 
 /// Summary of the current link state, exposed to the frontend.
@@ -126,6 +127,13 @@ pub async fn apply_memory_deltas(
     store
         .log_sync(&peer_device_id, "inbound", total)
         .map_err(|e| e.to_string())?;
+
+    // Enqueue newly synced entries for embedding so the ANN index
+    // picks them up on the next embed worker tick (multi-device fix).
+    if total > 0 {
+        let _ = embedding_queue::backfill_queue(store.conn());
+    }
+
     Ok(result)
 }
 

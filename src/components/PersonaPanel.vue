@@ -62,6 +62,124 @@
         />
       </label>
 
+      <section class="pp-voice" data-testid="pp-voice-profile">
+        <header class="pp-section-header">
+          <h4>Voice design</h4>
+          <span>Used by the persona prompt and TTS-capable voice engines.</span>
+        </header>
+        <div class="pp-row">
+          <label class="pp-field">
+            <span>Gender</span>
+            <select
+              v-model="draft.voiceProfile.gender"
+              data-testid="pp-voice-gender"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in genderOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="pp-field">
+            <span>Age</span>
+            <select
+              v-model="draft.voiceProfile.age"
+              data-testid="pp-voice-age"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in ageOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="pp-field">
+            <span>Pitch</span>
+            <select
+              v-model="draft.voiceProfile.pitch"
+              data-testid="pp-voice-pitch"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in pitchOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="pp-row">
+          <label class="pp-field">
+            <span>Style</span>
+            <select
+              v-model="draft.voiceProfile.style"
+              data-testid="pp-voice-style"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in styleOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="pp-field">
+            <span>English accent</span>
+            <select
+              v-model="draft.voiceProfile.englishAccent"
+              data-testid="pp-voice-english-accent"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in englishAccentOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="pp-field">
+            <span>Chinese dialect</span>
+            <select
+              v-model="draft.voiceProfile.chineseDialect"
+              data-testid="pp-voice-chinese-dialect"
+              @change="markDirty"
+            >
+              <option
+                v-for="option in chineseDialectOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <label class="pp-field pp-field-block">
+          <span>Provider voice</span>
+          <input
+            v-model="draft.voiceProfile.voiceName"
+            type="text"
+            maxlength="120"
+            placeholder="e.g. en-US-AnaNeural"
+            data-testid="pp-voice-name"
+            @input="markDirty"
+          >
+        </label>
+      </section>
+
       <PersonaListEditor
         label="Tone"
         placeholder="warm, concise, lightly sarcastic…"
@@ -332,6 +450,13 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { usePersonaStore } from '../stores/persona';
 import {
+  PERSONA_CHINESE_DIALECT_OPTIONS,
+  PERSONA_ENGLISH_ACCENT_OPTIONS,
+  PERSONA_VOICE_AGE_OPTIONS,
+  PERSONA_VOICE_GENDER_OPTIONS,
+  PERSONA_VOICE_PITCH_OPTIONS,
+  PERSONA_VOICE_STYLE_OPTIONS,
+  migratePersonaVoiceProfile,
   type PersonaTraits,
 } from '../stores/persona-types';
 import { buildPersonaBlock } from '../utils/persona-prompt';
@@ -347,6 +472,12 @@ const draft = ref<PersonaTraits>(cloneTraits(store.traits));
 const isDirty = ref(false);
 const isSaving = ref(false);
 const lastSavedAt = ref<number | null>(null);
+const genderOptions = PERSONA_VOICE_GENDER_OPTIONS;
+const ageOptions = PERSONA_VOICE_AGE_OPTIONS;
+const pitchOptions = PERSONA_VOICE_PITCH_OPTIONS;
+const styleOptions = PERSONA_VOICE_STYLE_OPTIONS;
+const englishAccentOptions = PERSONA_ENGLISH_ACCENT_OPTIONS;
+const chineseDialectOptions = PERSONA_CHINESE_DIALECT_OPTIONS;
 
 function cloneTraits(t: PersonaTraits): PersonaTraits {
   return {
@@ -355,6 +486,7 @@ function cloneTraits(t: PersonaTraits): PersonaTraits {
     quirks: [...t.quirks],
     avoid: [...t.avoid],
     exampleDialogue: [...(t.exampleDialogue ?? [])],
+    voiceProfile: migratePersonaVoiceProfile(t.voiceProfile),
   };
 }
 
@@ -572,6 +704,7 @@ watch(
 .pp-field-block { width: 100%; }
 .pp-field span { font-size: 0.8rem; color: var(--ts-text-muted, #aab); }
 .pp-field input,
+.pp-field select,
 .pp-field textarea {
   background: var(--ts-input-bg, rgba(0, 0, 0, 0.25));
   border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.12));
@@ -581,6 +714,18 @@ watch(
   font: inherit;
 }
 .pp-field textarea { resize: vertical; min-height: 4rem; }
+.pp-voice {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.08));
+  border-radius: var(--ts-radius-sm, 6px);
+  background: var(--ts-bg-input);
+}
+.pp-section-header { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.pp-section-header h4 { margin: 0; font-size: 0.95rem; }
+.pp-section-header span { font-size: 0.75rem; color: var(--ts-text-muted, #aab); }
 .pp-toggle { display: inline-flex; align-items: center; gap: 0.5rem; cursor: pointer; }
 .pp-actions { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .pp-btn {

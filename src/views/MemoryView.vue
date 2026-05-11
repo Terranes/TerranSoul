@@ -220,58 +220,15 @@
           Loading {{ store.memories.length }} memories…
         </div>
       </div>
-      <aside
+      <GraphNodeCrudPanel
         v-if="selectedEntry"
-        class="mv-node-detail"
-      >
-        <h3>{{ selectedEntry.content }}</h3>
-        <p><strong>Type:</strong> {{ selectedEntry.memory_type }}</p>
-        <p><strong>Tier:</strong> <span :class="'mv-tier-badge tier-' + selectedEntry.tier">{{ selectedEntry.tier }}</span></p>
-        <p><strong>Tags:</strong> {{ selectedEntry.tags || '—' }}</p>
-        <p><strong>Importance:</strong> {{ '★'.repeat(selectedEntry.importance) }}</p>
-        <p><strong>Decay:</strong> {{ (selectedEntry.decay_score * 100).toFixed(0) }}%</p>
-        <p><strong>Accessed:</strong> {{ selectedEntry.access_count }}×</p>
-        <div
-          v-if="selectedEdges.length"
-          class="mv-node-edges"
-        >
-          <strong>Edges ({{ selectedEdges.length }}):</strong>
-          <ul>
-            <li
-              v-for="e in selectedEdges"
-              :key="e.id"
-              class="mv-node-edge"
-            >
-              <span class="mv-rel-pill">{{ e.rel_type }}</span>
-              <span class="mv-edge-direction">
-                {{ e.src_id === selectedEntry.id ? '→' : '←' }}
-                #{{ e.src_id === selectedEntry.id ? e.dst_id : e.src_id }}
-              </span>
-              <button
-                class="mv-edge-del"
-                title="Delete edge"
-                @click="handleDeleteEdge(e.id)"
-              >
-                ×
-              </button>
-            </li>
-          </ul>
-        </div>
-        <div class="mv-node-btns">
-          <button
-            class="btn-secondary"
-            @click="startEdit(selectedEntry)"
-          >
-            ✏ Edit
-          </button>
-          <button
-            class="btn-danger"
-            @click="confirmDelete(selectedEntry.id)"
-          >
-            🗑 Delete
-          </button>
-        </div>
-      </aside>
+        :entry="selectedEntry"
+        :edges="selectedEdges"
+        :all-memories="store.memories"
+        @close="selectedEntry = null"
+        @navigate="onNodeSelect"
+        @changed="onGraphChanged"
+      />
     </div>
 
     <!-- ── List tab ── -->
@@ -751,6 +708,7 @@ import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import BrainGraphViewport from '../components/BrainGraphViewport.vue';
+import GraphNodeCrudPanel from '../components/GraphNodeCrudPanel.vue';
 import type { MemoryEntry, MemoryType, MemoryTier, MemoryProvenance } from '../types';
 
 const store = useMemoryStore();
@@ -919,6 +877,17 @@ function onNodeSelect(id: number) {
   selectedEntry.value = store.memories.find((m) => m.id === id) ?? null;
 }
 
+/** Called by GraphNodeCrudPanel after any node/edge mutation. */
+async function onGraphChanged() {
+  await store.fetchAll();
+  await store.fetchEdges();
+  await store.getEdgeStats();
+  if (selectedEntry.value) {
+    selectedEntry.value =
+      store.memories.find((m) => m.id === selectedEntry.value!.id) ?? null;
+  }
+}
+
 async function handleExtractEdges() {
   isActing.value = true;
   feedback.value = '';
@@ -934,11 +903,6 @@ async function handleExtractEdges() {
   await store.getEdgeStats();
   isActing.value = false;
   setTimeout(() => (feedback.value = ''), 4000);
-}
-
-async function handleDeleteEdge(edgeId: number) {
-  await store.deleteEdge(edgeId);
-  await store.getEdgeStats();
 }
 
 // Add / Edit modal

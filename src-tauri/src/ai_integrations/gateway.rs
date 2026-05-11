@@ -387,6 +387,40 @@ pub struct IngestLessonResponse {
     pub persisted_to_seed: bool,
 }
 
+/// `brain.append` — append a timestamped update to an existing
+/// memory entry without creating a duplicate. Inspired by
+/// rahilp/second-brain-cloudflare's `append` MCP tool: when the user
+/// (or agent) says "actually…", "we changed our minds", or "update
+/// that", we extend the existing entry rather than storing a near
+/// duplicate. TerranSoul's existing `MemoryStore::update` saves a
+/// version snapshot before the write and re-routes the entry through
+/// the embedding queue, so the append is non-destructive *and*
+/// re-embedded automatically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppendRequest {
+    /// Existing memory id to append to. The caller must have read +
+    /// write capability.
+    pub id: i64,
+    /// Free-form text to append. Must be non-empty after trimming.
+    pub addition: String,
+    /// Optional source tag (e.g. `"agent-session"`, `"chat"`,
+    /// `"bookmarklet"`). Recorded as a marker comment in the appended
+    /// section so future readers see where the update came from.
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppendResponse {
+    pub memory_id: i64,
+    /// Total length of the new content (bytes), useful for the caller
+    /// to detect runaway entries.
+    pub new_content_len: usize,
+    /// Number of historical versions retained for this entry after
+    /// the append (the pre-append snapshot is included).
+    pub version_count: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HealthResponse {
     pub version: String,
@@ -405,6 +439,15 @@ pub struct HealthResponse {
     /// Embedding worker status (rate-limit pauses, hard failures, throughput).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embed_worker: Option<crate::memory::embedding_queue::WorkerStatus>,
+    /// Per-shard health (capacity, index status). Added in Chunk 48.7.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shard_health: Option<crate::memory::shard_backpressure::ShardHealthSummary>,
+    /// Coarse shard router health (build metadata + refresh policy state).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub router_health: Option<crate::memory::shard_router::RouterHealth>,
+    /// Disk-backed ANN migration eligibility/sidecar health (Chunk 49.2).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub disk_ann_health: Option<crate::memory::disk_backed_ann::DiskAnnHealthSummary>,
     /// Field-level descriptions for clients rendering raw JSON.
     pub descriptions: HealthDescriptions,
 }
@@ -524,6 +567,16 @@ pub trait BrainGateway: Send + Sync {
         caps: &GatewayCaps,
         req: IngestLessonRequest,
     ) -> Result<IngestLessonResponse, GatewayError>;
+
+    /// `brain.append` — append a timestamped update to an existing
+    /// memory entry without creating a duplicate. Saves a version
+    /// snapshot of the prior state and re-embeds the merged entry.
+    /// Requires `brain_write` capability.
+    async fn append(
+        &self,
+        caps: &GatewayCaps,
+        req: AppendRequest,
+    ) -> Result<AppendResponse, GatewayError>;
 
     /// `brain.health` — server + brain status snapshot.
     async fn health(&self, caps: &GatewayCaps) -> Result<HealthResponse, GatewayError>;
@@ -1260,6 +1313,89 @@ impl BrainGateway for AppStateGateway {
         })
     }
 
+    async fn append(
+        &self,
+        caps: &GatewayCaps,
+        req: AppendRequest,
+    ) -> Result<AppendResponse, GatewayError> {
+        if !caps.brain_write {
+            return Err(GatewayError::PermissionDenied("brain_write"));
+        }
+        let addition = req.addition.trim();
+        if addition.is_empty() {
+            return Err(GatewayError::InvalidArgument(
+                "addition cannot be empty".into(),
+            ));
+        }
+
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+
+        // Load existing entry to preserve content + bound runaway growth.
+        let existing = store
+            .get_by_id(req.id)
+            .map_err(|e| GatewayError::Storage(format!("get_by_id({}): {e}", req.id)))?;
+
+        // Build the appended block. Use unix-millis (the codebase's
+        // canonical timestamp; matches `created_at`/`last_accessed`
+        // columns) and a marker the user can grep for. ISO-8601 is
+        // intentionally avoided to keep the gateway free of `chrono`.
+        let ts_ms = crate::memory::store::now_ms();
+        let source_label = req
+            .source
+            .as_deref()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .unwrap_or("agent");
+        let new_content = format!(
+            "{old}
+
+[Update {ts_ms} · {src}]
+{addition}",
+            old = existing.content,
+            ts_ms = ts_ms,
+            src = source_label,
+            addition = addition,
+        );
+        let new_content_len = new_content.len();
+
+        // `MemoryStore::update` saves a version snapshot of the prior
+        // state via `versioning::save_version` before writing, and
+        // re-routes the entry through the embedding queue when
+        // content changes. So append is non-destructive *and* the
+        // merged entry is re-embedded automatically.
+        store
+            .update(
+                req.id,
+                crate::memory::MemoryUpdate {
+                    content: Some(new_content),
+                    tags: None,
+                    importance: None,
+                    memory_type: None,
+                },
+            )
+            .map_err(|e| GatewayError::Storage(format!("update({}): {e}", req.id)))?;
+
+        // Count retained versions for the response.
+        let version_count: i64 = store
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM memory_versions WHERE memory_id = ?1",
+                rusqlite::params![req.id],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+
+        Ok(AppendResponse {
+            memory_id: req.id,
+            new_content_len,
+            version_count,
+        })
+    }
+
     async fn health(&self, caps: &GatewayCaps) -> Result<HealthResponse, GatewayError> {
         require_read(caps)?;
         let model_opt = self.active_brain()?;
@@ -1347,6 +1483,39 @@ impl BrainGateway for AppStateGateway {
 
         let embed_worker = Some(self.state.embed_worker_metrics.snapshot());
 
+        let shard_health = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            store
+                .shard_health_summary(crate::memory::shard_backpressure::DEFAULT_SHARD_MAX_ENTRIES)
+                .ok()
+        };
+
+        let router_health = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            store.router_health_summary().ok()
+        };
+
+        let disk_ann_health = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            store
+                .disk_ann_health_summary(
+                    crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD,
+                )
+                .ok()
+        };
+
         Ok(HealthResponse {
             version: env!("CARGO_PKG_VERSION").to_string(),
             brain_provider: provider.to_string(),
@@ -1356,6 +1525,9 @@ impl BrainGateway for AppStateGateway {
             rag_quality,
             memory,
             embed_worker,
+            shard_health,
+            router_health,
+            disk_ann_health,
             descriptions,
         })
     }
@@ -2059,7 +2231,7 @@ mod tests {
             file_path: None,
             cursor_offset: None,
             selection: None,
-            query: "rust".into(),
+            query: "borrow checker data races".into(),
             limit: Some(10),
         };
         let before = gw
@@ -2270,5 +2442,157 @@ mod tests {
             .await
             .expect("should default importance");
         assert_eq!(resp.importance, 8);
+    }
+
+    // ─── brain.append (inspired by second-brain-cloudflare) ─────────────
+
+    #[tokio::test]
+    async fn append_requires_write_capability() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .append(
+                &GatewayCaps::NONE,
+                AppendRequest {
+                    id: 1,
+                    addition: "more info".into(),
+                    source: None,
+                },
+            )
+            .await;
+        assert!(err.is_err());
+        assert!(err.unwrap_err().to_string().contains("brain_write"));
+    }
+
+    #[tokio::test]
+    async fn append_rejects_empty_addition() {
+        let state = seed_state();
+        let gw = AppStateGateway::new(state.clone());
+        // Need a valid id so the check is exercised; whitespace only counts as empty.
+        let id = {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(NewMemory {
+                    content: "original".into(),
+                    tags: "test".into(),
+                    importance: 5,
+                    memory_type: MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id
+        };
+        let err = gw
+            .append(
+                &GatewayCaps::READ_WRITE,
+                AppendRequest {
+                    id,
+                    addition: "   \n  ".into(),
+                    source: None,
+                },
+            )
+            .await;
+        assert!(err.is_err(), "whitespace-only addition must be rejected");
+        assert!(err.unwrap_err().to_string().contains("addition"));
+    }
+
+    #[tokio::test]
+    async fn append_extends_content_and_saves_version_snapshot() {
+        let state = seed_state();
+        let gw = AppStateGateway::new(state.clone());
+        let id = {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(NewMemory {
+                    content: "original note about ownership".into(),
+                    tags: "rust".into(),
+                    importance: 5,
+                    memory_type: MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id
+        };
+
+        let resp = gw
+            .append(
+                &GatewayCaps::READ_WRITE,
+                AppendRequest {
+                    id,
+                    addition: "actually we now use Arc instead of Rc".into(),
+                    source: Some("agent-session".into()),
+                },
+            )
+            .await
+            .expect("append should succeed with write caps");
+
+        assert_eq!(resp.memory_id, id);
+        assert!(resp.new_content_len > "original note about ownership".len());
+        assert!(
+            resp.version_count >= 1,
+            "at least one version snapshot must be retained (got {})",
+            resp.version_count
+        );
+
+        // Verify the merged content includes both original + addition + source label.
+        let store = state.memory_store.lock().unwrap();
+        let entry = store.get_by_id(id).unwrap();
+        assert!(entry.content.contains("original note about ownership"));
+        assert!(entry.content.contains("Arc instead of Rc"));
+        assert!(entry.content.contains("agent-session"));
+        assert!(entry.content.contains("[Update "));
+    }
+
+    #[tokio::test]
+    async fn append_uses_default_source_label_when_omitted() {
+        let state = seed_state();
+        let gw = AppStateGateway::new(state.clone());
+        let id = {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(NewMemory {
+                    content: "seed".into(),
+                    tags: "test".into(),
+                    importance: 5,
+                    memory_type: MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id
+        };
+
+        gw.append(
+            &GatewayCaps::READ_WRITE,
+            AppendRequest {
+                id,
+                addition: "more".into(),
+                source: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let store = state.memory_store.lock().unwrap();
+        let entry = store.get_by_id(id).unwrap();
+        assert!(
+            entry.content.contains("· agent]"),
+            "expected default source label 'agent', got: {}",
+            entry.content
+        );
+    }
+
+    #[tokio::test]
+    async fn append_returns_error_for_missing_id() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .append(
+                &GatewayCaps::READ_WRITE,
+                AppendRequest {
+                    id: 999_999_999,
+                    addition: "anything".into(),
+                    source: None,
+                },
+            )
+            .await;
+        assert!(err.is_err(), "non-existent id must surface an error");
     }
 }

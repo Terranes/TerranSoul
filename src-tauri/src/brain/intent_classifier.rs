@@ -686,9 +686,7 @@ mod tests {
     #[test]
     fn shortcut_detects_provided_documents_variant() {
         assert_eq!(
-            detect_document_learning_shortcut(
-                "Please look at my provided documents and learn it",
-            ),
+            detect_document_learning_shortcut("Please look at my provided documents and learn it",),
             Some(IntentDecision::LearnWithDocs {
                 topic: FALLBACK_LEARN_DOCS_TOPIC.to_string(),
             })

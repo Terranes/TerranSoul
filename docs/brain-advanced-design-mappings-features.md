@@ -13,7 +13,7 @@
 > screens, code-intelligence, MCP-only surfaces, and standalone admin
 > tooling unless they directly affect a chat turn.
 >
-> Last audited: 2026-05-10. Source-of-truth code paths cited inline.
+> Last audited: 2026-05-11. Source-of-truth code paths cited inline.
 
 ---
 
@@ -115,19 +115,24 @@ Status legend:
 
 | Feature | Status | Chatbox surface | Backend |
 |---|---|---|---|
-| `memory_edges` schema (typed, directional, confidence, source, valid_from/to) | ✅ | Underlies multi-hop and audit. | `memory/edges.rs`, schema V15 |
+| `memory_edges` schema (typed, directional, confidence, source, valid_from/to) | ✅ | Underlies multi-hop and audit. | `memory/edges.rs`, schema V21 |
 | LLM edge extraction (`extract_edges_via_brain`) | ✅ / 🟢 | Best-effort auto-fires after successful chat fact extraction when `auto_extract_edges` is enabled and a local active model exists; also available from MemoryView and maintenance. | `commands/memory.rs::extract_memories_from_session`, `memory/brain_memory.rs::propose_edges`, [memory.ts](../src/stores/memory.ts) |
 | Multi-hop hybrid search (`hybrid_search_with_graph` / `multi_hop_search_memories`, ≤3 hops) | 🟡 | MemoryView *Multi-hop* search and MCP `brain_kg_neighbors`. Not on chat send. | `memory/edges.rs`, [memory.ts L373](../src/stores/memory.ts#L373) |
 | Memory-audit provenance view | 🟢 | MemoryView *Audit* panel via `get_memory_provenance`. | `memory/audit.rs` |
 | 3-D KG viewport (Three.js + d3-force-3d) | 🟢 | `BrainGraphViewport.vue` from BrainView, not chat. | `src/components/BrainGraphViewport.vue` |
 | Folder ↔ KG sync (`sync_context_folders`, `import_file_to_knowledge_graph`, `export_kg_subtree`, `convert_context_to_knowledge`) | 🟢 | BrainView *📂 Context Folders* panel + `/digest <path>` slash command in chat. | `commands/context_folder.rs` |
 | Temporal KG (`valid_from`/`valid_to`, `close_memory_edge`, `get_edges_for_at`) | 🟡 | Schema + commands shipped; no chatbox UI yet. | `memory/edges.rs` |
+| Paged graph adjacency (billion-scale Phase 5) | ✅ | `memory_graph_page` detail+focus fast path uses O(k log n) paged adjacency via covering indexes instead of full-graph load. | `memory/graph_paging.rs`, `commands/memory.rs` |
+| FTS5 keyword index (billion-scale Phase 4) | ✅ | Transparent — keyword retriever uses `keyword_candidate_ids_fts5()` fast path with INSTR fallback when FTS5 unavailable. | `memory/store.rs`, `memories_fts` virtual table, schema V21 |
+| Shard backpressure + health (billion-scale cross-cutting) | ✅ | Transparent — `shard_health_summary()` wired into `brain_health` MCP response; backpressure rejects ingests at shard capacity (2M default). | `memory/shard_backpressure.rs`, `ai_integrations/gateway.rs` |
 
 ### 2.6 SQLite, schema, persistence (§8, §9)
 
-All transparent to chat. WAL mode, auto-backup `memory.db.bak`, schema V15
+All transparent to chat. WAL mode, auto-backup `memory.db.bak`, schema V21
 with `pending_embeddings`, `protected`, `cognitive_kind`, `category`,
-`updated_at`, `origin_device` columns are all enforced at startup. ✅.
+`updated_at`, `origin_device` columns, FTS5 keyword index (`memories_fts`),
+composite covering indexes on `memory_edges`, and `memory_graph_clusters`
+pre-aggregated table are all enforced at startup. ✅.
 
 ### 2.7 Brain modes & provider architecture (§10, §10.1)
 
@@ -371,6 +376,8 @@ Filed against the conventions in `rules/milestones.md`:
 
 - [brain-advanced-design.md](brain-advanced-design.md) — canonical
   architecture (this doc audits it).
+- [billion-scale-retrieval-design.md](billion-scale-retrieval-design.md) —
+  scaling path to 1B records (FTS5, paged graph, backpressure, sharded HNSW).
 - [BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md](../instructions/BRAIN-COMPLEX-EXAMPLE-EXPLAIN.md)
   — technical reference (schema, RAG pipeline, comparisons).
 - [brain-rag-setup-tutorial.md](../tutorials/brain-rag-setup-tutorial.md)

@@ -116,7 +116,7 @@ they want as well."* Persona is therefore **two things layered**:
 
 | Layer | What it is | How it is produced | Where it lives |
 |---|---|---|---|
-| **Trait persona** | Name, role, tone, quirks, do/don't list, biography | User-edited in the Persona panel (or learned by the LLM from chat extraction) | `persona.json` on disk; loaded into `persona.ts` Pinia store |
+| **Trait persona** | Name, role, tone, quirks, do/don't list, biography, voice design | User-edited in the Persona panel (or learned by the LLM from chat extraction) | `persona.json` on disk; loaded into `persona.ts` Pinia store |
 | **Embodiment persona** | Custom expression presets + learned motion clips that the avatar uses to *show* the persona | Recorded from the camera in a teach session | `expressions/`, `motions/` on disk; indexed by `persona.ts` |
 
 `PersonaTraits` schema (TypeScript, mirrored 1:1 in `persona.json`):
@@ -137,10 +137,24 @@ interface PersonaTraits {
   quirks: string[];
   /** Hard "don't" list (negative constraints). */
   avoid: string[];
+  /** Example dialogue exchanges showing how the persona speaks. */
+  exampleDialogue: string[];
   /** Whether the persona block is currently injected into the system prompt. */
   active: boolean;
+  /** Gender, age, pitch, style, accent, dialect, and provider voice name. */
+  voiceProfile: PersonaVoiceProfile;
   /** Last edit timestamp (ms epoch). */
   updatedAt: number;
+}
+
+interface PersonaVoiceProfile {
+  gender: 'female' | 'male';
+  age: 'child' | 'teen' | 'young_adult' | 'adult' | 'middle_aged' | 'elderly';
+  pitch: 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
+  style: 'natural' | 'whisper';
+  englishAccent: 'american' | 'british' | 'australian' | 'canadian' | 'indian' | 'irish' | 'scottish' | 'south_african';
+  chineseDialect: 'mandarin' | 'sichuanese' | 'shaanxi' | 'cantonese' | 'taiwanese' | 'shanghainese' | 'hunanese' | 'none';
+  voiceName: string;
 }
 ```
 
@@ -163,7 +177,17 @@ A fresh install ships with `default-persona.json`:
   "tone": ["warm", "concise"],
   "quirks": [],
   "avoid": ["unsolicited medical/legal/financial advice"],
-  "active": true
+  "exampleDialogue": [],
+  "active": true,
+  "voiceProfile": {
+    "gender": "female",
+    "age": "adult",
+    "pitch": "medium",
+    "style": "natural",
+    "englishAccent": "american",
+    "chineseDialect": "mandarin",
+    "voiceName": "en-US-AnaNeural"
+  }
 }
 ```
 
@@ -891,6 +915,26 @@ cues treats the hints as supporting context rather than content to echo.
 the legacy `propose_persona` delegates with `hints = None` so existing
 tests stay byte-identical.
 
+### 9.5 Voice-design persona profile (✅ shipped 2026-05-11)
+
+`PersonaTraits.voiceProfile` gives the active persona a structured speaker
+identity: gender, age bucket, pitch bucket, delivery style (`natural` or
+`whisper`), English accent, Chinese dialect, and provider-specific voice
+name. The Persona panel edits these fields directly and `buildPersonaBlock`
+renders one compact line into `[PERSONA]`:
+
+> `Voice design: female adult voice, medium pitch, natural style, American English accent, 普通话 Chinese dialect, preferred TTS voice en-US-AnaNeural.`
+
+Current Web Speech / OpenAI-compatible TTS paths can only use part of this
+profile (voice name, pitch, rate). The full schema is intentionally provider
+neutral so an optional voice-design engine can consume the same fields later
+without changing the user-facing model/persona editor.
+
+Per-model voice overrides live in the character store for bundled and
+imported VRM models. Selecting a model applies its profile to TTS voice,
+pitch, and rate immediately; imported-model name/gender/persona metadata is
+also mirrored through the existing `update_user_model` command.
+
 **Privacy contract:**
 
 - The analyzer never reads raw audio — by the time a turn reaches the
@@ -1046,6 +1090,10 @@ function in `src/utils/persona-migrate.ts` upgrades old payloads to the
 current schema, mirroring `skill-tree.ts::migrateTracker`. We do not yet
 have a V2 schema; this is forward-compatibility scaffolding identical to
 how `QuestTrackerData` is handled today.
+
+`voiceProfile` is a backward-compatible V1 addition. Older `persona.json`
+files that do not contain it migrate to the default female/adult/medium/
+natural/American/普通话 profile with `en-US-AnaNeural` as the provider voice.
 
 ### 11.3 Persona pack envelope (✅ shipped 2026-04-24, Chunk 14.7)
 

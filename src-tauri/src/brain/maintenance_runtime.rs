@@ -424,11 +424,65 @@ pub async fn dispatch_job(job: MaintenanceJob, state: &crate::AppState) -> Resul
         }
         MaintenanceJob::AnnCompact => {
             let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let router_refreshed = store
+                .maybe_refresh_shard_router(true)
+                .unwrap_or(None)
+                .unwrap_or(0);
+            let disk_ann_report = store
+                .run_disk_ann_migration_job(
+                    crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD,
+                    crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN,
+                )
+                .unwrap_or_else(|_| {
+                    crate::memory::disk_backed_ann::DiskAnnMigrationReport::empty(
+                        crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD,
+                        crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN,
+                    )
+                });
             if !store.ann_needs_compaction() {
-                return Ok("ann_compact: skipped (fragmentation below threshold)".to_string());
+                let mut msg = "ann_compact: skipped (fragmentation below threshold)".to_string();
+                if router_refreshed > 0 {
+                    msg.push_str(&format!(
+                        ", refreshed shard router with {router_refreshed} centroids"
+                    ));
+                }
+                if disk_ann_report.sidecars_written > 0 {
+                    msg.push_str(&format!(
+                        ", wrote {} disk-ann sidecar(s)",
+                        disk_ann_report.sidecars_written
+                    ));
+                }
+                return Ok(msg);
             }
             let rebuilt = store.compact_ann().map_err(|e| e.to_string())?;
-            Ok(format!("ann_compact: rebuilt index with {rebuilt} vectors"))
+
+            // Refresh PQ codebooks for any large shards (Phase 48.4 Phase 2)
+            let pq_refreshed = store.refresh_pq_codebooks().unwrap_or(0);
+
+            // Refresh pre-aggregated graph cluster stats (Phase 48.6)
+            let clusters = store.refresh_graph_clusters().unwrap_or(0);
+
+            let mut msg = format!("ann_compact: rebuilt index with {rebuilt} vectors");
+            if pq_refreshed > 0 {
+                msg.push_str(&format!(
+                    ", refreshed PQ codebooks for {pq_refreshed} shard(s)"
+                ));
+            }
+            if clusters > 0 {
+                msg.push_str(&format!(", refreshed {clusters} graph cluster(s)"));
+            }
+            if router_refreshed > 0 {
+                msg.push_str(&format!(
+                    ", refreshed shard router with {router_refreshed} centroids"
+                ));
+            }
+            if disk_ann_report.sidecars_written > 0 {
+                msg.push_str(&format!(
+                    ", wrote {} disk-ann sidecar(s)",
+                    disk_ann_report.sidecars_written
+                ));
+            }
+            Ok(msg)
         }
     }
 }

@@ -1,7 +1,8 @@
 # Billion-Scale Retrieval & Graph — Design
 
-> Status: **Phase 1 in progress.** Honest scoping doc. Not all phases are
-> implemented yet. Land in priority order; each phase is independently shippable.
+> Status: **Phases 1, 4, 5, and cross-cutting complete.** Honest scoping doc.
+> Phases 2 and 3 remain roadmap. Land in priority order; each phase is
+> independently shippable.
 > Last updated: 2026-05-11
 
 ## Why this exists
@@ -76,54 +77,72 @@ Land additive scaffolds and one user-visible win. No breaking changes.
      command (preserves Vitest / non-Tauri usage).
 4. **Design doc** (this file) + milestone breakdown in `rules/milestones.md`.
 
-### Phase 2 — Sharded HNSW (single-process)
+### Phase 2 — Sharded HNSW (single-process) (✅ Shipped — Chunk 48.2/48.3/48.8/48.9)
 
-- One `usearch` index per `ShardKey`, files under
+- ✅ One `usearch` index per `ShardKey`, files under
   `<app-data>/vectors/<shard>.usearch`, each with its own quantization sidecar.
-- Coarse router: a tiny IVF-style centroid lookup built from a 1% sample of
+- ✅ Coarse router: a tiny IVF-style centroid lookup built from a 1% sample of
   embeddings to predict the top-`p` shards per query.
-- `ShardedHybridSearch` consults the router → vector top-K per shard →
+- ✅ Router persistence + reload: `shard_router.json` now stores centroid
+  vectors + shard mapping so `load_shard_router()` can hydrate a queryable
+  router across restarts instead of always rebuilding.
+- ✅ `ShardedHybridSearch` consults the router → vector top-K per shard →
   RRF merge → keyword/decay/recency reranker on the union.
-- Adds `MemoryStore::rebalance_shards()` and a background compaction task.
+- ✅ `MemoryStore::rebalance_shards()` is available.
+- ✅ Dedicated router refresh policy:
+  - time trigger (stale/missing) + volume trigger (mutation delta),
+  - cooldown-gated to avoid repeated on-query rebuild bursts,
+  - forced scheduled refresh via maintenance `AnnCompact` path.
 
-### Phase 3 — Disk-backed ANN (PQ / IVF-PQ)
+### Phase 3 — Disk-backed ANN (PQ / IVF-PQ) (◐ Kickoff shipped — Chunk 49.1)
+
+- ✅ Kickoff planner surface (`memory/disk_backed_ann.rs` +
+  `MemoryStore::disk_ann_plan`) reports per-shard migration candidates by
+  threshold and ANN index-file presence for deterministic rollout sequencing.
 
 - For shards > N million entries, build IVF-PQ indexes (target m=96, nbits=8)
   using a Rust binding to FAISS or `usearch`'s pq mode.
 - Memory-map shard files; only the active centroid lists are paged into RAM.
 - Refresh PQ codebooks during nightly compaction.
 
-### Phase 4 — Keyword + recency scale-out
+### Phase 4 — Keyword + recency scale-out (✅ Shipped — Chunk 48.5)
 
-- Migrate BM25-lite from SQL `LIKE` to a proper FTS5 virtual table per shard
-  (or `tantivy` if FTS5 hits limits).
+- ✅ FTS5 external-content virtual table `memories_fts` with unicode61
+  tokenizer, auto-sync INSERT/UPDATE/DELETE triggers, and
+  `keyword_candidate_ids_fts5()` fast path with INSTR fallback.
+- ✅ Schema V21 creates FTS5 table per-shard (via `ensure_v21_fts5()`).
 - Store `last_accessed` and `decay_score` in a covering index so recency
   signals never scan the full table.
 
-### Phase 5 — Graph at 1B
+### Phase 5 — Graph at 1B (✅ Shipped — Chunk 48.6)
 
-- Move the knowledge-graph traversal off in-memory `Vec<Edge>` and onto a
-  paged adjacency table (`memory_edges` already exists; add covering indexes
-  `(src_id, edge_type)` and `(dst_id, edge_type)`).
+- ✅ Composite covering indexes `(src_id, rel_type)` and `(dst_id, rel_type)`
+  on `memory_edges` enable O(log n) filtered adjacency queries.
+- ✅ `memory_graph_clusters` pre-aggregated table refreshed during
+  `AnnCompact` maintenance job.
+- ✅ `memory/graph_paging.rs` module with `get_edges_paged()`,
+  `get_top_degree_nodes()`, `get_graph_clusters()`, `graph_totals()`.
+- ✅ `memory_graph_page` command uses paged adjacency fast path for
+  detail zoom + focus_id (loads only neighbourhood, not entire graph).
 - Frontend never holds more than ~5 000 nodes simultaneously. Cluster
   supernodes at overview zoom, expand on focus.
-- Pre-aggregated cluster stats stored in `memory_graph_clusters` and refreshed
-  during compaction.
 
-## Cross-cutting rules
+## Cross-cutting rules (✅ Shipped — Chunk 48.7)
 
 - **No global locks during search.** Per-shard `RwLock`, parallel queries via
   `rayon` or `tokio::task::spawn_blocking`.
 - **Bounded rerank.** LLM-as-judge runs on at most `rerank_cap` (default 50)
   candidates regardless of `limit`.
-- **Hot-cache.** Last N query → top-K results cached for ≤ 60 s to absorb
-  duplicate chat-loop calls.
-- **Backpressure.** Ingest jobs that would push a shard past
-  `shard_max_entries` (default 50M) trigger shard split / rebalance instead
-  of degrading search latency.
-- **No silent fallbacks.** If a shard's index is missing/corrupt, the search
-  layer reports it through the existing health channel; it does not pretend
-  the result set is complete.
+- **Hot-cache.** ✅ Last N query → top-K results cached for ≤ 60 s to absorb
+  duplicate chat-loop calls. (`search_cache.rs`, `DEFAULT_TTL_MS = 60_000`.)
+- **Backpressure.** ✅ Ingest jobs that would push a shard past
+  `shard_max_entries` (default 2M per logical shard) are rejected with
+  `BackpressureError`; callers must split/rebalance.
+  (`memory/shard_backpressure.rs`, `DEFAULT_SHARD_MAX_ENTRIES = 2_000_000`.)
+- **No silent fallbacks.** ✅ If a shard's index is missing/corrupt, the
+  `shard_health_summary()` reports it through `HealthResponse.shard_health`
+  in the `brain_health` MCP tool; it does not pretend the result set is
+  complete. (`ai_integrations/gateway.rs`.)
 
 ## Phase 1 acceptance
 
@@ -138,6 +157,10 @@ Land additive scaffolds and one user-visible win. No breaking changes.
 
 ## References (credit in `CREDITS.md` when applicable)
 
+- [brain-advanced-design.md](brain-advanced-design.md) — canonical brain/memory
+  architecture (this doc extends its §16 Scaling Roadmap Phase 7).
+- [brain-advanced-design-mappings-features.md](brain-advanced-design-mappings-features.md)
+  — per-feature chatbox audit that maps billion-scale infra to daily use.
 - Cormack et al., "Reciprocal Rank Fusion outperforms Condorcet and individual
   rank learning methods", SIGIR 2009.
 - Subramanya et al., "DiskANN: Fast Accurate Billion-point Nearest Neighbor

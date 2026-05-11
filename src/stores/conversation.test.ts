@@ -14,6 +14,7 @@ import { setActivePinia, createPinia } from 'pinia';
 import {
   detectTranslatorModeRequest,
   isStopTranslatorModeRequest,
+  shouldAwaitIntentBeforeStreaming,
   shouldUseFastChatPath,
   useConversationStore,
 } from './conversation';
@@ -480,7 +481,14 @@ describe('conversation store — Tauri backend available', () => {
 
     const commands = mockInvoke.mock.calls.map((call) => call[0]);
     expect(commands).toContain('classify_intent');
+    expect(commands).not.toContain('send_message_stream');
     expect(store.messages.some((m) => m.questId === 'learn-docs-missing' || m.questId === 'scholar-quest')).toBe(true);
+  });
+
+  it('waits for intent before streaming explicit document-learning prompts', () => {
+    expect(shouldAwaitIntentBeforeStreaming('learn my provided documents')).toBe(true);
+    expect(shouldAwaitIntentBeforeStreaming('Learn Vietnamese laws using my provided documents')).toBe(true);
+    expect(shouldAwaitIntentBeforeStreaming('Explain the difference between a statute and a regulation.')).toBe(false);
   });
 
   it('falls back to send_message on streaming failure', async () => {

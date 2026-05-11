@@ -1,7 +1,7 @@
 # Brain & Memory — Advanced Architecture Design
 
 > **TerranSoul v0.1** — Self-learning AI companion with persistent memory  
-> Last updated: 2026-05-09
+> Last updated: 2026-05-11
 > **Audience**: Developers, contributors, and architects who need to understand the full memory/brain system.
 
 ## Architecture at a glance
@@ -21,7 +21,7 @@ flowchart TB
     subgraph BE["Backend — Rust + Tokio"]
         CMDS["Tauri commands<br/>(150+ async fns)"]
         BRAIN["Brain module<br/>OllamaAgent · OpenAiClient · FreeProvider"]
-        MEM["Memory module<br/>MemoryStore · hybrid_search · decay/GC"]
+        MEM["Memory module<br/>MemoryStore · hybrid_search · consolidation · decay/GC"]
         DB[("SQLite WAL<br/>memory.db")]
         CMDS --> BRAIN
         CMDS --> MEM
@@ -73,7 +73,7 @@ flowchart TB
 
     subgraph HYBRID["Hybrid retrieval — 3 retrievers + RRF fusion"]
         VEC["Vector similarity<br/>HNSW · usearch · 768-dim"]
-        KW["Keyword / FTS"]
+        KW["Keyword / FTS5<br/>memories_fts (V21) + INSTR fallback"]
         FRESH["Recency / freshness"]
         VEC --> RRF["Reciprocal Rank Fusion<br/>k=60"]
         KW --> RRF
@@ -81,7 +81,8 @@ flowchart TB
     end
 
     HYBRID --> SCORE["6-signal scoring<br/>vector·40 + keyword·20 + recency·15<br/>+ importance·10 + decay·10 + tier·5"]
-    SCORE --> HYDE{"HyDE?<br/>cold/abstract query"}
+    SCORE --> DIVERSE["Session diversification<br/>cap noisy session clusters<br/>keep global rows uncapped"]
+    DIVERSE --> HYDE{"HyDE?<br/>cold/abstract query"}
     HYDE -->|yes| HYDE_GEN["LLM writes hypothetical answer<br/>→ embed THAT for retrieval"]
     HYDE -->|no| RERANK
     HYDE_GEN --> RERANK
@@ -207,7 +208,7 @@ When you have those five points internalised, the rest of the doc is just specif
 │  │                     BACKEND (Rust + Tokio)                           │   │
 │  │                                                                      │   │
 │  │  ┌────────────────────────────────────────────────────────────────┐  │   │
-│  │  │                   Commands Layer (60+)                         │  │   │
+│  │  │                   Commands Layer (150+)                        │  │   │
 │  │  │  chat.rs • streaming.rs • memory.rs • brain.rs • voice.rs     │  │   │
 │  │  └────────┬──────────────────────────────┬────────────────────────┘  │   │
 │  │           │                              │                           │   │
@@ -297,7 +298,7 @@ Google Drive file flow. Browser chat injects top browser-RAG hits as the same
 turns back into local memory. Browser-mode QA is covered by focused Vue tests for
 landing anchors, one-click browser authorization, forced pet-preview wiring,
 manga-style pet emotion bubbles, app-window launch events, browser memory
-storage/search, browser sync payloads, and prompt injection.
+storage/search, browser sync payloads, and prompt injection. The memory store also exposes a progressive search shape: compact ranked previews first, with full `MemoryEntry` expansion only for selected IDs.
 
 ---
 
@@ -366,7 +367,7 @@ TerranSoul's memory mirrors human cognition: **short-term** (seconds–minutes),
 │                    LONG-TERM MEMORY                              │
 │                                                                  │
 │  Storage:   SQLite, tier='long', vector-indexed                 │
-│  Capacity:  1M target via native-ann HNSW + self-eviction       │
+│  Capacity:  1M verified (HNSW bench); 1B design path via sharding │
 │  Lifetime:  Permanent — subject to decay + GC                   │
 │  Purpose:   Knowledge base for RAG injection                    │
 │  Injected:  Top 5 via hybrid_search() into [LONG-TERM MEMORY]  │
@@ -570,7 +571,7 @@ Implemented as a pure function in
 ```
 fn classify(memory_type, tags, content) -> CognitiveKind:
  1. If `tags` contains an explicit cognitive tag
- (`episodic` | `semantic` | `procedural` | `judgment`, optionally with
+ (`episodic` | `semantic` | `procedural`/`procedure` | `judgment`, optionally with
  `:detail` suffix), use it. — power-user override.
  2. Else apply structural-type defaults:
  Summary → Episodic (recaps a session)
@@ -688,7 +689,7 @@ Contentful retrieval queries run a hybrid search that combines six signals into 
 ```
 final_score =
  0.40 × vector_similarity // Semantic meaning (cosine distance)
-  + 0.20 × keyword_match // Exact word overlap (BM25-like)
+  + 0.20 × keyword_match // FTS5 full-text match (V21) with INSTR fallback
   + 0.15 × recency_bias // How recently accessed
   + 0.10 × importance_score // User-assigned priority (1–5)
   + 0.10 × decay_score // Freshness multiplier (0.0–1.0)
@@ -759,12 +760,14 @@ final_score =
 > - **Cloud embedding API** — vector RAG works in free/paid modes too
 > - **Fast chat path** (2026-05-09) — `should_skip_rag` / `shouldUseFastChatPath` skip embed + hybrid search for empty memory stores and short content-light turns, avoiding local embedding model swaps on greetings
 > - **LocalOllama VRAM guard** (2026-05-09) — production state starts with a 5-minute startup quiet window, pre-warms the chat model before the embedding queue starts, pauses local embedding ticks during active chat, sends `keep_alive: 0` on embed calls, `keep_alive: "30m"` on chat calls, and `think:false` on the hot stream so thinking models do not spend seconds silently before visible text
-> - **RRF fusion** — live desktop and paired-mobile chat use thresholded hybrid eligibility followed by Reciprocal Rank Fusion (k=60) + query-intent boosts for final prompt ordering
+> - **RRF fusion** — live desktop and paired-mobile chat use thresholded hybrid eligibility followed by Reciprocal Rank Fusion (k=60), session diversification, and query-intent boosts for final prompt ordering
 > - **HyDE** — LLM-hypothetical-document embedding for cold/abstract queries
 > - **Cross-encoder rerank** — LLM-as-judge scores (query, doc) pairs 0–10; RRF/HyDE search defaults rerank on and prunes below threshold 0.55 before prompt injection
 > - **Relevance threshold** — only entries above a configurable score are injected
+> - **Progressive disclosure search** — `progressive_search_memories` returns compact ranked previews first and expands selected full rows by ID
 > - **Semantic chunking** — `text-splitter` crate replaces naive word-count splitter
 > - **NotebookLM-style source guides** — one compact `summary` row per source lets broad document questions retrieve a source guide before raw chunks
+> - **N-to-1 consolidation synthesis** — idle consolidation creates parent `summary` memories from related child clusters, sets child `parent_id`, and records `derived_from` graph edges
 > - **Auto-edge extraction on ingest** — document ingest best-effort proposes typed KG edges after storing/embedding new chunks
 > - **Contextual Retrieval** — Anthropic 2024 approach prepends doc context to chunks
 > - **Contradiction resolution** — LLM-powered conflict detection + soft-closure
@@ -810,7 +813,8 @@ User types: "What are the filing deadlines?"
 │               limit=5)                                              │
 │                                                                      │
 │ Scans ALL memories in SQLite, scores each with 6 signals,          │
-│ returns top 5 by final_score.                                       │
+│ fuses/reranks candidates, caps noisy non-empty session clusters,   │
+│ and returns top 5 by final_score.                                   │
 │                                                                      │
 │ Results:                                                             │
 │   #1  score=0.89  "Cook County Rule 14.3: 30-day notice"           │
@@ -969,8 +973,9 @@ Default builds return a clear disabled message from `WasmRunner`; rebuild with
 │  Storage:   BLOB column in SQLite (768 × 4 bytes = 3 KB each)   │
 │  Vector index:                                                    │
 │    Default: pure-Rust linear cosine scan (loader-stable CI/MCP)  │
-│    native-ann: persisted usearch HNSW vectors.usearch file       │
-│                O(log n) search for large local stores            │
+│    native-ann: per-shard persisted usearch HNSW files            │
+│      <app-data>/vectors/<tier>__<kind>.usearch (+ .quant sidecar) │
+│      shard fan-out + RRF merge keeps retrieval bounded at scale  │
 │                                                                   │
 │  Memory budget:                                                   │
 │    1,000 memories   ×  3 KB  =    3 MB                           │
@@ -1250,11 +1255,21 @@ command layer to prevent runaway expansion.
 
 ## 7. Visualization Layers
 
-The memory graph is hard to visualize in a single UI because it spans three tiers, multiple categories, thousands of entries, and complex relationships. The solution: **three complementary visualization layers**.
+The memory graph is hard to visualize in a single UI because it spans three tiers, multiple categories, thousands of entries, and complex relationships. The solution: **four complementary visualization layers**.
 
-### Layer 1: In-App (Cytoscape.js)
+> **Scaling note:** For datasets past ~50k nodes, the 2D/3D renderers cannot
+> show everything at once. The `memory_graph_page` paged endpoint (see
+> [`billion-scale-retrieval-design.md`](billion-scale-retrieval-design.md)
+> Phase 5) streams LOD pages to the viewport. Supernodes at overview zoom,
+> neighbourhood expand on focus, never more than ~5 000 visible nodes.
 
-The primary visualization, rendered inside TerranSoul's Memory tab:
+### Layer 1: In-App 2D Graph (sigma.js WebGL + Canvas2D fallback)
+
+The primary 2D visualization, rendered inside TerranSoul's Memory tab via
+`MemoryGraph.vue`. Uses sigma.js WebGL backend for performance (handles
+10k+ nodes smoothly); falls back to Canvas2D in non-WebGL environments
+(Vitest / jsdom). Pulls paged data from `memory_graph_page` on viewport
+change / zoom / focus.
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
@@ -1535,13 +1550,24 @@ This is intentional: neither side ever silently destroys content the other side 
 
 ## 8. SQLite Schema
 
-### Current Canonical Schema (V15)
+### Current Canonical Schema (V21)
 
 Collapsed the pre-release migration runner into a single canonical
 initializer at `src-tauri/src/memory/schema.rs`. Fresh SQLite databases are
-created directly at V15, and `schema_version` records one canonical row rather
-than a historical migration ledger. V14/V15 upgrade guards add
-`pending_embeddings` and `protected` for existing V13/V14 databases.
+created directly at the current version, and `schema_version` records one
+canonical row rather than a historical migration ledger. Incremental upgrade
+guards bring existing databases forward (V14→V15→…→V21).
+
+**Schema version history (post-V15 additions):**
+
+| Version | Feature | Key tables/indexes added |
+|---|---|---|
+| V15 | Baseline (memories, edges, versions, conflicts, devices, sync, pending_embeddings) | — |
+| V16–V20 | Embedding queue, ANN flush, metrics, capacity eviction, maintenance state | Various |
+| V21 | FTS5 keyword index + paged graph infra (Chunk 48.5 / 48.6) | `memories_fts` (external-content FTS5), composite covering indexes `(src_id, rel_type)` / `(dst_id, rel_type)` on `memory_edges`, `memory_graph_clusters` |
+
+> See [`docs/billion-scale-retrieval-design.md`](billion-scale-retrieval-design.md)
+> for the full billion-scale scaling plan that motivated V21.
 
 ```sql
 CREATE TABLE schema_version (
@@ -1620,6 +1646,21 @@ CREATE INDEX idx_edges_dst  ON memory_edges(dst_id);
 CREATE INDEX idx_edges_type ON memory_edges(rel_type);
   CREATE INDEX idx_edges_valid_to ON memory_edges(valid_to);
   CREATE INDEX idx_edges_edge_source ON memory_edges(edge_source);
+  -- V21: composite covering indexes for O(log n) paged adjacency (billion-scale)
+  CREATE INDEX idx_edges_src_rel ON memory_edges(src_id, rel_type);
+  CREATE INDEX idx_edges_dst_rel ON memory_edges(dst_id, rel_type);
+
+  -- V21: FTS5 external-content keyword index (billion-scale Phase 4)
+  CREATE VIRTUAL TABLE memories_fts USING fts5(content, tags, content=memories, content_rowid=id, tokenize='unicode61');
+
+  -- V21: pre-aggregated graph cluster stats (billion-scale Phase 5)
+  CREATE TABLE memory_graph_clusters (
+    cognitive_kind TEXT PRIMARY KEY,
+    node_count INTEGER NOT NULL DEFAULT 0,
+    edge_count INTEGER NOT NULL DEFAULT 0,
+    avg_importance REAL NOT NULL DEFAULT 0.0,
+    refreshed_at INTEGER NOT NULL DEFAULT 0
+  );
 
   CREATE TABLE memory_versions (
  id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2574,17 +2615,24 @@ million-memory target.
 
 ## 16. Scaling Roadmap
 
+> **Billion-scale path (Phase 48):** For scaling past 10M memories toward 1B
+> on a single workstation, see
+> [`docs/billion-scale-retrieval-design.md`](billion-scale-retrieval-design.md).
+> That doc covers sharded HNSW, IVF-PQ disk-backed ANN, FTS5, paged graph,
+> and backpressure. Phases 4–5 and cross-cutting rules are shipped as of
+> schema V21 (2026-05-11).
+
 ### Current Limits
 
 | Metric | Current | Target |
 |--------|---------|--------|
-| Total memories | ~500 (brute-force LLM search) | 100,000+ (hybrid search) |
-| Search latency | HNSW smoke p99 0.86 ms at 10k vectors | p99 <= 100 ms at 1M entries (gated by `bench-million`) |
+| Total memories | Tested to 1M (HNSW bench) | 1B (billion-scale design) |
+| Search latency | HNSW smoke p99 0.86 ms at 10k; FTS5 keyword < 1 ms | p99 ≤ 100 ms at 1M (gated by `bench-million`) |
 | Embedding model | nomic-embed-text (768-dim) | Same (good quality/size ratio) |
 | RAG quality | 60% (no embed) to 100% (Ollama) | 100% via cloud embed API |
-| Visualization | Cytoscape.js with typed graph edges (V5) | + Obsidian vault export |
-| Categories | 4 types (flat) | 8 categories (hierarchical) |
-| Relationships | Typed entity-relationship graph (V5) | Conflict detection + temporal links |
+| Visualization | sigma.js WebGL 2D + Three.js/d3-force-3d 3D + paged graph | Billion-node LOD streaming |
+| Categories | 8 categories (hierarchical prefix tags) | — (complete) |
+| Relationships | Typed KG (V5) + temporal + conflict detect + covering indexes | Billion-edge paged adjacency |
 
 ### Phase Plan
 
@@ -2596,7 +2644,7 @@ million-memory target.
 │  ├── ✓ Three-tier memory model (short/working/long)                │
 │  ├── ✓ Hybrid 6-signal search                                      │
 │  ├── ✓ Exponential decay + GC                                      │
-│  ├── ✓ Cytoscape.js graph visualization                            │
+│  ├── ✓ sigma.js WebGL + Three.js 3D graph visualization            │
 │  ├── ✓ LLM extract/summarize/embed                                 │
 │  └── ✓ Deduplication via cosine threshold                          │
 │                                                                     │
@@ -2699,13 +2747,39 @@ million-memory target.
 │  │     INCORRECT,            ); query-rewrite + web-search          │
 │  │     fallback is                                                  │
 │  ├── ✓ Sleep-time consolidation (Letta-style background job that    │
-│  │     compresses/links short→working→long during idle)             │
+│  │     compresses, links, and creates N-to-1 summary parents)        │
 │  │     (`memory::consolidation`, schedule via workflows)             │
 │  ├── ✓ Temporal knowledge graph (Zep / Graphiti-style valid_from / │
 │  │     valid_to columns on memory_edges, V6 schema)                │
 │  └── ✓ Matryoshka embeddings (truncate to 256-dim fast pass +    │
 │        full-dim re-rank; `memory::matryoshka` module +              │
 │        `matryoshka_search_memories` Tauri command)                  │
+│                                                                     │
+│  PHASE 7 — Billion-Scale (✅ Partially shipped — see                │
+│            docs/billion-scale-retrieval-design.md)                   │
+│  ├── ✓ Sharded retrieval scaffold (memory/sharded_retrieval.rs)    │
+│  ├── ✓ Paged graph endpoint (memory_graph_page) + LOD viewport     │
+│  ├── ✓ FTS5 per-shard keyword index (memories_fts, schema V21)     │
+│  ├── ✓ Composite covering indexes + memory_graph_clusters (V21)    │
+│  ├── ✓ Backpressure (shard_max_entries=2M, reject at capacity)     │
+│  ├── ✓ Hot-cache (60s TTL, generation-based invalidation)          │
+│  ├── ✓ Health surface (ShardHealthSummary in brain_health MCP)     │
+│  ├── ✓ Router health surface (`router_health` in brain_health MCP;  │
+│  │    built_at/age/centroid_count/stale + refresh policy state)    │
+│  ├── ✓ Sharded HNSW (one usearch index per ShardKey) + durable     │
+│  │    coarse router persistence (`vectors/shard_router.json`)      │
+│  │    with lazy load/rebuild fallback                              │
+│  ├── ✓ Router refresh scheduler policy (cooldown + mutation        │
+│  │    threshold, forced refresh on AnnCompact maintenance)         │
+│  ├── ✓ Disk-backed ANN migration sidecar path (`memory/disk_backed_ann`; │
+│  │    `MemoryStore::disk_ann_plan` + `run_disk_ann_migration_job`, │
+│  │    writes `vectors/<shard>.ivfpq.json` on AnnCompact)           │
+│  ├── ✓ Disk ANN health surface (`disk_ann_health` in brain_health MCP; │
+│  │    eligible candidates vs sidecar-ready shards)                 │
+│  ├── ✓ Manual migration control surface (`disk_ann_plan_preview`,   │
+│  │    `disk_ann_migration_status`, `run_disk_ann_migration`) for    │
+│  │    deterministic operator-triggered sidecar batches              │
+│  └── ○ Full IVF-PQ index build/search path for migrated shards     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -2763,7 +2837,7 @@ const info = await invoke('get_schema_info');
 
 | Feature | `search_memories` | `semantic_search_memories` | `hybrid_search_memories` |
 |---|---|---|---|
-| Method | SQL `LIKE '%keyword%'` | Cosine similarity | 6-signal scoring |
+| Method | FTS5 full-text (with INSTR fallback) | Cosine similarity | 6-signal scoring |
 | Speed | <1ms (any size) | ~50ms embed + <5ms search | ~50ms embed + <5ms search |
 | Accuracy | Exact match only | Understands meaning | Best of both worlds |
 | Requires Brain | No | Yes (Ollama for embedding) | Partial (degrades gracefully) |
@@ -2771,7 +2845,7 @@ const info = await invoke('get_schema_info');
 
 ### "How does the memory graph connect to categories?"
 
-Currently, the Cytoscape.js graph connects nodes (memories) via shared tags. With the proposed category taxonomy (§3), the graph gains a second axis:
+The in-app sigma.js/Three.js graph connects nodes (memories) via typed edges in `memory_edges`. With the category taxonomy (§3), the graph gains a second axis:
 
 - **Tags** create horizontal connections (memories about the same topic)
 - **Categories** create vertical grouping (all personal info, all domain knowledge, etc.)
@@ -2843,7 +2917,7 @@ Quick reference for all diagrams in this document:
 | 9 | **Late Chunking** ([Jina AI, Sep 2024](https://jina.ai/news/late-chunking-in-long-context-embedding-models/)) | Embed the *whole* document with a long-context embedding model first, then mean-pool per-chunk token windows — preserves cross-chunk context | ✅ | `memory::late_chunking` now includes pooling plus chunk↔token alignment (`CharSpan`, `token_spans_for_char_spans`), and `run_ingest_task` uses it behind `AppSettings.late_chunking`. `OllamaAgent::embed_tokens` calls `/api/embed` with `truncate=false` and accepts token-vector response shapes with offsets or token text. If the local model returns standard pooled embeddings, ingestion falls back to the existing per-chunk embedding path.. |
 | 10 | **Cross-encoder reranking** (BGE-reranker-v2-m3, Cohere Rerank 3, etc.) | Second-pass scorer over top-k candidates with a query-doc joint encoder, much higher precision than bi-encoder cosine | ✅ | `src-tauri/src/memory/reranker.rs` (prompt + score parser + reorder logic, 14 unit tests) + `OllamaAgent::rerank_score` + `rerank_search_memories` Tauri command. Uses **LLM-as-judge** with the active brain (no extra model download). Unscored candidates are kept rather than dropped, preserving recall when the brain is flaky. Interface (`(query, document) -> Option<u8>`) is identical to a future BGE/mxbai backend so swapping is a one-line change. |
 | 11 | **Matryoshka Representation Learning** (Kusupati et al., 2022; widely adopted 2024) | One embedding model, truncatable to 256 / 512 / 768 dim with graceful quality degradation — cheap fast first pass + full-dim re-rank | ✅ | `src-tauri/src/memory/matryoshka.rs` — `truncate_and_normalize` + `two_stage_search`, plus `matryoshka_search_memories` Tauri command. Default fast-dim 256 for `nomic-embed-text`.. |
-| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | ✅ | `src-tauri/src/memory/consolidation.rs` — `run_sleep_time_consolidation` job runs during idle, links short→working→long, surfaces stats via `ConsolidationResult`.. |
+| 12 | **Letta (formerly MemGPT) sleep-time memory** ([Letta, 2024](https://www.letta.com/blog/sleep-time-compute)) | Background "sleep" job during idle compresses, links, and consolidates short → working → long; writable structured memory blocks | ✅ | `src-tauri/src/memory/consolidation.rs` — `run_sleep_time_consolidation` job runs during idle, links short→working→long, synthesizes related child clusters into parent `summary` rows, sets child `parent_id`, records `derived_from` edges, and surfaces stats via `ConsolidationResult`. |
 | 13 | **Zep / Graphiti temporal KG** ([getzep/graphiti, 2024](https://github.com/getzep/graphiti)) | Knowledge graph where every edge has `valid_from` / `valid_to` timestamps; supports point-in-time queries and contradicting-fact resolution | ✅ | The canonical schema includes two nullable Unix-ms columns on `memory_edges` (`valid_from` inclusive, `valid_to` exclusive — open ends mean "always"). `MemoryEdge::is_valid_at(t)` is the pure interval predicate; `MemoryStore::get_edges_for_at(memory, dir, valid_at)` is the point-in-time query (when `valid_at = None` it preserves the legacy "return all edges" behaviour for full back-compat). `MemoryStore::close_edge(id, t)` records supersession; pairing it with `add_edge { valid_from: Some(t) }` expresses "fact X changed value at time t" as two non-destructive rows. The `add_memory_edge` Tauri command gained `valid_from` / `valid_to` parameters; the `close_memory_edge` command exposes supersession to the frontend. Edge unit tests plus canonical schema tests cover the shape. |
 | 14 | **Agentic RAG** (industry term, 2024–2026) | RAG embedded in an agent loop: plan → retrieve → reflect → re-retrieve → generate, with tool use | 🟡 | Foundations: roster + workflow engine. Phase 6: explicit retrieve-as-tool wiring. |
 | 15 | **Context Engineering** (discipline, 2025) | Systematic management of *what* enters the context window: history, tool descriptions, retrieved chunks, structured instructions — beyond prompt engineering | 🟡 | Persona + `[LONG-TERM MEMORY]` block + animation tags is a starting point (§4 RAG injection flow). Phase 6: explicit context budgeter. |
@@ -2949,7 +3023,7 @@ Each row below is one selection point. The "Decided by" column tells you **wheth
 | 10a | **Intent-classifier fast path** | Pure code | Short content-light turns return `chat` without an LLM classifier request; contentful/setup turns still use the classifier | `brain/intent_classifier.rs::should_use_fast_chat_path` + `src/stores/conversation.ts::shouldUseFastChatPath` | Prevents LocalOllama classifier/chat contention on greetings |
 | 11 | **Memory relevance ranking (LLM mode)** | **LLM** | `semantic_search_entries` sends all entries to LLM with a ranking prompt | `memory/brain_memory.rs` | Falls back to `hybrid_search` if Ollama unreachable |
 | 12 | **Fact extraction from chat** | **LLM** | `extract_facts` prompts LLM for ≤5 atomic facts | `memory/brain_memory.rs` | None — feature unavailable without an LLM brain |
-| 13 | **Cognitive kind** (episodic / semantic / procedural / judgment) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:* / judgment:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` + `src/utils/cognitive-kind.ts` | Defaults to `Semantic` |
+| 13 | **Cognitive kind** (episodic / semantic / procedural / judgment) | Pure code | `cognitive_kind::classify(memory_type, tags, content)` — tag prefix `episodic:* / semantic:* / procedural:*` plus `procedure` alias / `judgment:*` overrides; otherwise tag → type → content order, verb/hint heuristics | `memory/cognitive_kind.rs` + `src/utils/cognitive-kind.ts` | Defaults to `Semantic` |
 | 14 | **Knowledge-graph edge relation type** | **LLM** + normaliser | `extract_edges_via_brain` prompts LLM with the 17-type taxonomy; `edges::normalise_rel_type` snaps free-form types to canonical | `memory/edges.rs` | Free-form edges allowed (preserved as-is) |
 | 15 | **Storage backend** | User (compile-time + config) | Cargo features `postgres` / `mssql` / `cassandra`; runtime `StorageConfig` selects which `StorageBackend` impl is bound | `memory/backend.rs` + `lib.rs` startup | SQLite (always available, default) |
 | 16 | **Agent dispatch** | Caller / orchestrator | `AgentOrchestrator::dispatch(agent_id, msg)`; `agent_id="auto"` → `default_agent_id` ("stub") | `orchestrator/agent_orchestrator.rs:34` | Stub agent when no others registered |
@@ -3138,6 +3212,8 @@ After every auto-learn extraction, the frontend accumulates a running count of s
 - **Pure prompt + parse** — `persona::drift::build_drift_prompt` and `parse_drift_reply` are I/O-free and exhaustively unit-tested (14 tests).
 - **Non-blocking** — drift check failure never breaks chat. If the brain can't parse a reply, a "no drift" report is returned.
 - **Fact-count-based** — uses accumulated facts (not turns) as the trigger, so quiet sessions with few extractable facts don't waste LLM calls.
+
+`PersonaTraits` also carries a backward-compatible `voiceProfile` used by the persona prompt and TTS model editor. It records gender, age, pitch, delivery style, English accent, Chinese dialect, and provider voice name; `buildPersonaBlock` renders one concise `Voice design:` line so the chat brain and voice providers share the same speaker intent.
 
 ### 21.7 Roadmap gaps (already tracked in §16)
 
@@ -3366,6 +3442,21 @@ from the first available source in this order: `TERRANSOUL_MCP_SHARED_DIR`,
 `<data_dir>/shared`, `<cwd>/mcp-data/shared`, then compiled-in SQL fallback.
 This keeps release builds deterministic while letting local dev/release runs
 consume the checked-in `mcp-data/shared/` dataset without repackaging.
+
+**Display-free MCP HTTP profile (`terransoul --mcp-http`, container/CI).** The
+containerized MCP stack uses the same `AppStateGateway` and axum HTTP transport
+as the tray profile, but it does not start the Tauri window, system tray, or
+WebView runtime. `Dockerfile.mcp` builds the release binary with
+`--no-default-features --features headless-mcp`, bakes in the checked-in
+`mcp-data/shared/` seed snapshot required by the compiled fallback paths, and
+starts `terransoul --mcp-http`. `docker-compose.mcp.yml` keeps runtime state in
+the `terransoul-mcp-data` volume, binds `127.0.0.1:7423`, disables idle shutdown
+with `TERRANSOUL_MCP_IDLE_TIMEOUT=0`, and healthchecks `/health`. User-facing
+aliases are explicit (`npm run mcp:container`, `mcp:container:config`,
+`mcp:container:logs`, `mcp:container:stop`) so `npm run mcp` remains the local
+tray/coding-agent workflow. This container path is for CI/research/headless
+services only; TerranSoul's desktop distribution remains a native Tauri app and
+must not gain a mandatory Docker runtime dependency.
 
 **Capability profile.** `GatewayCaps::default` remains read-only for tests and
 future embedders, but explicit MCP transports use `mcp::transport_caps` with

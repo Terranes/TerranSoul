@@ -318,6 +318,11 @@ fn spawn_worker_inner(
         let mut interval = tokio::time::interval(WORKER_TICK_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut consecutive_rate_limits: u32 = 0;
+        // Periodic backfill counter: re-scan for unembedded entries every
+        // BACKFILL_EVERY ticks (~60 s) to catch memories that arrived via
+        // CRDT sync or other paths that bypass the embedding queue.
+        const BACKFILL_EVERY: u32 = 6;
+        let mut ticks_since_backfill: u32 = 0;
 
         loop {
             tokio::select! {
@@ -326,6 +331,20 @@ fn spawn_worker_inner(
                     break;
                 }
                 _ = interval.tick() => {}
+            }
+
+            // Periodic backfill: catch entries from CRDT sync or other
+            // non-queue insertion paths (multi-device safety net).
+            ticks_since_backfill += 1;
+            if ticks_since_backfill >= BACKFILL_EVERY {
+                ticks_since_backfill = 0;
+                if let Ok(s) = state.memory_store.lock() {
+                    if let Ok(n) = backfill_queue(s.conn()) {
+                        if n > 0 {
+                            eprintln!("[embed-queue] periodic backfill: {n} new entries queued");
+                        }
+                    }
+                }
             }
 
             // If paused due to rate limiting, skip this tick.

@@ -31,8 +31,12 @@ export const useVoiceStore = defineStore('voice', () => {
   const config = ref<VoiceConfig>({
     asr_provider: null,
     tts_provider: null,
+    tts_voice: null,
+    tts_pitch: 0,
+    tts_rate: 0,
     api_key: null,
     endpoint_url: null,
+    hotwords: [],
   });
   const isLoading = ref(false);
   const error = ref<string | null>(null);
@@ -139,8 +143,12 @@ export const useVoiceStore = defineStore('voice', () => {
     config.value = {
       asr_provider: null,
       tts_provider: null,
+      tts_voice: null,
+      tts_pitch: 0,
+      tts_rate: 0,
       api_key: null,
       endpoint_url: null,
+      hotwords: [],
     };
   }
 

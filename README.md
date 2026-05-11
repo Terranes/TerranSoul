@@ -9,7 +9,7 @@
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![Tauri 2](https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white)](https://tauri.app/)
 
-TerranSoul is a desktop/mobile AI companion with a 3D VRM avatar, persistent memory, semantic-search RAG, and a self-running MCP brain server that gives AI coding agents (Copilot, Claude Code, Cursor, Codex) project-wide knowledge, retrieval, and self-improvement — all local-first and offline-capable. TerranSoul's 3D assistant is not only a chat UI + avatar layer. It is built on a coding harness and context-engineering stack that keeps agent work reliable over long sessions.
+TerranSoul is a local 3D AI assistant and built on harness/context engeering for daily live reliability. It combines hybrid-memory RAG, knowledge graphs, and self-running MCP infrastructure to give AI coding agents (Copilot, Claude Code, Cursor, Codex) persistent project-wide context, semantic retrieval, and self-improving workflows — fully offline-capable with pluggable local or cloud LLMs.
 
 If you want a personal AI that **remembers everything**, **runs on your hardware**, **everything offline** and **makes your other AI tools smarter by sharing its brain** — this is it.
 
@@ -95,10 +95,23 @@ npm run mcp                              # Starts on 127.0.0.1:7423
 curl http://127.0.0.1:7423/health        # Verify
 ```
 
+For CI/research environments that need isolation without opening the Tauri
+tray runtime, use the display-free MCP container:
+
+```bash
+npm run mcp:container          # docker compose up -d --build
+npm run mcp:container:config   # validate compose config
+npm run mcp:container:logs     # follow container logs
+npm run mcp:container:stop     # stop the container stack
+```
+
+The desktop app remains a native Tauri install; containers are for MCP/headless
+services and research infrastructure only.
+
 **Why this matters:** Your coding agents (Copilot, Claude Code, Cursor, Codex) gain:
 
 - **Project memory** — decisions, architecture facts, lessons learned persist across sessions
-- **Semantic search** — RRF + HyDE + cross-encoder reranking over 1M+ memories
+- **Semantic search** — diversified RRF + HyDE + cross-encoder reranking over 1M+ memories, with compact-first result previews for low-token agent workflows
 - **Code intelligence** — symbol index, impact analysis, cross-repo contracts
 - **Self-improvement** — agents write learnings back to the brain for future sessions
 - **10–50× context reduction** — retrieval returns focused facts, not raw file dumps
@@ -135,9 +148,9 @@ This is what lets TerranSoul support long-running, multi-agent coding workflows 
 
 - **3D VRM Avatar** — lip sync, expressions, motion capture, spring-bone physics. Pet mode floats on your desktop.
 - **Multi-Provider Brain** — Free cloud (Pollinations/OpenRouter/Gemini), paid (OpenAI/Anthropic/Groq), or local Ollama. Switch anytime.
-- **Persistent Memory + RAG** — thresholded hybrid eligibility, RRF + query-intent prompt ordering for live chat, HyDE, cross-encoder reranker, knowledge graph with typed edges, RAG-contextual intent classification for setup/quest routing from user-customizable seeded system defaults, a deterministic shortcut for explicit onboarding phrases like "Learn from my documents", and a fast chat path that skips retrieval for greetings so LocalLLM replies stay under 1s when warm. 1M+ entries benchmarked.
+- **Persistent Memory + RAG** — thresholded hybrid eligibility, session-diversified RRF + query-intent prompt ordering for live chat, cognitive-kind tags including `procedure`/`procedural` aliases, HyDE, cross-encoder reranker, N-to-1 consolidation summaries with parent/child links, knowledge graph with typed edges, progressive compact-first search responses, RAG-contextual intent classification for setup/quest routing from user-customizable seeded system defaults, a deterministic shortcut for explicit onboarding phrases like "Learn from my documents", and a fast chat path that skips retrieval for greetings so LocalLLM replies stay under 1s when warm. 1M+ entries benchmarked.
 - **Knowledge Wiki** — `/digest`, `/spotlight`, `/serendipity`, `/revisit` commands for graph curation.
-- **Voice** — ASR (Web Speech, Groq Whisper, OpenAI Whisper) + TTS (Web Speech, OpenAI). Full lip-sync pipeline.
+- **Voice** — ASR (Web Speech, Groq Whisper, OpenAI Whisper) + TTS (Web Speech, OpenAI), editable model/persona voice profiles, and full lip-sync pipeline.
 - **Skill Tree** — 40+ skills across 5 categories. RPG-style quest progression, auto-detection, combo unlocks.
 - **Device Sync** — CRDT-based peer-to-peer replication over QUIC/WebSocket. QR pairing.
 - **Hive Federation** — opt-in relay for shared knowledge + distributed AI jobs. Ed25519-signed bundles, per-memory privacy ACLs.
@@ -161,8 +174,27 @@ This is what lets TerranSoul support long-running, multi-agent coding workflows 
 | Bundler | Vite 6.x |
 | DB | SQLite (local, 1M+ benchmarked), Postgres (hive relay) |
 | LLM | Ollama (local), OpenAI/Anthropic/Groq (cloud), Pollinations (free) |
-| Vector | usearch HNSW (desktop), pure-Rust fallback (mobile) |
+| Vector | per-shard usearch HNSW (desktop, `vectors/<tier>__<kind>.usearch`), pure-Rust fallback (mobile) |
 | Sync | CRDT (LWW + 2P-Set) over QUIC/WebSocket |
+
+---
+
+At billion-scale fan-out, TerranSoul also uses a persisted coarse shard router
+(`vectors/shard_router.json`) that stores centroid vectors + shard mapping,
+allowing lazy reload of top-p shard routing across restarts before rebuilding
+from live embeddings.
+
+Router maintenance is now policy-driven: rebuild attempts are cooldown-gated,
+triggered by stale/missing routers or mutation-volume thresholds, and forced
+on scheduled maintenance (`AnnCompact`) to avoid repeated on-query rebuild
+bursts under heavy traffic. MCP `brain_health` also exposes router metadata
+(`router_health`) including build age, centroid count, and staleness.
+
+Phase 3 disk-backed ANN now includes an executable migration hook:
+`MemoryStore::run_disk_ann_migration_job` writes per-shard IVF-PQ sidecar
+metadata (`vectors/<shard>.ivfpq.json`) from deterministic planner candidates,
+`AnnCompact` triggers sidecar writes on schedule, and MCP `brain_health`
+surfaces `disk_ann_health` (eligible candidates, sidecars present, and gaps).
 
 ---
 
@@ -174,7 +206,7 @@ This is what lets TerranSoul support long-running, multi-agent coding workflows 
 | **Paid API** | Cloud (your key) | API key | Best quality (GPT-4o, Claude, etc.) |
 | **Local Ollama** | Fully offline | ~2 GB download | Maximum privacy, no internet |
 
-Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Contentful setup requests still use the backend classifier in every brain mode, including Local Ollama; `classify_intent` retrieves app knowledge from the memory/RAG store and also preserves a small deterministic shortcut for explicit onboarding phrases like **"Learn from my documents"** so Scholar's Quest still opens when a local model returns `unknown` for the exact tutorial wording. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions use thresholded memory eligibility and RRF + query-intent prompt ordering; Local Ollama keeps this keyword/freshness-only on the hot path when embedding would swap models.
+Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Contentful setup requests still use the backend classifier in every brain mode, including Local Ollama; `classify_intent` retrieves app knowledge from the memory/RAG store and also preserves a small deterministic shortcut for explicit onboarding phrases like **"Learn from my documents"** so Scholar's Quest still opens when a local model returns `unknown` for the exact tutorial wording. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions use thresholded memory eligibility and session-diversified RRF + query-intent prompt ordering, with uncapped global memories and a default cap for noisy per-session clusters; Local Ollama keeps this keyword/freshness-only on the hot path when embedding would swap models.
 
 Local Ollama hardware recommendations favor responsive interactive models by default; larger catalogue models remain selectable for users who prefer slower, heavier reasoning runs.
 
@@ -238,6 +270,7 @@ npx vitest run                 # Frontend tests (1738 passing)
 cargo test                     # Backend tests (2383 passing)
 cargo clippy -- -D warnings    # Lint
 npm run mcp                    # Start headless MCP brain (:7423)
+npm run mcp:container          # Start isolated MCP HTTP container (:7423)
 ```
 
 **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cargo clippy -- -D warnings && cargo test`
@@ -257,7 +290,7 @@ Rust Core (150+ commands)
   ├── hive/          — Federation protocol, signing, jobs, privacy
   ├── ai_integrations/mcp/ — MCP server (HTTP + stdio)
   ├── coding/        — Self-improve, DAG runner, task queue
-  ├── persona/       — Traits, drift detection, pack export
+  ├── persona/       — Traits, voice profile design, drift detection, pack export
   ├── identity/      — Ed25519 device keys
   ├── link/          — CRDT sync over QUIC/WebSocket
   └── orchestrator/  — Agent routing, capability gates

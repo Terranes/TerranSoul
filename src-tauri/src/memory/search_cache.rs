@@ -21,8 +21,9 @@ use std::time::Instant;
 /// Default cache capacity (number of unique queries cached).
 pub const DEFAULT_CAPACITY: usize = 64;
 
-/// Default TTL in milliseconds (30 seconds).
-pub const DEFAULT_TTL_MS: u64 = 30_000;
+/// Default TTL in milliseconds (60 seconds — absorbs duplicate chat-loop
+/// calls and MCP tool re-fetches within one conversational turn).
+pub const DEFAULT_TTL_MS: u64 = 60_000;
 
 // ---------------------------------------------------------------------------
 // Types

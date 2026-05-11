@@ -1,5 +1,6 @@
 pub mod brain_config;
 pub mod brain_store;
+pub mod circuit_breaker;
 pub mod cloud_embeddings;
 pub mod context_budget;
 pub mod doc_catalogue;

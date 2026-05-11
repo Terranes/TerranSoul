@@ -85,6 +85,10 @@ pub struct GraphNode {
     pub is_supernode: bool,
     /// Number of underlying memories. `1` for real nodes.
     pub count: i64,
+    /// UUID of the device that last wrote this entry (multi-device).
+    /// Empty for supernodes.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub origin_device: String,
 }
 
 /// An edge in the paged graph response. May be an aggregated super-edge.
@@ -131,12 +135,13 @@ pub fn build_graph_page(
     let limit = request
         .limit
         .unwrap_or(DEFAULT_GRAPH_LIMIT)
-        .min(MAX_GRAPH_NODES)
-        .max(1);
+        .clamp(1, MAX_GRAPH_NODES);
 
     match request.zoom {
         GraphZoom::Overview => build_overview(entries, edges, total_nodes, total_edges),
-        GraphZoom::Cluster => build_cluster(entries, edges, request, limit, total_nodes, total_edges),
+        GraphZoom::Cluster => {
+            build_cluster(entries, edges, request, limit, total_nodes, total_edges)
+        }
         GraphZoom::Detail => build_detail(entries, edges, request, limit, total_nodes, total_edges),
     }
 }
@@ -175,6 +180,7 @@ fn build_overview(
             degree: 0, // filled in after edge aggregation
             is_supernode: true,
             count,
+            origin_device: String::new(),
         });
         for e in group {
             entry_kind.insert(e.id, *kind);
@@ -216,7 +222,11 @@ fn build_overview(
 
     // Deterministic ordering for tests / stable rendering.
     nodes.sort_by(|a, b| a.id.cmp(&b.id));
-    out_edges.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.target.cmp(&b.target)));
+    out_edges.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then_with(|| a.target.cmp(&b.target))
+    });
 
     GraphPageResponse {
         nodes,
@@ -293,6 +303,7 @@ fn build_detail(
                 degree: *degree.get(&e.id).unwrap_or(&0),
                 is_supernode: false,
                 count: 1,
+                origin_device: e.origin_device.clone().unwrap_or_default(),
             }
         })
         .collect();
@@ -331,9 +342,10 @@ fn build_cluster(
     // Determine the focused kind.
     let focus_kind = request.focus_kind.or_else(|| {
         request.focus_id.and_then(|fid| {
-            entries.iter().find(|e| e.id == fid).map(|e| {
-                classify_cognitive_kind(&e.memory_type, &e.tags, &e.content)
-            })
+            entries
+                .iter()
+                .find(|e| e.id == fid)
+                .map(|e| classify_cognitive_kind(&e.memory_type, &e.tags, &e.content))
         })
     });
 
@@ -385,6 +397,7 @@ fn build_cluster(
                 degree: *degree.get(&e.id).unwrap_or(&0),
                 is_supernode: false,
                 count: 1,
+                origin_device: e.origin_device.clone().unwrap_or_default(),
             }
         })
         .collect();
@@ -410,6 +423,7 @@ fn build_cluster(
             degree: 0,
             is_supernode: true,
             count,
+            origin_device: String::new(),
         });
         for e in group {
             entry_kind.insert(e.id, *kind);
@@ -472,7 +486,11 @@ fn build_cluster(
         .collect();
 
     nodes.sort_by(|a, b| b.degree.cmp(&a.degree).then_with(|| a.id.cmp(&b.id)));
-    out_edges.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.target.cmp(&b.target)));
+    out_edges.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then_with(|| a.target.cmp(&b.target))
+    });
 
     GraphPageResponse {
         nodes,
@@ -510,7 +528,7 @@ fn short_label(content: &str) -> String {
     let mut s = content.split_whitespace().collect::<Vec<_>>().join(" ");
     if s.chars().count() > 60 {
         s = s.chars().take(57).collect::<String>();
-        s.push_str("…");
+        s.push('…');
     }
     s
 }
@@ -628,7 +646,13 @@ mod tests {
         let entries = vec![
             entry(1, MemoryTier::Long, "semantic", "fact A", 3),
             entry(2, MemoryTier::Long, "semantic", "fact B", 3),
-            entry(3, MemoryTier::Long, "procedural", "how to ship: bump tag push", 3),
+            entry(
+                3,
+                MemoryTier::Long,
+                "procedural",
+                "how to ship: bump tag push",
+                3,
+            ),
             entry(4, MemoryTier::Long, "episodic", "yesterday we shipped", 3),
         ];
         let edges = vec![edge(1, 3, "links_to"), edge(2, 4, "links_to")];
@@ -651,8 +675,20 @@ mod tests {
         let entries = vec![
             entry(1, MemoryTier::Long, "semantic", "fact A", 3),
             entry(2, MemoryTier::Long, "semantic", "fact B", 3),
-            entry(3, MemoryTier::Long, "procedural", "how to ship: bump tag push", 3),
-            entry(4, MemoryTier::Long, "procedural", "how to deploy: ssh restart", 3),
+            entry(
+                3,
+                MemoryTier::Long,
+                "procedural",
+                "how to ship: bump tag push",
+                3,
+            ),
+            entry(
+                4,
+                MemoryTier::Long,
+                "procedural",
+                "how to deploy: ssh restart",
+                3,
+            ),
             entry(5, MemoryTier::Long, "episodic", "yesterday we shipped", 3),
         ];
         let edges = vec![edge(1, 3, "r"), edge(2, 5, "r")];
@@ -693,5 +729,47 @@ mod tests {
         let label = short_label(&s);
         assert!(label.chars().count() <= 60);
         assert!(label.ends_with("…"));
+    }
+
+    /// Multi-device: graph nodes carry `origin_device` from the memory entry,
+    /// allowing the frontend to distinguish memories from different devices.
+    #[test]
+    fn detail_zoom_carries_origin_device() {
+        let mut e1 = entry(1, MemoryTier::Long, "semantic", "from desktop", 3);
+        e1.origin_device = Some("device-desktop-001".to_string());
+        let mut e2 = entry(2, MemoryTier::Long, "semantic", "from phone", 3);
+        e2.origin_device = Some("device-phone-002".to_string());
+        let e3 = entry(3, MemoryTier::Long, "semantic", "no device", 3);
+
+        let req = GraphPageRequest {
+            zoom: GraphZoom::Detail,
+            ..Default::default()
+        };
+        let page = build_graph_page(&[e1, e2, e3], &[], &req);
+        let n1 = page.nodes.iter().find(|n| n.id == "m-1").unwrap();
+        assert_eq!(n1.origin_device, "device-desktop-001");
+        let n2 = page.nodes.iter().find(|n| n.id == "m-2").unwrap();
+        assert_eq!(n2.origin_device, "device-phone-002");
+        let n3 = page.nodes.iter().find(|n| n.id == "m-3").unwrap();
+        assert!(n3.origin_device.is_empty());
+    }
+
+    /// Multi-device overview: supernodes don't carry origin_device.
+    #[test]
+    fn overview_supernodes_have_empty_origin_device() {
+        let mut e1 = entry(1, MemoryTier::Long, "semantic", "fact", 3);
+        e1.origin_device = Some("dev-a".to_string());
+        let mut e2 = entry(2, MemoryTier::Long, "episodic", "yesterday", 3);
+        e2.origin_device = Some("dev-b".to_string());
+
+        let req = GraphPageRequest {
+            zoom: GraphZoom::Overview,
+            ..Default::default()
+        };
+        let page = build_graph_page(&[e1, e2], &[], &req);
+        for node in &page.nodes {
+            assert!(node.is_supernode);
+            assert!(node.origin_device.is_empty());
+        }
     }
 }

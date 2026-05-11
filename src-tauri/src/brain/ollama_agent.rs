@@ -80,7 +80,8 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
             .no_proxy()
             .http1_only()
             .pool_max_idle_per_host(0)
-            .build() else {
+            .build()
+        else {
             return;
         };
         // 1-token streamed chat forces Ollama to load the weights and warm

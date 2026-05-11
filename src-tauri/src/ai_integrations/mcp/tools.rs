@@ -126,6 +126,19 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "brain_append",
+            "description": "Append a timestamped update to an existing memory entry instead of creating a near-duplicate. Use when information has changed or evolved (\"actually...\", \"we changed our minds\", \"update that\"). Saves a version snapshot of the prior state and re-embeds the merged entry. Requires write capability.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "Existing memory entry id to append to" },
+                    "addition": { "type": "string", "description": "Free-form text to append. Must be non-empty." },
+                    "source": { "type": "string", "description": "Optional source label recorded in the appended block (e.g. 'agent-session', 'chat', 'bookmarklet'). Defaults to 'agent'." }
+                },
+                "required": ["id", "addition"]
+            }
+        }),
+        json!({
             "name": "brain_health",
             "description": "TerranSoul brain status: version, active provider, model, RAG quality, memory count, and descriptions explaining what the numbers mean.",
             "inputSchema": {
@@ -378,6 +391,24 @@ pub async fn dispatch(
                 category,
             };
             gw.ingest_lesson(caps, req)
+                .await
+                .map(|r| serde_json::to_string(&r).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "brain_append" => {
+            let id = args["id"]
+                .as_i64()
+                .ok_or_else(|| "missing required param: id".to_string())?;
+            let addition = args["addition"]
+                .as_str()
+                .ok_or_else(|| "missing required param: addition".to_string())?
+                .to_string();
+            let req = AppendRequest {
+                id,
+                addition,
+                source: args["source"].as_str().map(String::from),
+            };
+            gw.append(caps, req)
                 .await
                 .map(|r| serde_json::to_string(&r).unwrap_or_default())
                 .map_err(|e| e.to_string())
@@ -1968,14 +1999,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 17);
+        assert_eq!(defs.len(), 18);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 34);
+        assert_eq!(defs.len(), 35);
     }
 
     #[test]
@@ -2004,6 +2035,7 @@ mod tests {
             "brain_suggest_context",
             "brain_ingest_url",
             "brain_ingest_lesson",
+            "brain_append",
             "brain_health",
             "brain_failover_status",
             "brain_wiki_audit",
@@ -2021,7 +2053,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[17..]
+        let code_names: Vec<&str> = defs[18..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();

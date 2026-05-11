@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildPersonaBlock, type LearnedMotionRef } from './persona-prompt';
-import { defaultPersona, type PersonaTraits } from '../stores/persona-types';
+import { buildPersonaBlock, buildVoiceDesignInstruction, type LearnedMotionRef } from './persona-prompt';
+import { defaultPersona, migratePersonaTraits, type PersonaTraits } from '../stores/persona-types';
 
 const baseTraits = (overrides: Partial<PersonaTraits> = {}): PersonaTraits => ({
   ...defaultPersona(),
@@ -19,11 +19,11 @@ describe('buildPersonaBlock', () => {
     expect(buildPersonaBlock(baseTraits({ active: false }))).toBe('');
   });
 
-  it('returns empty string when all renderable fields are blank', () => {
+  it('renders voice design when text persona fields are blank', () => {
     const empty = baseTraits({
       name: '', role: '', bio: '', tone: [], quirks: [], avoid: [],
     });
-    expect(buildPersonaBlock(empty)).toBe('');
+    expect(buildPersonaBlock(empty)).toContain('Voice design:');
   });
 
   it('renders the default persona with identity + tone + avoid lines', () => {
@@ -33,14 +33,16 @@ describe('buildPersonaBlock', () => {
     expect(block).toContain('You are Soul, TerranSoul companion.');
     expect(block).toContain('Tone: warm, concise.');
     expect(block).toContain('Never:');
+    expect(block).toContain('Voice design: female adult voice, medium pitch, natural style, American English accent');
   });
 
   it('uses "You are X." when only name is set', () => {
     const block = buildPersonaBlock(baseTraits({
       name: 'Lia', role: '', bio: '', tone: [], quirks: [], avoid: [],
     }));
-    expect(block).toContain('You are Lia.');
-    expect(block).not.toContain(',');
+    const identityLine = block.split('\n').find(line => line.startsWith('You are '));
+    expect(identityLine).toBe('You are Lia.');
+    expect(identityLine).not.toContain(',');
   });
 
   it('uses "You are a Y." when only role is set', () => {
@@ -136,6 +138,28 @@ describe('buildPersonaBlock', () => {
     const block = buildPersonaBlock(baseTraits());
     expect(block.startsWith('\n\n[PERSONA]')).toBe(true);
     expect(block.endsWith('[/PERSONA]')).toBe(true);
+  });
+
+  it('renders whisper, accent, dialect, and provider voice from voice profile', () => {
+    const block = buildPersonaBlock(baseTraits({
+      voiceProfile: {
+        gender: 'male',
+        age: 'elderly',
+        pitch: 'very_low',
+        style: 'whisper',
+        englishAccent: 'british',
+        chineseDialect: 'sichuanese',
+        voiceName: 'en-GB-RyanNeural',
+      },
+    }));
+    expect(block).toContain('Voice design: male elderly voice, very low pitch, whisper style, British English accent, 四川话 Chinese dialect, preferred TTS voice en-GB-RyanNeural.');
+  });
+
+  it('migrates old persona JSON with a default voice profile', () => {
+    const migrated = migratePersonaTraits({ name: 'Old Soul', role: 'guide', active: true });
+    expect(migrated.voiceProfile.gender).toBe('female');
+    expect(migrated.voiceProfile.pitch).toBe('medium');
+    expect(buildVoiceDesignInstruction(migrated.voiceProfile)).toContain('American English accent');
   });
 
   // ── Example dialogue ────────────────────────────────────────────────

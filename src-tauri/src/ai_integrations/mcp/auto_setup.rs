@@ -7,7 +7,8 @@
 //! 2. Upsert the `terransoul-brain` entry.
 //! 3. Atomically write via temp-file + rename.
 //!
-//! Supported clients: VS Code Copilot, Claude Desktop, Codex CLI.
+//! Supported clients: VS Code Copilot, Claude Desktop, Codex CLI, Cursor IDE,
+//! OpenCode, Hermes Agent (NousResearch — YAML-based, marker-managed).
 
 use serde_json::{json, Value};
 use std::fs;
@@ -80,6 +81,31 @@ pub fn opencode_config_path() -> Option<PathBuf> {
     dirs::config_dir().map(|d| d.join("opencode").join("config.json"))
 }
 
+/// Hermes Agent config path (`~/.hermes/cli-config.yaml`).
+///
+/// Hermes (NousResearch) stores its CLI config as YAML under the user
+/// home directory rather than the platform config dir. The MCP servers
+/// block lives at the top-level `mcp_servers:` key.
+///
+/// Native Windows installs use `%LOCALAPPDATA%\hermes\cli-config.yaml`
+/// per the Hermes README; WSL2/Linux/macOS use `~/.hermes/`.
+pub fn hermes_config_path() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        if let Some(local) = dirs::data_local_dir() {
+            let native_dir = local.join("hermes");
+            if native_dir.is_dir() {
+                return Some(native_dir.join("cli-config.yaml"));
+            }
+        }
+        dirs::home_dir().map(|d| d.join(".hermes").join("cli-config.yaml"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        dirs::home_dir().map(|d| d.join(".hermes").join("cli-config.yaml"))
+    }
+}
+
 // ─── Config builders (pure functions) ───────────────────────────────
 
 /// Build the MCP server entry for VS Code / Copilot.
@@ -119,6 +145,217 @@ pub fn build_codex_entry(url: &str, token: &str) -> Value {
         "url": url,
         "token": token
     })
+}
+
+// ─── Hermes Agent (YAML, marker-block) ──────────────────────────────
+
+/// Marker that opens the TerranSoul auto-managed block in Hermes
+/// `cli-config.yaml`. Kept stable so re-runs upsert in place.
+pub const HERMES_BLOCK_BEGIN: &str =
+    "# >>> TerranSoul MCP auto-config (managed; do not edit between markers) >>>";
+
+/// Marker that closes the TerranSoul auto-managed block in Hermes
+/// `cli-config.yaml`.
+pub const HERMES_BLOCK_END: &str = "# <<< TerranSoul MCP auto-config <<<";
+
+/// Build the YAML snippet that registers `terransoul-brain` under
+/// Hermes Agent's `mcp_servers:` key (HTTP transport).
+pub fn build_hermes_yaml_block(url: &str, token: &str) -> String {
+    format!(
+        "{begin}\nmcp_servers:\n  {entry}:\n    url: \"{url}\"\n    headers:\n      Authorization: \"Bearer {token}\"\n    timeout: 120\n    connect_timeout: 60\n{end}\n",
+        begin = HERMES_BLOCK_BEGIN,
+        entry = entry_name(),
+        url = url,
+        token = token,
+        end = HERMES_BLOCK_END,
+    )
+}
+
+/// Build the YAML snippet for Hermes Agent's stdio transport.
+pub fn build_hermes_stdio_yaml_block(exe_path: &str) -> String {
+    format!(
+        "{begin}\nmcp_servers:\n  {entry}:\n    command: \"{exe}\"\n    args: [\"--mcp-stdio\"]\n    timeout: 120\n    connect_timeout: 60\n{end}\n",
+        begin = HERMES_BLOCK_BEGIN,
+        entry = entry_name(),
+        exe = exe_path,
+        end = HERMES_BLOCK_END,
+    )
+}
+
+/// Upsert the TerranSoul-managed block inside `existing` YAML. If a
+/// previous TerranSoul block exists between the markers it is replaced;
+/// otherwise the new block is appended. Returns `(new_text, conflict_warning)`.
+pub fn upsert_hermes_yaml_block(existing: &str, new_block: &str) -> (String, Option<String>) {
+    if let (Some(begin_idx), Some(end_idx)) = (
+        existing.find(HERMES_BLOCK_BEGIN),
+        existing.find(HERMES_BLOCK_END),
+    ) {
+        if end_idx > begin_idx {
+            let after_end = end_idx + HERMES_BLOCK_END.len();
+            let after_end = match existing[after_end..].find('\n') {
+                Some(nl) => after_end + nl + 1,
+                None => existing.len(),
+            };
+            let mut out = String::with_capacity(existing.len() + new_block.len());
+            out.push_str(&existing[..begin_idx]);
+            out.push_str(new_block);
+            out.push_str(&existing[after_end..]);
+            return (out, None);
+        }
+    }
+
+    let warning = detect_hermes_mcp_servers_conflict(existing);
+
+    let mut out = String::with_capacity(existing.len() + new_block.len() + 2);
+    out.push_str(existing);
+    if !existing.is_empty() && !existing.ends_with('\n') {
+        out.push('\n');
+    }
+    if !existing.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(new_block);
+    (out, warning)
+}
+
+/// Detect a top-level `mcp_servers:` key outside the TerranSoul-managed
+/// block. Naive line scan — false positives only produce a warning.
+fn detect_hermes_mcp_servers_conflict(existing: &str) -> Option<String> {
+    let mut inside_managed = false;
+    for line in existing.lines() {
+        if line.contains(HERMES_BLOCK_BEGIN) {
+            inside_managed = true;
+            continue;
+        }
+        if line.contains(HERMES_BLOCK_END) {
+            inside_managed = false;
+            continue;
+        }
+        if inside_managed {
+            continue;
+        }
+        let trimmed = line.trim_start();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        if line.starts_with("mcp_servers:") || line.starts_with("mcp_servers ") {
+            return Some(
+                "Hermes config already defines a top-level `mcp_servers:` key outside the \
+                 TerranSoul-managed block. YAML does not allow duplicate top-level keys; merge \
+                 the `terransoul-brain` entry into your existing block manually, or delete your \
+                 hand-written entry."
+                    .to_string(),
+            );
+        }
+    }
+    None
+}
+
+/// Write the Hermes Agent MCP config (HTTP transport).
+pub fn write_hermes_config(url: &str, token: &str) -> Result<SetupResult, String> {
+    let path = hermes_config_path().ok_or("could not determine Hermes config path")?;
+    write_hermes_block(&path, &build_hermes_yaml_block(url, token))
+}
+
+/// Write the Hermes Agent MCP config (stdio transport).
+pub fn write_hermes_stdio_config(exe_path: &str) -> Result<SetupResult, String> {
+    let path = hermes_config_path().ok_or("could not determine Hermes config path")?;
+    write_hermes_block(&path, &build_hermes_stdio_yaml_block(exe_path))
+}
+
+/// Shared helper: read existing YAML (or empty), upsert the managed
+/// block, atomically write back.
+fn write_hermes_block(path: &Path, new_block: &str) -> Result<SetupResult, String> {
+    let existing = if path.exists() {
+        fs::read_to_string(path).map_err(|e| format!("failed to read {}: {e}", path.display()))?
+    } else {
+        String::new()
+    };
+
+    let (new_text, warning) = upsert_hermes_yaml_block(&existing, new_block);
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("failed to create directory {}: {e}", parent.display()))?;
+    }
+    let tmp = path.with_extension("yaml.tmp");
+    fs::write(&tmp, new_text.as_bytes())
+        .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, path).map_err(|e| {
+        format!(
+            "failed to rename {} → {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
+
+    let message = match warning {
+        Some(w) => format!(
+            "Hermes Agent config written. Restart Hermes (`hermes` CLI) to activate. WARNING: {w}"
+        ),
+        None => {
+            "Hermes Agent config written. Restart Hermes (`hermes` CLI) to activate.".to_string()
+        }
+    };
+
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message,
+    })
+}
+
+/// Remove the TerranSoul-managed block from Hermes Agent's config.
+pub fn remove_hermes_config() -> Result<SetupResult, String> {
+    let path = hermes_config_path().ok_or("could not determine Hermes config path")?;
+    if !path.exists() {
+        return Ok(SetupResult {
+            success: true,
+            config_path: path.display().to_string(),
+            message: "Hermes config does not exist — nothing to remove.".to_string(),
+        });
+    }
+    let existing =
+        fs::read_to_string(&path).map_err(|e| format!("failed to read {}: {e}", path.display()))?;
+    let stripped = remove_hermes_managed_block(&existing);
+    let tmp = path.with_extension("yaml.tmp");
+    fs::write(&tmp, stripped.as_bytes())
+        .map_err(|e| format!("failed to write {}: {e}", tmp.display()))?;
+    fs::rename(&tmp, &path).map_err(|e| {
+        format!(
+            "failed to rename {} → {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
+    Ok(SetupResult {
+        success: true,
+        config_path: path.display().to_string(),
+        message: "TerranSoul block removed from Hermes config.".to_string(),
+    })
+}
+
+/// Strip the TerranSoul-managed block from Hermes YAML, leaving the
+/// rest of the file (and user-owned content) untouched.
+pub fn remove_hermes_managed_block(existing: &str) -> String {
+    let (Some(begin_idx), Some(end_idx)) = (
+        existing.find(HERMES_BLOCK_BEGIN),
+        existing.find(HERMES_BLOCK_END),
+    ) else {
+        return existing.to_string();
+    };
+    if end_idx <= begin_idx {
+        return existing.to_string();
+    }
+    let after_end = end_idx + HERMES_BLOCK_END.len();
+    let after_end = match existing[after_end..].find('\n') {
+        Some(nl) => after_end + nl + 1,
+        None => existing.len(),
+    };
+    let mut out = String::with_capacity(existing.len());
+    out.push_str(&existing[..begin_idx]);
+    out.push_str(&existing[after_end..]);
+    out
 }
 
 // ─── Stdio entry builders (Chunk 15.9) ──────────────────────────────
@@ -366,6 +603,22 @@ pub fn setup_all_clients(workspace_root: &Path, url: &str, token: &str) -> Vec<S
         }
     }
 
+    // Hermes Agent (NousResearch) — only when ~/.hermes/ already exists
+    // (avoid creating user state for an unused tool).
+    if let Some(hermes_path) = hermes_config_path() {
+        let parent_exists = hermes_path.parent().is_some_and(|p| p.is_dir());
+        if parent_exists {
+            match write_hermes_config(url, token) {
+                Ok(r) => results.push(r),
+                Err(e) => results.push(SetupResult {
+                    success: false,
+                    config_path: hermes_path.display().to_string(),
+                    message: format!("Hermes Agent: {e}"),
+                }),
+            }
+        }
+    }
+
     results
 }
 
@@ -596,6 +849,18 @@ pub fn list_client_status(workspace_root: &Path) -> Vec<ClientStatus> {
             client: "OpenCode".to_string(),
             configured,
             config_path: Some(opencode_path.display().to_string()),
+        });
+    }
+
+    // Hermes Agent (NousResearch) — YAML, not JSON; check for managed marker.
+    if let Some(hermes_path) = hermes_config_path() {
+        let configured = fs::read_to_string(&hermes_path)
+            .map(|s| s.contains(HERMES_BLOCK_BEGIN))
+            .unwrap_or(false);
+        results.push(ClientStatus {
+            client: "Hermes Agent".to_string(),
+            configured,
+            config_path: Some(hermes_path.display().to_string()),
         });
     }
 
@@ -873,5 +1138,105 @@ mod tests {
         let deep_path = tmp.path().join("a").join("b").join("c.json");
         atomic_write_json(&deep_path, &json!({"test": true})).unwrap();
         assert!(deep_path.exists());
+    }
+
+    // ─── Hermes Agent (YAML, marker-block) tests ───────────────────
+
+    #[test]
+    fn hermes_yaml_block_includes_url_token_and_entry_name() {
+        let block = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        assert!(block.contains(HERMES_BLOCK_BEGIN));
+        assert!(block.contains(HERMES_BLOCK_END));
+        assert!(block.contains("mcp_servers:"));
+        assert!(block.contains(entry_name()));
+        assert!(block.contains(TEST_URL));
+        assert!(block.contains(TEST_TOKEN));
+        assert!(block.contains("Bearer"));
+        assert!(block.contains("timeout: 120"));
+    }
+
+    #[test]
+    fn hermes_stdio_yaml_block_uses_command_and_args() {
+        let block = build_hermes_stdio_yaml_block(TEST_EXE);
+        assert!(block.contains("command: \"/usr/local/bin/terransoul\""));
+        assert!(block.contains("--mcp-stdio"));
+        assert!(!block.contains("Bearer"));
+        assert!(!block.contains("url:"));
+    }
+
+    #[test]
+    fn upsert_hermes_block_appends_when_missing() {
+        let existing = "# my hermes config\nmodel: claude\n";
+        let block = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        let (out, warn) = upsert_hermes_yaml_block(existing, &block);
+        assert!(warn.is_none());
+        assert!(out.contains("# my hermes config"));
+        assert!(out.contains("model: claude"));
+        assert!(out.contains(HERMES_BLOCK_BEGIN));
+        assert!(out.contains(TEST_URL));
+    }
+
+    #[test]
+    fn upsert_hermes_block_replaces_existing_managed_block() {
+        let initial = "model: claude\n";
+        let first = build_hermes_yaml_block("http://old.example/mcp", "oldtoken");
+        let (after_first, _) = upsert_hermes_yaml_block(initial, &first);
+        assert!(after_first.contains("oldtoken"));
+
+        let second = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        let (after_second, warn) = upsert_hermes_yaml_block(&after_first, &second);
+        assert!(warn.is_none());
+        assert!(!after_second.contains("oldtoken"));
+        assert!(!after_second.contains("http://old.example/mcp"));
+        assert!(after_second.contains(TEST_TOKEN));
+        assert!(after_second.contains(TEST_URL));
+        // User content preserved.
+        assert!(after_second.contains("model: claude"));
+        // Only ONE managed block.
+        assert_eq!(
+            after_second.matches(HERMES_BLOCK_BEGIN).count(),
+            1,
+            "upsert must not duplicate managed blocks"
+        );
+    }
+
+    #[test]
+    fn upsert_hermes_block_warns_on_user_mcp_servers_collision() {
+        let existing = "mcp_servers:\n  other:\n    url: \"http://x\"\n";
+        let block = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        let (_out, warn) = upsert_hermes_yaml_block(existing, &block);
+        assert!(
+            warn.is_some(),
+            "must warn when user has their own top-level mcp_servers key"
+        );
+        assert!(warn.unwrap().contains("mcp_servers"));
+    }
+
+    #[test]
+    fn upsert_hermes_block_no_warning_when_user_key_is_inside_managed_block() {
+        // Existing file already has a managed block with mcp_servers: —
+        // re-running setup should NOT warn about the marker contents.
+        let first = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        let initial = format!("model: claude\n\n{first}");
+        let second = build_hermes_yaml_block("http://new", "newtoken");
+        let (_out, warn) = upsert_hermes_yaml_block(&initial, &second);
+        assert!(warn.is_none());
+    }
+
+    #[test]
+    fn remove_hermes_managed_block_strips_only_managed_section() {
+        let block = build_hermes_yaml_block(TEST_URL, TEST_TOKEN);
+        let combined = format!("model: claude\nlogging: info\n\n{block}");
+        let stripped = remove_hermes_managed_block(&combined);
+        assert!(stripped.contains("model: claude"));
+        assert!(stripped.contains("logging: info"));
+        assert!(!stripped.contains(HERMES_BLOCK_BEGIN));
+        assert!(!stripped.contains(TEST_URL));
+    }
+
+    #[test]
+    fn remove_hermes_managed_block_is_noop_when_absent() {
+        let original = "model: claude\n";
+        assert_eq!(remove_hermes_managed_block(original), original);
     }
 }

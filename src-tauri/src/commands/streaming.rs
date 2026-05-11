@@ -456,10 +456,7 @@ impl StreamTagParser {
 fn strip_execute_tool_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
-    loop {
-        let Some(start) = remaining.find(BlockKind::ExecuteTool.open_tag()) else {
-            break;
-        };
+    while let Some(start) = remaining.find(BlockKind::ExecuteTool.open_tag()) {
         result.push_str(&remaining[..start]);
         remaining = &remaining[start + BlockKind::ExecuteTool.open_tag().len()..];
         if let Some(end) = remaining.find(BlockKind::ExecuteTool.close_tag()) {

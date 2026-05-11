@@ -17,7 +17,7 @@
 
     <p class="aiv-help">
       Expose TerranSoul's brain to external AI coding assistants
-      (VS Code Copilot, Claude Desktop, Codex CLI) over the
+      (VS Code Copilot, Claude Desktop, Codex CLI, Hermes Agent) over the
       <a
         href="https://modelcontextprotocol.io"
         target="_blank"
@@ -295,10 +295,13 @@ const copyMessage = ref<string | null>(null);
 const lastSetupMessage = ref<string | null>(null);
 
 /** Map a backend `ClientStatus.client` label to the wire client id. */
-function clientKey(label: string): 'vscode' | 'claude' | 'codex' {
+function clientKey(
+  label: string,
+): 'vscode' | 'claude' | 'codex' | 'hermes' {
   const lower = label.toLowerCase();
   if (lower.includes('claude')) return 'claude';
   if (lower.includes('codex')) return 'codex';
+  if (lower.includes('hermes')) return 'hermes';
   return 'vscode';
 }
 
@@ -335,7 +338,7 @@ async function onRegenToken() {
   await store.regenerateToken();
 }
 
-async function onSetup(client: 'vscode' | 'claude' | 'codex') {
+async function onSetup(client: 'vscode' | 'claude' | 'codex' | 'hermes') {
   lastSetupMessage.value = null;
   const result = await store.setupClient(client, workspaceRoot.value);
   if (result) {
@@ -343,7 +346,7 @@ async function onSetup(client: 'vscode' | 'claude' | 'codex') {
   }
 }
 
-async function onRemove(client: 'vscode' | 'claude' | 'codex') {
+async function onRemove(client: 'vscode' | 'claude' | 'codex' | 'hermes') {
   lastSetupMessage.value = null;
   const result = await store.removeClient(client, workspaceRoot.value);
   if (result) {

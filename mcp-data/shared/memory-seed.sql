@@ -2,7 +2,7 @@
 -- Applied on first `npm run mcp` when memory.db does not exist yet.
 -- Contains architectural knowledge so agents can be productive immediately.
 --
--- Schema: see src-tauri/src/memory/schema.rs (version 20)
+-- Schema: see src-tauri/src/memory/schema.rs (version 21)
 -- Fields: content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category, cognitive_kind
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
@@ -15,7 +15,7 @@ VALUES
 ('Frontend source is in src/ — Vue 3.5 + TypeScript 5.x, Pinia stores. Backend source is in src-tauri/src/ — Rust async (Tokio), 150+ Tauri commands. Tests: npx vitest run, npm run build, npm run lint, cargo test, and cargo clippy --all-targets -- -D warnings.', 'architecture,project-structure,testing', 5, 'fact', 1746316800000, 'long', 1.0, 55, 'architecture'),
 
 -- Brain system
-('Brain modes: (1) Free API — Pollinations/OpenRouter free-tier with no API key needed, (2) Paid API — OpenAI/Anthropic/Groq with user-supplied key, (3) Local Ollama — private, offline-capable, hardware-adaptive model selection. Default for MCP headless mode is free API via Pollinations.', 'brain,llm,providers,terransoul', 5, 'fact', 1746316800000, 'long', 1.0, 55, 'brain'),
+('Brain modes: (1) Free API — Pollinations/OpenRouter free-tier with no API key needed, (2) Paid API — OpenAI/Anthropic/Groq with user-supplied key, (3) Local Ollama — private, offline-capable, hardware-adaptive model selection. MCP headless mode seeds a local Ollama config when available and does not silently fall back to a free API if Ollama is missing.', 'brain,llm,providers,terransoul', 5, 'fact', 1746316800000, 'long', 1.0, 65, 'brain'),
 
 ('RAG pipeline: contentful live chat uses fast-path skip for short/empty turns, thresholded hybrid 6-signal eligibility, then RRF + query-intent ordering for top-5 prompt injection. Free/paid modes can include query embeddings; Local Ollama hot stream stays keyword/freshness-only when embedding would swap models. HyDE, matryoshka, and LLM-as-judge rerank are available through MemoryView/MCP/non-streaming helper surfaces rather than automatic streamed chat by default. Live prompts wrap retrieved records in a [RETRIEVED CONTEXT] pack containing backward-compatible [LONG-TERM MEMORY] snippets plus a contract that the snippets are query results, not the whole database.', 'brain,rag,memory,search,context-pack', 5, 'fact', 1746316800000, 'long', 1.0, 110, 'brain'),
 
@@ -26,7 +26,9 @@ VALUES
 
 ('MCP shared data policy: mcp-data/shared is committed and reviewable; runtime files such as mcp-token.txt, memory.db, SQLite WAL/SHM files, vector indexes, logs, locks, sessions, and worktrees are ignored. Contributors and self-improve runs may update mcp-data/shared/memory-seed.sql with durable project knowledge.', 'mcp,data,gitignore,shared-seed', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
 
-('To start MCP headless server: run npm run mcp from the repo root. It binds 127.0.0.1:7423 when available, uses mcp-data/ for state, auto-configures brain to Pollinations free API if Ollama is unavailable, and writes the bearer token to mcp-data/mcp-token.txt plus .vscode/.mcp-token.', 'mcp,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 50, 'mcp'),
+('To start the local MCP tray/coding-agent server: run npm run mcp from the repo root. It binds 127.0.0.1:7423 when available, uses mcp-data/ for state, configures Local Ollama when available, leaves setup explicit when no local brain is available, and writes the bearer token to mcp-data/mcp-token.txt plus .vscode/.mcp-token.', 'mcp,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
+
+('LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.', 'lesson,mcp,container,docker,ci,research,headless,desktop-native', 9, 'procedure', 1778544000000, 'long', 1.0, 85, 'mcp'),
 
 -- Setup & Development
 ('CI gate command: npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test. Run after every chunk completion. On Linux, install Tauri WebKit/GTK system libraries before Rust checks.', 'ci,testing,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'development'),
@@ -1970,3 +1972,195 @@ SELECT
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'UI LESSON (2026-05-11): In ChatView + CharacterViewport,%'
 );
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'SHARDED ANN LESSON (2026-05-11): Chunk 48.2 replaced single vectors.usearch with per-shard usearch files at <app-data>/vectors/<tier>__<kind>.usearch plus per-index .quant sidecars. MemoryStore now routes set_embedding/update/delete/delete_many through ShardKey=(MemoryTier,CognitiveKind), performs shard fan-out ANN retrieval merged by RRF, and supports rebalance_shards plus shard-wide compaction/save/rebuild paths.',
+  'sharded-ann,usearch,hnsw,rrf,chunk-48.2,vector-search,memory-store,scale',
+  9, 'procedure', 1778457600000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'SHARDED ANN LESSON (2026-05-11):%'
+);
+
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'HERMES AGENT INTEGRATION (2026-05-11): Hermes Agent (NousResearch/hermes-agent, MIT) auto-loads AGENTS.md and uses YAML config at ~/.hermes/cli-config.yaml (or %LOCALAPPDATA%\hermes\cli-config.yaml on native Windows) with a top-level mcp_servers: block. TerranSoul wires Hermes via write_hermes_config() / write_hermes_stdio_config() in src-tauri/src/ai_integrations/mcp/auto_setup.rs using a marker-comment upsert (HERMES_BLOCK_BEGIN / HERMES_BLOCK_END) — no YAML parser dependency, user content outside markers preserved verbatim, duplicate top-level mcp_servers: keys surfaced as warnings. Tauri commands: setup_hermes_mcp / setup_hermes_mcp_stdio / remove_hermes_mcp. Top wins over OpenClaw: built-in learning loop (validates Phase 25), Honcho dialectic user modeling (backlog), FTS5 session search (validates Chunk 48.5), subagent delegation, cron scheduling (backlog), trajectory compression (already Chunk 47.4). 8 unit tests cover YAML block builders, upsert/replace, conflict detection, and managed-block removal.',
+  'hermes-agent,mcp,auto-setup,yaml,nousresearch,ai-coding,chunk-15.6,integrations,attribution',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'HERMES AGENT INTEGRATION (2026-05-11):%'
+);
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BRAIN_APPEND MCP TOOL (2026-05-11): Inspired by rahilp/second-brain-cloudflare (MIT). Added gateway::append + brain_append MCP tool that takes (id, addition, source?) and extends an existing memory entry with format "{old}\n\n[Update {ts_ms} · {src}]\n{addition}" using literal middle-dot. Wraps existing MemoryStore::update which auto-saves a version snapshot via versioning::save_version and re-embeds via shard re-routing — non-destructive AND re-embedded automatically. Wired in src-tauri/src/ai_integrations/gateway.rs (AppendRequest/AppendResponse + trait method + AppStateGateway impl), src-tauri/src/ai_integrations/mcp/tools.rs (schema after brain_ingest_lesson, dispatch arm, expected-list test), and mcp/activity.rs (describe_tool arm). Tool counts bumped: brain tools 17→18, total tools 34→35; integration_tests::tools_list_returns_28_tools updated to 35 with index shift +1 for all tools at position ≥8. 5 unit tests cover write-capability gate, empty-addition rejection, content+version verification, default source label "agent", missing-id error. Lessons: format! macro and \\u escapes do not compose — use literal unicode characters in source; NewMemory has more fields than MemoryEntry — always use store.add(NewMemory{..,..Default::default()}). Do not implement bookmarklet/iOS-Shortcuts/Cloudflare-specific patterns; tiered duplicate detection (≥95 block, 85-95 flag) is a future backlog candidate.',
+  'brain-append,mcp,gateway,versioning,second-brain-cloudflare,attribution,chunk-improvements,rahilp',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BRAIN_APPEND MCP TOOL (2026-05-11):%'
+);
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 48.5-48.7 (2026-05-11): Schema version bumped 20→21. (48.5) FTS5 per-shard keyword index via external-content virtual table memories_fts with unicode61 tokenizer, auto-sync INSERT/UPDATE/DELETE triggers, keyword_candidate_ids_fts5() fast path with INSTR fallback. (48.6) Paged KG: composite covering indexes (src_id,rel_type)/(dst_id,rel_type) on memory_edges, memory_graph_clusters pre-aggregated table refreshed during AnnCompact maintenance, get_edges_paged() + graph_totals() for O(k log n) neighbourhood load. (48.7) Backpressure: DEFAULT_SHARD_MAX_ENTRIES=2M ceiling, check_shard_capacity() rejects ingests at limit, shard_health_summary() reports per-shard status (entry_count, fts5, ann_index, over_capacity). Hot-cache TTL 30s→60s. ShardHealthSummary wired into HealthResponse (brain_health MCP tool) so agents see degraded shards immediately. Key files: memory/schema.rs (ensure_v21_fts5 + ensure_v21_graph_indexes), memory/graph_paging.rs, memory/shard_backpressure.rs, memory/store.rs (has_fts5, data_dir getter, FTS5 search paths), ai_integrations/gateway.rs (HealthResponse.shard_health). All tests pass: 2756 Rust lib + 1801 Vitest.',
+  'billion-scale,fts5,graph-paging,backpressure,shard-health,brain-health,schema-v21,phase48',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.5-48.7 (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'DOCUMENT-LEARNING VOICE UX LESSON (2026-05-11): Explicit prompts such as "learn my provided documents" must wait for classify_intent before starting normal LLM streaming/TTS. If streaming begins first, the user can hear a generic chat answer while the visible UI routes to Scholar''s Quest. Use shouldAwaitIntentBeforeStreaming() in src/stores/conversation.ts for high-confidence learn/study my/provided docs/files/notes prompts, and centralize quest-card subtitle/TTS in ChatView.vue with a message-id dedupe helper so watcher, send, and quest-choice paths cannot speak the same quest card twice.',
+  'document-learning,scholars-quest,tts,conversation-store,chatview,intent-routing,voice-ux,frontend',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'frontend', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'DOCUMENT-LEARNING VOICE UX LESSON (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 48.8 (2026-05-11): Coarse shard router is now durable and queryable across restarts. shard_router.json persists built_at, embedding_dim, and centroid rows {id, shard token, embedding vector}. ShardRouter::load_from_dir rehydrates the in-memory ANN by replaying persisted centroids, while MemoryStore::select_shards_for_query now tries cached router, then persisted load, then lazy build before all-shards fallback. This closes the Phase 2 durability gap where router metadata existed but runtime always rebuilt/probed-all after process restart.',
+  'billion-scale,shard-router,phase48.8,sharded-hnsw,router-persistence,rrf,memory-store,ann',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.8 (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 48.9 (2026-05-11): Coarse shard routing now uses a policy-driven refresh scheduler. MemoryStore applies cooldown-gated refreshes (15m) with dual triggers: time (missing/stale router) and volume (mutation delta >= 500). Query fan-out attempts throttled refresh instead of unconditional rebuild on every miss, and maintenance AnnCompact forces a refresh pass to keep shard_router.json warm. MCP brain_health now includes router_health metadata (cached/persisted presence, built_at, age_ms, centroid_count, stale flag, cooldown, mutation delta) so agents can diagnose routing freshness before retrieval-heavy operations.',
+  'billion-scale,shard-router,phase48.9,router-scheduler,maintenance,brain-health,observability,ann',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.9 (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 49.1 (2026-05-11): Phase 3 disk-backed ANN kickoff added a deterministic migration planner scaffold. New module memory/disk_backed_ann.rs defines DiskAnnPlan + DiskAnnShardPlan and plan_from_counts() for threshold-based candidate selection; MemoryStore::disk_ann_plan() now derives per-shard candidates from live SQLite counts and ANN index-file presence. This is an execution-planning surface only (no IVF-PQ read/write path yet) so rollout can be sequenced safely before enabling disk-backed index migration jobs.',
+  'billion-scale,phase49.1,disk-backed-ann,ivf-pq,planner,shard-migration,memory-store',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.1 (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'VOICE DESIGN DECISION (2026-05-11): TerranSoul now models persona/model voice design as structured profile data (gender, age, pitch, style, English accent, Chinese dialect, provider voice). Existing Web Speech/OpenAI-compatible TTS remains the default path and maps only voice/pitch/rate where supported. k2-fsa/OmniVoice matches the requested full voice-design fields, but should be evaluated as an optional future provider because Python/PyTorch/Hugging Face runtime size, packaging, performance, and voice-cloning consent UX need separate design before shipping.',
+  'voice-design,tts,persona,model-profile,omnivoice,provider-decision,frontend',
+  9, 'decision', 1778716800000, 'long', 1.0, 'voice', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'VOICE DESIGN DECISION (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11): Disk-backed ANN execution path is now live at sidecar level. `memory/disk_backed_ann.rs` now defines IVF-PQ sidecar schema + I/O (`DiskAnnSidecar`, `write_sidecar`, `read_sidecar`, `list_sidecars`) with suffix `vectors/<shard>.ivfpq.json`. `MemoryStore::run_disk_ann_migration_job(threshold,max_shards)` executes deterministic planner candidates by writing sidecars for shards with existing ANN index files; `disk_ann_health_summary` reports eligible vs sidecar-ready shards. Maintenance `AnnCompact` now runs this migration hook and includes sidecar-write counts in status text. MCP `brain_health` now exposes `disk_ann_health` so agents can see migration eligibility/readiness gaps before IVF-PQ build/search paths are fully wired.',
+  'billion-scale,phase49.2,disk-backed-ann,ivf-pq,sidecar,migration,maintenance,brain-health',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11): Added explicit Tauri control commands for disk-backed ANN migration operations. `disk_ann_plan_preview(threshold?)` returns deterministic planner candidates, `disk_ann_migration_status(threshold?)` reports eligible-vs-ready sidecar health, and `run_disk_ann_migration(threshold?, max_shards?)` executes one migration batch using `MemoryStore::run_disk_ann_migration_job`. Commands are wired in `src-tauri/src/lib.rs` invoke handler so operators can run deterministic sidecar writes on demand instead of waiting for the AnnCompact schedule.',
+  'billion-scale,phase49.3,disk-backed-ann,commands,plan,status,migration,sidecar,tauri',
+  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11):%'
+);
+
+-- ====================================================================
+-- Chunk 50.1 — Shard health, router health, graph observability Tauri commands
+-- Synced: 2026-05-11
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CHUNK 50.1 (2026-05-11): Added 7 Tauri commands exposing Phase 48 shard/graph observability. Commands in src-tauri/src/commands/memory.rs and registered in src-tauri/src/lib.rs: (1) shard_health(max_entries?) — wraps shard_backpressure::shard_health_summary, returns ShardHealthSummary with per-shard capacity/counts/backpressure state; (2) router_health() — wraps shard_router::router_health, returns RouterHealth with centroid count/staleness/timestamp; (3) rebuild_shard_router() — triggers MemoryStore::build_shard_router, rebuilds centroid index from all shards; (4) rebalance_ann_shards() — wraps MemoryStore::rebalance_shards, redistributes entries across HNSW shards; (5) refresh_graph_clusters() — wraps graph_paging::refresh_graph_clusters, recomputes memory_graph_clusters; (6) get_top_degree_nodes(kind?, limit?) — wraps graph_paging::get_top_degree_nodes, returns high-degree hub nodes optionally filtered by cognitive_kind; (7) graph_totals() — wraps graph_paging::graph_totals, returns node/edge counts. All backed by Phase 48 MemoryStore methods from shard_backpressure.rs, shard_router.rs, and graph_paging.rs. cargo check --target-dir ../target-test passes.',
+  'chunk-50.1,tauri,shard-health,router-health,graph-observability,architecture,memory,phase48,phase50',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.1 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.1 (2026-05-11):%'
+  AND (
+       d.content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11):%'
+    OR d.content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+  );
+
+-- ====================================================================
+-- Chunk 50.2 — Graph node full CRUD + Graph node panel UI/UX
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CHUNK 50.2 (2026-05-11): Full CRUD over knowledge-graph nodes + improved Graph node panel UI. Backend: new MemoryStore::update_edge(id, rel_type?, confidence?, source?) in memory/edges.rs — partial patch (None keeps existing), rel_type normalised, confidence clamped to [0,1]. Two new Tauri commands in commands/memory.rs: update_memory_edge (calls EdgeSource::parse, invalidates kg_cache for [src_id,dst_id]) and detach_memory_node (collects neighbours via get_edges_for(Both), runs delete_edges_for_memory, invalidates cache for node + all neighbours; returns count). Both registered in lib.rs invoke handler. Frontend: two new Pinia actions in src/stores/memory.ts — updateEdge(id, patch) and detachNode(id) — that mirror commands and patch local edges[] array. Replaced the bare .mv-node-detail aside in MemoryView.vue with new component src/components/GraphNodeCrudPanel.vue (~900 lines): glass-card header with cognitive-kind dot/badge/content preview, inline node edit (textarea+tags+type+importance), read-mode meta grid, Relationships split into ← Parents (incoming) and → Children (outgoing) with click-to-edit rel pills + click-to-navigate neighbour previews + per-edge delete + Detach-all, inline edge editor (rel_type select + confidence slider), link form with segmented direction toggle and filtered target combobox (max 8, matches #id or substring), footer with ✏ Edit / 🗑 Delete and 2.4s toast feedback. All styles use var(--ts-*) tokens + color-mix translucent accents. MemoryView.vue gained onGraphChanged handler that re-fetches memories+edges+stats and re-resolves selectedEntry. Tests: new update_edge_partial_patch Rust test (31 edges tests pass), cargo check ok, vue-tsc clean, vitest 1806/1806.',
+  'chunk-50.2,graph-crud,memory-edges,ui-ux,vue-component,GraphNodeCrudPanel,tauri-command,pinia-action,architecture,phase50',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.2 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.2 (2026-05-11):%'
+  AND (
+       d.content LIKE 'CHUNK 50.1 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Frontend Pinia stores:%'
+  );
+
+-- ====================================================================
+-- Chunk 50.3 — agentmemory-inspired: privacy scrub, content-hash dedup, circuit breaker
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CHUNK 50.3 (2026-05-11): Learned from rohitg00/agentmemory (DeepWiki analysis, MIT, no source copy) and implemented 3 improvements. (1) Privacy scrubbing: new memory/privacy.rs with strip_secrets() that applies 4 passes before storing memories — <private> tag removal, 20 prefix-based API key patterns (sk-ant-*, sk-*, ghp_*, AKIA*, AIza*, hf_*, glpat-*, xoxb-*, npm_*, etc.), JWT base64 triple-dot detection, and key-value secret name matching (password, api_key, secret, authorization, etc.). Uses LazyLock static vecs and native string ops, no regex crate. (2) Content-hash dedup at insert: MemoryStore::add() and add_many() now auto-compute SHA-256 of (scrubbed) content when source_hash is not caller-provided, then call find_by_source_hash() to return existing entry instead of creating a duplicate. This makes memory creation idempotent by content. (3) Circuit breaker: new brain/circuit_breaker.rs implementing CLOSED→OPEN→HALF_OPEN state machine (default: 3 failures in 60s trips to OPEN, 30s recovery timeout to HALF_OPEN, one probe request). Integrated into ProviderStatus in provider_rotator.rs — select_provider() and select_failover_chain() both check CB state after health gate. New FailoverReason::CircuitBreakerOpen. Public methods: record_request_success/failure(provider_id), circuit_breaker_state(provider_id). Follow-up agentmemory retrieval/consolidation ideas were implemented in Chunk 50.4. Tests: 12 privacy, 10 CB, 98 store, 41 rotator all pass.',
+  'chunk-50.3,privacy,secrets,scrubbing,dedup,content-hash,circuit-breaker,resilience,provider-rotator,agentmemory,architecture',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.3 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.3 (2026-05-11):%'
+  AND (
+       d.content LIKE 'CHUNK 50.2 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Frontend Pinia stores:%'
+  );
+
+-- ====================================================================
+-- Chunk 50.4 — consolidation synthesis, diversified search, progressive search
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CHUNK 50.4 (2026-05-11): Implemented the remaining agentmemory-derived memory improvements. (1) Consolidation synthesis: memory/consolidation.rs now groups active unparented persistent memories by graph neighbourhood first and tag fallback second, creates N-to-1 parent Summary rows tagged synthetic:consolidation/parent_summary, sets child parent_id via MemoryStore::set_parent_for_memories(), and writes parent -> child derived_from edges with edge_source consolidation_synthesis. ConsolidationResult exposes synthesized count and synthesized_parent_ids; config adds synthesis_min_children, synthesis_max_clusters, synthesis_max_children. (2) Session diversification: MemoryStore::hybrid_search_rrf and hybrid_search_rrf_with_intent now pass fused candidates through select_diversified_ranked(), capping non-empty session_id clusters at DEFAULT_MAX_RESULTS_PER_SESSION=3 while leaving global NULL-session long-term memories uncapped. Cache mode keys changed to rrf_vec_diverse/rrf_diverse. (3) Progressive disclosure search: new Tauri command progressive_search_memories(query, limit?, expand_ids?) returns compact ranked previews first and expands selected full MemoryEntry rows by ID; frontend types CompactMemoryResult/ProgressiveMemorySearchResponse and Pinia memory.progressiveSearch() expose it with a browser fallback. Follow-up validation taught cognitive_kind::classify to treat the common procedure tag alias as procedural, and stale tests were updated for content-hash dedup and targeted incremental retrieval. Docs updated in README and docs/brain-advanced-design.md. Tests: consolidation 10/10, store 99/99, cargo check, cargo clippy -D warnings, full cargo test --lib 2791/2791, vue-tsc clean, vitest 1806/1806.',
+  'chunk-50.4,agentmemory,consolidation,synthesis,parent-id,session-diversification,rrf,progressive-search,compact-results,memory-store,architecture',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.4 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.4 (2026-05-11):%'
+  AND (
+       d.content LIKE 'CHUNK 50.3 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+    OR d.content LIKE 'RAG pipeline:%'
+  );

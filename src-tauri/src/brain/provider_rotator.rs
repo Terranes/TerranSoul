@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 
+use crate::brain::circuit_breaker::{CircuitBreaker, CircuitState};
 use crate::brain::free_api::{free_provider_catalogue, FreeProvider};
 
 // ---------------------------------------------------------------------------
@@ -29,6 +30,8 @@ pub enum FailoverReason {
     PrivacyConstraint,
     /// All free-tier providers in the catalogue are exhausted.
     FreeTierExhausted,
+    /// Provider circuit breaker is OPEN (repeated request failures).
+    CircuitBreakerOpen,
 }
 
 impl FailoverReason {
@@ -41,6 +44,7 @@ impl FailoverReason {
             Self::TokenCapExceeded { .. } => "token-cap-exceeded",
             Self::PrivacyConstraint => "privacy-constraint",
             Self::FreeTierExhausted => "free-tier-exhausted",
+            Self::CircuitBreakerOpen => "circuit-breaker-open",
         }
     }
 }
@@ -156,6 +160,8 @@ pub struct ProviderStatus {
     pub latency: Option<Duration>,
     /// When the last health check was performed.
     pub last_health_check: Option<Instant>,
+    /// Per-provider circuit breaker (trips after repeated request failures).
+    pub circuit_breaker: CircuitBreaker,
 }
 
 impl ProviderStatus {
@@ -170,6 +176,7 @@ impl ProviderStatus {
             is_healthy: true,
             latency: None,
             last_health_check: None,
+            circuit_breaker: CircuitBreaker::with_defaults(),
         }
     }
 }
@@ -422,8 +429,27 @@ impl ProviderRotator {
                 continue;
             }
 
+            // --- Circuit breaker gate ---
+            // Snapshot values we need from the immutable borrow before
+            // potentially calling get_mut.
+            let breaker_state = status.circuit_breaker.state();
+            let is_rate_limited = status.is_rate_limited;
+
+            if breaker_state == CircuitState::Open {
+                // Attempt is_allowed() which may transition to HalfOpen.
+                let allowed = self
+                    .providers
+                    .get_mut(id)
+                    .map(|s| s.circuit_breaker.is_allowed())
+                    .unwrap_or(false);
+                if !allowed {
+                    self.record_failover(id.clone(), FailoverReason::CircuitBreakerOpen, now_ms);
+                    continue;
+                }
+            }
+
             // --- Rate-limit gate ---
-            if status.is_rate_limited {
+            if is_rate_limited {
                 self.record_failover(id.clone(), FailoverReason::RateLimit, now_ms);
                 continue;
             }
@@ -451,7 +477,12 @@ impl ProviderRotator {
 
             // --- Context-window gate (provider max context) ---
             if let Some(estimated) = constraints.estimated_tokens {
-                let provider_max = provider_context_limit(&status.provider);
+                // Re-borrow for context window check.
+                let provider_max = self
+                    .providers
+                    .get(id)
+                    .map(|s| provider_context_limit(&s.provider))
+                    .unwrap_or(8_000);
                 if estimated > provider_max {
                     self.record_failover(
                         id.clone(),
@@ -524,8 +555,24 @@ impl ProviderRotator {
                 continue;
             }
 
+            // Circuit breaker gate — check state without mutable borrow first.
+            let cb_state = status.circuit_breaker.state();
+            let is_rate_limited = status.is_rate_limited;
+
+            if cb_state == CircuitState::Open {
+                let allowed = self
+                    .providers
+                    .get_mut(id)
+                    .map(|s| s.circuit_breaker.is_allowed())
+                    .unwrap_or(false);
+                if !allowed {
+                    self.record_failover(id.clone(), FailoverReason::CircuitBreakerOpen, now_ms);
+                    continue;
+                }
+            }
+
             // Rate-limit gate
-            if status.is_rate_limited {
+            if is_rate_limited {
                 self.record_failover(id.clone(), FailoverReason::RateLimit, now_ms);
                 continue;
             }
@@ -552,7 +599,11 @@ impl ProviderRotator {
 
             // Context-window gate
             if let Some(estimated) = constraints.estimated_tokens {
-                let provider_max = provider_context_limit(&status.provider);
+                let provider_max = self
+                    .providers
+                    .get(id)
+                    .map(|s| provider_context_limit(&s.provider))
+                    .unwrap_or(8_000);
                 if estimated > provider_max {
                     self.record_failover(
                         id.clone(),
@@ -587,6 +638,33 @@ impl ProviderRotator {
                 _ => status.rate_limit_reset = Some(min_reset),
             }
         }
+    }
+
+    /// Record a successful request to a provider's circuit breaker.
+    ///
+    /// Call this after a provider returns a valid response. Resets the
+    /// circuit breaker to CLOSED if it was in HALF_OPEN probe state.
+    pub fn record_request_success(&mut self, provider_id: &str) {
+        if let Some(status) = self.providers.get_mut(provider_id) {
+            status.circuit_breaker.record_success();
+        }
+    }
+
+    /// Record a failed request to a provider's circuit breaker.
+    ///
+    /// Call this after a provider returns an error (timeout, 5xx, etc.).
+    /// May trip the circuit breaker to OPEN after the failure threshold.
+    pub fn record_request_failure(&mut self, provider_id: &str) {
+        if let Some(status) = self.providers.get_mut(provider_id) {
+            status.circuit_breaker.record_failure();
+        }
+    }
+
+    /// Get the circuit breaker state for a specific provider.
+    pub fn circuit_breaker_state(&self, provider_id: &str) -> Option<CircuitState> {
+        self.providers
+            .get(provider_id)
+            .map(|s| s.circuit_breaker.state())
     }
 
     /// Sort the internal id list by latency (fastest first).

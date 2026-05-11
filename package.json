@@ -23,6 +23,11 @@
     "mcp": "npx vite build && node scripts/copilot-start-mcp.mjs 240",
     "mcp:setup": "cargo run --manifest-path src-tauri/Cargo.toml --quiet -- --mcp-setup",
     "mcp:app": "npx vite build && node scripts/run-target-mcp.mjs --mcp-app",
+    "mcp:container": "docker compose -f docker-compose.mcp.yml up -d --build",
+    "mcp:container:config": "docker compose -f docker-compose.mcp.yml config",
+    "mcp:container:logs": "docker compose -f docker-compose.mcp.yml logs -f mcp",
+    "mcp:container:rebuild": "docker compose -f docker-compose.mcp.yml build --no-cache mcp",
+    "mcp:container:stop": "docker compose -f docker-compose.mcp.yml down",
     "mcp:sync-docs": "node scripts/sync-docs-to-mcp.mjs",
     "mcp:obsidian": "node scripts/mcp-obsidian.mjs"
   },

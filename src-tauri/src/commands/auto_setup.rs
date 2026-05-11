@@ -155,3 +155,34 @@ pub async fn setup_codex_mcp_stdio(state: State<'_, AppState>) -> Result<SetupRe
     track_auto_configured(&state, "mcp_codex_stdio")?;
     Ok(result)
 }
+
+// ─── Hermes Agent (NousResearch) ────────────────────────────────────
+
+/// Set up Hermes Agent MCP integration over the HTTP transport.
+///
+/// Hermes uses YAML at `~/.hermes/cli-config.yaml`. The TerranSoul
+/// entry is upserted between marker comments so user-edited content
+/// outside the markers is preserved verbatim.
+#[tauri::command]
+pub async fn setup_hermes_mcp(state: State<'_, AppState>) -> Result<SetupResult, String> {
+    let (token, port) = get_mcp_info(&state).await?;
+    let url = mcp_url(port);
+    let result = auto_setup::write_hermes_config(&url, &token)?;
+    track_auto_configured(&state, "mcp_hermes")?;
+    Ok(result)
+}
+
+/// Set up Hermes Agent MCP integration over the **stdio** transport.
+#[tauri::command]
+pub async fn setup_hermes_mcp_stdio(state: State<'_, AppState>) -> Result<SetupResult, String> {
+    let exe = current_exe_path()?;
+    let result = auto_setup::write_hermes_stdio_config(&exe)?;
+    track_auto_configured(&state, "mcp_hermes_stdio")?;
+    Ok(result)
+}
+
+/// Remove the TerranSoul-managed block from Hermes Agent's config.
+#[tauri::command]
+pub async fn remove_hermes_mcp() -> Result<SetupResult, String> {
+    auto_setup::remove_hermes_config()
+}

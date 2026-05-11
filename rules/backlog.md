@@ -34,7 +34,8 @@
 | Chunk | Description | Status | Notes |
 |-------|-------------|--------|-------|
 | 115 | Live2D Support | Closed / no-action | VRM remains the sole supported avatar format; Live2D is rejected for licensing/runtime fit in `docs/persona-design.md` and `docs/licensing-audit.md`. |
-| 117 | Docker Containerization | Demoted | Containers are not useful for the Tauri desktop runtime by default; keep Docker/Aspire-style work in research/CI only until explicitly promoted. |
+
+📦 Promoted to `rules/milestones.md` on 2026-05-11 — chunk 117, constrained to CI/research/service containers only.
 
 ---
 

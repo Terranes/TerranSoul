@@ -1,12 +1,67 @@
 use rusqlite::{params, Connection, Result as SqlResult};
 use serde::{Deserialize, Serialize};
+use std::cell::Cell;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::cognitive_kind::classify as classify_cognitive_kind;
 use super::metrics::{Timer, METRICS};
 use super::schema;
 use super::search_cache::SEARCH_CACHE;
+use super::sharded_retrieval::{merge_shard_rankings, ShardKey};
+
+/// Maximum results from a single session in diversified RRF retrieval.
+///
+/// Only real `session_id` values are capped; global long-term memories with
+/// `session_id = NULL` remain uncapped so durable knowledge is not hidden.
+pub const DEFAULT_MAX_RESULTS_PER_SESSION: usize = 3;
+
+fn select_diversified_ranked<I>(
+    ranked: I,
+    by_id: &HashMap<i64, MemoryEntry>,
+    limit: usize,
+    max_per_session: usize,
+) -> Vec<(i64, f64)>
+where
+    I: IntoIterator<Item = (i64, f64)>,
+{
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let max_per_session = max_per_session.max(1);
+    let mut session_counts: HashMap<String, usize> = HashMap::new();
+    let mut selected = Vec::with_capacity(limit);
+
+    for (id, score) in ranked {
+        let Some(entry) = by_id.get(&id) else {
+            continue;
+        };
+
+        if let Some(session_id) = entry
+            .session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|session_id| !session_id.is_empty())
+        {
+            let count = session_counts.entry(session_id.to_string()).or_insert(0);
+            if *count >= max_per_session {
+                continue;
+            }
+            *count += 1;
+        }
+
+        selected.push((id, score));
+        if selected.len() >= limit {
+            break;
+        }
+    }
+
+    selected
+}
 
 pub(crate) fn now_ms() -> i64 {
     SystemTime::now()
@@ -187,7 +242,7 @@ fn default_importance() -> i64 {
 }
 
 /// Fields that may be updated on an existing memory.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct MemoryUpdate {
     pub content: Option<String>,
     pub tags: Option<String>,
@@ -235,11 +290,22 @@ pub struct MemoryCleanupReport {
 ///   more than immediate planner-stat updates.
 const ANALYZE_EVERY: u64 = 10_000;
 
+/// Rebuild throttle for coarse shard router. Prevents expensive rebuild bursts
+/// when many consecutive queries arrive while the router is stale/missing.
+pub const ROUTER_REFRESH_COOLDOWN_MS: i64 = 15 * 60 * 1000;
+/// Volume trigger: if writes since the last successful build exceed this
+/// threshold, a background-safe refresh becomes eligible.
+pub const ROUTER_REFRESH_MIN_MUTATIONS: u64 = 500;
+
 pub struct MemoryStore {
     pub(crate) conn: Connection,
-    /// Optional ANN index for fast vector search (Chunk 16.10).
-    /// Initialized lazily on first vector operation.
-    ann: std::cell::OnceCell<super::ann_index::AnnIndex>,
+    /// Shard-keyed ANN indices for fast vector search (Chunk 48.2).
+    /// Initialized lazily on first per-shard vector operation.
+    anns: RefCell<HashMap<ShardKey, super::ann_index::AnnIndex>>,
+    /// Coarse shard router — predicts top-p shards for a query (Chunk 48.3).
+    /// Initialized lazily on first use or at startup. Falls back to "probe all shards"
+    /// if missing/stale.
+    router: RefCell<Option<super::shard_router::ShardRouter>>,
     /// Data directory for persisting the ANN index file.
     /// `None` for in-memory stores (tests).
     data_dir: Option<std::path::PathBuf>,
@@ -250,6 +316,10 @@ pub struct MemoryStore {
     /// an `ANALYZE_EVERY` boundary, we run `ANALYZE` to keep the query
     /// planner statistics fresh (Chunk 41.12R).
     mutations: AtomicU64,
+    /// Last mutation counter snapshot after a successful router rebuild.
+    router_last_refresh_mutation: Cell<u64>,
+    /// Last wall-clock rebuild attempt timestamp (ms). Used for cooldown.
+    router_last_refresh_attempt_ms: Cell<i64>,
 }
 
 impl MemoryStore {
@@ -293,10 +363,13 @@ impl MemoryStore {
         let _ = conn.execute_batch("PRAGMA optimize;");
         MemoryStore {
             conn,
-            ann: std::cell::OnceCell::new(),
+            anns: RefCell::new(HashMap::new()),
+            router: RefCell::new(None),
             data_dir: Some(data_dir.to_path_buf()),
             flush_handle: None,
             mutations: AtomicU64::new(0),
+            router_last_refresh_mutation: Cell::new(0),
+            router_last_refresh_attempt_ms: Cell::new(0),
         }
     }
 
@@ -311,10 +384,13 @@ impl MemoryStore {
         schema::create_canonical_schema(&conn).expect("memory schema initialization failed");
         MemoryStore {
             conn,
-            ann: std::cell::OnceCell::new(),
+            anns: RefCell::new(HashMap::new()),
+            router: RefCell::new(None),
             data_dir: None,
             flush_handle: None,
             mutations: AtomicU64::new(0),
+            router_last_refresh_mutation: Cell::new(0),
+            router_last_refresh_attempt_ms: Cell::new(0),
         }
     }
 
@@ -339,74 +415,137 @@ impl MemoryStore {
         &self.conn
     }
 
-    /// Lazily initialize and return the ANN index.
-    ///
-    /// On first call, detects the embedding dimensionality from the DB,
-    /// then either loads the persisted index from disk or rebuilds it.
-    /// Returns `None` if no embeddings exist yet (dimension unknown).
-    fn ann_index(&self) -> Option<&super::ann_index::AnnIndex> {
-        // If already initialized, return it.
-        if let Some(idx) = self.ann.get() {
-            return Some(idx);
-        }
-        // Detect dimensions from existing embeddings.
-        let dims = super::ann_index::detect_dimensions(&self.conn)?;
-        if dims == 0 {
-            return None;
-        }
-        // Try to initialize the index.
-        let idx = if let Some(dir) = &self.data_dir {
-            super::ann_index::AnnIndex::open(dir, dims).ok()?
-        } else {
-            super::ann_index::AnnIndex::new(dims).ok()?
-        };
-        // If the index is empty, rebuild from DB.
-        if idx.is_empty() {
-            if let Ok(entries) = self.get_with_embeddings() {
-                let iter = entries.iter().filter_map(|e| {
-                    let emb = e.embedding.as_ref()?;
-                    Some((e.id, emb.as_slice()))
-                });
-                let _ = idx.rebuild(iter);
-            }
-        }
-        // Store in OnceCell (may race if called concurrently, but
-        // MemoryStore is behind a Mutex so that won't happen).
-        let _ = self.ann.set(idx);
-        self.ann.get()
+    /// Data directory for on-disk stores; `None` for in-memory (tests).
+    pub(crate) fn data_dir(&self) -> Option<&std::path::Path> {
+        self.data_dir.as_deref()
     }
 
-    /// Initialize the ANN index with a known dimensionality (e.g. after
-    /// the first embedding is computed).  No-op if already initialized.
-    fn ensure_ann_for_dim(&self, dim: usize) -> Option<&super::ann_index::AnnIndex> {
-        if let Some(idx) = self.ann.get() {
-            if idx.dimensions() == dim {
-                return Some(idx);
+    /// Compute the logical shard key for a memory row by id.
+    fn shard_key_for_id(&self, id: i64) -> Option<ShardKey> {
+        let (tier, memory_type, tags, content): (String, String, String, String) = self
+            .conn
+            .query_row(
+                "SELECT tier, memory_type, tags, content FROM memories WHERE id = ?1",
+                params![id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .ok()?;
+        let memory_type = MemoryType::from_str(&memory_type);
+        let kind = classify_cognitive_kind(&memory_type, &tags, &content);
+        Some(ShardKey {
+            tier: MemoryTier::from_str(&tier),
+            kind,
+        })
+    }
+
+    fn open_shard_ann(&self, shard: ShardKey, dim: usize) -> Option<super::ann_index::AnnIndex> {
+        if let Some(dir) = &self.data_dir {
+            super::ann_index::AnnIndex::open_for_token(dir, &shard.as_path_token(), dim).ok()
+        } else {
+            super::ann_index::AnnIndex::new(dim).ok()
+        }
+    }
+
+    fn live_embeddings_for_shard(
+        &self,
+        shard: ShardKey,
+        dim: usize,
+    ) -> Result<Vec<(i64, Vec<f32>)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, embedding, memory_type, tags, content
+                 FROM memories
+                 WHERE tier = ?1 AND embedding IS NOT NULL",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map(params![shard.tier.as_str()], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, Vec<u8>>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })
+            .map_err(|e| e.to_string())?;
+
+        let mut out = Vec::new();
+        for row in rows {
+            let (id, blob, memory_type, tags, content) = row.map_err(|e| e.to_string())?;
+            let memory_type = MemoryType::from_str(&memory_type);
+            if classify_cognitive_kind(&memory_type, &tags, &content) != shard.kind {
+                continue;
             }
-            // Dimension changed — can't reinitialize a OnceCell, so fall
-            // back to brute-force until restart.
+            let emb = bytes_to_embedding(&blob);
+            if emb.len() == dim {
+                out.push((id, emb));
+            }
+        }
+        Ok(out)
+    }
+
+    fn ensure_shard_ann_for_dim(&self, shard: ShardKey, dim: usize) -> Option<()> {
+        {
+            let anns = self.anns.borrow();
+            if let Some(idx) = anns.get(&shard) {
+                if idx.dimensions() == dim {
+                    return Some(());
+                }
+                return None;
+            }
+        }
+
+        let idx = self.open_shard_ann(shard, dim)?;
+        if idx.is_empty() {
+            let entries = self.live_embeddings_for_shard(shard, dim).ok()?;
+            let _ = idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())));
+        }
+        self.anns.borrow_mut().insert(shard, idx);
+        Some(())
+    }
+
+    fn ensure_shard_ann(&self, shard: ShardKey) -> Option<()> {
+        let dim = super::ann_index::detect_dimensions(&self.conn)?;
+        if dim == 0 {
             return None;
         }
-        let idx = if let Some(dir) = &self.data_dir {
-            super::ann_index::AnnIndex::open(dir, dim).ok()?
-        } else {
-            super::ann_index::AnnIndex::new(dim).ok()?
-        };
-        let _ = self.ann.set(idx);
-        self.ann.get()
+        self.ensure_shard_ann_for_dim(shard, dim)
     }
 
     /// Insert a new memory entry and return it with its assigned id.
+    ///
+    /// Applies privacy scrubbing (strips API keys, tokens, passwords) and
+    /// content-hash deduplication before inserting. If a memory with the
+    /// same content hash already exists, returns the existing entry instead
+    /// of creating a duplicate.
     pub fn add(&self, m: NewMemory) -> SqlResult<MemoryEntry> {
         let _t = Timer::start(&METRICS.add);
         SEARCH_CACHE.invalidate();
+
+        // Privacy scrub — strip secrets before storing.
+        let content = super::privacy::strip_secrets(&m.content);
+
+        // Content-hash dedup — auto-compute SHA-256 if caller didn't provide.
+        let content_hash = m.source_hash.clone().unwrap_or_else(|| {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            format!("{:x}", hasher.finalize())
+        });
+        // Check for existing entry with the same content hash.
+        if let Ok(Some(existing)) = self.find_by_source_hash(&content_hash) {
+            return Ok(existing);
+        }
+
         let importance = m.importance.clamp(1, 5);
         let now = now_ms();
-        let token_count = estimate_tokens(&m.content);
+        let token_count = estimate_tokens(&content);
         self.conn.execute(
             "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count, source_url, source_hash, expires_at)
              VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8, ?9, ?10)",
-            params![m.content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count, m.source_url, m.source_hash, m.expires_at],
+            params![content, m.tags, importance, m.memory_type.as_str(), now, MemoryTier::Long.as_str(), token_count, m.source_url, Some(&content_hash), m.expires_at],
         )?;
         let id = self.conn.last_insert_rowid();
         self.record_mutations(1);
@@ -427,6 +566,15 @@ impl MemoryStore {
         if items.is_empty() {
             return Ok(Vec::new());
         }
+        // Backpressure: reject bulk ingest that would exceed long-tier capacity.
+        if let Err(e) = self.check_ingest_capacity(items.len()) {
+            return Err(rusqlite::Error::QueryReturnedNoRows).map_err(|_| {
+                rusqlite::Error::SqliteFailure(
+                    rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_FULL),
+                    Some(e.message),
+                )
+            });
+        }
         let now = now_ms();
         let mut ids = Vec::with_capacity(items.len());
         let tier_str = MemoryTier::Long.as_str();
@@ -437,10 +585,19 @@ impl MemoryStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, 0, ?6, 1.0, ?7, ?8, ?9, ?10)",
             )?;
             for m in items.drain(..) {
+                // Privacy scrub each chunk.
+                let content = super::privacy::strip_secrets(&m.content);
+                // Auto-compute content hash for dedup if not provided.
+                let content_hash = m.source_hash.unwrap_or_else(|| {
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    hasher.update(content.as_bytes());
+                    format!("{:x}", hasher.finalize())
+                });
                 let importance = m.importance.clamp(1, 5);
-                let token_count = estimate_tokens(&m.content);
+                let token_count = estimate_tokens(&content);
                 stmt.execute(params![
-                    m.content,
+                    content,
                     m.tags,
                     importance,
                     m.memory_type.as_str(),
@@ -448,7 +605,7 @@ impl MemoryStore {
                     tier_str,
                     token_count,
                     m.source_url,
-                    m.source_hash,
+                    Some(&content_hash),
                     m.expires_at,
                 ])?;
                 ids.push(tx.last_insert_rowid());
@@ -491,6 +648,10 @@ impl MemoryStore {
         if ids.is_empty() {
             return Ok(());
         }
+
+        let shard_keys: Vec<Option<ShardKey>> =
+            ids.iter().map(|id| self.shard_key_for_id(*id)).collect();
+
         let tx = self.conn.transaction()?;
         {
             let mut stmt = tx.prepare_cached("DELETE FROM memories WHERE id = ?1")?;
@@ -499,9 +660,12 @@ impl MemoryStore {
             }
         }
         tx.commit()?;
-        if let Some(idx) = self.ann.get() {
-            for id in ids {
-                let _ = idx.remove(*id);
+
+        for (id, shard_opt) in ids.iter().zip(shard_keys.iter()) {
+            if let Some(shard) = shard_opt {
+                if let Some(idx) = self.anns.borrow().get(shard) {
+                    let _ = idx.remove(*id);
+                }
             }
         }
         Ok(())
@@ -524,6 +688,26 @@ impl MemoryStore {
         )?;
         let id = self.conn.last_insert_rowid();
         self.get_by_id(id)
+    }
+
+    /// Set a synthesized parent memory for a group of child memories.
+    pub fn set_parent_for_memories(&self, child_ids: &[i64], parent_id: i64) -> SqlResult<usize> {
+        if child_ids.is_empty() {
+            return Ok(0);
+        }
+        SEARCH_CACHE.invalidate();
+        let mut updated = 0usize;
+        for child_id in child_ids {
+            if *child_id == parent_id {
+                continue;
+            }
+            updated += self.conn.execute(
+                "UPDATE memories SET parent_id = ?1 WHERE id = ?2",
+                params![parent_id, child_id],
+            )?;
+        }
+        self.record_mutations(updated as u64);
+        Ok(updated)
     }
 
     /// Fetch a memory by its id.
@@ -664,17 +848,34 @@ impl MemoryStore {
         if query.trim().is_empty() {
             return self.get_all();
         }
-        let pattern = format!("%{}%", query.to_lowercase());
-        let mut stmt = self.conn.prepare(
-            "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
-                    tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
-             FROM memories
-             WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
-             ORDER BY importance DESC, access_count DESC, created_at DESC",
-        )?;
-        let rows = stmt.query_map(params![pattern], row_to_entry)?;
-        let entries: SqlResult<Vec<MemoryEntry>> = rows.collect();
-        let entries = entries?;
+
+        let entries = if self.has_fts5() {
+            // FTS5 path: tokenized full-text match with BM25 ranking.
+            let escaped = query.replace('"', "\"\"");
+            let fts_query = format!("\"{escaped}\"");
+            let mut stmt = self.conn.prepare(
+                "SELECT m.id, m.content, m.tags, m.importance, m.memory_type, m.created_at, m.last_accessed, m.access_count,
+                        m.tier, m.decay_score, m.session_id, m.parent_id, m.token_count, m.source_url, m.source_hash, m.expires_at, m.valid_to, m.obsidian_path, m.last_exported, m.updated_at, m.origin_device, m.hlc_counter, m.confidence
+                 FROM memories m
+                 JOIN memories_fts ON memories_fts.rowid = m.id
+                 WHERE memories_fts MATCH ?1
+                 ORDER BY rank",
+            )?;
+            let rows = stmt.query_map(params![fts_query], row_to_entry)?;
+            rows.collect::<SqlResult<Vec<MemoryEntry>>>()?
+        } else {
+            // Fallback: LIKE-based full-table scan.
+            let pattern = format!("%{}%", query.to_lowercase());
+            let mut stmt = self.conn.prepare(
+                "SELECT id, content, tags, importance, memory_type, created_at, last_accessed, access_count,
+                        tier, decay_score, session_id, parent_id, token_count, source_url, source_hash, expires_at, valid_to, obsidian_path, last_exported, updated_at, origin_device, hlc_counter, confidence
+                 FROM memories
+                 WHERE lower(content) LIKE ?1 OR lower(tags) LIKE ?1
+                 ORDER BY importance DESC, access_count DESC, created_at DESC",
+            )?;
+            let rows = stmt.query_map(params![pattern], row_to_entry)?;
+            rows.collect::<SqlResult<Vec<MemoryEntry>>>()?
+        };
 
         // Update last_accessed and access_count for matched entries.
         let now = now_ms();
@@ -698,6 +899,11 @@ impl MemoryStore {
         SEARCH_CACHE.invalidate();
         // Snapshot the current state before editing (best-effort).
         let content_changed = upd.content.is_some();
+        let old_shard = if content_changed {
+            self.shard_key_for_id(id)
+        } else {
+            None
+        };
         let has_changes = content_changed
             || upd.tags.is_some()
             || upd.importance.is_some()
@@ -739,8 +945,10 @@ impl MemoryStore {
                 params![id],
             )?;
             // Remove stale vector from the ANN index (best-effort).
-            if let Some(idx) = self.ann.get() {
-                let _ = idx.remove(id);
+            if let Some(shard) = old_shard {
+                if let Some(idx) = self.anns.borrow().get(&shard) {
+                    let _ = idx.remove(id);
+                }
             }
             // Enqueue for re-embedding (best-effort — table may not exist
             // on very old schemas).
@@ -755,11 +963,14 @@ impl MemoryStore {
     pub fn delete(&self, id: i64) -> SqlResult<()> {
         let _t = Timer::start(&METRICS.delete);
         SEARCH_CACHE.invalidate();
+        let shard = self.shard_key_for_id(id);
         self.conn
             .execute("DELETE FROM memories WHERE id = ?1", params![id])?;
         // Remove from ANN index (best-effort).
-        if let Some(idx) = self.ann.get() {
-            let _ = idx.remove(id);
+        if let Some(shard) = shard {
+            if let Some(idx) = self.anns.borrow().get(&shard) {
+                let _ = idx.remove(id);
+            }
         }
         self.record_mutations(1);
         Ok(())
@@ -834,9 +1045,12 @@ impl MemoryStore {
             "UPDATE memories SET embedding = ?1 WHERE id = ?2",
             params![bytes, id],
         )?;
-        // Keep the ANN index in sync (best-effort).
-        if let Some(idx) = self.ensure_ann_for_dim(embedding.len()) {
-            let _ = idx.add(id, embedding);
+        // Keep the shard ANN index in sync (best-effort).
+        if let Some(shard) = self.shard_key_for_id(id) {
+            let _ = self.ensure_shard_ann_for_dim(shard, embedding.len());
+            if let Some(idx) = self.anns.borrow().get(&shard) {
+                let _ = idx.add(id, embedding);
+            }
         }
         Ok(())
     }
@@ -881,14 +1095,59 @@ impl MemoryStore {
     }
 
     /// Fetch the IDs of memories whose content or tags contain any of
-    /// the given `words` (case-insensitive via `INSTR` + `LOWER`).
+    /// the given `words`. Uses FTS5 MATCH when the index is available,
+    /// falling back to INSTR + LOWER (full-table scan) otherwise.
     /// Returns at most `pool` IDs.
     fn keyword_candidate_ids(&self, words: &[String], pool: usize) -> SqlResult<Vec<i64>> {
         if words.is_empty() {
             return Ok(Vec::new());
         }
-        // Build a WHERE clause: LOWER(content) LIKE '%word1%' OR LOWER(tags) LIKE '%word1%' OR ...
-        // Using INSTR is slightly faster than LIKE for substring matching.
+
+        // Try FTS5 first — orders of magnitude faster at scale.
+        if self.has_fts5() {
+            return self.keyword_candidate_ids_fts5(words, pool);
+        }
+
+        // Fallback: full-table scan with INSTR (pre-FTS5 databases).
+        self.keyword_candidate_ids_instr(words, pool)
+    }
+
+    /// Check whether the FTS5 index table exists and is usable.
+    pub(crate) fn has_fts5(&self) -> bool {
+        self.conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memories_fts'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap_or(0)
+            > 0
+    }
+
+    /// FTS5-based keyword candidate retrieval. Builds an OR query from the
+    /// word list and uses BM25 ranking for relevance ordering.
+    fn keyword_candidate_ids_fts5(&self, words: &[String], pool: usize) -> SqlResult<Vec<i64>> {
+        // Build FTS5 query: word1 OR word2 OR word3 ...
+        // FTS5 tokenizes with unicode61 so we pass words as-is (no need to lowercase).
+        let fts_query: String = words
+            .iter()
+            .map(|w| {
+                // Escape double-quotes inside tokens for safety.
+                let escaped = w.replace('"', "\"\"");
+                format!("\"{escaped}\"")
+            })
+            .collect::<Vec<_>>()
+            .join(" OR ");
+
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT rowid FROM memories_fts WHERE memories_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![fts_query, pool as i64], |row| row.get::<_, i64>(0))?;
+        rows.collect()
+    }
+
+    /// Legacy INSTR-based keyword scan (fallback when FTS5 is unavailable).
+    fn keyword_candidate_ids_instr(&self, words: &[String], pool: usize) -> SqlResult<Vec<i64>> {
         let conditions: Vec<String> = words
             .iter()
             .enumerate()
@@ -905,7 +1164,6 @@ impl MemoryStore {
             words.len() + 1
         );
         let mut stmt = self.conn.prepare_cached(&sql)?;
-        let n_params = words.len() + 1;
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = words
             .iter()
             .map(|w| Box::new(w.to_lowercase()) as Box<dyn rusqlite::types::ToSql>)
@@ -914,8 +1172,22 @@ impl MemoryStore {
         let refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|b| b.as_ref()).collect();
         let rows = stmt.query_map(&*refs, |row| row.get::<_, i64>(0))?;
-        let _ = n_params; // suppress unused warning
         rows.collect()
+    }
+
+    /// Rebuild the FTS5 index from scratch. Useful during maintenance
+    /// or when the index gets out of sync (e.g. after a direct SQL edit).
+    /// Returns the number of rows indexed, or 0 if FTS5 is not available.
+    pub fn rebuild_fts5(&self) -> SqlResult<usize> {
+        if !self.has_fts5() {
+            return Ok(0);
+        }
+        self.conn
+            .execute_batch("INSERT INTO memories_fts(memories_fts) VALUES ('rebuild');")?;
+        let count: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM memories", [], |row| row.get(0))?;
+        Ok(count as usize)
     }
 
     /// Fetch full entries (with embeddings) for a set of IDs.
@@ -944,7 +1216,7 @@ impl MemoryStore {
     }
 
     /// Fetch full entries (without embeddings) for a set of IDs.
-    fn get_entries_by_ids(&self, ids: &[i64]) -> SqlResult<Vec<MemoryEntry>> {
+    pub(crate) fn get_entries_by_ids(&self, ids: &[i64]) -> SqlResult<Vec<MemoryEntry>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -980,12 +1252,28 @@ impl MemoryStore {
         let pool = Self::CANDIDATE_POOL;
         let mut id_set: HashSet<i64> = HashSet::with_capacity(pool * 3);
 
-        // (1) ANN vector candidates
+        // (1) ANN vector candidates from router-selected shards + RRF merge
         if let Some(qe) = query_embedding {
-            if let Some(idx) = self.ann_index() {
-                if let Ok(matches) = idx.search(qe, pool) {
-                    id_set.extend(matches.iter().map(|(id, _)| *id));
+            let mut per_shard_rankings: Vec<Vec<i64>> = Vec::new();
+            // Use router to select top-p shards; falls back to all shards if router unavailable
+            let shards_to_probe = self.select_shards_for_query(qe);
+            for shard in shards_to_probe {
+                let _ = self.ensure_shard_ann(shard);
+                let anns = self.anns.borrow();
+                if let Some(idx) = anns.get(&shard) {
+                    if let Ok(matches) = idx.search(qe, pool) {
+                        if !matches.is_empty() {
+                            per_shard_rankings
+                                .push(matches.into_iter().map(|(id, _)| id).collect::<Vec<_>>());
+                        }
+                    }
                 }
+            }
+            if !per_shard_rankings.is_empty() {
+                let ranking_slices: Vec<&[i64]> =
+                    per_shard_rankings.iter().map(|r| r.as_slice()).collect();
+                let merged = merge_shard_rankings(&ranking_slices, pool);
+                id_set.extend(merged.into_iter().map(|(id, _)| id));
             }
         }
 
@@ -1048,24 +1336,41 @@ impl MemoryStore {
         query_embedding: &[f32],
         limit: usize,
     ) -> SqlResult<Vec<MemoryEntry>> {
-        // ── Fast path: ANN index ──────────────────────────────────────────
-        if let Some(idx) = self.ann_index() {
-            if let Ok(matches) = idx.search(query_embedding, limit) {
-                if !matches.is_empty() {
-                    let now = now_ms();
-                    let mut results = Vec::with_capacity(matches.len());
-                    for (id, _sim) in &matches {
-                        if let Ok(entry) = self.get_by_id(*id) {
-                            let _ = self.conn.execute(
-                                "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
-                                params![now, entry.id],
-                            );
-                            results.push(entry);
-                        }
+        // ── Fast path: router-selected shards + per-shard ANN + RRF merge ──
+        let mut per_shard_rankings: Vec<Vec<i64>> = Vec::new();
+        // Use router to select top-p shards; falls back to all shards if router unavailable
+        let shards_to_probe = self.select_shards_for_query(query_embedding);
+        for shard in shards_to_probe {
+            let _ = self.ensure_shard_ann(shard);
+            let anns = self.anns.borrow();
+            if let Some(idx) = anns.get(&shard) {
+                if let Ok(matches) = idx.search(query_embedding, limit.max(1)) {
+                    if !matches.is_empty() {
+                        per_shard_rankings
+                            .push(matches.into_iter().map(|(id, _)| id).collect::<Vec<_>>());
                     }
-                    if !results.is_empty() {
-                        return Ok(results);
+                }
+            }
+        }
+
+        if !per_shard_rankings.is_empty() {
+            let ranking_slices: Vec<&[i64]> =
+                per_shard_rankings.iter().map(|r| r.as_slice()).collect();
+            let merged = merge_shard_rankings(&ranking_slices, limit.max(1));
+            if !merged.is_empty() {
+                let now = now_ms();
+                let mut results = Vec::with_capacity(merged.len());
+                for (id, _score) in &merged {
+                    if let Ok(entry) = self.get_by_id(*id) {
+                        let _ = self.conn.execute(
+                            "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                            params![now, entry.id],
+                        );
+                        results.push(entry);
                     }
+                }
+                if !results.is_empty() {
+                    return Ok(results);
                 }
             }
         }
@@ -1110,16 +1415,27 @@ impl MemoryStore {
         query_embedding: &[f32],
         threshold: f32,
     ) -> SqlResult<Option<i64>> {
-        // ── Fast path: ANN index ──────────────────────────────────────────
-        if let Some(idx) = self.ann_index() {
-            if let Ok(matches) = idx.search(query_embedding, 1) {
-                if let Some(&(id, sim)) = matches.first() {
-                    if sim >= threshold {
-                        return Ok(Some(id));
+        // ── Fast path: per-shard ANN scan ────────────────────────────────
+        let mut best: Option<(i64, f32)> = None;
+        for shard in ShardKey::all() {
+            let _ = self.ensure_shard_ann(shard);
+            let anns = self.anns.borrow();
+            if let Some(idx) = anns.get(&shard) {
+                if let Ok(matches) = idx.search(query_embedding, 1) {
+                    if let Some(&(id, sim)) = matches.first() {
+                        match best {
+                            Some((_, bsim)) if bsim >= sim => {}
+                            _ => best = Some((id, sim)),
+                        }
                     }
                 }
-                return Ok(None);
             }
+        }
+        if let Some((id, sim)) = best {
+            if sim >= threshold {
+                return Ok(Some(id));
+            }
+            return Ok(None);
         }
 
         // ── Fallback: brute-force scan ────────────────────────────────────
@@ -1396,9 +1712,9 @@ impl MemoryStore {
         let cache_key = SearchCacheKey {
             query: query.to_string(),
             mode: if query_embedding.is_some() {
-                "rrf_vec".into()
+                "rrf_vec_diverse".into()
             } else {
-                "rrf".into()
+                "rrf_diverse".into()
             },
             limit,
         };
@@ -1554,10 +1870,16 @@ impl MemoryStore {
         });
 
         // Store result in cache for future lookups.
-        let cached_hits: Vec<CachedHit> = fused
+        let selected = select_diversified_ranked(
+            fused.iter().map(|(_, id, score)| (*id, *score)),
+            &by_id,
+            limit,
+            DEFAULT_MAX_RESULTS_PER_SESSION,
+        );
+
+        let cached_hits: Vec<CachedHit> = selected
             .iter()
-            .take(limit)
-            .map(|(_, id, score)| CachedHit {
+            .map(|(id, score)| CachedHit {
                 memory_id: *id,
                 score: *score,
             })
@@ -1565,10 +1887,9 @@ impl MemoryStore {
         SEARCH_CACHE.put(cache_key, cached_hits);
 
         // Materialize the top-`limit` MemoryEntry list, preserving fused order.
-        let top: Vec<MemoryEntry> = fused
+        let top: Vec<MemoryEntry> = selected
             .into_iter()
-            .take(limit)
-            .filter_map(|(_, id, _)| by_id.get(&id).cloned())
+            .filter_map(|(id, _)| by_id.get(&id).cloned())
             .collect();
 
         // Touch access counters for the matched entries.
@@ -1752,9 +2073,11 @@ impl MemoryStore {
             });
         }
 
-        let top: Vec<MemoryEntry> = fused
+        let selected =
+            select_diversified_ranked(fused, &by_id, limit, DEFAULT_MAX_RESULTS_PER_SESSION);
+
+        let top: Vec<MemoryEntry> = selected
             .into_iter()
-            .take(limit)
             .filter_map(|(id, _)| by_id.get(&id).cloned())
             .collect();
 
@@ -2169,8 +2492,8 @@ impl MemoryStore {
             )
             .ok(); // tables may not exist on older schemas — ignore errors
         let deleted = self.conn.execute("DELETE FROM memories", [])?;
-        // Rebuild ANN index empty.
-        if let Some(idx) = self.ann.get() {
+        // Rebuild loaded shard ANN indices empty.
+        for idx in self.anns.borrow().values() {
             let _ = idx.rebuild(std::iter::empty());
         }
         Ok(deleted)
@@ -2245,35 +2568,45 @@ impl MemoryStore {
     /// Save all ANN indices to disk.  Returns `(flush_count, ops_flushed)`.
     /// Called by the background flush task.
     pub fn ann_save_all(&self) -> (u64, u64) {
-        if let Some(idx) = self.ann.get() {
+        let mut saved = 0u64;
+        for idx in self.anns.borrow().values() {
             let _ = idx.save();
+            saved += 1;
         }
-        // Return (1, 0) to signal a flush happened even if save was a no-op.
-        (1, 0)
+        (saved.max(1), 0)
     }
 
     /// Returns `true` if the ANN index has fragmentation above the compaction
     /// threshold (20%).  Returns `false` if no index exists.
     pub fn ann_needs_compaction(&self) -> bool {
         const COMPACTION_THRESHOLD: f32 = 0.20;
-        match self.ann.get() {
-            Some(idx) => idx.fragmentation_ratio() > COMPACTION_THRESHOLD,
-            None => false,
-        }
+        self.anns
+            .borrow()
+            .values()
+            .any(|idx| idx.fragmentation_ratio() > COMPACTION_THRESHOLD)
     }
 
     /// Rebuild the ANN index from live long-tier entries, removing tombstones.
     /// Returns the number of vectors in the rebuilt index.
     pub fn compact_ann(&self) -> Result<usize, String> {
-        let dim = match self.ann.get() {
-            Some(idx) => idx.dimensions(),
-            None => return Ok(0),
-        };
-        let entries = self.live_embeddings(dim)?;
-        let ann = self.ann.get().ok_or("ANN index disappeared")?;
-        let count = ann.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
-        ann.reset_fragmentation();
-        Ok(count)
+        let mut total = 0usize;
+        for shard in ShardKey::all() {
+            let _ = self.ensure_shard_ann(shard);
+            let dim = {
+                let anns = self.anns.borrow();
+                match anns.get(&shard) {
+                    Some(idx) => idx.dimensions(),
+                    None => continue,
+                }
+            };
+            let entries = self.live_embeddings_for_shard(shard, dim)?;
+            if let Some(idx) = self.anns.borrow().get(&shard) {
+                let count = idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+                idx.reset_fragmentation();
+                total += count;
+            }
+        }
+        Ok(total)
     }
 
     /// Backfill the `embedding_model_id` column for entries that have an
@@ -2293,60 +2626,604 @@ impl MemoryStore {
         &self,
         quant: super::ann_index::EmbeddingQuantization,
     ) -> Result<usize, String> {
-        // Detect current dimension from existing index or DB.
-        let dim = if let Some(idx) = self.ann.get() {
-            idx.dimensions()
-        } else {
-            let d = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
-            if d == 0 {
-                return Ok(0);
-            }
-            d
-        };
+        let dim = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+        if dim == 0 {
+            return Ok(0);
+        }
 
-        let entries = self.live_embeddings(dim)?;
-
-        // Create a new index with the requested quantization.
-        let new_idx = if let Some(dir) = &self.data_dir {
-            super::ann_index::AnnIndex::open_quantized(dir, dim, quant)?
-        } else {
-            super::ann_index::AnnIndex::new_quantized(dim, quant)?
-        };
-        let count = new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
-
-        // Replace the primary index. Because OnceCell doesn't support
-        // overwrite, we can only do this if it wasn't set. If it was, the
-        // caller should restart. In practice the rebuild will have already
-        // persisted to disk and a restart picks up the new quantization.
-        let _ = self.ann.set(new_idx);
-        Ok(count)
+        let mut total = 0usize;
+        for shard in ShardKey::all() {
+            let entries = self.live_embeddings_for_shard(shard, dim)?;
+            let new_idx = if let Some(dir) = &self.data_dir {
+                super::ann_index::AnnIndex::open_quantized_for_token(
+                    dir,
+                    &shard.as_path_token(),
+                    dim,
+                    quant,
+                )?
+            } else {
+                super::ann_index::AnnIndex::new_quantized(dim, quant)?
+            };
+            let count = new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+            self.anns.borrow_mut().insert(shard, new_idx);
+            total += count;
+        }
+        Ok(total)
     }
 
-    /// Collect `(id, embedding)` pairs from long-tier entries.
-    fn live_embeddings(&self, dim: usize) -> Result<Vec<(i64, Vec<f32>)>, String> {
-        let mut stmt = self
-            .conn
-            .prepare(
-                "SELECT id, embedding FROM memories
-                 WHERE tier = 'long' AND embedding IS NOT NULL",
-            )
-            .map_err(|e| e.to_string())?;
-        let rows = stmt
-            .query_map([], |row| {
-                let id: i64 = row.get(0)?;
-                let blob: Vec<u8> = row.get(1)?;
-                Ok((id, blob))
-            })
-            .map_err(|e| e.to_string())?;
-        let mut out = Vec::new();
-        for r in rows {
-            let (id, blob) = r.map_err(|e| e.to_string())?;
-            let emb = bytes_to_embedding(&blob);
-            if emb.len() == dim {
-                out.push((id, emb));
+    /// Rebuild all shard ANN indices with PQ selection (Phase 48.4).
+    /// Large shards (> 50M entries) automatically use PQ quantization.
+    /// Smaller shards use F32. Returns total vectors indexed across all shards.
+    pub fn rebuild_ann_with_pq_selection(&self) -> Result<usize, String> {
+        let dim = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+        if dim == 0 {
+            return Ok(0);
+        }
+
+        let mut total = 0usize;
+        for shard in ShardKey::all() {
+            let entries = self.live_embeddings_for_shard(shard, dim)?;
+            let entry_count = entries.len();
+
+            // Decide quantization based on shard size
+            let quant = if entry_count > super::ann_index::LARGE_SHARD_THRESHOLD {
+                super::ann_index::EmbeddingQuantization::PQ
+            } else {
+                super::ann_index::EmbeddingQuantization::F32
+            };
+
+            let new_idx = if let Some(dir) = &self.data_dir {
+                super::ann_index::AnnIndex::open_quantized_for_token(
+                    dir,
+                    &shard.as_path_token(),
+                    dim,
+                    quant,
+                )?
+            } else {
+                super::ann_index::AnnIndex::new_quantized(dim, quant)?
+            };
+
+            // Track entry count for future PQ decisions
+            new_idx.set_entry_count(entry_count);
+
+            // Build PQ codebooks for large shards
+            if entry_count > super::ann_index::LARGE_SHARD_THRESHOLD {
+                // Sample a subset for codebook building (10k entries or 10%, whichever is smaller)
+                let sample_size = std::cmp::min(10_000, entry_count / 10);
+                let embeddings: Vec<Vec<f32>> = entries
+                    .iter()
+                    .step_by((entry_count / sample_size).max(1))
+                    .take(sample_size)
+                    .map(|(_, emb)| emb.clone())
+                    .collect();
+
+                new_idx.build_pq_codebooks(&embeddings)?;
+
+                // Save codebooks to disk if we have a data directory
+                if let Some(dir) = &self.data_dir {
+                    new_idx.save_pq_codebooks(dir)?;
+                }
+            }
+
+            let count = new_idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+            self.anns.borrow_mut().insert(shard, new_idx);
+            total += count;
+        }
+        Ok(total)
+    }
+
+    /// Rebalance all shard ANN indices from live embeddings and persist them.
+    /// Returns total vectors indexed across all shards.
+    pub fn rebalance_shards(&self) -> Result<usize, String> {
+        let dim = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+        if dim == 0 {
+            return Ok(0);
+        }
+
+        let mut total = 0usize;
+        for shard in ShardKey::all() {
+            let entries = self.live_embeddings_for_shard(shard, dim)?;
+            let idx = self
+                .open_shard_ann(shard, dim)
+                .ok_or_else(|| format!("failed to open shard index {}", shard.as_path_token()))?;
+            let count = idx.rebuild(entries.iter().map(|(id, emb)| (*id, emb.as_slice())))?;
+            self.anns.borrow_mut().insert(shard, idx);
+            total += count;
+        }
+        Ok(total)
+    }
+
+    /// Build a coarse shard router from a 1% sample of embeddings.
+    /// The router learns to route queries to the top-p most relevant shards,
+    /// reducing search fan-out from 15 to ~5 shards on average (Chunk 48.3).
+    ///
+    /// Returns the number of centroids added to the router, or an error.
+    pub fn build_shard_router(&self) -> Result<usize, String> {
+        let dim = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+        if dim == 0 {
+            return Ok(0);
+        }
+
+        // Sample 1% of all embeddings across all shards
+        let all_entries = self.live_embeddings_per_shard(dim)?;
+        let total_entries: usize = all_entries.values().map(|es| es.len()).sum();
+
+        if total_entries == 0 {
+            // No embeddings yet; return empty router
+            return Ok(0);
+        }
+
+        let mut router = super::shard_router::ShardRouter::new(dim)
+            .map_err(|e| format!("failed to create router: {}", e))?;
+
+        let mut centroid_id = 0u32;
+
+        for (shard, entries) in all_entries.iter() {
+            if entries.is_empty() {
+                continue;
+            }
+
+            // Deterministic 1% sample: take every 100th entry (or more if count < 100)
+            let sample_stride = (entries.len() / 100).max(1);
+            let mut sampled: Vec<&Vec<f32>> = Vec::new();
+
+            for (i, entry) in entries.iter().enumerate() {
+                if i % sample_stride == 0 {
+                    sampled.push(entry);
+                }
+            }
+
+            // Add centroids to router
+            for embedding in sampled {
+                router
+                    .add_centroid(centroid_id, embedding, *shard)
+                    .map_err(|e| format!("failed to add centroid: {}", e))?;
+                centroid_id += 1;
             }
         }
-        Ok(out)
+
+        // Save router to disk
+        if let Some(data_dir) = &self.data_dir {
+            let vectors_dir = data_dir.join("vectors");
+            let _ = std::fs::create_dir_all(&vectors_dir);
+            router
+                .save_to_dir(&vectors_dir)
+                .map_err(|e| format!("failed to save router: {}", e))?;
+        }
+
+        *self.router.borrow_mut() = Some(router);
+        self.router_last_refresh_mutation
+            .set(self.mutations.load(Ordering::Relaxed));
+        self.router_last_refresh_attempt_ms.set(now_ms());
+        Ok(centroid_id as usize)
+    }
+
+    /// Throttled router refresh policy used by both query path and scheduled
+    /// maintenance. Returns `Ok(Some(count))` when a refresh ran, `Ok(None)`
+    /// when skipped by policy, or `Err` on refresh failure.
+    pub fn maybe_refresh_shard_router(&self, force: bool) -> Result<Option<usize>, String> {
+        let now = now_ms();
+        let last_attempt = self.router_last_refresh_attempt_ms.get();
+        if !force && last_attempt > 0 && now - last_attempt < ROUTER_REFRESH_COOLDOWN_MS {
+            return Ok(None);
+        }
+
+        let current_mutations = self.mutations.load(Ordering::Relaxed);
+        let last_refresh_mutations = self.router_last_refresh_mutation.get();
+        let mutation_delta = current_mutations.saturating_sub(last_refresh_mutations);
+
+        let router_state = self.router.borrow();
+        let has_cached = router_state.is_some();
+        let cached_stale = router_state.as_ref().map(|r| r.is_stale()).unwrap_or(true);
+        drop(router_state);
+
+        let due_by_time = !has_cached || cached_stale;
+        let due_by_volume = mutation_delta >= ROUTER_REFRESH_MIN_MUTATIONS;
+        if !force && !due_by_time && !due_by_volume {
+            return Ok(None);
+        }
+
+        self.router_last_refresh_attempt_ms.set(now);
+        let count = self.build_shard_router()?;
+        Ok(Some(count))
+    }
+
+    /// Router metadata surfaced in health checks.
+    pub fn router_health_summary(&self) -> Result<super::shard_router::RouterHealth, String> {
+        let now = now_ms();
+        let has_cached_router = self.router.borrow().is_some();
+        let vectors_dir = self.data_dir.as_ref().map(|d| d.join("vectors"));
+
+        let disk_meta = if let Some(dir) = vectors_dir.as_ref() {
+            super::shard_router::load_disk_meta(dir)?
+        } else {
+            None
+        };
+
+        let cached_meta = self.router.borrow().as_ref().map(|router| {
+            (
+                router.built_at(),
+                router.centroid_count(),
+                router.is_stale(),
+            )
+        });
+
+        let built_at = cached_meta
+            .as_ref()
+            .map(|m| m.0)
+            .or_else(|| disk_meta.as_ref().map(|m| m.built_at));
+        let centroid_count = cached_meta
+            .as_ref()
+            .map(|m| m.1)
+            .or_else(|| disk_meta.as_ref().map(|m| m.centroid_count))
+            .unwrap_or(0);
+        let stale = cached_meta.as_ref().map(|m| m.2).unwrap_or_else(|| {
+            built_at
+                .map(|ts| {
+                    now.saturating_sub(ts)
+                        > super::shard_router::ShardRouter::STALENESS_THRESHOLD_MS
+                })
+                .unwrap_or(true)
+        });
+
+        let age_ms = built_at.map(|ts| now.saturating_sub(ts));
+        let last_attempt = self.router_last_refresh_attempt_ms.get();
+        let last_attempt = if last_attempt > 0 {
+            Some(last_attempt)
+        } else {
+            None
+        };
+        let current_mutations = self.mutations.load(Ordering::Relaxed);
+        let mutation_delta =
+            current_mutations.saturating_sub(self.router_last_refresh_mutation.get());
+
+        Ok(super::shard_router::RouterHealth {
+            has_cached_router,
+            has_persisted_router: disk_meta.is_some(),
+            built_at,
+            age_ms,
+            centroid_count,
+            stale,
+            last_refresh_attempt_ms: last_attempt,
+            refresh_cooldown_ms: ROUTER_REFRESH_COOLDOWN_MS as u64,
+            min_mutations_for_refresh: ROUTER_REFRESH_MIN_MUTATIONS,
+            mutations_since_refresh: mutation_delta,
+        })
+    }
+
+    /// Load the shard router from disk, if it exists and is healthy.
+    /// Falls back to `Ok(None)` if missing or stale (> 24h old).
+    pub fn load_shard_router(&self) -> Result<Option<super::shard_router::ShardRouter>, String> {
+        if let Some(data_dir) = &self.data_dir {
+            let vectors_dir = data_dir.join("vectors");
+            if vectors_dir.exists() {
+                match super::shard_router::ShardRouter::load_from_dir(&vectors_dir) {
+                    Ok(Some(router)) => {
+                        if router.is_healthy() {
+                            return Ok(Some(router));
+                        }
+                    }
+                    Ok(None) => {
+                        return Ok(None);
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: failed to load router: {}", e);
+                        return Ok(None);
+                    }
+                }
+            }
+        }
+        Ok(None)
+    }
+
+    /// Select top-p shards for a query embedding using the coarse router.
+    /// Falls back to "all shards" if the router is missing, stale, or invalid.
+    pub fn select_shards_for_query(&self, query_embedding: &[f32]) -> Vec<ShardKey> {
+        // Try to use the cached router
+        {
+            let router_ref = self.router.borrow();
+            if let Some(router) = router_ref.as_ref() {
+                if router.is_healthy() {
+                    if let Ok(shards) = router.select_top_shards(
+                        query_embedding,
+                        super::shard_router::ShardRouter::DEFAULT_TOP_P,
+                    ) {
+                        if !shards.is_empty() {
+                            return shards;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Try loading a persisted router from disk (if available and healthy).
+        if let Ok(Some(router)) = self.load_shard_router() {
+            if let Ok(shards) = router.select_top_shards(
+                query_embedding,
+                super::shard_router::ShardRouter::DEFAULT_TOP_P,
+            ) {
+                if !shards.is_empty() {
+                    *self.router.borrow_mut() = Some(router);
+                    return shards;
+                }
+            }
+        }
+
+        // Try a throttled rebuild before fallback. This avoids repeated rebuild
+        // bursts under high query load while still healing stale/missing routers.
+        let _ = self.maybe_refresh_shard_router(false);
+        {
+            let router_ref = self.router.borrow();
+            if let Some(router) = router_ref.as_ref() {
+                if router.is_healthy() {
+                    if let Ok(shards) = router.select_top_shards(
+                        query_embedding,
+                        super::shard_router::ShardRouter::DEFAULT_TOP_P,
+                    ) {
+                        if !shards.is_empty() {
+                            return shards;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: probe all shards
+        ShardKey::all()
+    }
+
+    /// Helper to gather all embeddings grouped by shard for router building.
+    /// Returns a map from `ShardKey` to vectors of embedding bytes.
+    fn live_embeddings_per_shard(
+        &self,
+        expected_dim: usize,
+    ) -> Result<std::collections::HashMap<ShardKey, Vec<Vec<f32>>>, String> {
+        let mut result: std::collections::HashMap<ShardKey, Vec<Vec<f32>>> =
+            std::collections::HashMap::new();
+
+        for shard in ShardKey::all() {
+            let entries = self.live_embeddings_for_shard(shard, expected_dim)?;
+            if !entries.is_empty() {
+                result.insert(shard, entries.into_iter().map(|(_, emb)| emb).collect());
+            }
+        }
+
+        Ok(result)
+    }
+
+    /// Check if any shard's PQ codebooks are stale and need refresh (Phase 48.4).
+    /// Returns true if at least one large shard has stale codebooks (> 7 days old) or missing codebooks.
+    pub fn pq_codebooks_need_refresh(&self) -> bool {
+        let data_dir = match &self.data_dir {
+            Some(dir) => dir,
+            None => return false, // No data directory, can't persist codebooks
+        };
+
+        for shard in ShardKey::all() {
+            if let Some(idx) = self.anns.borrow().get(&shard) {
+                // Check if this is a large shard that should have codebooks
+                if idx.is_large_shard() {
+                    // Load codebooks from disk to check if they exist and are stale
+                    let codebook_path = data_dir.join("vectors.pq.json");
+
+                    if let Ok(Some(codebooks)) =
+                        super::ann_index::PQCodebooks::load_from_disk(&codebook_path)
+                    {
+                        if codebooks.is_stale() {
+                            return true;
+                        }
+                    } else {
+                        // Missing or unreadable codebooks for large shard = needs refresh
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Refresh PQ codebooks for all large shards (Phase 48.4 Phase 2).
+    /// Rebuilds codebooks from a sample of embeddings if they're stale or missing.
+    /// Returns the number of shards refreshed.
+    pub fn refresh_pq_codebooks(&self) -> Result<usize, String> {
+        let data_dir = match &self.data_dir {
+            Some(dir) => dir.clone(),
+            None => return Ok(0), // No data directory, skip refresh
+        };
+
+        let dim = super::ann_index::detect_dimensions(&self.conn).unwrap_or(0);
+        if dim == 0 {
+            return Ok(0);
+        }
+
+        let mut refreshed_count = 0usize;
+
+        for shard in ShardKey::all() {
+            let entries = self.live_embeddings_for_shard(shard, dim)?;
+
+            // Only refresh for large shards
+            if entries.len() <= super::ann_index::LARGE_SHARD_THRESHOLD {
+                continue;
+            }
+
+            // Get the shard index
+            if let Some(idx) = self.anns.borrow().get(&shard) {
+                // Check if codebooks are stale or missing
+                let codebook_path = data_dir.join("vectors.pq.json");
+                let needs_refresh =
+                    match super::ann_index::PQCodebooks::load_from_disk(&codebook_path) {
+                        Ok(Some(codebooks)) => codebooks.is_stale(),
+                        Ok(None) => true, // Missing codebooks
+                        Err(_) => true,   // Load error, assume stale
+                    };
+
+                if needs_refresh {
+                    // Sample embeddings for codebook building (10k or 10%, whichever is smaller)
+                    let sample_size = std::cmp::min(10_000, entries.len() / 10);
+                    let embeddings: Vec<Vec<f32>> = entries
+                        .iter()
+                        .step_by((entries.len() / sample_size).max(1))
+                        .take(sample_size)
+                        .map(|(_, emb)| emb.clone())
+                        .collect();
+
+                    // Rebuild codebooks
+                    if idx.build_pq_codebooks(&embeddings).is_ok() {
+                        // Save to disk
+                        let _ = idx.save_pq_codebooks(&data_dir);
+                        refreshed_count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(refreshed_count)
+    }
+
+    /// Phase 3 kickoff planner: decide which shards should be migrated to
+    /// disk-backed ANN first, based on per-shard cardinality.
+    pub fn disk_ann_plan(
+        &self,
+        threshold: usize,
+    ) -> Result<super::disk_backed_ann::DiskAnnPlan, String> {
+        let threshold = if threshold == 0 {
+            super::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD
+        } else {
+            threshold
+        };
+
+        let mut rows: Vec<(String, usize, bool)> = Vec::new();
+        for shard in ShardKey::all() {
+            let count = self.shard_entry_count(&shard).map_err(|e| e.to_string())? as usize;
+            if count == 0 {
+                continue;
+            }
+            let ann_exists = if let Some(dir) = self.data_dir() {
+                super::ann_index::index_path_for_token(dir, &shard.as_path_token()).exists()
+            } else {
+                true
+            };
+            rows.push((shard.as_path_token(), count, ann_exists));
+        }
+
+        Ok(super::disk_backed_ann::plan_from_counts(threshold, rows))
+    }
+
+    /// Execute one disk-backed ANN migration batch by writing IVF-PQ sidecars
+    /// for top candidate shards. This is the first executable Phase 3 path:
+    /// it does not build IVF-PQ indexes yet, but persists per-shard migration
+    /// metadata so a future index-builder can consume deterministic sidecars.
+    pub fn run_disk_ann_migration_job(
+        &self,
+        threshold: usize,
+        max_shards: usize,
+    ) -> Result<super::disk_backed_ann::DiskAnnMigrationReport, String> {
+        let threshold = if threshold == 0 {
+            super::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD
+        } else {
+            threshold
+        };
+        let max_shards = if max_shards == 0 {
+            super::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN
+        } else {
+            max_shards
+        };
+
+        let mut report =
+            super::disk_backed_ann::DiskAnnMigrationReport::empty(threshold, max_shards);
+        let Some(data_dir) = self.data_dir() else {
+            return Ok(report);
+        };
+
+        let plan = self.disk_ann_plan(threshold)?;
+        if plan.candidates.is_empty() {
+            return Ok(report);
+        }
+
+        let vectors_dir = data_dir.join("vectors");
+        for candidate in plan.candidates.iter().take(max_shards) {
+            report.attempted += 1;
+
+            if !candidate.ann_index_exists {
+                report.skipped_missing_ann += 1;
+                report
+                    .items
+                    .push(super::disk_backed_ann::DiskAnnMigrationItem {
+                        shard: candidate.shard.clone(),
+                        migrated: false,
+                        reason: "ANN index file missing; sidecar not written".to_string(),
+                    });
+                continue;
+            }
+
+            let ann_path = super::ann_index::index_path_for_token(data_dir, &candidate.shard);
+            if !ann_path.exists() {
+                report.skipped_missing_ann += 1;
+                report
+                    .items
+                    .push(super::disk_backed_ann::DiskAnnMigrationItem {
+                        shard: candidate.shard.clone(),
+                        migrated: false,
+                        reason: "ANN index path does not exist on disk".to_string(),
+                    });
+                continue;
+            }
+
+            let sidecar = super::disk_backed_ann::DiskAnnSidecar::new(
+                candidate.shard.clone(),
+                candidate.entry_count,
+                threshold,
+                ann_path.to_string_lossy().to_string(),
+            );
+            super::disk_backed_ann::write_sidecar(&vectors_dir, &sidecar)?;
+
+            report.migrated += 1;
+            report.sidecars_written += 1;
+            report
+                .items
+                .push(super::disk_backed_ann::DiskAnnMigrationItem {
+                    shard: candidate.shard.clone(),
+                    migrated: true,
+                    reason: "IVF-PQ sidecar written".to_string(),
+                });
+        }
+
+        Ok(report)
+    }
+
+    /// Disk-backed ANN migration health summary for `brain_health`.
+    pub fn disk_ann_health_summary(
+        &self,
+        threshold: usize,
+    ) -> Result<super::disk_backed_ann::DiskAnnHealthSummary, String> {
+        let threshold = if threshold == 0 {
+            super::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD
+        } else {
+            threshold
+        };
+        let plan = self.disk_ann_plan(threshold)?;
+
+        let sidecars = if let Some(data_dir) = self.data_dir() {
+            super::disk_backed_ann::list_sidecars(&data_dir.join("vectors"))?
+        } else {
+            Vec::new()
+        };
+
+        let sidecar_shards: HashSet<String> = sidecars.into_iter().map(|s| s.shard).collect();
+        let ready_candidates = plan
+            .candidates
+            .iter()
+            .filter(|candidate| sidecar_shards.contains(&candidate.shard))
+            .count();
+        let eligible_candidates = plan.candidate_count;
+
+        Ok(super::disk_backed_ann::DiskAnnHealthSummary {
+            threshold,
+            eligible_candidates,
+            sidecars_total: sidecar_shards.len(),
+            ready_candidates,
+            missing_sidecars: eligible_candidates.saturating_sub(ready_candidates),
+        })
     }
 }
 
@@ -2630,6 +3507,59 @@ mod tests {
         assert_eq!(entry.content, "User prefers Python");
         assert_eq!(entry.importance, 3);
         assert_eq!(entry.access_count, 0);
+    }
+
+    #[test]
+    fn diversified_ranked_caps_real_sessions_only() {
+        let store = MemoryStore::in_memory();
+        let mut ranked = Vec::new();
+        for idx in 0..5 {
+            let entry = store
+                .add_to_tier(
+                    NewMemory {
+                        content: format!("noisy session memory {idx}"),
+                        tags: "retrieval".to_string(),
+                        ..new_memory("unused")
+                    },
+                    MemoryTier::Long,
+                    Some("session-a"),
+                )
+                .unwrap();
+            ranked.push((entry.id, 1.0 - (idx as f64 * 0.01)));
+        }
+        for idx in 0..2 {
+            let entry = store
+                .add_to_tier(
+                    NewMemory {
+                        content: format!("other session memory {idx}"),
+                        tags: "retrieval".to_string(),
+                        ..new_memory("unused")
+                    },
+                    MemoryTier::Long,
+                    Some("session-b"),
+                )
+                .unwrap();
+            ranked.push((entry.id, 0.5 - (idx as f64 * 0.01)));
+        }
+        let global = store.add(new_memory("global durable memory")).unwrap();
+        ranked.push((global.id, 0.1));
+
+        let by_id: HashMap<i64, MemoryEntry> = store
+            .get_entries_by_ids(&ranked.iter().map(|(id, _)| *id).collect::<Vec<_>>())
+            .unwrap()
+            .into_iter()
+            .map(|entry| (entry.id, entry))
+            .collect();
+
+        let selected = select_diversified_ranked(ranked, &by_id, 6, 3);
+        let session_a_count = selected
+            .iter()
+            .filter(|(id, _)| {
+                by_id.get(id).and_then(|entry| entry.session_id.as_deref()) == Some("session-a")
+            })
+            .count();
+        assert_eq!(session_a_count, 3);
+        assert!(selected.iter().any(|(id, _)| *id == global.id));
     }
 
     #[test]
@@ -4043,5 +4973,344 @@ mod tests {
 
         let recs = store.get_reinforcements(e.id, 10).unwrap();
         assert!(recs.is_empty());
+    }
+
+    // ── Chunk 48.4 Phase 2 — PQ Codebook Refresh Tests ────────────────────────────
+
+    #[test]
+    fn pq_codebooks_need_refresh_returns_false_with_no_data() {
+        // Empty store → no large shards → no refresh needed
+        let store = MemoryStore::in_memory();
+        assert!(!store.pq_codebooks_need_refresh());
+    }
+
+    #[test]
+    fn pq_codebooks_need_refresh_returns_false_when_data_below_threshold() {
+        // Small dataset → below LARGE_SHARD_THRESHOLD → no refresh needed
+        let store = MemoryStore::in_memory();
+        for i in 0..1000 {
+            let m = NewMemory {
+                content: format!("entry {}", i),
+                tags: format!("tier_long|kind_semantic"),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            };
+            store.add(m).unwrap();
+        }
+        // With 1000 entries (far below 50M threshold), no refresh needed
+        assert!(!store.pq_codebooks_need_refresh());
+    }
+
+    #[test]
+    fn refresh_pq_codebooks_returns_zero_with_no_data() {
+        // Empty store → no codebooks to refresh
+        let store = MemoryStore::in_memory();
+        let refreshed = store.refresh_pq_codebooks().unwrap();
+        assert_eq!(refreshed, 0);
+    }
+
+    #[test]
+    fn refresh_pq_codebooks_handles_small_shards_gracefully() {
+        // Small dataset should skip PQ refresh (below threshold)
+        let store = MemoryStore::in_memory();
+        for i in 0..100 {
+            let m = NewMemory {
+                content: format!("entry {}", i),
+                tags: format!("tier_long|kind_semantic"),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            };
+            store.add(m).unwrap();
+        }
+        // Should succeed but return 0 refreshed (below threshold)
+        let refreshed = store.refresh_pq_codebooks().unwrap();
+        assert_eq!(refreshed, 0, "Small shards should not trigger PQ refresh");
+    }
+
+    // ─── FTS5 keyword index tests (Chunk 48.5) ───────────────────────
+
+    #[test]
+    fn fts5_index_is_created_on_new_store() {
+        let store = MemoryStore::in_memory();
+        assert!(store.has_fts5(), "FTS5 table should exist after init");
+    }
+
+    #[test]
+    fn fts5_search_finds_inserted_memory() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "Quantum entanglement is fascinating".to_string(),
+                tags: "physics,science".to_string(),
+                importance: 4,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                content: "Cooking pasta requires boiling water".to_string(),
+                tags: "cooking,food".to_string(),
+                importance: 2,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let ids = store
+            .keyword_candidate_ids(&["quantum".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 1);
+
+        let ids = store
+            .keyword_candidate_ids(&["pasta".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn fts5_search_respects_pool_limit() {
+        let store = MemoryStore::in_memory();
+        for i in 0..20 {
+            store
+                .add(NewMemory {
+                    content: format!("Memory about Rust programming lesson {}", i),
+                    tags: "rust,programming".to_string(),
+                    importance: 3,
+                    memory_type: MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let ids = store
+            .keyword_candidate_ids(&["rust".to_string()], 5)
+            .unwrap();
+        assert!(ids.len() <= 5, "pool limit should cap results");
+    }
+
+    #[test]
+    fn fts5_search_or_semantics() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "Cats are wonderful pets".to_string(),
+                tags: "animals".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                content: "Dogs are loyal companions".to_string(),
+                tags: "animals".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let ids = store
+            .keyword_candidate_ids(&["cats".to_string(), "dogs".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 2, "OR should match both entries");
+    }
+
+    #[test]
+    fn fts5_triggers_keep_index_in_sync_on_update() {
+        let store = MemoryStore::in_memory();
+        let entry = store
+            .add(NewMemory {
+                content: "Original content about dolphins".to_string(),
+                tags: "marine".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Before update: "dolphins" matches.
+        let ids = store
+            .keyword_candidate_ids(&["dolphins".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 1);
+
+        // Update content.
+        store
+            .update(
+                entry.id,
+                MemoryUpdate {
+                    content: Some("Updated content about elephants".to_string()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        // After update: "dolphins" should no longer match.
+        let ids = store
+            .keyword_candidate_ids(&["dolphins".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 0, "FTS5 should reflect updated content");
+
+        // "elephants" should now match.
+        let ids = store
+            .keyword_candidate_ids(&["elephants".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 1);
+    }
+
+    #[test]
+    fn fts5_triggers_keep_index_in_sync_on_delete() {
+        let store = MemoryStore::in_memory();
+        let entry = store
+            .add(NewMemory {
+                content: "Temporary note about zebras".to_string(),
+                tags: "test".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let ids = store
+            .keyword_candidate_ids(&["zebras".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 1);
+
+        store.delete(entry.id).unwrap();
+
+        let ids = store
+            .keyword_candidate_ids(&["zebras".to_string()], 10)
+            .unwrap();
+        assert_eq!(ids.len(), 0, "FTS5 should reflect deletion");
+    }
+
+    #[test]
+    fn fts5_search_method_uses_fts5() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "Astrophysics involves studying celestial bodies".to_string(),
+                tags: "science,space".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(NewMemory {
+                content: "Gardening tips for spring planting".to_string(),
+                tags: "hobby".to_string(),
+                importance: 2,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results = store.search("astrophysics").unwrap();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].content.contains("Astrophysics"));
+    }
+
+    #[test]
+    fn fts5_covering_indexes_exist() {
+        let store = MemoryStore::in_memory();
+        let exists: bool = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_memories_last_accessed'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            > 0;
+        assert!(exists, "last_accessed covering index should exist");
+
+        let exists: bool = store
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_memories_decay_recency'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap()
+            > 0;
+        assert!(exists, "decay_recency covering index should exist");
+    }
+
+    #[test]
+    fn schema_version_is_21() {
+        let store = MemoryStore::in_memory();
+        assert_eq!(store.schema_version(), 21);
+    }
+
+    #[test]
+    fn disk_ann_migration_job_writes_sidecar_for_candidate_shard() {
+        let root = std::env::temp_dir().join(format!("ts_disk_ann_migrate_{}", now_ms()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let store = MemoryStore::new(&root);
+        let entry = store
+            .add(NewMemory {
+                content: "Disk ANN migration candidate".to_string(),
+                tags: "semantic".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        store
+            .set_embedding(entry.id, &[0.1, 0.2, 0.3, 0.4])
+            .unwrap();
+        let _ = store.ann_save_all();
+
+        let report = store.run_disk_ann_migration_job(1, 1).unwrap();
+        assert_eq!(report.migrated, 1);
+        assert_eq!(report.sidecars_written, 1);
+        assert_eq!(report.attempted, 1);
+
+        let sidecar =
+            crate::memory::disk_backed_ann::read_sidecar(&root.join("vectors"), "long__semantic")
+                .unwrap()
+                .expect("expected sidecar for long__semantic");
+        assert_eq!(sidecar.shard, "long__semantic");
+        assert_eq!(sidecar.threshold, 1);
+        assert_eq!(sidecar.status, "planned");
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn disk_ann_health_summary_reports_missing_sidecars() {
+        let root = std::env::temp_dir().join(format!("ts_disk_ann_health_{}", now_ms()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+
+        let store = MemoryStore::new(&root);
+        let entry = store
+            .add(NewMemory {
+                content: "Eligible shard without sidecar".to_string(),
+                tags: "semantic".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .set_embedding(entry.id, &[0.4, 0.3, 0.2, 0.1])
+            .unwrap();
+        let _ = store.ann_save_all();
+
+        let health = store.disk_ann_health_summary(1).unwrap();
+        assert_eq!(health.eligible_candidates, 1);
+        assert_eq!(health.ready_candidates, 0);
+        assert_eq!(health.missing_sidecars, 1);
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

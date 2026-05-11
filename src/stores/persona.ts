@@ -100,7 +100,8 @@ export const usePersonaStore = defineStore('persona', () => {
       t.bio.trim() !== def.bio ||
       t.tone.length !== def.tone.length ||
       t.tone.some((x, i) => x !== def.tone[i]) ||
-      t.quirks.length > 0
+      t.quirks.length > 0 ||
+      JSON.stringify(t.voiceProfile) !== JSON.stringify(def.voiceProfile)
     );
   });
 
@@ -180,9 +181,17 @@ export const usePersonaStore = defineStore('persona', () => {
    *  push the rendered block to the backend so the next chat turn picks
    *  it up. */
   async function saveTraits(next: Partial<PersonaTraits>): Promise<void> {
+    const voiceProfile = migratePersonaTraits({
+      ...traits.value,
+      voiceProfile: {
+        ...traits.value.voiceProfile,
+        ...(next.voiceProfile ?? {}),
+      },
+    }).voiceProfile;
     traits.value = {
       ...traits.value,
       ...next,
+      voiceProfile,
       version: PERSONA_SCHEMA_VERSION,
       updatedAt: Date.now(),
     };

@@ -49,6 +49,7 @@ own auto-loaded instruction file format:
 | Claude Code | `CLAUDE.md` (repo root) |
 | Codex CLI / OpenAI agents | `AGENTS.md` (repo root) |
 | Cursor | `.cursorrules` (repo root) |
+| Hermes Agent (NousResearch) | `AGENTS.md` (repo root) — auto-loaded by Hermes per its docs |
 
 **Canonical source:** `.github/copilot-instructions.md` is the single source
 of truth for project-wide instructions. It contains the full architecture,

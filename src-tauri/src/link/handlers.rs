@@ -8,6 +8,7 @@
 use super::{LinkMessage, LinkStatus, PeerAddr};
 use crate::memory::crdt_sync::SyncDelta;
 use crate::memory::edge_crdt_sync::EdgeSyncDelta;
+use crate::memory::embedding_queue;
 use crate::AppState;
 
 /// Dispatch an inbound LinkMessage to the appropriate handler.
@@ -63,6 +64,12 @@ async fn handle_memory_sync(
         store
             .log_sync(&msg.origin, "inbound", total)
             .map_err(|e| e.to_string())?;
+
+        // Enqueue newly synced entries for embedding so the ANN index
+        // picks them up on the next embed worker tick (multi-device fix).
+        if total > 0 {
+            let _ = embedding_queue::backfill_queue(store.conn());
+        }
     }
 
     if response_deltas.is_empty() {
