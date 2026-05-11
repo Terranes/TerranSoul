@@ -26,6 +26,7 @@ services:
     environment:
       - TERRANSOUL_MCP_DATA_DIR=/home/terransoul/mcp-data
       - TERRANSOUL_MCP_PORT=7423
+      - TERRANSOUL_MCP_BIND=0.0.0.0
       - TERRANSOUL_MCP_IDLE_TIMEOUT=0
       - RUST_LOG=info
     healthcheck:

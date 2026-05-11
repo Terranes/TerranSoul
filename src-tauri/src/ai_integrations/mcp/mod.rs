@@ -114,6 +114,8 @@ impl IngestSink for AppHandleIngestSink {
             source,
             tags,
             importance,
+            None,
+            None,
             self.app.clone(),
             state,
         )
@@ -157,6 +159,8 @@ impl IngestSink for HeadlessIngestSink {
             source,
             tags,
             importance,
+            None,
+            None,
             self.state.clone(),
         )
         .await

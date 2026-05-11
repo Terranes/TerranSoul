@@ -102,6 +102,12 @@ export interface AppSettings {
   code_index_mmap_mb?: number;
   /** User-defined context folders for knowledge ingestion (brute-force scan, not recommended for large trees). */
   context_folders?: ContextFolder[];
+  /** Default Scholar's Quest web crawl toggle. */
+  scholar_crawl_enabled?: boolean;
+  /** Scholar's Quest crawl depth limit. Default 2. */
+  scholar_crawl_max_depth?: number;
+  /** Scholar's Quest crawl page limit. Default 20. */
+  scholar_crawl_max_pages?: number;
   /** Controls extended-thinking (chain-of-thought) depth for the LLM. Only affects models supporting Ollama's `think` parameter. */
   reasoning_effort?: ReasoningEffort;
   /** When true, show karaoke-style subtitle dialog above chat controls during TTS playback. */
@@ -136,6 +142,14 @@ export const MAX_CODE_INDEX_CACHE_MB = 256;
 export const DEFAULT_CODE_INDEX_MMAP_MB = 32;
 export const MIN_CODE_INDEX_MMAP_MB = 0;
 export const MAX_CODE_INDEX_MMAP_MB = 1024;
+
+export const DEFAULT_SCHOLAR_CRAWL_ENABLED = false;
+export const DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH = 2;
+export const MIN_SCHOLAR_CRAWL_MAX_DEPTH = 1;
+export const MAX_SCHOLAR_CRAWL_MAX_DEPTH = 5;
+export const DEFAULT_SCHOLAR_CRAWL_MAX_PAGES = 20;
+export const MIN_SCHOLAR_CRAWL_MAX_PAGES = 1;
+export const MAX_SCHOLAR_CRAWL_MAX_PAGES = 100;
 
 export const DEFAULT_MAX_LONG_TERM_ENTRIES = 1_000_000;
 export const MIN_MAX_LONG_TERM_ENTRIES = 1_000;
@@ -185,6 +199,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
   code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
   context_folders: [],
+  scholar_crawl_enabled: DEFAULT_SCHOLAR_CRAWL_ENABLED,
+  scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+  scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
   reasoning_effort: 'off',
   karaoke_dialog_enabled: true,
   debug_logging: false,
@@ -349,6 +366,28 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ code_index_mmap_mb: clamped });
   }
 
+  async function saveScholarCrawlSettings(enabled: boolean, maxDepth: number, maxPages: number): Promise<void> {
+    const clampedDepth = Math.min(
+      MAX_SCHOLAR_CRAWL_MAX_DEPTH,
+      Math.max(
+        MIN_SCHOLAR_CRAWL_MAX_DEPTH,
+        Number.isFinite(maxDepth) ? Math.round(maxDepth) : DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+      ),
+    );
+    const clampedPages = Math.min(
+      MAX_SCHOLAR_CRAWL_MAX_PAGES,
+      Math.max(
+        MIN_SCHOLAR_CRAWL_MAX_PAGES,
+        Number.isFinite(maxPages) ? Math.round(maxPages) : DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+      ),
+    );
+    await saveSettings({
+      scholar_crawl_enabled: enabled,
+      scholar_crawl_max_depth: clampedDepth,
+      scholar_crawl_max_pages: clampedPages,
+    });
+  }
+
   return {
     // state
     settings,
@@ -371,5 +410,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSqliteMmapMb,
     saveCodeIndexCacheMb,
     saveCodeIndexMmapMb,
+    saveScholarCrawlSettings,
   };
 });

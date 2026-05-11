@@ -156,11 +156,13 @@ mod tests {
     #[test]
     fn hook_is_noop_below_threshold() {
         let ctx = RunContext::new("s", "agent", PathBuf::from("."));
-        let mut state = AgentState::default();
-        state.messages = vec![
-            AgentMessage::new("user", "u1"),
-            AgentMessage::new("assistant", "a1"),
-        ];
+        let mut state = AgentState {
+            messages: vec![
+                AgentMessage::new("user", "u1"),
+                AgentMessage::new("assistant", "a1"),
+            ],
+            ..Default::default()
+        };
         state.usage.last_prompt_tokens = 99_999;
 
         let request = ModelRequest::new(vec!["prompt".to_string()]);
@@ -176,14 +178,16 @@ mod tests {
     #[test]
     fn hook_summarizes_once_above_threshold() {
         let ctx = RunContext::new("s", "agent", PathBuf::from("."));
-        let mut state = AgentState::default();
-        state.messages = vec![
-            AgentMessage::new("user", "u1"),
-            AgentMessage::new("assistant", "a1"),
-            AgentMessage::new("user", "u2"),
-            AgentMessage::new("assistant", "a2"),
-            AgentMessage::new("user", "u3"),
-        ];
+        let mut state = AgentState {
+            messages: vec![
+                AgentMessage::new("user", "u1"),
+                AgentMessage::new("assistant", "a1"),
+                AgentMessage::new("user", "u2"),
+                AgentMessage::new("assistant", "a2"),
+                AgentMessage::new("user", "u3"),
+            ],
+            ..Default::default()
+        };
         state.usage.last_prompt_tokens = 120_000;
 
         let request = ModelRequest::new(vec!["prompt".to_string()]);

@@ -92,7 +92,13 @@ async function openGatherSourcesStep(page: Page): Promise<void> {
   await expect(hotseat).toBeVisible({ timeout: 5_000 });
 
   const autoInstall = hotseat.locator('.hotseat-tile', { hasText: 'Auto install all' }).first();
-  if (await autoInstall.isVisible({ timeout: 1_000 }).catch(() => false)) {
+  const installSageLibrary = hotseat.locator('.hotseat-tile', { hasText: "Install 📚 Sage's Library" }).first();
+  if (await installSageLibrary.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await installSageLibrary.click();
+    await expect(
+      hotseat.locator('.hotseat-tile-label', { hasText: 'Start Knowledge Quest' }),
+    ).toBeVisible({ timeout: 15_000 });
+  } else if (await autoInstall.isVisible({ timeout: 1_000 }).catch(() => false)) {
     await autoInstall.click();
     await expect(
       hotseat.locator('.hotseat-tile-label', { hasText: 'Start Knowledge Quest' }),
@@ -145,6 +151,11 @@ test('real desktop Learn from my documents opens URL and file attachment control
     await expect(questDialog.locator('.kq-url-field')).toBeVisible();
     await expect(questDialog.locator('.kq-url-add')).toBeVisible();
     await expect(questDialog.locator('input[type="file"]')).toBeAttached();
+    const crawlToggle = questDialog.locator('.kq-crawl-checkbox');
+    await expect(crawlToggle).toBeAttached();
+    await crawlToggle.check();
+    await expect(questDialog.locator('.kq-crawl-number')).toHaveCount(2);
+    await crawlToggle.uncheck();
   } finally {
     await browser.close();
   }

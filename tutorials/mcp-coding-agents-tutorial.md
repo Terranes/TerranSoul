@@ -257,7 +257,9 @@ npm run mcp:container:stop     # stop and remove the service container
 The container uses `Dockerfile.mcp`, `docker-compose.mcp.yml`, and the
 display-free `terransoul --mcp-http` entry point. Runtime state lives in the
 `terransoul-mcp-data` Docker volume, while seed knowledge comes from the
-checked-in `mcp-data/shared/` snapshot baked into the image.
+checked-in `mcp-data/shared/` snapshot baked into the image. The server binds
+to `0.0.0.0` inside the container so Docker can publish it, but Compose maps the
+host side to `127.0.0.1:7423` only.
 
 Verify health after startup:
 

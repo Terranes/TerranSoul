@@ -13,6 +13,11 @@ export interface TaskInfo {
   error: string | null;
 }
 
+export interface CrawlIngestOptions {
+  crawlDepth?: number;
+  crawlMaxPages?: number;
+}
+
 export const useTaskStore = defineStore('tasks', () => {
   const tasks = ref<Map<string, TaskInfo>>(new Map());
   let unlistenProgress: (() => void) | null = null;
@@ -54,10 +59,13 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function ingestDocument(source: string, tags?: string, importance?: number) {
+  async function ingestDocument(source: string, tags?: string, importance?: number, options?: CrawlIngestOptions) {
     try {
+      const payload: Record<string, unknown> = { source, tags, importance };
+      if (options?.crawlDepth != null) payload.crawlDepth = options.crawlDepth;
+      if (options?.crawlMaxPages != null) payload.crawlMaxPages = options.crawlMaxPages;
       const result = await invoke<{ task_id: string; source: string; source_type: string }>(
-        'ingest_document', { source, tags, importance }
+        'ingest_document', payload,
       );
       return result;
     } catch (e) {

@@ -719,6 +719,12 @@ fn resolve_headless_mcp_idle_timeout() -> u64 {
         .unwrap_or(0)
 }
 
+fn resolve_headless_mcp_bind_all_interfaces() -> bool {
+    std::env::var("TERRANSOUL_MCP_BIND")
+        .ok()
+        .is_some_and(|value| matches!(value.trim(), "0.0.0.0" | "all" | "*"))
+}
+
 /// Run TerranSoul as a repo-local MCP HTTP server without a Tauri UI.
 ///
 /// This is intended for containers, CI/research services, and other
@@ -737,11 +743,17 @@ pub fn run_mcp_http() -> std::io::Result<()> {
     let data_dir = resolve_headless_mcp_data_dir();
     let port = resolve_headless_mcp_port();
     let idle_timeout_secs = resolve_headless_mcp_idle_timeout();
+    let bind_all_interfaces = resolve_headless_mcp_bind_all_interfaces();
+    let bind_host = if bind_all_interfaces {
+        "0.0.0.0"
+    } else {
+        "127.0.0.1"
+    };
 
     std::fs::create_dir_all(&data_dir)?;
     ai_integrations::mcp::enable_mcp_pet_mode();
     eprintln!("[mcp-http] data dir: {}", data_dir.display());
-    eprintln!("[mcp-http] port: {port}");
+    eprintln!("[mcp-http] bind: {bind_host}:{port}");
 
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -772,7 +784,7 @@ pub fn run_mcp_http() -> std::io::Result<()> {
             state.clone(),
             port,
             token.clone(),
-            false,
+            bind_all_interfaces,
             false,
             None,
             idle_timeout_secs,
@@ -781,8 +793,8 @@ pub fn run_mcp_http() -> std::io::Result<()> {
         .map_err(std::io::Error::other)?;
 
         eprintln!(
-            "[mcp-http] MCP server listening on http://127.0.0.1:{} (POST /mcp)",
-            handle.port
+            "[mcp-http] MCP server listening on http://{}:{} (POST /mcp)",
+            bind_host, handle.port
         );
         eprintln!("[mcp-http] bearer token: {token}");
 

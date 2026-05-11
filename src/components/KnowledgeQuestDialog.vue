@@ -36,6 +36,7 @@
 
           <!-- ═══ Step Tracker ═══ -->
           <nav
+            v-if="!prerequisiteDeclined"
             class="kq-steps"
             aria-label="Quest progress"
           >
@@ -57,45 +58,35 @@
 
           <!-- ═══ Step Content ═══ -->
           <div class="kq-body">
-            <!-- Step 1: Verify Brain -->
+            <!-- Prerequisite decline -->
             <section
-              v-if="currentStep === 0"
-              class="kq-section"
+              v-if="prerequisiteDeclined"
+              class="kq-section kq-prereq-decline"
             >
               <h3 class="kq-section-title">
-                🧠 Verifying Brain
+                Prerequisites Needed
               </h3>
-              <div class="kq-check-list">
+              <p class="kq-hint">
+                Complete these prerequisite quests before starting Scholar's Quest.
+              </p>
+              <div class="kq-prereq-list">
                 <div
-                  v-for="check in brainChecks"
-                  :key="check.label"
-                  class="kq-check"
+                  v-for="id in missingPrerequisiteIds"
+                  :key="id"
+                  class="kq-prereq-item"
                 >
-                  <span class="kq-check-icon">{{ check.ok ? '✅' : check.checking ? '⏳' : '❌' }}</span>
-                  <span class="kq-check-label">{{ check.label }}</span>
-                  <span
-                    v-if="check.detail"
-                    class="kq-check-detail"
-                  >{{ check.detail }}</span>
+                  <span class="kq-prereq-icon">{{ questIcon(id) }}</span>
+                  <span class="kq-prereq-name">{{ questName(id) }}</span>
                 </div>
               </div>
-              <p
-                v-if="brainReady"
-                class="kq-success-text"
-              >
-                All systems ready! Your brain can learn.
-              </p>
-              <p
-                v-else-if="brainError"
-                class="kq-error-text"
-              >
-                {{ brainError }}
+              <p class="kq-prereq-question">
+                Start the prerequisite setup now?
               </p>
             </section>
 
-            <!-- Step 2: Gather Sources -->
+            <!-- Step 1: Gather Sources -->
             <section
-              v-if="currentStep === 1"
+              v-if="!prerequisiteDeclined && currentStep === 0"
               class="kq-section"
             >
               <h3 class="kq-section-title">
@@ -127,9 +118,39 @@
                     v-model="crawlWholeSite"
                     type="checkbox"
                     class="kq-crawl-checkbox"
+                    @change="persistCrawlSettings"
                   >
-                  <span>🕸️ Crawl whole site (follow same-domain links, up to depth 2 / 20 pages)</span>
+                  <span>🕸️ Crawl whole site</span>
                 </label>
+                <div
+                  v-if="crawlWholeSite"
+                  class="kq-crawl-options"
+                >
+                  <label class="kq-crawl-option">
+                    <span>Depth</span>
+                    <input
+                      v-model.number="crawlMaxDepth"
+                      type="number"
+                      :min="MIN_SCHOLAR_CRAWL_MAX_DEPTH"
+                      :max="MAX_SCHOLAR_CRAWL_MAX_DEPTH"
+                      class="kq-crawl-number"
+                      @change="persistCrawlSettings"
+                      @blur="persistCrawlSettings"
+                    >
+                  </label>
+                  <label class="kq-crawl-option">
+                    <span>Pages</span>
+                    <input
+                      v-model.number="crawlMaxPages"
+                      type="number"
+                      :min="MIN_SCHOLAR_CRAWL_MAX_PAGES"
+                      :max="MAX_SCHOLAR_CRAWL_MAX_PAGES"
+                      class="kq-crawl-number"
+                      @change="persistCrawlSettings"
+                      @blur="persistCrawlSettings"
+                    >
+                  </label>
+                </div>
                 <div class="kq-file-row">
                   <button
                     class="kq-file-btn"
@@ -172,9 +193,9 @@
               </div>
             </section>
 
-            <!-- Step 3: Learning -->
+            <!-- Step 2: Learning -->
             <section
-              v-if="currentStep === 2"
+              v-if="!prerequisiteDeclined && currentStep === 1"
               class="kq-section"
             >
               <h3 class="kq-section-title">
@@ -218,9 +239,9 @@
               </div>
             </section>
 
-            <!-- Step 4: Ready -->
+            <!-- Step 3: Ready -->
             <section
-              v-if="currentStep === 3"
+              v-if="!prerequisiteDeclined && currentStep === 2"
               class="kq-section"
             >
               <h3 class="kq-section-title">
@@ -254,28 +275,35 @@
           <!-- ═══ Footer Actions ═══ -->
           <footer class="kq-footer">
             <button
-              v-if="currentStep === 0 && brainReady"
-              class="kq-btn kq-btn-primary"
-              @click="advanceStep"
+              v-if="prerequisiteDeclined"
+              class="kq-btn kq-btn-secondary"
+              @click="$emit('close')"
             >
-              Continue ▸
+              Cancel
             </button>
             <button
-              v-if="currentStep === 1 && sources.length > 0"
+              v-if="prerequisiteDeclined"
+              class="kq-btn kq-btn-primary"
+              @click="startPrerequisiteSetup"
+            >
+              Start Now
+            </button>
+            <button
+              v-if="!prerequisiteDeclined && currentStep === 0 && sources.length > 0"
               class="kq-btn kq-btn-primary"
               @click="startIngestion"
             >
               ⚡ Start Learning
             </button>
             <button
-              v-if="currentStep === 2 && allTasksDone"
+              v-if="!prerequisiteDeclined && currentStep === 1 && allTasksDone"
               class="kq-btn kq-btn-primary"
               @click="advanceStep"
             >
               Continue ▸
             </button>
             <button
-              v-if="currentStep === 3"
+              v-if="!prerequisiteDeclined && currentStep === 2"
               class="kq-btn kq-btn-primary kq-btn-glow"
               @click="finishQuest"
             >
@@ -290,9 +318,20 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { useBrainStore } from '../stores/brain';
 import { useTaskStore, type TaskInfo } from '../stores/tasks';
 import { useMemoryStore } from '../stores/memory';
+import { getMissingPrereqQuests, handleLearnDocsChoice } from '../stores/conversation';
+import {
+  DEFAULT_SCHOLAR_CRAWL_ENABLED,
+  DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+  DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+  MAX_SCHOLAR_CRAWL_MAX_DEPTH,
+  MAX_SCHOLAR_CRAWL_MAX_PAGES,
+  MIN_SCHOLAR_CRAWL_MAX_DEPTH,
+  MIN_SCHOLAR_CRAWL_MAX_PAGES,
+  useSettingsStore,
+} from '../stores/settings';
+import { useSkillTreeStore } from '../stores/skill-tree';
 
 const props = defineProps<{
   visible: boolean;
@@ -308,120 +347,103 @@ interface QuestSource {
   type: 'url' | 'file';
   name: string;
   path: string; // URL or file path
+  crawlMaxDepth?: number;
+  crawlMaxPages?: number;
 }
 
-interface BrainCheck {
-  label: string;
-  ok: boolean;
-  checking: boolean;
-  detail?: string;
-}
-
-const brain = useBrainStore();
 const taskStore = useTaskStore();
 const memoryStore = useMemoryStore();
+const settingsStore = useSettingsStore();
+const skillTree = useSkillTreeStore();
 
 // ── Step management ──
 const currentStep = ref(0);
+const missingPrerequisiteIds = ref<string[]>([]);
+const prerequisiteDeclined = computed(() => missingPrerequisiteIds.value.length > 0);
 const steps = computed(() => [
-  { icon: '🧠', label: 'Verify Brain', status: currentStep.value > 0 ? 'done' : currentStep.value === 0 ? 'active' : 'pending' },
-  { icon: '📖', label: 'Gather Sources', status: currentStep.value > 1 ? 'done' : currentStep.value === 1 ? 'active' : 'pending' },
-  { icon: '⚡', label: 'Learn', status: currentStep.value > 2 ? 'done' : currentStep.value === 2 ? 'active' : 'pending' },
-  { icon: '🎯', label: 'Ready', status: currentStep.value === 3 ? 'active' : 'pending' },
+  { icon: '📖', label: 'Gather Sources', status: currentStep.value > 0 ? 'done' : currentStep.value === 0 ? 'active' : 'pending' },
+  { icon: '⚡', label: 'Learn', status: currentStep.value > 1 ? 'done' : currentStep.value === 1 ? 'active' : 'pending' },
+  { icon: '🎯', label: 'Ready', status: currentStep.value === 2 ? 'active' : 'pending' },
 ]);
 
-// ── Step 1: Brain verification ──
-const brainChecks = ref<BrainCheck[]>([
-  { label: 'Brain configured', ok: false, checking: true },
-  { label: 'LLM model loaded', ok: false, checking: true },
-  { label: 'Memory system ready', ok: false, checking: true },
-  { label: 'Ingestion engine online', ok: false, checking: true },
-]);
-const brainReady = computed(() => brainChecks.value.every(c => c.ok));
-const brainError = ref<string | null>(null);
+function refreshPrerequisiteGate() {
+  missingPrerequisiteIds.value = getMissingPrereqQuests(skillTree, 'scholar-quest');
+}
 
-async function verifyBrain() {
-  // Check 1: Brain configured
-  const hasBrain = brain.hasBrain && brain.brainMode !== null;
-  brainChecks.value[0] = {
-    label: 'Brain configured',
-    ok: hasBrain,
-    checking: false,
-    detail: hasBrain
-      ? `${brain.brainMode!.mode === 'local_ollama' ? 'Ollama' : brain.brainMode!.mode} · ${(brain.brainMode as any).model ?? ''}`
-      : 'No brain configured',
-  };
+function questIcon(id: string): string {
+  return skillTree.nodes.find((node) => node.id === id)?.icon ?? '⚔️';
+}
 
-  // Check 2: LLM model loaded
-  const isLocal = brain.brainMode?.mode === 'local_ollama';
-  let modelOk = hasBrain;
-  let modelDetail = '';
-  if (isLocal) {
-    try {
-      const resp = await fetch('http://localhost:11434/api/tags');
-      if (resp.ok) {
-        const data = await resp.json();
-        modelOk = data.models && data.models.length > 0;
-        modelDetail = modelOk ? `${data.models[0].name} loaded` : 'No models found';
-      }
-    } catch {
-      modelOk = false;
-      modelDetail = 'Ollama not reachable';
-    }
-  } else if (hasBrain) {
-    modelDetail = 'Cloud provider active';
-  }
-  brainChecks.value[1] = { label: 'LLM model loaded', ok: modelOk, checking: false, detail: modelDetail };
+function questName(id: string): string {
+  return skillTree.nodes.find((node) => node.id === id)?.name ?? id;
+}
 
-  // Check 3: Memory system
-  let memOk = false;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('get_memories');
-    memOk = true;
-  } catch {
-    memOk = false;
-  }
-  brainChecks.value[2] = {
-    label: 'Memory system ready',
-    ok: memOk,
-    checking: false,
-    detail: memOk ? 'SQLite connected' : 'Tauri IPC required',
-  };
-
-  // Check 4: Ingestion engine
-  let ingestOk = false;
-  try {
-    const { invoke } = await import('@tauri-apps/api/core');
-    await invoke('get_all_tasks');
-    ingestOk = true;
-  } catch {
-    ingestOk = false;
-  }
-  brainChecks.value[3] = {
-    label: 'Ingestion engine online',
-    ok: ingestOk,
-    checking: false,
-    detail: ingestOk ? 'Ready to learn' : 'Tauri IPC required',
-  };
-
-  if (!brainReady.value) {
-    brainError.value = 'Some systems are not available. Ensure the Tauri desktop app is running.';
-  }
+async function startPrerequisiteSetup() {
+  const setupTopic = props.topic || 'my documents';
+  emit('close');
+  await handleLearnDocsChoice(`learn-docs:install-all:${encodeURIComponent(setupTopic)}`);
 }
 
 // ── Step 2: Sources ──
 const urlInput = ref('');
 const crawlWholeSite = ref(false);
+const crawlMaxDepth = ref(DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH);
+const crawlMaxPages = ref(DEFAULT_SCHOLAR_CRAWL_MAX_PAGES);
 const sources = ref<QuestSource[]>([]);
 const fileInputRef = ref<HTMLInputElement | null>(null);
+
+function clampCrawlDepth(value: number): number {
+  return Math.min(
+    MAX_SCHOLAR_CRAWL_MAX_DEPTH,
+    Math.max(
+      MIN_SCHOLAR_CRAWL_MAX_DEPTH,
+      Number.isFinite(value) ? Math.round(value) : DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+    ),
+  );
+}
+
+function clampCrawlPages(value: number): number {
+  return Math.min(
+    MAX_SCHOLAR_CRAWL_MAX_PAGES,
+    Math.max(
+      MIN_SCHOLAR_CRAWL_MAX_PAGES,
+      Number.isFinite(value) ? Math.round(value) : DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+    ),
+  );
+}
+
+function hydrateCrawlSettings() {
+  const settings = settingsStore.settings;
+  crawlWholeSite.value = settings.scholar_crawl_enabled ?? DEFAULT_SCHOLAR_CRAWL_ENABLED;
+  crawlMaxDepth.value = clampCrawlDepth(settings.scholar_crawl_max_depth ?? DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH);
+  crawlMaxPages.value = clampCrawlPages(settings.scholar_crawl_max_pages ?? DEFAULT_SCHOLAR_CRAWL_MAX_PAGES);
+}
+
+async function persistCrawlSettings() {
+  crawlMaxDepth.value = clampCrawlDepth(crawlMaxDepth.value);
+  crawlMaxPages.value = clampCrawlPages(crawlMaxPages.value);
+  await settingsStore.saveScholarCrawlSettings(
+    crawlWholeSite.value,
+    crawlMaxDepth.value,
+    crawlMaxPages.value,
+  );
+}
 
 function addUrl() {
   const url = urlInput.value.trim();
   if (!url) return;
-  const path = crawlWholeSite.value && /^https?:\/\//i.test(url) ? `crawl:${url}` : url;
-  const name = crawlWholeSite.value ? `🕸️ ${url} (crawl)` : url;
-  sources.value.push({ type: 'url', name, path });
+  const shouldCrawl = crawlWholeSite.value && /^https?:\/\//i.test(url);
+  const path = shouldCrawl ? `crawl:${url}` : url;
+  const maxDepth = clampCrawlDepth(crawlMaxDepth.value);
+  const maxPages = clampCrawlPages(crawlMaxPages.value);
+  const name = shouldCrawl ? `🕸️ ${url} (depth ${maxDepth} / ${maxPages} pages)` : url;
+  sources.value.push({
+    type: 'url',
+    name,
+    path,
+    crawlMaxDepth: shouldCrawl ? maxDepth : undefined,
+    crawlMaxPages: shouldCrawl ? maxPages : undefined,
+  });
   urlInput.value = '';
 }
 
@@ -459,13 +481,16 @@ const totalChunks = computed(() =>
 );
 
 async function startIngestion() {
-  currentStep.value = 2;
+  currentStep.value = 1;
   for (const src of sources.value) {
     try {
       const result = await taskStore.ingestDocument(
-        src.type === 'url' ? src.path : src.path,
+        src.path,
         `knowledge,${props.topic.toLowerCase().replace(/\s+/g, '-')}`,
         5,
+        src.crawlMaxDepth != null && src.crawlMaxPages != null
+          ? { crawlDepth: src.crawlMaxDepth, crawlMaxPages: src.crawlMaxPages }
+          : undefined,
       );
       taskIds.value.push(result.task_id);
     } catch (err) {
@@ -476,7 +501,7 @@ async function startIngestion() {
 
 // Watch for all tasks completing → auto-advance
 watch(allTasksDone, (done) => {
-  if (done && currentStep.value === 2) {
+  if (done && currentStep.value === 1) {
     // Small delay for visual feedback
     setTimeout(() => advanceStep(), 1500);
   }
@@ -484,7 +509,7 @@ watch(allTasksDone, (done) => {
 
 // ── Navigation ──
 function advanceStep() {
-  if (currentStep.value < 3) {
+  if (currentStep.value < 2) {
     currentStep.value++;
   }
 }
@@ -499,20 +524,20 @@ async function finishQuest() {
 
 // ── Lifecycle ──
 onMounted(() => {
+  hydrateCrawlSettings();
   if (props.visible) {
-    verifyBrain();
+    refreshPrerequisiteGate();
   }
 });
 
 watch(() => props.visible, (v) => {
   if (v) {
     currentStep.value = 0;
-    brainError.value = null;
     taskIds.value = [];
     sources.value = [];
     urlInput.value = '';
-    crawlWholeSite.value = false;
-    verifyBrain();
+    hydrateCrawlSettings();
+    refreshPrerequisiteGate();
   }
 });
 </script>
@@ -692,35 +717,44 @@ watch(() => props.visible, (v) => {
   line-height: 1.4;
 }
 
-/* ── Brain checks ── */
-.kq-check-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.kq-check {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: var(--ts-bg-panel);
-  border-radius: 8px;
-  border: 1px solid var(--ts-border-subtle);
-}
-.kq-check-icon { font-size: 1rem; flex-shrink: 0; }
-.kq-check-label { font-size: 0.82rem; color: var(--ts-text-bright); flex: 1; }
-.kq-check-detail { font-size: 0.72rem; color: var(--ts-text-muted); }
-
 .kq-success-text {
   margin: 14px 0 0;
   font-size: 0.85rem;
   color: var(--ts-success);
   font-weight: 600;
 }
-.kq-error-text {
-  margin: 14px 0 0;
-  font-size: 0.82rem;
-  color: var(--ts-error);
+
+/* ── Prerequisite decline ── */
+.kq-prereq-decline {
+  padding-top: 4px;
+}
+.kq-prereq-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 12px 0;
+}
+.kq-prereq-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: 8px;
+}
+.kq-prereq-icon {
+  font-size: 1rem;
+}
+.kq-prereq-name {
+  font-size: 0.84rem;
+  color: var(--ts-text-bright);
+  font-weight: 600;
+}
+.kq-prereq-question {
+  margin: 12px 0 0;
+  color: var(--ts-text-secondary);
+  font-size: 0.84rem;
 }
 
 /* ── Source input ── */
@@ -776,6 +810,32 @@ watch(() => props.visible, (v) => {
   height: 16px;
   accent-color: var(--ts-quest-gold);
   cursor: pointer;
+}
+.kq-crawl-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 4px 2px 28px;
+}
+.kq-crawl-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: var(--ts-text-secondary);
+}
+.kq-crawl-number {
+  width: 64px;
+  padding: 6px 8px;
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-quest-border);
+  border-radius: 6px;
+  color: var(--ts-text-bright);
+  font-size: 0.78rem;
+}
+.kq-crawl-number:focus {
+  border-color: var(--ts-quest-gold);
+  outline: none;
 }
 .kq-file-row {
   display: flex;
@@ -943,6 +1003,15 @@ watch(() => props.visible, (v) => {
 }
 .kq-btn-primary:hover {
   box-shadow: 0 6px 24px var(--ts-quest-gold-glow);
+}
+.kq-btn-secondary {
+  background: var(--ts-bg-panel);
+  border: 1px solid var(--ts-border-subtle);
+  color: var(--ts-text-secondary);
+}
+.kq-btn-secondary:hover {
+  color: var(--ts-text-bright);
+  border-color: var(--ts-quest-border);
 }
 .kq-btn-glow {
   animation: kq-btn-pulse 2s ease-in-out infinite;

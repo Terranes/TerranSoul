@@ -472,8 +472,9 @@ function executeGatedSetupCommand(
 
 /**
  * Walk the prerequisite chain of `targetQuestId` and return the ordered list
- * of quest IDs that aren't yet `active`. The target quest itself is included
- * at the end of the list when it isn't active either.
+ * of prerequisite quest IDs that aren't yet `active`. The target quest itself
+ * is intentionally excluded: Scholar's Quest is the guided flow we start after
+ * its setup prerequisites are active, not another prerequisite to auto-complete.
  *
  * The order is dependency-first: every prerequisite appears before the quest
  * that depends on it, so the auto-install loop can simply iterate left → right.
@@ -482,35 +483,117 @@ export function getMissingPrereqQuests(
   skillTree: ReturnType<typeof useSkillTreeStore>,
   targetQuestId: string,
 ): string[] {
+  return buildLearnDocsPrereqPrecheck(skillTree, targetQuestId).missingIds;
+}
+
+interface LearnDocsPrereqEvaluation {
+  id: string;
+  active: boolean;
+  detail: string;
+}
+
+interface LearnDocsPrereqPrecheck {
+  missingIds: string[];
+  evaluations: LearnDocsPrereqEvaluation[];
+}
+
+function evaluateLiveLearnDocsPrerequisite(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  id: string,
+): Omit<LearnDocsPrereqEvaluation, 'id'> {
+  const brain = useBrainStore();
+  const memory = useMemoryStore();
+
+  if (id === 'free-brain') {
+    return brain.hasBrain
+      ? { active: true, detail: 'a brain provider is configured now' }
+      : { active: false, detail: 'no active brain provider is configured now' };
+  }
+
+  if (id === 'memory') {
+    return brain.brainMode !== null
+      ? { active: true, detail: 'memory can attach to the current brain mode' }
+      : { active: false, detail: 'memory needs an active brain mode' };
+  }
+
+  if (id === 'rag-knowledge') {
+    const hasBrain = brain.brainMode !== null;
+    const memoryCount = memory.memories.length;
+    const active = hasBrain && memoryCount > 0;
+    if (active) {
+      return { active: true, detail: `current brain mode is active and ${memoryCount} memory item(s) exist` };
+    }
+    const needs = [
+      !hasBrain ? 'an active brain mode' : null,
+      memoryCount === 0 ? 'at least one memory' : null,
+    ].filter(Boolean).join(' and ');
+    return { active: false, detail: `needs ${needs}` };
+  }
+
+  try {
+    const status = skillTree.getSkillStatus(id);
+    return status === 'active'
+      ? { active: true, detail: 'quest status is active' }
+      : { active: false, detail: `quest status is ${status}` };
+  } catch (err) {
+    console.warn(`getSkillStatus(${id}) failed; assuming not active`, err);
+    return { active: false, detail: 'status check failed, so setup is required' };
+  }
+}
+
+function buildLearnDocsPrereqPrecheck(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  targetQuestId: string,
+): LearnDocsPrereqPrecheck {
   const ordered: string[] = [];
+  const evaluations: LearnDocsPrereqEvaluation[] = [];
   const seen = new Set<string>();
 
-  function visit(id: string): void {
+  function visit(id: string, includeSelf: boolean): void {
     if (seen.has(id)) return;
     seen.add(id);
     const node = skillTree.nodes.find((n) => n.id === id);
     if (!node) return;
-    for (const req of node.requires) visit(req);
-    let status: string;
-    try {
-      status = skillTree.getSkillStatus(id);
-    } catch (err) {
-      // Defensive: treat status-check failures as "not active yet" so the
-      // quest is included in the install list rather than silently skipped.
-      console.warn(`getSkillStatus(${id}) failed; assuming not active`, err);
-      status = 'available';
-    }
-    if (status !== 'active') ordered.push(id);
+    for (const req of node.requires) visit(req, true);
+    if (!includeSelf) return;
+    const result = evaluateLiveLearnDocsPrerequisite(skillTree, id);
+    evaluations.push({ id, ...result });
+    if (!result.active) ordered.push(id);
   }
 
-  visit(targetQuestId);
-  return ordered;
+  visit(targetQuestId, false);
+  return { missingIds: ordered, evaluations };
 }
 
 /** Look up a quest's display name (fallback: the id itself). */
 function questDisplayName(skillTree: ReturnType<typeof useSkillTreeStore>, id: string): string {
   const node = skillTree.nodes.find((n) => n.id === id);
   return node ? `${node.icon} ${node.name}` : id;
+}
+
+function buildLearnDocsThinking(
+  topic: string,
+  precheck: LearnDocsPrereqPrecheck,
+): string {
+  const skillTree = useSkillTreeStore();
+  const lines = [
+    `Considering whether Scholar's Quest can start for **${topic}**.`,
+    'I am checking the current brain and memory state instead of trusting saved quest completion, because setup can be removed later.',
+    ...precheck.evaluations.map((item) => {
+      const state = item.active ? 'ready' : 'needs setup';
+      return `- **${questDisplayName(skillTree, item.id)}**: ${state} — ${item.detail}.`;
+    }),
+  ];
+
+  if (precheck.missingIds.length === 0) {
+    lines.push('All prerequisites are live now, so the next step is the Scholar\'s Quest start prompt.');
+  } else if (precheck.missingIds.length === 1) {
+    lines.push(`Only **${questDisplayName(skillTree, precheck.missingIds[0])}** is missing, so the hotseat should show Install and Cancel.`);
+  } else {
+    lines.push('Multiple prerequisites are missing, so the hotseat should offer the setup chain before Scholar\'s Quest starts.');
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -521,30 +604,105 @@ function questDisplayName(skillTree: ReturnType<typeof useSkillTreeStore>, id: s
  * `topic` is round-tripped through the choice values so we can resume the
  * flow without keeping any extra state in the store.
  */
-function pushMissingComponentsPrompt(topic: string, missingIds: string[]): void {
+function pushMissingComponentsPrompt(
+  topic: string,
+  missingIds: string[],
+  thinkingContent: string,
+): void {
   const conversation = useConversationStore();
   const skillTree = useSkillTreeStore();
   const list = missingIds
     .map((id) => `• **${questDisplayName(skillTree, id)}**`)
     .join('\n');
   const enc = encodeURIComponent(topic);
+  const isSingleMissing = missingIds.length === 1;
+  const choices = isSingleMissing
+    ? [
+        {
+          label: `Install ${questDisplayName(skillTree, missingIds[0])}`,
+          value: `learn-docs:install-quest:${missingIds[0]}:${enc}`,
+          icon: '⚔️',
+        },
+        { label: 'Cancel', value: 'dismiss', icon: '❌' },
+      ]
+    : [
+        { label: 'Auto install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
+        { label: 'Start chain quest', value: `learn-docs:install-each:${enc}`, icon: '📋' },
+        { label: 'Cancel', value: 'dismiss', icon: '❌' },
+      ];
   conversation.messages.push({
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      `To learn **${topic}** from your documents I need a few quests to be active first:\n\n` +
+      `To learn **${topic}** from your documents I need ${isSingleMissing ? 'this quest' : 'a few quests'} to be active first:\n\n` +
       `${list}\n\n` +
       `How would you like to proceed?`,
     agentName: 'System',
     sentiment: 'neutral',
     timestamp: Date.now(),
     questId: 'learn-docs-missing',
-    questChoices: [
-      { label: 'Auto install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
-      { label: 'Start chain quest', value: `learn-docs:install-each:${enc}`, icon: '📋' },
-      { label: 'Cancel', value: 'dismiss', icon: '❌' },
-    ],
+    thinkingLabel: 'Checking Learn Docs setup',
+    thinkingContent,
+    questChoices: choices,
   });
+}
+
+async function installLearnDocsPrerequisite(topic: string, questId: string): Promise<void> {
+  const brain = useBrainStore();
+
+  if (questId === 'free-brain') {
+    try {
+      await brain.autoConfigureForDesktop();
+    } catch {
+      brain.autoConfigureFreeApi();
+    }
+    return;
+  }
+
+  if (questId === 'memory') {
+    if (!brain.brainMode) {
+      try {
+        await brain.autoConfigureForDesktop();
+      } catch {
+        brain.autoConfigureFreeApi();
+      }
+    }
+    return;
+  }
+
+  if (questId === 'rag-knowledge') {
+    const memStore = useMemoryStore();
+    if (memStore.memories.length === 0) {
+      const entry = await memStore.addMemory({
+        content: `I want to learn about ${topic} from my own documents.`,
+        tags: 'learning,goal',
+        importance: 5,
+        memory_type: 'context',
+      });
+      if (!entry) {
+        const now = Date.now();
+        memStore.memories.push({
+          id: now,
+          content: `I want to learn about ${topic} from my own documents.`,
+          tags: 'learning,goal',
+          importance: 5,
+          memory_type: 'context',
+          created_at: now,
+          last_accessed: null,
+          access_count: 0,
+          tier: 'short',
+          decay_score: 1,
+          session_id: null,
+          parent_id: null,
+          token_count: 12,
+          confidence: 1.0,
+        });
+      }
+    }
+    return;
+  }
+
+  throw new Error(`No automatic installer is available for ${questId}.`);
 }
 
 /** Sub-prompt for "Install one by one": one button per missing quest. */
@@ -580,7 +738,7 @@ function pushInstallEachPrompt(topic: string, missingIds: string[]): void {
  * documents about `topic` to import. This is the same overlay the rest of
  * the codebase uses for the document-gather step.
  */
-function pushReadyForLearnDocs(topic: string): void {
+function pushReadyForLearnDocs(topic: string, thinkingContent?: string): void {
   const conversation = useConversationStore();
   conversation.messages.push({
     id: crypto.randomUUID(),
@@ -591,6 +749,8 @@ function pushReadyForLearnDocs(topic: string): void {
     sentiment: 'happy',
     timestamp: Date.now(),
     questId: 'scholar-quest',
+    thinkingLabel: thinkingContent ? 'Checking Learn Docs setup' : undefined,
+    thinkingContent,
     questChoices: [
       { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
       { label: 'No thanks', value: 'dismiss', icon: '💤' },
@@ -606,32 +766,32 @@ function pushReadyForLearnDocs(topic: string): void {
  */
 function startLearnDocsFlow(topic: string): void {
   const skillTree = useSkillTreeStore();
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  if (missing.length === 0) {
-    pushReadyForLearnDocs(topic);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const thinkingContent = buildLearnDocsThinking(topic, precheck);
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, thinkingContent);
     return;
   }
-  pushMissingComponentsPrompt(topic, missing);
+  pushMissingComponentsPrompt(topic, precheck.missingIds, thinkingContent);
 }
 
 /**
  * Auto-install path: actually activate every missing quest in the prereq
- * chain by performing the real configuration (brain setup, memory bootstrap,
- * manual-completion marking) rather than just clicking "accept" on the
- * quest-guide chat flow.
+ * chain by performing the real configuration (brain setup and memory
+ * bootstrap) rather than just clicking "accept" on the quest-guide chat flow.
  *
  * Install order (from brain-advanced-design.md):
  *   1. 🧠 Awaken the Mind  — free cloud LLM provider
  *   2. 📖 Long-Term Memory  — SQLite memory store (auto-active once brain set)
  *   3. 📚 Sage's Library    — RAG pipeline (needs brain + ≥1 memory)
- *   4. 📚 Scholar's Quest   — document ingestion (chain quest, mark complete)
+ *   4. 📚 Scholar's Quest   — document ingestion chain starts after setup
  */
 async function runAutoInstall(topic: string): Promise<void> {
   const skillTree = useSkillTreeStore();
   const conversation = useConversationStore();
-  const brain = useBrainStore();
 
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  const initialPrecheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const missing = initialPrecheck.missingIds;
   const installed: string[] = [];
 
   conversation.messages.push({
@@ -641,62 +801,13 @@ async function runAutoInstall(topic: string): Promise<void> {
     agentName: 'System',
     sentiment: 'happy',
     timestamp: Date.now(),
+    thinkingLabel: 'Checking Learn Docs setup',
+    thinkingContent: buildLearnDocsThinking(topic, initialPrecheck),
   });
 
   for (const id of missing) {
     try {
-      // Perform the actual activation for each quest type.
-      if (id === 'free-brain') {
-        // Configure a free cloud LLM provider (Pollinations).
-        try {
-          await brain.autoConfigureForDesktop();
-        } catch {
-          brain.autoConfigureFreeApi();
-        }
-      } else if (id === 'memory') {
-        // Memory auto-activates once the brain is configured.
-        // Ensure brain mode is set (should be from free-brain step).
-        if (!brain.brainMode) {
-          try { await brain.autoConfigureForDesktop(); }
-          catch { brain.autoConfigureFreeApi(); }
-        }
-      } else if (id === 'rag-knowledge') {
-        // RAG requires brain + at least one memory.
-        // Seed a bootstrap memory so the RAG quest becomes active.
-        const memStore = useMemoryStore();
-        if (memStore.memories.length === 0) {
-          // addMemory catches errors internally and returns null (never throws).
-          const entry = await memStore.addMemory({
-            content: `I want to learn about ${topic} from my own documents.`,
-            tags: 'learning,goal',
-            importance: 5,
-            memory_type: 'context',
-          });
-          if (!entry) {
-            // Invoke failed — push a local-only entry so the status check passes.
-            const now = Date.now();
-            memStore.memories.push({
-              id: now,
-              content: `I want to learn about ${topic} from my own documents.`,
-              tags: 'learning,goal',
-              importance: 5,
-              memory_type: 'context',
-              created_at: now,
-              last_accessed: null,
-              access_count: 0,
-              tier: 'short',
-              decay_score: 1,
-              session_id: null,
-              parent_id: null,
-              token_count: 12,
-              confidence: 1.0,
-            });
-          }
-        }
-      } else if (id === 'scholar-quest') {
-        // Scholar's Quest is a chain quest — mark it manually completed.
-        skillTree.markComplete(id);
-      }
+      await installLearnDocsPrerequisite(topic, id);
       installed.push(id);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -727,9 +838,10 @@ async function runAutoInstall(topic: string): Promise<void> {
   }
 
   // Recompute — anything still inactive is something we couldn't auto-finish.
-  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  if (stillMissing.length > 0) {
-    const list = stillMissing.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
+  const finalPrecheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const finalThinking = buildLearnDocsThinking(topic, finalPrecheck);
+  if (finalPrecheck.missingIds.length > 0) {
+    const list = finalPrecheck.missingIds.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
     conversation.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -740,6 +852,8 @@ async function runAutoInstall(topic: string): Promise<void> {
       sentiment: 'neutral',
       timestamp: Date.now(),
       questId: 'learn-docs-followup',
+      thinkingLabel: 'Checking Learn Docs setup',
+      thinkingContent: finalThinking,
       questChoices: [
         { label: 'Open Quests tab', value: 'navigate:skills', icon: '🗺️' },
         { label: 'Dismiss', value: 'dismiss', icon: '💤' },
@@ -747,7 +861,7 @@ async function runAutoInstall(topic: string): Promise<void> {
     });
     return;
   }
-  pushReadyForLearnDocs(topic);
+  pushReadyForLearnDocs(topic, finalThinking);
 }
 
 /**
@@ -757,8 +871,12 @@ async function runAutoInstall(topic: string): Promise<void> {
  */
 function runManualInstall(topic: string): void {
   const skillTree = useSkillTreeStore();
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  pushInstallEachPrompt(topic, missing);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, buildLearnDocsThinking(topic, precheck));
+    return;
+  }
+  pushInstallEachPrompt(topic, precheck.missingIds);
 }
 
 /** Trigger a single missing quest (used by the per-quest buttons). */
@@ -766,28 +884,24 @@ async function runInstallSingleQuest(topic: string, questId: string): Promise<vo
   const skillTree = useSkillTreeStore();
   const conversation = useConversationStore();
   try {
-    skillTree.triggerQuestEvent(questId);
+    await installLearnDocsPrerequisite(topic, questId);
   } catch (err) {
-    // triggerQuestEvent throws before handleQuestChoice runs — surface the
-    // error explicitly so the user isn't left with a silent no-op.
+    // Surface setup failures explicitly so the user isn't left with a silent no-op.
     const detail = err instanceof Error ? err.message : String(err);
     conversation.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: `⚠️ Could not start **${questDisplayName(skillTree, questId)}**: ${detail}. Try opening it from the Quests tab.`,
+      content: `⚠️ Could not install **${questDisplayName(skillTree, questId)}**: ${detail}. Try opening it from the Quests tab.`,
       agentName: 'System',
       sentiment: 'sad',
       timestamp: Date.now(),
     });
   }
-  // Re-evaluate after the user finishes interacting with this quest. We
-  // surface the rest of the missing list so the user can keep going, or the
-  // ready-for-docs prompt if everything's now active.
-  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest').filter((id) => id !== questId);
-  if (stillMissing.length === 0) {
-    pushReadyForLearnDocs(topic);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, buildLearnDocsThinking(topic, precheck));
   } else {
-    pushInstallEachPrompt(topic, stillMissing);
+    pushInstallEachPrompt(topic, precheck.missingIds);
   }
 }
 
@@ -839,8 +953,13 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
     }
     case 'install-back': {
       const skillTree = useSkillTreeStore();
-      const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-      pushMissingComponentsPrompt(topic, missing);
+      const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+      const thinkingContent = buildLearnDocsThinking(topic, precheck);
+      if (precheck.missingIds.length === 0) {
+        pushReadyForLearnDocs(topic, thinkingContent);
+      } else {
+        pushMissingComponentsPrompt(topic, precheck.missingIds, thinkingContent);
+      }
       return true;
     }
     default:

@@ -12,14 +12,14 @@ WHERE content LIKE 'To start MCP headless server:%auto-configures brain to Polli
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
 SELECT
-  'LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.',
-  'lesson,mcp,container,docker,ci,research,headless,desktop-native',
+  'LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; the container must set TERRANSOUL_MCP_BIND=0.0.0.0 internally while Compose publishes host loopback only. Keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.',
+  'lesson,mcp,container,docker,ci,research,headless,desktop-native,bind',
   9,
   'procedure',
   1778544000000,
   'long',
   1.0,
-  85,
+  110,
   'mcp'
 WHERE NOT EXISTS (
   SELECT 1 FROM memories

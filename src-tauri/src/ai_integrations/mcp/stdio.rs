@@ -156,6 +156,8 @@ impl IngestSink for StdioIngestSink {
             source,
             tags,
             importance,
+            None,
+            None,
             self.state.clone(),
         )
         .await

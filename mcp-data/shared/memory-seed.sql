@@ -28,7 +28,7 @@ VALUES
 
 ('To start the local MCP tray/coding-agent server: run npm run mcp from the repo root. It binds 127.0.0.1:7423 when available, uses mcp-data/ for state, configures Local Ollama when available, leaves setup explicit when no local brain is available, and writes the bearer token to mcp-data/mcp-token.txt plus .vscode/.mcp-token.', 'mcp,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
 
-('LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.', 'lesson,mcp,container,docker,ci,research,headless,desktop-native', 9, 'procedure', 1778544000000, 'long', 1.0, 85, 'mcp'),
+('LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; the container must set TERRANSOUL_MCP_BIND=0.0.0.0 internally while Compose publishes host loopback only. Keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.', 'lesson,mcp,container,docker,ci,research,headless,desktop-native,bind', 9, 'procedure', 1778544000000, 'long', 1.0, 110, 'mcp'),
 
 -- Setup & Development
 ('CI gate command: npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test. Run after every chunk completion. On Linux, install Tauri WebKit/GTK system libraries before Rust checks.', 'ci,testing,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'development'),
@@ -275,6 +275,18 @@ VALUES
 
 ('LESSON: Persistent WebView2 CDP E2E state isolation (2026-05-10): Regular Playwright E2Es attach to a long-lived Tauri WebView instead of launching a fresh browser page, so each connectToDesktopApp() must clear leaked conversation messages, streamingText, isThinking/isStreaming, messageQueue, generationActive, MCP/window mode flags, quest dialogs, and the __tsE2ELastSend marker before a spec starts. Otherwise tutorial/animation specs can leave huge chat history or active local generations that make later real Ollama prompts queue behind stale work and appear as false latency failures. Broad desktop/mobile flow specs should use real completion waits; reserve the 2s budget for dedicated responsiveness tests.', 'lesson,e2e,playwright,webview2,cdp,state-isolation,ollama,latency,conversation,tauri', 10, 'procedure', 1778976000000, 'long', 1.0, 115, 'testing');
 
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
+VALUES
+('LESSON: Scholar''s Quest is the document-learning chain target, not an installable prerequisite. The Learn Docs flow should only auto-install unmet prerequisites through Sage''s Library (`rag-knowledge`), then start Scholar''s Quest. Scholar crawl settings are persisted in AppSettings (`scholar_crawl_enabled`, `scholar_crawl_max_depth`, `scholar_crawl_max_pages`) and the ingest backend preserves custom crawl bounds in canonical `crawl:depth=<n>,pages=<n>:<url>` task sources for resume safety.', 'lesson,scholar-quest,learn-docs,rag-knowledge,crawl,app-settings,ingest', 9, 'procedure', 1778544000000, 'long', 1.0, 80, 'brain');
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
+VALUES
+('LESSON: Scholar''s Quest should not show a Verify Brain step. Entry into KnowledgeQuestDialog gates on unmet prerequisites; if any prerequisites remain, show a prerequisite decline modal listing the missing quests with Cancel and Start Now. Start Now launches the Learn Docs prerequisite setup flow; otherwise the first quest step is Gather Sources.', 'lesson,scholar-quest,verify-brain,prerequisite-gate,learn-docs,knowledge-quest', 9, 'procedure', 1778544000000, 'long', 1.0, 58, 'brain');
+
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
+VALUES
+('LESSON: Learn Docs must precheck Scholar''s Quest prerequisites from live app state before deciding whether Sage''s Library or Scholar''s Quest should start. Saved quest completion can be stale if the user removes a brain mode, Local Ollama setup, or memories. Attach the precheck to the resulting chat prompt as collapsed thinkingContent so users can see why the hotseat shows Install Sage''s Library + Cancel or the Scholar''s Quest start prompt.', 'lesson,learn-docs,scholar-quest,rag-knowledge,sage-library,precheck,thinking-content,chat-ui', 9, 'procedure', 1778630400000, 'long', 1.0, 76, 'brain');
+
 UPDATE memories
 SET protected = 1,
     cognitive_kind = 'procedural'
@@ -373,6 +385,34 @@ WHERE s.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user
     OR d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
     OR d.content LIKE 'MCP PREFLIGHT INSTRUCTIONS FILE:%'
     OR d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
+  AND (
+       d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier document-learning setup%'
+    OR d.content LIKE 'Batched embedding pipeline%'
+    OR d.content LIKE 'commands/ files%ingest.rs%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: Scholar''s Quest should not show a Verify Brain step%'
+  AND (
+       d.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
+    OR d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier document-learning setup%'
+  );
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778630400000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'LESSON: Learn Docs must precheck Scholar''s Quest prerequisites from live app state%'
+  AND (
+       d.content LIKE 'LESSON: Scholar''s Quest should not show a Verify Brain step%'
+    OR d.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
   );
 
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)

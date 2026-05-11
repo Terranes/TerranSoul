@@ -730,6 +730,7 @@ describe('conversation store — new quest trigger behavior', () => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
     mockStreamChat.mockReset();
+    localStorage.removeItem('terransoul-quest-tracker');
   });
 
   it('does NOT auto-trigger Scholar\'s Quest when user asks a law question', async () => {
@@ -919,7 +920,7 @@ describe('conversation store — Learn-with-docs flow', () => {
     expect(store.messages[1].content).toMatch(/material in your documents/i);
   });
 
-  it('pushes the missing-components prompt with three choices', async () => {
+  it('pushes a two-choice install prompt when only Sage\'s Library is missing', async () => {
     configureBrowserProvider();
     mockInvoke.mockImplementation(async (cmd: string) => {
       if (cmd === 'classify_intent') {
@@ -936,19 +937,85 @@ describe('conversation store — Learn-with-docs flow', () => {
     expect(prompt.questId).toBe('learn-docs-missing');
     expect(prompt.content).toMatch(/Vietnamese laws/);
     const values = prompt.questChoices!.map((c) => c.value);
-    expect(values).toHaveLength(3);
-    expect(values[0]).toMatch(/^learn-docs:install-all:/);
-    expect(values[1]).toMatch(/^learn-docs:install-each:/);
-    expect(values[2]).toBe('dismiss');
+    expect(values).toHaveLength(2);
+    expect(prompt.questChoices![0].label).toBe("Install 📚 Sage's Library");
+    expect(values[0]).toMatch(/^learn-docs:install-quest:rag-knowledge:/);
+    expect(values[1]).toBe('dismiss');
+    expect(values.some((value) => value.startsWith('learn-docs:install-all:'))).toBe(false);
+    expect(values.some((value) => value.startsWith('learn-docs:install-each:'))).toBe(false);
+    expect(prompt.thinkingLabel).toBe('Checking Learn Docs setup');
+    expect(prompt.thinkingContent).toMatch(/current brain and memory state/i);
+    expect(prompt.thinkingContent).toMatch(/Sage's Library\*\*: needs setup/i);
   });
 
-  it('install-all runs auto-install and reports installed quests', async () => {
+  it('prechecks Sage\'s Library from live setup even when saved quest completion says active', async () => {
+    configureBrowserProvider();
+    const skillTree = useSkillTreeStore();
+    skillTree.markComplete('rag-knowledge');
+    expect(skillTree.getSkillStatus('rag-knowledge')).toBe('active');
+
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'learn_with_docs', topic: 'Vietnamese laws' };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Learn Vietnamese laws using my provided documents');
+
+    expect(store.messages).toHaveLength(2);
+    const prompt = store.messages[1];
+    expect(prompt.questId).toBe('learn-docs-missing');
+    expect(prompt.questChoices).toHaveLength(2);
+    expect(prompt.questChoices![0].label).toBe("Install 📚 Sage's Library");
+    expect(prompt.thinkingLabel).toBe('Checking Learn Docs setup');
+    expect(prompt.thinkingContent).toMatch(/saved quest completion/i);
+    expect(prompt.thinkingContent).toMatch(/Sage's Library\*\*: needs setup/i);
+  });
+
+  it('starts Scholar\'s Quest after initial setup already completed Sage\'s Library', async () => {
+    configureBrowserProvider();
+    const memory = useMemoryStore();
+    const now = Date.now();
+    memory.memories.push({
+      id: now,
+      content: 'Bootstrap memory for document learning.',
+      tags: 'learning,goal',
+      importance: 5,
+      memory_type: 'context',
+      created_at: now,
+      last_accessed: null,
+      access_count: 0,
+      tier: 'short',
+      decay_score: 1,
+      session_id: null,
+      parent_id: null,
+      token_count: 6,
+      confidence: 1.0,
+    });
+    mockInvoke.mockImplementation(async (cmd: string) => {
+      if (cmd === 'classify_intent') {
+        return { kind: 'learn_with_docs', topic: 'Vietnamese laws' };
+      }
+      return undefined;
+    });
+
+    const store = useConversationStore();
+    await store.sendMessage('Learn Vietnamese laws using my provided documents');
+
+    expect(store.messages).toHaveLength(2);
+    expect(store.messages[1].questId).toBe('scholar-quest');
+    expect(store.messages[1].questChoices?.[0].label).toBe('Start Knowledge Quest');
+    expect(store.messages[1].thinkingContent).toMatch(/Scholar's Quest start prompt/i);
+  });
+
+  it('install-all runs setup and starts Scholar\'s Quest without marking it complete', async () => {
     const { handleLearnDocsChoice } = await import('./conversation');
     const { useSkillTreeStore } = await import('./skill-tree');
     const skillTree = useSkillTreeStore();
     const store = useConversationStore();
 
-    // markComplete is called for scholar-quest
     const markSpy = vi.spyOn(skillTree, 'markComplete').mockImplementation(() => {});
 
     await handleLearnDocsChoice(`learn-docs:install-all:${encodeURIComponent('Vietnamese laws')}`);
@@ -959,7 +1026,9 @@ describe('conversation store — Learn-with-docs flow', () => {
     expect(store.messages[0].content).toMatch(/Auto-installing/);
     // Should have an installed summary or followup
     const last = store.messages[store.messages.length - 1];
-    expect(last.questId === 'scholar-quest' || last.questId === 'learn-docs-followup' || last.content.includes('Installed')).toBe(true);
+    expect(last.questId).toBe('scholar-quest');
+    expect(markSpy).not.toHaveBeenCalledWith('scholar-quest');
+    expect(last.thinkingContent).toMatch(/All prerequisites are live now/i);
 
     markSpy.mockRestore();
   });
@@ -977,7 +1046,8 @@ describe('conversation store — Learn-with-docs flow', () => {
     // Should produce auto-install messages
     expect(store.messages.length).toBeGreaterThanOrEqual(1);
     const last = store.messages[store.messages.length - 1];
-    expect(last.questId === 'scholar-quest' || last.questId === 'learn-docs-followup' || last.content.includes('Installed')).toBe(true);
+    expect(last.questId).toBe('scholar-quest');
+    expect(markSpy).not.toHaveBeenCalledWith('scholar-quest');
 
     markSpy.mockRestore();
   });
@@ -993,6 +1063,7 @@ describe('conversation store — Learn-with-docs flow', () => {
     // Every choice (except Cancel) should be a per-quest install action.
     const installs = prompt.questChoices!.filter((c) => c.value.startsWith('learn-docs:install-quest:'));
     expect(installs.length).toBeGreaterThan(0);
+    expect(installs.some((c) => c.value.includes('install-quest:scholar-quest:'))).toBe(false);
     expect(prompt.questChoices!.some((c) => c.value === 'dismiss')).toBe(true);
   });
 

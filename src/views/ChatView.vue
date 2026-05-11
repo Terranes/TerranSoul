@@ -1714,6 +1714,7 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
 /** Called when the Knowledge Quest chain completes — close dialog and notify. */
 function handleKnowledgeQuestFinish() {
   showKnowledgeQuest.value = false;
+  skillTree.markComplete('scholar-quest');
   setChatDrawerExpanded(true);
   const content =
     `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +

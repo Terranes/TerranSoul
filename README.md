@@ -106,7 +106,8 @@ npm run mcp:container:stop     # stop the container stack
 ```
 
 The desktop app remains a native Tauri install; containers are for MCP/headless
-services and research infrastructure only.
+services and research infrastructure only. The service binds to `0.0.0.0` inside
+the container, but Compose publishes it to host loopback (`127.0.0.1:7423`).
 
 **Why this matters:** Your coding agents (Copilot, Claude Code, Cursor, Codex) gain:
 
@@ -207,6 +208,8 @@ surfaces `disk_ann_health` (eligible candidates, sidecars present, and gaps).
 | **Local Ollama** | Fully offline | ~2 GB download | Maximum privacy, no internet |
 
 Local chat keeps small turns fast: short greetings and acknowledgements skip intent-classifier, embedding, and RAG retrieval work, avoiding `nomic-embed-text`/chat-model VRAM swaps on consumer GPUs. Contentful setup requests still use the backend classifier in every brain mode, including Local Ollama; `classify_intent` retrieves app knowledge from the memory/RAG store and also preserves a small deterministic shortcut for explicit onboarding phrases like **"Learn from my documents"** so Scholar's Quest still opens when a local model returns `unknown` for the exact tutorial wording. Local Ollama also pre-warms the chat model on startup, pauses background embedding ticks during the startup/active-chat quiet window, unloads embedding models immediately after batch work, and disables raw silent thinking on the hot stream so visible tokens begin quickly. Contentful questions use thresholded memory eligibility and session-diversified RRF + query-intent prompt ordering, with uncapped global memories and a default cap for noisy per-session clusters; Local Ollama keeps this keyword/freshness-only on the hot path when embedding would swap models.
+
+Scholar's Quest starts after its prerequisites are active rather than being auto-completed by setup. Sage's Library (`rag-knowledge`) is the final prerequisite; Learn Docs re-checks the live brain and memory state instead of trusting saved quest completion, then shows that setup check as a collapsed thinking block on the chat prompt. If a user opens the quest early, the dialog shows the missing prerequisite quests and offers Cancel or Start Now for setup instead of showing a Verify Brain step. Once prerequisites are active, the quest opens the document picker. The web-crawl toggle in that picker is saved in app settings with configurable depth and page limits (defaults: off, depth 2, 20 pages), and the ingest backend clamps crawl requests to depth 1..=5 and pages 1..=100 while preserving legacy `crawl:<url>` imports.
 
 Local Ollama hardware recommendations favor responsive interactive models by default; larger catalogue models remain selectable for users who prefer slower, heavier reasoning runs.
 

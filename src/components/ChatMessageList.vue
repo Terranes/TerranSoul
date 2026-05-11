@@ -76,7 +76,7 @@
           class="thinking-details"
         >
           <summary class="thinking-summary">
-            💭 Thinking…
+            💭 {{ item.msg!.thinkingLabel ?? 'Thinking…' }}
           </summary>
           <SafeMarkdown
             class="thinking-content"

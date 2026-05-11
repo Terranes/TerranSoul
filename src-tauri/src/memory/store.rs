@@ -4991,7 +4991,7 @@ mod tests {
         for i in 0..1000 {
             let m = NewMemory {
                 content: format!("entry {}", i),
-                tags: format!("tier_long|kind_semantic"),
+                tags: "tier_long|kind_semantic".to_string(),
                 importance: 3,
                 memory_type: MemoryType::Fact,
                 ..Default::default()
@@ -5017,7 +5017,7 @@ mod tests {
         for i in 0..100 {
             let m = NewMemory {
                 content: format!("entry {}", i),
-                tags: format!("tier_long|kind_semantic"),
+                tags: "tier_long|kind_semantic".to_string(),
                 importance: 3,
                 memory_type: MemoryType::Fact,
                 ..Default::default()

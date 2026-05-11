@@ -117,6 +117,9 @@ mod tests {
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
         };
@@ -181,6 +184,9 @@ mod tests {
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
         };

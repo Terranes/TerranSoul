@@ -1125,7 +1125,7 @@ function toggleRenderMode(): void {
 onMounted(() => {
   refreshTheme();
   resizeCanvas();
-  resizeObserver = new ResizeObserver(() => {
+  const onResize: ResizeObserverCallback = () => {
     resizeCanvas();
     if (renderMode.value === 'webgl' && sigmaInstance) {
       try {
@@ -1134,7 +1134,8 @@ onMounted(() => {
         /* sigma not ready */
       }
     }
-  });
+  };
+  resizeObserver = new ResizeObserver(onResize);
   if (container.value) resizeObserver.observe(container.value);
   rebuildData();
   startSim();

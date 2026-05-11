@@ -2022,6 +2022,10 @@ Wednesday (rule amended):
 
   The goal is prompt cost control: broad questions like "summarize this source", "what are the main topics?", or "what should I ask about this document?" can retrieve the compact guide instead of several full chunks. Detail-seeking questions still retrieve original chunks, so grounding and quote-level answers remain possible. The guide is generated with deterministic text processing, not an LLM call, so ingestion does not spend paid/free provider tokens just to make the document readable.
 
+  ### 1b. Scholar's Quest Web-Crawl Bounds
+
+  Scholar's Quest treats document learning as a chain quest: setup prerequisites stop at Sage's Library (`rag-knowledge`), then the Scholar's Quest dialog gathers URLs/files and starts ingestion. Learn Docs performs a live precheck of the current brain mode and memory count for this chain, ignoring stale manual completion for auto-detected setup such as Sage's Library, and attaches that precheck to the resulting chat prompt as collapsed `thinkingContent`. The dialog does not include a Verify Brain quest step; direct entry checks the prerequisite chain first, and if anything is missing it shows a prerequisite decline state with Cancel and Start Now to launch setup. The web-crawl option is persisted in `AppSettings` as `scholar_crawl_enabled`, `scholar_crawl_max_depth`, and `scholar_crawl_max_pages` (defaults: off, depth 2, 20 pages). `KnowledgeQuestDialog.vue` passes the selected limits to `ingest_document`, and `commands/ingest.rs` canonicalises crawl task sources as `crawl:depth=<n>,pages=<n>:<url>` so resumed crawl tasks keep the same bounds. The backend clamps depth to 1..=5 and pages to 1..=100 before crawling; legacy `crawl:<url>` still uses the default 2 / 20 limits.
+
 ```
 ┌──────────────────────────────────────────────────────────┐
 │                  STALENESS DETECTION                      │
@@ -3450,13 +3454,15 @@ WebView runtime. `Dockerfile.mcp` builds the release binary with
 `--no-default-features --features headless-mcp`, bakes in the checked-in
 `mcp-data/shared/` seed snapshot required by the compiled fallback paths, and
 starts `terransoul --mcp-http`. `docker-compose.mcp.yml` keeps runtime state in
-the `terransoul-mcp-data` volume, binds `127.0.0.1:7423`, disables idle shutdown
-with `TERRANSOUL_MCP_IDLE_TIMEOUT=0`, and healthchecks `/health`. User-facing
-aliases are explicit (`npm run mcp:container`, `mcp:container:config`,
-`mcp:container:logs`, `mcp:container:stop`) so `npm run mcp` remains the local
-tray/coding-agent workflow. This container path is for CI/research/headless
-services only; TerranSoul's desktop distribution remains a native Tauri app and
-must not gain a mandatory Docker runtime dependency.
+the `terransoul-mcp-data` volume, sets `TERRANSOUL_MCP_BIND=0.0.0.0` inside the
+container, publishes the host side on loopback only (`127.0.0.1:7423`), disables
+idle shutdown with `TERRANSOUL_MCP_IDLE_TIMEOUT=0`, and healthchecks `/health`.
+User-facing aliases are explicit (`npm run mcp:container`,
+`mcp:container:config`, `mcp:container:logs`, `mcp:container:stop`) so
+`npm run mcp` remains the local tray/coding-agent workflow. This container path
+is for CI/research/headless services only; TerranSoul's desktop distribution
+remains a native Tauri app and must not gain a mandatory Docker runtime
+dependency.
 
 **Capability profile.** `GatewayCaps::default` remains read-only for tests and
 future embedders, but explicit MCP transports use `mcp::transport_caps` with

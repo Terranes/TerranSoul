@@ -1,3 +1,30 @@
+## Chunk 117 — CI/research containerization support
+
+**Status:** Complete
+**Date:** 2026-05-11
+**Goal:** Promote the remaining actionable backlog containerization item and implement container support only for CI/research/headless services, while keeping the Tauri desktop runtime native and non-Docker-dependent.
+
+**Architecture:**
+- Added a display-free MCP HTTP entry point: `terransoul --mcp-http` / `--mcp-headless`. It builds repo-local `AppState`, seeds `mcp-data/shared`, applies MCP brain config, writes the bearer token, starts the axum MCP transport, supports configurable `TERRANSOUL_MCP_PORT`, `TERRANSOUL_MCP_IDLE_TIMEOUT`, and `TERRANSOUL_MCP_BIND`, and waits for Ctrl+C/SIGTERM without opening a Tauri window, tray, or WebView.
+- Updated `Dockerfile.mcp` to build the headless MCP feature, include `mcp-data/shared`, `docs/`, and `instructions/` required by compile-time seed/Tauri resource paths, use current trixie-slim Node/Rust/runtime stages, and start `./terransoul --mcp-http`.
+- Updated `docker-compose.mcp.yml` to publish host loopback only (`127.0.0.1:7423:7423`), bind all interfaces only inside the container (`TERRANSOUL_MCP_BIND=0.0.0.0`), keep idle shutdown disabled for service use, persist state in `terransoul-mcp-data`, and healthcheck `/health`.
+- Added explicit package aliases: `mcp:container`, `mcp:container:config`, `mcp:container:logs`, `mcp:container:rebuild`, and `mcp:container:stop`, leaving `npm run mcp` as the local tray/coding-agent workflow.
+- Added `.dockerignore` to keep runtime data, build outputs, reports, and heavy local assets out of the MCP image context while preserving `mcp-data/shared/**`.
+- Synced docs in `README.md`, `tutorials/mcp-coding-agents-tutorial.md`, and `docs/brain-advanced-design.md`; synced durable MCP knowledge in `mcp-data/shared/memory-seed.sql` plus migration `mcp-data/shared/migrations/028_mcp_container_http_mode.sql`.
+- Backlog hygiene: Chunk 117 was promoted by explicit user request; Chunk 115 remains closed/no-action and Phase 43 remains archived in this log rather than being re-listed as active work.
+
+**Tests / Validation:**
+- `cargo fmt --manifest-path src-tauri/Cargo.toml` ✅
+- `cargo check --target-dir ../target-test --no-default-features --features headless-mcp` ✅
+- `cargo check --target-dir ../target-test` ✅
+- `cargo test --target-dir ../target-test --lib mcp_seed_tests` — 4/4 ✅
+- `npm run mcp:container:config` ✅
+- `docker compose -f docker-compose.mcp.yml build mcp` ✅
+- Container smoke test: `terransoul-mcp:latest` on loopback host port 7524 returned `/health` with `status=ok`, `port=7524`, provider `ollama`, model `gemma3:4b`; test container removed ✅
+- VS Code Problems: no project-code errors. Docker base-image scanner still reports upstream vulnerabilities in the Node/Rust builder stages (`node:24-trixie-slim`, `rust:1.90-slim-trixie`); the runtime stage is clean in the current scanner output.
+
+---
+
 ## Chunk 50.4 — consolidation synthesis, diversified search, progressive compact-first search
 
 **Status:** Complete

@@ -254,6 +254,8 @@ pub async fn sync_context_folders(
                 file_path.clone(),
                 Some(tags),
                 Some(3), // moderate importance — context folders are reference, not critical
+                None,
+                None,
                 state.inner().clone(),
             )
             .await

@@ -32,19 +32,7 @@
 
 ## Next Chunk
 
-Next up: **Chunk 117 — CI/research containerization support**
-
----
-
-## Phase 9 — Learned Features (From Reference Projects)
-
-> Promoted from `rules/backlog.md` on 2026-05-11 by explicit user request.
-> Scope is constrained to CI/research/service containers; do **not** make the
-> Tauri desktop runtime depend on Docker.
-
-| Chunk | Status | Title | Notes |
-|---|---|---|---|
-| 117 | not-started | CI/research containerization support | Keep desktop install native. Improve documented/containerized support for CI/research services and MCP/headless workflows using existing `Dockerfile.mcp`, `docker-compose.mcp.yml`, hive-relay compose files, and container-tooling conventions. Add tests/docs where practical; do not introduce a mandatory app runtime container. |
+Next up: **No queued chunks. Promote the next chunk to continue.**
 
 ---
 

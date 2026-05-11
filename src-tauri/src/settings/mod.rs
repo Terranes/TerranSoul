@@ -361,6 +361,20 @@ pub struct AppSettings {
     #[serde(default)]
     pub context_folders: Vec<ContextFolder>,
 
+    /// Default web-crawl toggle and crawl bounds used by Scholar's Quest
+    /// when adding URLs to the document-ingest pipeline. The ingest command
+    /// still clamps these limits server-side before crawling.
+    #[serde(default)]
+    pub scholar_crawl_enabled: bool,
+
+    /// Maximum same-domain link depth for Scholar's Quest crawls. Default 2.
+    #[serde(default = "default_scholar_crawl_max_depth")]
+    pub scholar_crawl_max_depth: u32,
+
+    /// Maximum pages fetched by a Scholar's Quest crawl. Default 20.
+    #[serde(default = "default_scholar_crawl_max_pages")]
+    pub scholar_crawl_max_pages: u32,
+
     /// Controls extended-thinking (chain-of-thought) depth for the LLM.
     /// Only affects models that support Ollama's `think` parameter.
     /// Default `Off` — fastest first-token latency.
@@ -505,6 +519,14 @@ pub const DEFAULT_CODE_INDEX_MMAP_MB: u32 = 32;
 pub const MIN_CODE_INDEX_MMAP_MB: u32 = 0;
 pub const MAX_CODE_INDEX_MMAP_MB: u32 = 1024;
 
+/// Scholar's Quest web-crawl defaults and guardrails.
+pub const DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 2;
+pub const MIN_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 1;
+pub const MAX_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 5;
+pub const DEFAULT_SCHOLAR_CRAWL_MAX_PAGES: u32 = 20;
+pub const MIN_SCHOLAR_CRAWL_MAX_PAGES: u32 = 1;
+pub const MAX_SCHOLAR_CRAWL_MAX_PAGES: u32 = 100;
+
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
 }
@@ -523,6 +545,14 @@ fn default_code_index_cache_mb() -> u32 {
 
 fn default_code_index_mmap_mb() -> u32 {
     DEFAULT_CODE_INDEX_MMAP_MB
+}
+
+fn default_scholar_crawl_max_depth() -> u32 {
+    DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH
+}
+
+fn default_scholar_crawl_max_pages() -> u32 {
+    DEFAULT_SCHOLAR_CRAWL_MAX_PAGES
 }
 
 fn default_max_memory_gb() -> f64 {
@@ -624,6 +654,9 @@ impl Default for AppSettings {
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: ReasoningEffort::Off,
             debug_logging: false,
         }
@@ -809,6 +842,9 @@ mod tests {
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
             context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: ReasoningEffort::Off,
             debug_logging: false,
         };
@@ -890,6 +926,29 @@ mod tests {
     fn default_late_chunking_is_off() {
         let s = AppSettings::default();
         assert!(!s.late_chunking);
+    }
+
+    #[test]
+    fn default_scholar_crawl_settings_match_dialog_defaults() {
+        let s = AppSettings::default();
+        assert!(!s.scholar_crawl_enabled);
+        assert_eq!(s.scholar_crawl_max_depth, DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH);
+        assert_eq!(s.scholar_crawl_max_pages, DEFAULT_SCHOLAR_CRAWL_MAX_PAGES);
+    }
+
+    #[test]
+    fn serde_fills_scholar_crawl_defaults_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(!parsed.scholar_crawl_enabled);
+        assert_eq!(
+            parsed.scholar_crawl_max_depth,
+            DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH
+        );
+        assert_eq!(
+            parsed.scholar_crawl_max_pages,
+            DEFAULT_SCHOLAR_CRAWL_MAX_PAGES
+        );
     }
 
     #[test]

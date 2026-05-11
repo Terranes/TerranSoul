@@ -28,8 +28,10 @@ export interface Message {
   charismaAssets?: CharismaTurnAsset[];
   /** User's 1-5 turn-level rating distributed to all fired Charisma assets. */
   charismaTurnRating?: number;
-  /** Extended-thinking / chain-of-thought reasoning text (collapsible in UI). */
+  /** Extended-thinking or status text (collapsible in UI). */
   thinkingContent?: string;
+  /** Optional label for the collapsible thinking/status block. */
+  thinkingLabel?: string;
 }
 
 export interface QuestChoice {
