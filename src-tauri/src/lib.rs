@@ -561,7 +561,26 @@ fn resolve_data_dir_for_cli() -> PathBuf {
 /// touching the user's companion data dir. When the override is set,
 /// pet mode is enabled so `serverInfo.name` advertises
 /// `terransoul-brain-mcp`.
+///
+/// Before creating local state, this entry point attaches to an existing
+/// authenticated release/tray/dev HTTP MCP server when one is available.
+/// That keeps Copilot, Claude, Cursor, Codex, and older stdio configs on
+/// the same running brain instead of starting one process per agent.
 pub fn run_stdio() -> std::io::Result<()> {
+    if let Some(target) = find_existing_mcp_http_target() {
+        eprintln!(
+            "[mcp-stdio] proxying to existing TerranSoul {} MCP server on http://127.0.0.1:{}/mcp",
+            target.label, target.port
+        );
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
+        return runtime.block_on(ai_integrations::mcp::stdio::proxy_to_http(
+            target.url(),
+            target.token,
+        ));
+    }
+
     let (data_dir, repo_local) = if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
         let trimmed = p.trim();
         if trimmed.is_empty() {
@@ -574,19 +593,6 @@ pub fn run_stdio() -> std::io::Result<()> {
     };
 
     if repo_local {
-        // Pet-mode stdio launches honor the same release > dev > mcp
-        // priority as `--mcp-tray`. If the app is already running, we
-        // emit a clear stderr message and exit cleanly so VS Code (or
-        // any stdio MCP host) surfaces the reason instead of opening a
-        // duplicate brain on a stale repo-local data dir.
-        if let Some(label) = detect_running_terransoul_mcp() {
-            eprintln!(
-                "[mcp-stdio] TerranSoul {label} build is already serving MCP — \
-                 refusing to start pet-mode stdio. Use the running app's MCP \
-                 entry instead."
-            );
-            return Ok(());
-        }
         let _ = std::fs::create_dir_all(&data_dir);
         ai_integrations::mcp::enable_mcp_pet_mode();
     }
@@ -608,6 +614,112 @@ pub fn run_stdio() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
+}
+
+struct ExistingMcpHttpTarget {
+    label: &'static str,
+    port: u16,
+    token: String,
+}
+
+impl ExistingMcpHttpTarget {
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}/mcp", self.port)
+    }
+}
+
+fn find_existing_mcp_http_target() -> Option<ExistingMcpHttpTarget> {
+    let release = ai_integrations::mcp::DEFAULT_PORT;
+    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
+    let tray = resolve_headless_mcp_port();
+    let app_root = app_data_root_for_cli();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let tray_data = resolve_headless_mcp_data_dir();
+
+    let candidates = [
+        (
+            "release",
+            release,
+            vec!["TERRANSOUL_MCP_TOKEN"],
+            vec![app_root.join("mcp-token.txt")],
+        ),
+        (
+            "mcp-tray",
+            tray,
+            vec!["TERRANSOUL_MCP_TOKEN_MCP"],
+            vec![
+                tray_data.join("mcp-token.txt"),
+                cwd.join(".vscode").join(".mcp-token"),
+            ],
+        ),
+        (
+            "dev",
+            dev,
+            vec!["TERRANSOUL_MCP_TOKEN_DEV"],
+            vec![app_root.join("dev").join("mcp-token.txt")],
+        ),
+    ];
+
+    for (label, port, env_names, token_paths) in candidates {
+        let Some(token) = read_mcp_token_for_cli(&env_names, &token_paths) else {
+            continue;
+        };
+        if probe_terransoul_status_on(port, &token) {
+            return Some(ExistingMcpHttpTarget { label, port, token });
+        }
+    }
+
+    None
+}
+
+fn app_data_root_for_cli() -> PathBuf {
+    const BUNDLE_ID: &str = "com.terranes.terransoul";
+    dirs::data_dir()
+        .map(|dir| dir.join(BUNDLE_ID))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn read_mcp_token_for_cli(env_names: &[&str], token_paths: &[PathBuf]) -> Option<String> {
+    for env_name in env_names {
+        if let Ok(value) = std::env::var(env_name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    for token_path in token_paths {
+        if let Ok(value) = std::fs::read_to_string(token_path) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn probe_terransoul_status_on(port: u16, token: &str) -> bool {
+    let url = format!("http://127.0.0.1:{port}/status");
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(750))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let response = match client.get(url).bearer_auth(token).send() {
+        Ok(response) if response.status().is_success() => response,
+        _ => return false,
+    };
+    let Ok(body) = response.json::<serde_json::Value>() else {
+        return false;
+    };
+    body.get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| name.starts_with("terransoul-brain"))
 }
 
 /// Run TerranSoul as a standalone maintenance scheduler daemon
@@ -936,103 +1048,11 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     count
 }
 
-/// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
-/// 7422) to see if the user already has a brain server running.
-///
-/// Priority order is **release > dev > mcp**: if either of the
-/// app-owned ports answers, the headless runner refuses to start so a
-/// `npm run mcp` invocation never shadows a running app. Returns the
-/// label of the first port that answers, or `None` when neither is up.
-///
-/// **Service-name verification** — relying on an open port alone is
-/// unreliable (any process can squat on 7421/7422). We therefore
-/// follow up the TCP probe with an unauthenticated MCP `initialize`
-/// JSON-RPC call. The response is **always** delivered (the MCP
-/// dispatch layer answers `initialize` before checking the bearer
-/// token, by spec — see `router::dispatch_method`), so we can read
-/// `serverInfo.name` and confirm we are talking to TerranSoul before
-/// refusing to start. If the probe answers but the handshake doesn't
-/// look like TerranSoul, we treat the port as a foreign tenant and
-/// continue startup on `7423` instead of refusing.
-fn detect_running_terransoul_mcp() -> Option<&'static str> {
-    let release = ai_integrations::mcp::DEFAULT_PORT;
-    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
-    if probe_terransoul_on(release) {
-        Some("release")
-    } else if probe_terransoul_on(dev) {
-        Some("dev")
-    } else {
-        None
-    }
-}
-
-/// Confirm a TerranSoul MCP server is bound to `127.0.0.1:<port>` by
-/// (1) opening a TCP connection and (2) issuing the unauthenticated
-/// MCP `initialize` handshake, then checking that
-/// `serverInfo.name` starts with `terransoul-brain`.
-fn probe_terransoul_on(port: u16) -> bool {
-    use std::io::{Read, Write};
-    use std::net::{SocketAddr, TcpStream};
-    use std::time::Duration;
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
-
-    // Minimal JSON-RPC initialize. Auth is not required for
-    // initialize per the MCP spec, and our router answers it before
-    // running the bearer check (see router::dispatch_method).
-    let body = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
-    let req = format!(
-        "POST /mcp HTTP/1.1\r\n\
-         Host: 127.0.0.1:{port}\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {len}\r\n\
-         Connection: close\r\n\
-         \r\n",
-        len = body.len()
-    );
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-    if stream.write_all(body).is_err() {
-        return false;
-    }
-
-    let mut buf = Vec::with_capacity(2048);
-    let mut chunk = [0u8; 1024];
-    let deadline = std::time::Instant::now() + Duration::from_millis(750);
-    loop {
-        if buf.len() > 16 * 1024 {
-            break; // hard cap; server name lives near the top
-        }
-        if std::time::Instant::now() >= deadline {
-            break;
-        }
-        match stream.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => buf.extend_from_slice(&chunk[..n]),
-            Err(_) => break,
-        }
-    }
-    let text = String::from_utf8_lossy(&buf);
-    // We don't need to parse the full HTTP response; the JSON
-    // payload is in the body and contains the marker we care about.
-    text.contains("\"name\"")
-        && (text.contains("\"terransoul-brain\"")
-            || text.contains("\"terransoul-brain-dev\"")
-            || text.contains("\"terransoul-brain-mcp\""))
-}
-
 /// Run the `--mcp-setup` CLI subcommand.
 ///
 /// Detects AI coding editor config directories (`.vscode/`, `~/.cursor/`,
 /// `~/.codex/`, `~/.claude/`, `~/.config/opencode/`) and writes the
-/// MCP server entry pointing at the headless MCP HTTP server.
+/// MCP server entry pointing at the MCP tray HTTP server.
 ///
 /// Generates a token if one doesn't exist yet, then writes configs.
 pub fn run_mcp_setup() -> std::io::Result<()> {

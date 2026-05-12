@@ -105,7 +105,7 @@ TerranSoul's workspace includes a VS Code task that auto-starts MCP when you ope
 - Task: **"TerranSoul MCP: Auto-Start"**
 - Configured in `.vscode/tasks.json` with `runOptions.runOn: "folderOpen"`
 - Runs `node scripts/copilot-start-mcp.mjs` which:
-  1. Checks if ports 7421/7422/7423 already have a healthy MCP
+  1. Checks for an authenticated release (`7421`), MCP tray (`7423`), then dev (`7422`) server
   2. Reuses existing if found
   3. Starts `npm run mcp` detached if none is healthy
 

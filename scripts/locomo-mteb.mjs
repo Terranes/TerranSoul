@@ -380,8 +380,8 @@ class JsonlClient {
       '--quiet',
       '--manifest-path',
       resolve(REPO_ROOT, 'src-tauri', 'Cargo.toml'),
-      '--bin',
-      'longmemeval_ipc',
+      '--features', 'bench-million', '--bin',
+      'longmemeval-ipc',
       '--target-dir',
       DEFAULT_TARGET_DIR,
     ], {

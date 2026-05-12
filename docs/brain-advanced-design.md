@@ -3497,15 +3497,20 @@ status page is built in and does not depend on the Vite dev server. The full UI
 remains reopenable from the tray so users can inspect MCP config, provider
 state, memory, and graph panels while the HTTP MCP server remains running. Every coding
 agent session must use TerranSoul MCP as its project-memory layer when
-available: start or reuse the MCP tray/coding-agent runtime, call `brain_health`, then
-query `brain_search` / `brain_suggest_context` for the active chunk before
-broad manual repo exploration. MCP self-improve activity is written under
+available: attach to release `7421`, the MCP tray `7423`, or dev `7422` in that
+priority order, call `brain_health`, then query `brain_search` /
+`brain_suggest_context` for the active chunk before broad manual repo exploration.
+The workspace VS Code profile uses `scripts/mcp-tray-proxy.mjs` as a stdio proxy;
+older `terransoul --mcp-stdio` entries also bridge to an authenticated existing
+HTTP MCP server before creating local state. This lets Copilot, Claude Code,
+Cursor, Codex, and other agents share the same running release/tray/dev brain.
+MCP self-improve activity is written under
 `mcp-data/` as bounded runtime JSONL: `self_improve_runs.jsonl`,
 `self_improve_gates.jsonl`, and `self_improve_mcp.jsonl` each keep only the
 current file plus `.001`, capped at 1 MiB per file. Copilot cloud sessions run
 `scripts/copilot-start-mcp.mjs` from `copilot-setup-steps.yml`, which reuses
-an existing TerranSoul MCP server or starts `npm run mcp` detached and waits
-for `/health`. If startup or app validation fails because platform packages are
+an authenticated release/tray/dev server or starts `npm run mcp` detached and
+waits for `/health`. If startup or app validation fails because platform packages are
 missing (for example `glib-2.0.pc` / `gio-2.0.pc` on Ubuntu), the agent must
 install the missing Tauri/MCP system dependencies and retry before declaring MCP
 blocked. First-run seeding immediately triggers a best-effort embedding backfill

@@ -106,6 +106,12 @@ source code unless a dependency table below says otherwise.
 | `scraper`, `url`, `uuid`, `qrcode`, `sysinfo`, `tempfile`, `chrono` | MIT / Apache-2.0 / ISC | Utilities | |
 | [tracing](https://github.com/tokio-rs/tracing), [clap](https://github.com/clap-rs/clap) | MIT / Apache-2.0 | Logging, CLI parsing | |
 
+## CI and development tooling
+
+| Project | License / Terms | Used For | Notes |
+|---|---|---|---|
+| [awalsh128/cache-apt-pkgs-action](https://github.com/awalsh128/cache-apt-pkgs-action) | Apache-2.0 | [.github/workflows/terransoul-ci.yml](.github/workflows/terransoul-ci.yml) | Caches the Ubuntu Tauri/WebKit APT dependency set so repeat CI runs do not spend minutes reinstalling the same GTK/WebKit packages. |
+
 ## Models, formats, and protocols
 
 | Reference | License / Terms | Used For | Notes |

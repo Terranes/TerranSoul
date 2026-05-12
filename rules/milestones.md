@@ -32,7 +32,7 @@
 
 ## Next Chunk
 
-Next up: **BENCH-LCM-6 — Fix adversarial regression + combined model strategy** (`not-started`).
+Next up: **BENCH-LCM-7 — Confirm adversarial fix on 250-query slice** (`not-started`).
 
 ---
 
@@ -75,11 +75,15 @@ Goal: add a direct, reproducible TerranSoul run on the MTEB `LoCoMo` text-retrie
 
 > **Round 5 result (BENCH-LCM-5, 2026-05-12):** Upgraded from nomic-embed-text (137M, 768d) to mxbai-embed-large (335M, 1024d). Massive gains: overall **63.6%** R@10 (+3.7pp). single_hop 73.5% (+4.9pp), multi_hop 46.2% (+10.6pp), open_domain 42.0% (+9.4pp). Adversarial regressed to 61.7% (-2.6pp) — stronger semantic matching creates false positives on trick questions.
 
+> **Round 6 smoke (BENCH-LCM-6, 2026-05-12):** Proper-noun penalty (×0.35 when query proper noun missing from candidate) re-ranks adversarial queries on top of mxbai. 100-query smoke slice: **adversarial R@10 66.5%** (+4.8pp vs LCM-5's 61.7%, exceeds 64% target). Other-task deltas are slice-composition noise, not regressions. Awaiting 250-query confirmation in BENCH-LCM-7.
+
 > **Loop rule (per user request).** After each `BENCH-LCM-N` chunk completes, re-run the LoCoMo benchmark, diff against the previous round, and open the next fix chunk. Stop only when TerranSoul holds rank 1 on every measured metric.
+
+> **Smoke-slice rule (2026-05-12, per user request).** Always run a **100-query** smoke slice first to validate a fix before any heavier run. 250-query slices are too high for iteration. Only promote to a 250-query or full 1655-query run after the 100-query slice shows the expected directional change on the affected task(s).
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-LCM-6 | not-started | Fix adversarial regression (mxbai 61.7% vs nomic 64.3%). Try keyword-emphasis for adversarial queries. Test snowflake-arctic-embed2 as alternative. Explore multi-model ensemble. Target: overall R@10 > 65%, adversarial R@10 > 64%. |
+| BENCH-LCM-7 | not-started | Confirm BENCH-LCM-6 adversarial fix on a **250-query slice** across all 5 tasks (`rrf` + embeddings, mxbai-embed-large). If adversarial holds ≥64% R@10 and no other task regresses >2pp vs LCM-5, promote to a full 1655-query run and publish the official round-6 numbers. If a regression appears, tune `PROPER_NOUN_PENALTY` (currently 0.35) or scope it to adversarial-shaped queries only. |
 
 ---
 

@@ -13,12 +13,12 @@
 //!
 //! ## Authentication
 //!
-//! Stdio runs in a trusted parent–child relationship: the editor
+//! Stdio usually runs in a trusted parent–child relationship: the editor
 //! spawns `terransoul --mcp-stdio` as its own subprocess, so anything
 //! that can read/write the pipes already has the user's privileges.
-//! We therefore **do not** validate bearer tokens on stdio — that
-//! matches canonical MCP behaviour (Claude Desktop, VS Code's MCP
-//! extension, etc. never pass tokens to stdio servers).
+//! When an authenticated release/tray/dev HTTP MCP server already exists,
+//! the `--mcp-stdio` entry point bridges these stdio messages to that
+//! server using its token file so multiple agents share one live brain.
 //!
 //! The HTTP transport ([`super::router`]) keeps bearer-token auth
 //! because loopback HTTP is reachable by any other local process.
@@ -137,6 +137,105 @@ pub async fn run_with_state(state: crate::AppState) -> std::io::Result<()> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     run_loop(gw, caps, stdin, stdout).await
+}
+
+/// Bridge stdio MCP clients to an already-running TerranSoul HTTP MCP server.
+pub async fn proxy_to_http(url: String, token: String) -> std::io::Result<()> {
+    let client = reqwest::Client::new();
+    let stdin = tokio::io::stdin();
+    let mut stdout = tokio::io::stdout();
+    let mut reader = BufReader::new(stdin);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let n = reader.read_line(&mut line).await?;
+        if n == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let envelope: Value = match serde_json::from_str(trimmed) {
+            Ok(value) => value,
+            Err(e) => {
+                let resp = JsonRpcResponse::err(Value::Null, -32700, format!("parse error: {e}"));
+                write_response(&mut stdout, &resp).await?;
+                continue;
+            }
+        };
+
+        let id = envelope.get("id").cloned().unwrap_or(Value::Null);
+        let notification = !envelope.as_object().is_some_and(|obj| obj.contains_key("id"));
+
+        let response = client
+            .post(&url)
+            .bearer_auth(&token)
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(trimmed.to_string())
+            .send()
+            .await;
+
+        let response = match response {
+            Ok(response) => response,
+            Err(e) => {
+                if notification {
+                    eprintln!("MCP stdio proxy notification failed: {e}");
+                    continue;
+                }
+                let resp = JsonRpcResponse::err(
+                    id,
+                    -32000,
+                    format!("TerranSoul MCP proxy request failed: {e}"),
+                );
+                write_response(&mut stdout, &resp).await?;
+                continue;
+            }
+        };
+
+        let status = response.status();
+        let text = match response.text().await {
+            Ok(text) => text,
+            Err(e) => {
+                if notification {
+                    eprintln!("MCP stdio proxy notification body read failed: {e}");
+                    continue;
+                }
+                let resp = JsonRpcResponse::err(
+                    id,
+                    -32000,
+                    format!("TerranSoul MCP proxy response read failed: {e}"),
+                );
+                write_response(&mut stdout, &resp).await?;
+                continue;
+            }
+        };
+
+        if notification || status == reqwest::StatusCode::ACCEPTED {
+            if !status.is_success() {
+                eprintln!("MCP stdio proxy notification returned HTTP {status}: {text}");
+            }
+            continue;
+        }
+
+        if status.is_success() && !text.trim().is_empty() {
+            stdout.write_all(text.trim_end().as_bytes()).await?;
+            stdout.write_all(b"\n").await?;
+            stdout.flush().await?;
+            continue;
+        }
+
+        let resp = JsonRpcResponse::err(
+            id,
+            -32000,
+            format!("TerranSoul MCP proxy returned HTTP {status}: {text}"),
+        );
+        write_response(&mut stdout, &resp).await?;
+    }
+
+    Ok(())
 }
 
 #[derive(Clone)]

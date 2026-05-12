@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 
 const repoRoot = process.cwd()
 const port = Number.parseInt(process.env.TERRANSOUL_MCP_PORT ?? '7423', 10)
+const releasePort = 7421
+const devPort = 7422
 const waitSeconds = Number.parseInt(process.argv.find((arg) => /^\d+$/.test(arg)) ?? '240', 10)
 const smoke = process.argv.includes('--smoke')
 
@@ -70,6 +73,18 @@ async function get(url) {
   }
 }
 
+async function getJson(url, token) {
+  try {
+    const response = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!response.ok) return null
+    return await response.json()
+  } catch {
+    return null
+  }
+}
+
 async function isHealthy(targetPort) {
   return (await get(`http://127.0.0.1:${targetPort}/health`)) !== null
 }
@@ -83,13 +98,87 @@ async function waitForHealth(targetPort, seconds) {
   return false
 }
 
-async function waitForDown(targetPort, seconds) {
-  const deadline = Date.now() + seconds * 1000
-  while (Date.now() < deadline) {
-    if (!(await isHealthy(targetPort))) return true
-    await new Promise((resolve) => setTimeout(resolve, 500))
+function appDataRoot() {
+  if (process.platform === 'win32') {
+    return process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming')
   }
-  return false
+  if (process.platform === 'darwin') {
+    return path.join(os.homedir(), 'Library', 'Application Support')
+  }
+  return process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share')
+}
+
+function readToken(candidate) {
+  for (const envName of candidate.tokenEnv ?? []) {
+    const token = process.env[envName]?.trim()
+    if (token) return token
+  }
+
+  for (const tokenPath of candidate.tokenPaths) {
+    try {
+      const token = fs.readFileSync(tokenPath, 'utf8').trim()
+      if (token) return token
+    } catch {
+      // Try the next known token location.
+    }
+  }
+
+  return null
+}
+
+function serverCandidates() {
+  const appRoot = path.join(appDataRoot(), 'com.terranes.terransoul')
+  return [
+    {
+      label: 'release app',
+      buildMode: 'release',
+      port: releasePort,
+      tokenEnv: ['TERRANSOUL_MCP_TOKEN'],
+      tokenPaths: [path.join(appRoot, 'mcp-token.txt')],
+    },
+    {
+      label: 'MCP tray',
+      buildMode: 'mcp',
+      port,
+      tokenEnv: ['TERRANSOUL_MCP_TOKEN_MCP'],
+      tokenPaths: [
+        path.join(repoRoot, 'mcp-data', 'mcp-token.txt'),
+        path.join(repoRoot, '.vscode', '.mcp-token'),
+      ],
+    },
+    {
+      label: 'dev app',
+      buildMode: 'dev',
+      port: devPort,
+      tokenEnv: ['TERRANSOUL_MCP_TOKEN_DEV'],
+      tokenPaths: [path.join(appRoot, 'dev', 'mcp-token.txt')],
+    },
+  ]
+}
+
+async function probeExistingMcpServer(candidate) {
+  const token = readToken(candidate)
+  if (!token) return null
+
+  const status = await getJson(`http://127.0.0.1:${candidate.port}/status`, token)
+  if (!status || typeof status.name !== 'string' || !status.name.startsWith('terransoul-brain')) {
+    return null
+  }
+
+  return {
+    ...candidate,
+    token,
+    name: status.name,
+    actualPort: status.actual_port ?? candidate.port,
+  }
+}
+
+async function findExistingMcpServer() {
+  for (const candidate of serverCandidates()) {
+    const server = await probeExistingMcpServer(candidate)
+    if (server) return server
+  }
+  return null
 }
 
 function newestMtimeMs(targetPath) {
@@ -115,155 +204,36 @@ function isTargetMcpOutdated() {
   return newestSource > binaryMtime
 }
 
-function stopManagedMcpProcess() {
-  if (!fs.existsSync(pidPath)) {
-    return false
-  }
+// Prefer release first, then an already-open MCP tray, then dev.
+// Only build/start target-mcp when nothing usable is serving MCP yet.
 
-  const pidRaw = fs.readFileSync(pidPath, 'utf8').trim()
-  const pid = Number.parseInt(pidRaw, 10)
-  if (!Number.isFinite(pid) || pid <= 0) {
-    fs.rmSync(pidPath, { force: true })
-    return false
-  }
-
-  let stopped = false
-  try {
-    if (process.platform === 'win32') {
-      process.kill(pid)
-      stopped = true
-    } else {
-      try {
-        process.kill(-pid, 'SIGTERM')
-      } catch {
-        process.kill(pid, 'SIGTERM')
-      }
-      stopped = true
-    }
-  } catch {
-    // Process may already be gone; clear stale pid file below.
-  }
-
-  fs.rmSync(pidPath, { force: true })
-  return stopped
-}
-
-function stopStaleTargetMcpProcesses() {
-  if (process.platform !== 'win32') {
-    return false
-  }
-
-  // Query Win32_Process for stable executable-path matching.
-  // Get-Process Path filtering is less reliable across escaping/casing variations.
-  const probe = spawnSync(
-    'powershell',
-    [
-      '-NoProfile',
-      '-Command',
-      `(Get-CimInstance Win32_Process -Filter "Name='terransoul.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $_.ExecutablePath -like '*target-mcp*release*terransoul.exe' } | Select-Object -ExpandProperty ProcessId) -join "\n"`,
-    ],
-    { cwd: repoRoot, env: process.env, encoding: 'utf8' },
+const existingServer = await findExistingMcpServer()
+if (existingServer) {
+  console.log(
+    `[copilot-mcp] ${existingServer.label} is already serving MCP as ${existingServer.name} on ${existingServer.actualPort}; reusing it.`,
   )
-
-  if (probe.status !== 0) {
-    return false
+  if (smoke) {
+    console.log('[copilot-mcp] smoke mode reused the existing MCP server; nothing to stop.')
   }
-
-  const pids = (probe.stdout ?? '')
-    .split(/\r?\n/)
-    .map((s) => Number.parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n > 0)
-
-  if (pids.length === 0) {
-    return false
-  }
-
-  let stopped = false
-  for (const pid of pids) {
-    const kill = spawnSync('taskkill', ['/PID', String(pid), '/F'], {
-      cwd: repoRoot,
-      env: process.env,
-      stdio: 'ignore',
-    })
-    if (kill.status === 0) {
-      stopped = true
-    }
-  }
-
-  return stopped
+  process.exit(0)
 }
-
-function stopPortOwner(targetPort) {
-  if (process.platform !== 'win32') {
-    return false
-  }
-
-  const probe = spawnSync(
-    'powershell',
-    [
-      '-NoProfile',
-      '-Command',
-      `(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort ${targetPort} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess) -join "\n"`,
-    ],
-    { cwd: repoRoot, env: process.env, encoding: 'utf8' },
-  )
-
-  if (probe.status !== 0) {
-    return false
-  }
-
-  const pids = (probe.stdout ?? '')
-    .split(/\r?\n/)
-    .map((s) => Number.parseInt(s.trim(), 10))
-    .filter((n) => Number.isFinite(n) && n > 0)
-
-  if (pids.length === 0) {
-    return false
-  }
-
-  let stopped = false
-  for (const pid of pids) {
-    const kill = spawnSync('taskkill', ['/PID', String(pid), '/F'], {
-      cwd: repoRoot,
-      env: process.env,
-      stdio: 'ignore',
-    })
-    if (kill.status === 0) {
-      stopped = true
-    }
-  }
-
-  return stopped
-}
-
-// Always launch/manage the dedicated MCP tray runtime on 7423 so its
-// lifecycle and tray visibility are deterministic for coding sessions.
-
-const targetOutdated = process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1' && isTargetMcpOutdated()
 
 if (await isHealthy(port)) {
-  if (!targetOutdated) {
-    console.log(`[copilot-mcp] MCP full UI runtime is already healthy on ${port}; reusing it.`)
-    process.exit(0)
-  }
-
-  console.log('[copilot-mcp] detected stale target-mcp while MCP is running; terminating for rebuild/relaunch.')
-  if (!(stopManagedMcpProcess() || stopPortOwner(port))) {
-    console.error('[copilot-mcp] target-mcp is stale but no managed pid could be terminated; stop MCP manually and retry.')
-    process.exit(1)
-  }
-  if (!(await waitForDown(port, 20))) {
-    console.error('[copilot-mcp] target-mcp is stale and MCP did not shut down in time; stop it manually and retry.')
-    process.exit(1)
-  }
+  console.error(
+    `[copilot-mcp] something is listening on ${port}, but TerranSoul /status did not authenticate with the known tray token.`,
+  )
+  console.error('[copilot-mcp] leave the existing tray running; check mcp-data/mcp-token.txt or .vscode/.mcp-token, then retry.')
+  process.exit(1)
 }
+
+const targetOutdated = process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1' && isTargetMcpOutdated()
 
 rotateLogIfNeeded(logPath)
 const log = fs.openSync(logPath, 'a')
 
-if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
+if (targetOutdated) {
   console.log(`[copilot-mcp] warming MCP Rust build (target-mcp) before startup; log=${logPath}`)
-  let build = buildTargetMcp(log)
+  const build = buildTargetMcp(log)
   if (build.status !== 0) {
     const tail1 = fs.existsSync(logPath)
       ? fs.readFileSync(logPath, 'utf8').split('\n').slice(-120).join('\n')
@@ -275,15 +245,8 @@ if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
       tail1.includes('Access is denied')
 
     if (lockError) {
-      console.log('[copilot-mcp] detected locked target-mcp binary on Windows; attempting managed MCP stop + rebuild retry.')
-      const stopped = stopManagedMcpProcess() || stopStaleTargetMcpProcesses() || stopPortOwner(port)
-      if (!stopped) {
-        console.error('[copilot-mcp] could not terminate managed/stale MCP process for rebuild retry.')
-      } else if (!(await waitForDown(port, 20))) {
-        console.error('[copilot-mcp] managed MCP process did not shut down in time for rebuild retry.')
-      } else {
-        build = buildTargetMcp(log)
-      }
+      console.error('[copilot-mcp] target-mcp binary is locked, but no authenticated MCP server was reusable.')
+      console.error('[copilot-mcp] keep the tray open if it is intentional; otherwise close stale TerranSoul processes manually and retry.')
     }
   }
   if (build.status !== 0) {
@@ -296,6 +259,10 @@ if (process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1') {
     }
     process.exit(build.status ?? 1)
   }
+} else if (process.env.TERRANSOUL_MCP_SKIP_BUILD === '1') {
+  console.log('[copilot-mcp] TERRANSOUL_MCP_SKIP_BUILD=1; using existing target-mcp binary.')
+} else {
+  console.log('[copilot-mcp] target-mcp release binary is current; skipping cargo build.')
 }
 
 const childArgs = ['--mcp-tray']
@@ -315,7 +282,7 @@ const child = spawn(mcpBinary, childArgs, {
 })
 child.unref()
 fs.writeFileSync(pidPath, `${child.pid}\n`)
-console.log(`[copilot-mcp] started MCP full UI runtime as pid ${child.pid}; log=${logPath}`)
+console.log(`[copilot-mcp] started MCP tray runtime as pid ${child.pid}; log=${logPath}`)
 
 if (!(await waitForHealth(port, waitSeconds))) {
   const tail = fs.existsSync(logPath)
@@ -328,110 +295,11 @@ if (!(await waitForHealth(port, waitSeconds))) {
   process.exit(1)
 }
 
-console.log(`[copilot-mcp] MCP full UI runtime is healthy on ${port}`)
+console.log(`[copilot-mcp] MCP tray runtime is healthy on ${port}`)
 for (const tokenPath of ['.vscode/.mcp-token', 'mcp-data/mcp-token.txt']) {
   if (fs.existsSync(tokenPath)) {
     console.log(`[copilot-mcp] token available at ${tokenPath}`)
   }
-}
-
-// ─── Bulletproof MCP-token sync ──────────────────────────────────────────
-// Goal: VS Code's `terransoul-brain-mcp` profile must never get stuck on
-// "Starting MCP servers..." because of a missing/stale bearer token.
-//
-// Three failure modes we defend against:
-//   1. User just installed → user-env has no TERRANSOUL_MCP_TOKEN_MCP.
-//   2. Token file changed (rare — token is stable per data dir, but possible
-//      after `mcp-data/` was deleted) → user-env is stale.
-//   3. setx already updated user-env, but the currently running VS Code
-//      process still has the OLD value because env-var changes only
-//      propagate to NEW child processes.
-//
-// On Windows we use `setx` for persistence + a one-shot ".mcp-restart-needed"
-// marker file that the task output prints loudly when case 3 is detected.
-// The marker is cleared on every successful run where the running shell
-// already has the right token, so steady-state is silent.
-function readUserEnvVar(name) {
-  if (process.platform !== 'win32') return null
-  const result = spawnSync(
-    'powershell',
-    ['-NoProfile', '-Command', `[Environment]::GetEnvironmentVariable('${name}','User')`],
-    { encoding: 'utf8', windowsHide: true },
-  )
-  if (result.status !== 0) return null
-  return (result.stdout || '').trim() || null
-}
-
-try {
-  const tokenFile = path.join(repoRoot, '.vscode', '.mcp-token')
-  const restartMarker = path.join(repoRoot, '.vscode', '.mcp-restart-needed')
-  if (fs.existsSync(tokenFile)) {
-    const token = fs.readFileSync(tokenFile, 'utf8').trim()
-    if (token) {
-      // Always set in current process so any tool spawned from this script can authenticate.
-      process.env.TERRANSOUL_MCP_TOKEN_MCP = token
-
-      if (process.platform === 'win32') {
-        const userEnv = readUserEnvVar('TERRANSOUL_MCP_TOKEN_MCP')
-        const shellEnv = process.env.TERRANSOUL_MCP_TOKEN_MCP_RUNTIME || process.env.TERRANSOUL_MCP_TOKEN_MCP_PARENT || null
-        // Note: when this script runs as a VS Code task, process.env reflects
-        // what VS Code had when the task started, so a non-empty inherited
-        // value tells us VS Code is already authenticated. An empty inherited
-        // value while userEnv is correct = case 3 (restart needed).
-        const inherited = process.env.TERRANSOUL_MCP_TOKEN_MCP_INHERITED || shellEnv
-
-        if (userEnv !== token) {
-          const result = spawnSync('setx', ['TERRANSOUL_MCP_TOKEN_MCP', token], {
-            stdio: ['ignore', 'ignore', 'ignore'],
-            windowsHide: true,
-          })
-          if (result.status === 0) {
-            console.log('[copilot-mcp] TERRANSOUL_MCP_TOKEN_MCP synced to Windows user env (setx).')
-            // Drop the marker — the currently running VS Code definitely has stale env.
-            try {
-              fs.writeFileSync(restartMarker, `${new Date().toISOString()}\n${token.slice(0, 8)}…\n`)
-            } catch {
-              // best-effort
-            }
-            console.log('')
-            console.log('  ┌─────────────────────────────────────────────────────────────────────┐')
-            console.log('  │  ⚠ ONE-TIME ACTION REQUIRED:                                        │')
-            console.log('  │  TERRANSOUL_MCP_TOKEN_MCP was just persisted. The currently         │')
-            console.log('  │  running VS Code window has a stale (empty) copy.                   │')
-            console.log('  │  Close ALL VS Code windows (incl. tray) and reopen this workspace   │')
-            console.log('  │  once. After that, MCP will auto-authenticate forever.              │')
-            console.log('  └─────────────────────────────────────────────────────────────────────┘')
-            console.log('')
-          } else {
-            console.log('[copilot-mcp] setx TERRANSOUL_MCP_TOKEN_MCP failed; run manually:')
-            console.log(`               setx TERRANSOUL_MCP_TOKEN_MCP <token from .vscode/.mcp-token>`)
-          }
-        } else if (inherited && inherited !== token) {
-          // User env is correct but our parent (the VS Code task host) still
-          // has a stale value → tell user clearly that one restart is needed.
-          try {
-            fs.writeFileSync(restartMarker, `${new Date().toISOString()}\nstale-parent\n`)
-          } catch {
-            // best-effort
-          }
-          console.log('[copilot-mcp] User env is correct but VS Code task host has stale value — close VS Code fully and reopen once.')
-        } else {
-          // Steady state — everything in sync. Clear the marker if present.
-          if (fs.existsSync(restartMarker)) {
-            try { fs.unlinkSync(restartMarker) } catch { /* best-effort */ }
-          }
-          console.log('[copilot-mcp] MCP token already synced to Windows user env — VS Code can authenticate.')
-        }
-      } else {
-        // Unix: we can't auto-persist into the user shell, so print an export hint.
-        // The user only needs to run this once per machine.
-        console.log('[copilot-mcp] hint: add this to your shell rc once so VS Code inherits it:')
-        console.log('               export TERRANSOUL_MCP_TOKEN_MCP="$(cat \'' + tokenFile + '\')"')
-      }
-    }
-  }
-} catch (error) {
-  console.log(`[copilot-mcp] token env sync skipped: ${error.message}`)
 }
 
 if (smoke) {

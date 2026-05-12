@@ -88,11 +88,12 @@ New user? The First Launch Wizard auto-configures everything. Just open the app.
 
 ## The Key Differentiator: Self-Running MCP Brain
 
-TerranSoul runs a **headless MCP server** (`npm run mcp`) that exposes its brain — persistent memory, semantic search, knowledge graph, and code intelligence — to any AI coding agent over HTTP or stdio.
+TerranSoul runs a **local MCP tray runtime** (`npm run mcp`) that exposes its brain — persistent memory, semantic search, knowledge graph, and code intelligence — to any AI coding agent. Agents reuse an existing release app (`127.0.0.1:7421`), MCP tray (`127.0.0.1:7423`), or dev app (`127.0.0.1:7422`) in that order, so Copilot, Claude Code, Cursor, and Codex can share one running brain instead of spawning one process per session.
 
 ```bash
 npm run mcp                              # Starts on 127.0.0.1:7423
 curl http://127.0.0.1:7423/health        # Verify
+node scripts/mcp-tray-proxy.mjs --probe  # Show which running MCP server agents will use
 ```
 
 For CI/research environments that need isolation without opening the Tauri
@@ -117,7 +118,7 @@ the container, but Compose publishes it to host loopback (`127.0.0.1:7423`).
 - **Self-improvement** — agents write learnings back to the brain for future sessions
 - **10–50× context reduction** — retrieval returns focused facts, not raw file dumps
 
-The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
+The MCP tray auto-starts when VS Code opens the workspace if no release/tray/dev server is already available. The VS Code profile uses a stdio proxy that reads token files directly and forwards requests to the existing server, so no bearer-token environment variable or VS Code restart is required.
 
 > Full setup: [MCP for Coding Agents tutorial](tutorials/mcp-coding-agents-tutorial.md) · [Agent bootstrap](rules/agent-mcp-bootstrap.md)
 

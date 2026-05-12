@@ -826,7 +826,7 @@ VALUES (
 
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'MCP AUTO-START TASK: .vscode/tasks.json contains a task labeled "TerranSoul MCP: Auto-Start" with type=shell, command=node scripts/copilot-start-mcp.mjs, isBackground=true, and runOptions.runOn=folderOpen. This means VS Code launches it automatically whenever the TerranSoul workspace folder is opened. The script checks ports 7421/7422/7423, reuses any running MCP, or starts npm run mcp detached if none is healthy. No manual agent intervention needed.',
+  'MCP AUTO-START TASK: .vscode/tasks.json contains a task labeled "TerranSoul MCP: Auto-Start" with type=shell, command=node scripts/copilot-start-mcp.mjs, isBackground=true, and runOptions.runOn=folderOpen. This means VS Code launches it automatically whenever the TerranSoul workspace folder is opened. The script checks authenticated MCP servers in priority order 7421 release, 7423 MCP tray, then 7422 dev; it reuses the first available server or starts npm run mcp detached if none is healthy. No manual agent intervention needed.',
   'mcp,auto-start,vscode-task,setup,enforcement',
   9, 'fact', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
 );
@@ -2275,6 +2275,24 @@ WHERE NOT EXISTS (
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 SELECT
+  'MCP SHARED TRAY PROXY (2026-05-12): Supersedes prior stdio-only startup guidance. Copilot, Claude, Cursor, Codex, and other local agents must share an already-open TerranSoul MCP server instead of spawning one brain per session. Priority is release app on 7421, MCP tray on 7423, then dev app on 7422 because dev and tray can run at the same time and coding agents should prefer the shared tray over a dev app when release is absent. `.vscode/mcp.json` uses `node scripts/mcp-tray-proxy.mjs` as the `terransoul-brain-mcp` stdio command; the proxy reads token files itself and forwards JSON-RPC to the first authenticated server, so no `TERRANSOUL_MCP_TOKEN_MCP` env var or VS Code restart is required. `terransoul --mcp-stdio` also proxies to an authenticated release/tray/dev HTTP server before creating local AppState, preserving older Claude/Codex/Cursor configs. `scripts/copilot-start-mcp.mjs` now reuses authenticated release/tray/dev and only builds/starts `target-mcp --mcp-tray` when no usable server is open; it does not kill an existing tray merely because source mtimes changed.',
+  'mcp,tray,stdio-proxy,copilot,claude,cursor,codex,multi-session,startup,must-not-forget,non-negotiable',
+  10, 'procedure', 1778544000000, 'long', 1.0, 'mcp', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CI APT CACHE FOR TAURI WEBKIT (2026-05-12): The Rust CI job still needs Ubuntu Tauri/WebKit development packages because the crate depends on Tauri/Wry even for library clippy/tests. The slow `apt-get update && apt-get install libwebkit2gtk-4.1-dev ...` step should use `awalsh128/cache-apt-pkgs-action@v1` with the same package list and `execute_install_scripts: true`, and the Rust job should pin `runs-on: ubuntu-24.04` so the APT package set and cache stay stable. This preserves the dependency surface while letting repeat GitHub Actions runs restore the heavy GTK/WebKit package files from cache instead of spending many minutes reinstalling them.',
+  'ci,github-actions,apt,tauri,webkit,cache,workflow,performance',
+  8, 'procedure', 1778544000000, 'long', 1.0, 'ci', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CI APT CACHE FOR TAURI WEBKIT (2026-05-12):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
   'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12): LoCoMo adversarial queries regressed -2.6pp R@10 (64.3 → 61.7) when upgrading nomic-embed-text → mxbai-embed-large because stronger semantic embeddings retrieve wrong-entity documents when the query swaps a named entity (e.g. "What did Caroline realize after her charity race?" when the corpus attributes the realization to Melanie — both characters have near-identical charity-race chunks). Fix implemented in `src-tauri/src/bin/longmemeval_ipc.rs` `best_hits()`: (1) added `contents_lower: HashMap<i64,String>` to `IndexState` populated in `add_sessions`; (2) added `proper_noun_tokens(query)` extractor that picks capitalized non-stopword tokens >=3 chars (stoplist includes sentence-starter function words like What/Who/When/Did/Does/The/Is/Are/...); (3) after 4-way weighted RRF fusion but before the final sort, multiply each candidate score by 0.35 if its lowercased content contains NONE of the query proper nouns. The penalty is multiplicative (not a hard filter) so single_hop/multi_hop queries that paraphrase entities ("the runner" vs "Melanie") still surface their targets when no candidate has a proper-noun match. Only the `best` mode (LONGMEM_EMBED=1, default for BENCH-LCM runs) carries this defense; lexical-only `search` and `rrf` modes are unaffected because they do not exhibit the regression. Reproduce with `node scripts/locomo-mteb.mjs run --systems=rrf --embed --limit=0`. Pre-fix baseline: overall 63.6 / adversarial 61.7. Target: overall >=64 / adversarial >=64 without single_hop regression below 72.',
   'bench-lcm-6,locomo,adversarial,proper-noun,wrong-entity,rrf,best-hits,longmemeval_ipc,mxbai,regression,fix,procedure',
   9, 'procedure', 1747094400000, 'long', 1.0, 'benchmark', 'procedural'
@@ -2293,3 +2311,42 @@ SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747094400000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
   AND d.content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supersedes', 1.0, 'seed', 1778544000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%'
+  AND (
+       d.content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%'
+    OR d.content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
+  );
+
+
+-- BENCH-LCM-6 smoke validation + BENCH-LCM-7 follow-up rule (2026-05-12)
+INSERT INTO memories (tier, kind, content, importance, source_path, source_kind)
+SELECT 'long', 'lesson',
+  'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12): 100-query LoCoMo slice across all 5 tasks with `node scripts/locomo-mteb.mjs run --systems=rrf --limit=100 --embed` confirms the proper-noun penalty fix recovers adversarial R@10 from 61.7% (LCM-5 baseline, 250-q) to **66.5%** (+4.8pp), exceeding the >=64% target. Other-task deltas are slice-composition noise (100q != 250q). Next: BENCH-LCM-7 must confirm on a 250-query slice before promoting to a full 1655-query run that replaces the LCM-5 adversarial cell. New durable workflow rule: ALWAYS run a 100-query smoke slice first to validate the directional change; 250-query slices are too high for iteration. Output artefact: `target-copilot-bench/bench-results/locomo_mteb_terransoul_489q.{json,md}`.',
+  5, 'rules/completion-log.md', 'doc-corpus'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
+);
+
+INSERT INTO memories (tier, kind, content, importance, source_path, source_kind)
+SELECT 'long', 'principle',
+  'BENCH SMOKE-SLICE RULE (2026-05-12, durable, per user request): For any retrieval/RAG benchmark loop (BENCH-LCM, BENCH-AM, BENCH-TOP1, future memory-quality phases), always run a **100-query** smoke slice first to validate that a fix produces the expected directional change on the affected task(s). Only promote to a 250-query confirmation run after the 100-query slice passes, and only then to a full (1655-query LoCoMo / 500-question LongMemEval-S / full agentmemory fixture) run. 250-query slices are too high for iteration — they waste 30-60min per cycle when a 100-query slice would have answered the question. Codified in `rules/milestones.md` Phase BENCH-LCM "Smoke-slice rule" block.',
+  5, 'rules/milestones.md', 'doc-corpus'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, edge_kind, weight)
+SELECT s.id, d.id, 'supports', 1.0
+FROM memories s, memories d
+WHERE s.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
+  AND d.content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, edge_kind, weight)
+SELECT s.id, d.id, 'derived_from', 1.0
+FROM memories s, memories d
+WHERE s.content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
+  AND d.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%';
