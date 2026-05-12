@@ -27,15 +27,15 @@
 .mv-tab { padding: 0.4rem 1rem; border: none; border-radius: 6px; cursor: pointer; background: var(--ts-bg-surface); color: var(--ts-text-secondary); font-size: var(--ts-text-sm); transition: background var(--ts-transition-fast), color var(--ts-transition-fast); }
 .mv-tab:hover { background: var(--ts-bg-hover); color: var(--ts-text-primary); }
 .mv-tab.active { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); }
-.mv-graph-panel { display: flex; flex: 1; gap: 0.75rem; overflow: hidden; min-height: 0; }
+.mv-graph-panel { display: flex; flex: 1; gap: 0.75rem; overflow: hidden; min-height: 400px; }
 .mv-graph-panel > :first-child { flex: 1; min-width: 0; }
 .mv-graph-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .mv-graph-toolbar { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.4rem 0; }
 .mv-graph-toggle { display: flex; align-items: center; gap: 0.4rem; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
 .mv-edge-mode { background: var(--ts-bg-surface); color: var(--ts-text-primary); border: 1px solid var(--ts-border); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: var(--ts-text-sm); }
 .mv-edge-counter { font-size: var(--ts-text-sm); color: var(--ts-text-muted); }
-.mv-graph-main > .memory-graph { flex: 1; }
-.mv-graph-main > .brain-graph-viewport { flex: 1; }
+.mv-graph-main > .memory-graph { flex: 1; min-height: 320px; }
+.mv-graph-main > .brain-graph-viewport { flex: 1; min-height: 320px; }
 .mv-graph-main { position: relative; }
 .mv-graph-loading { position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%); font-size: var(--ts-text-sm); color: var(--ts-text-muted); background: var(--ts-bg-overlay); padding: 0.25rem 0.75rem; border-radius: 999px; pointer-events: none; z-index: 5; }
 .mv-node-edges { display: flex; flex-direction: column; gap: 0.3rem; padding-top: 0.4rem; border-top: 1px solid var(--ts-border); }

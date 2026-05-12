@@ -14,7 +14,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import {
   defaultPersona,
@@ -26,6 +26,7 @@ import {
   type MotionPolishConfig,
   type MotionPolishPreview,
 } from './persona-types';
+import { useCharacterStore } from './character';
 import { buildPersonaBlock, type LearnedMotionRef } from '../utils/persona-prompt';
 
 const TRAITS_STORAGE_KEY = 'terransoul.persona.traits.v1';
@@ -49,6 +50,7 @@ function freshSession(): CameraSessionState {
 }
 
 export const usePersonaStore = defineStore('persona', () => {
+  const characterStore = useCharacterStore();
   // ── Persistent state ────────────────────────────────────────────────
   const traits = ref<PersonaTraits>(defaultPersona());
   const traitsLoaded = ref(false);
@@ -84,7 +86,20 @@ export const usePersonaStore = defineStore('persona', () => {
    * prompt. Empty string when persona is inactive — same contract as the
    * `[LONG-TERM MEMORY]` block (see brain-advanced-design.md § 4).
    */
-  const personaBlock = computed(() => buildPersonaBlock(traits.value, learnedMotionRefs.value));
+  const effectiveTraits = computed<PersonaTraits>(() => {
+    const profile = characterStore.currentModelProfile();
+    return {
+      ...traits.value,
+      name: profile.name.trim() || traits.value.name,
+      role: profile.persona.trim() || traits.value.role,
+      voiceProfile: {
+        ...traits.value.voiceProfile,
+        ...profile.voiceProfile,
+      },
+    };
+  });
+
+  const personaBlock = computed(() => buildPersonaBlock(effectiveTraits.value, learnedMotionRefs.value));
 
   /**
    * True iff the user has customised the default persona — used by the
@@ -142,6 +157,12 @@ export const usePersonaStore = defineStore('persona', () => {
       }
     }
   }
+
+  watch(personaBlock, () => {
+    if (traitsLoaded.value) {
+      void syncBlockToBackend();
+    }
+  });
 
   /** Load persona state from disk on startup. Tauri first, then local
    *  storage as fallback / override-merge. */

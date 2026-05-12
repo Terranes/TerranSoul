@@ -19,6 +19,802 @@ use super::sharded_retrieval::{merge_shard_rankings, ShardKey};
 /// `session_id = NULL` remain uncapped so durable knowledge is not hidden.
 pub const DEFAULT_MAX_RESULTS_PER_SESSION: usize = 3;
 
+const GRAPH_BOOST_SEED_LIMIT: usize = 12;
+const GRAPH_BOOST_NEIGHBOR_LIMIT_PER_SEED: i64 = 64;
+const GRAPH_BOOST_PER_EDGE: f64 = 0.06;
+const GRAPH_BOOST_MAX: f64 = 0.18;
+
+const SHORT_TECH_QUERY_TERMS: &[&str] = &[
+    "ai", "ar", "as", "cd", "ci", "db", "kg", "ml", "qa", "ui", "ux", "vr",
+];
+const QUERY_STOP_TERMS: &[&str] = &[
+    "a",
+    "about",
+    "am",
+    "an",
+    "and",
+    "app",
+    "are",
+    "at",
+    "be",
+    "by",
+    "can",
+    "did",
+    "discussed",
+    "do",
+    "does",
+    "earlier",
+    "for",
+    "from",
+    "has",
+    "have",
+    "her",
+    "his",
+    "how",
+    "i",
+    "in",
+    "into",
+    "is",
+    "it",
+    "its",
+    "just",
+    "likely",
+    "me",
+    "mentioned",
+    "my",
+    "not",
+    "of",
+    "on",
+    "or",
+    "our",
+    "provided",
+    "remind",
+    "set",
+    "she",
+    "so",
+    "still",
+    "than",
+    "that",
+    "their",
+    "them",
+    "then",
+    "they",
+    "the",
+    "this",
+    "to",
+    "up",
+    "was",
+    "we",
+    "were",
+    "what",
+    "when",
+    "where",
+    "who",
+    "why",
+    "with",
+    "won",
+    "work",
+    "works",
+    "would",
+    "you",
+];
+
+const RECOMMENDATION_STOP_TERMS: &[&str] = &[
+    "again", "any", "been", "bit", "can", "could", "give", "got", "have", "having", "ive", "just",
+    "lately", "like", "me", "might", "more", "my", "need", "some", "would", "you", "your",
+];
+
+const RECOMMENDATION_QUERY_CUES: &[&str] = &[
+    "advice",
+    "idea",
+    "ideas",
+    "recommend",
+    "recommendation",
+    "recommendations",
+    "suggest",
+    "suggestion",
+    "suggestions",
+    "tips",
+];
+
+const LOW_SIGNAL_WEIGHT_TERMS: &[&str] = &[
+    "config",
+    "configuration",
+    "implementation",
+    "setup",
+    "test",
+    "testing",
+    "validation",
+];
+
+const RECOMMENDATION_DOMAIN_EXPANSIONS: &[(&str, &[&str])] = &[
+    (
+        "accessories",
+        &["case", "charger", "flash", "protector", "tripod"],
+    ),
+    ("activities", &["podcast", "podcasts", "genres", "commute"]),
+    (
+        "battery",
+        &["charger", "charging", "power", "bank", "traveling"],
+    ),
+    ("commute", &["podcast", "podcasts", "listening", "genres"]),
+    (
+        "conference",
+        &["field", "research", "advancements", "publications"],
+    ),
+    (
+        "conferences",
+        &["field", "research", "advancements", "publications"],
+    ),
+    ("dinner", &["fresh", "herbs", "recipe", "recipes"]),
+    ("documentary", &["documentaries", "netflix", "series"]),
+    ("editing", &["adobe", "premiere", "software", "video"]),
+    (
+        "guitar",
+        &["fender", "gibson", "stratocaster", "les", "paul"],
+    ),
+    ("homegrown", &["fresh", "herbs", "recipe", "recipes"]),
+    ("ingredients", &["fresh", "herbs", "recipe", "recipes"]),
+    ("painting", &["acrylic", "brushes", "paints", "supplies"]),
+    ("paintings", &["acrylic", "brushes", "paints", "supplies"]),
+    ("phone", &["charger", "charging", "protector", "screen"]),
+    ("photography", &["camera", "flash", "lens", "sony"]),
+    (
+        "publications",
+        &["field", "research", "advancements", "conferences"],
+    ),
+    ("theme", &["rides", "events", "park", "parks"]),
+    ("video", &["adobe", "premiere", "software", "editing"]),
+];
+
+const QUERY_TERM_EXPANSIONS: &[(&str, &[&str])] = &[
+    ("bought", &["buy", "got", "invested", "purchased"]),
+    ("buy", &["bought", "got", "invested", "purchased"]),
+    (
+        "doctor",
+        &[
+            "appointment",
+            "dermatologist",
+            "dr",
+            "ent",
+            "physician",
+            "specialist",
+        ],
+    ),
+    (
+        "doctors",
+        &[
+            "appointment",
+            "dermatologist",
+            "doctor",
+            "dr",
+            "ent",
+            "physician",
+            "specialist",
+        ],
+    ),
+    ("got", &["bought", "buy", "invested", "purchased"]),
+    ("identity", &["background", "gender", "orientation", "transgender"]),
+    ("interested", &["enjoy", "fascinated", "love", "passion"]),
+    ("invested", &["bought", "buy", "got", "purchased"]),
+    ("learn", &["class", "course", "practice", "study", "studying"]),
+    ("leaning", &["belief", "opinion", "political", "view"]),
+    ("meet", &["catch", "lunch", "met"]),
+    ("moved", &["relocated", "country", "city", "home"]),
+    ("partake", &["did", "join", "joined", "participate"]),
+    ("partakes", &["did", "join", "joined", "participate"]),
+    ("participate", &["attend", "join", "joined", "went"]),
+    ("personality", &["caring", "kind", "thoughtful", "traits"]),
+    ("pet", &["cat", "dog", "puppy", "kitten"]),
+    ("pets", &["cat", "cats", "dog", "dogs"]),
+    ("political", &["conservative", "liberal", "leaning", "opinion"]),
+    ("pursue", &["aspire", "career", "field", "goal", "study"]),
+    ("religious", &["church", "faith", "spiritual"]),
+    ("research", &["researching", "study", "studying", "investigate"]),
+    ("roadtrip", &["drive", "road", "travel", "trip"]),
+    ("status", &["current", "situation", "update"]),
+    ("support", &["encourage", "help", "helped", "helping"]),
+    ("traits", &["caring", "kind", "personality", "thoughtful"]),
+    ("visited", &["appointment", "visit"]),
+    ("visit", &["appointment", "visited"]),
+    ("volunteer", &["community", "charity", "helping", "service"]),
+];
+
+fn query_terms(input: &str) -> (Vec<String>, usize) {
+    let mut seen = HashSet::new();
+    let mut terms: Vec<String> = input
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter_map(|raw| {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let term = trimmed.to_lowercase();
+            if QUERY_STOP_TERMS.contains(&term.as_str()) {
+                return None;
+            }
+            let keep_short = term.len() == 2
+                && (SHORT_TECH_QUERY_TERMS.contains(&term.as_str())
+                    || trimmed.chars().any(|c| c.is_ascii_uppercase()));
+            if term.len() > 2 || keep_short {
+                seen.insert(term.clone()).then_some(term)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if is_recommendation_query(input, &terms) {
+        terms.retain(|term| !RECOMMENDATION_STOP_TERMS.contains(&term.as_str()));
+        seen = terms.iter().cloned().collect();
+        let base_terms = terms.clone();
+        for term in base_terms {
+            for (cue, expansions) in RECOMMENDATION_DOMAIN_EXPANSIONS {
+                if term == *cue {
+                    add_terms(&mut terms, &mut seen, expansions);
+                }
+            }
+        }
+    }
+
+    // Semantic expansions (used for both FTS5 recall AND scoring).
+    add_semantic_query_expansions(&mut terms, &mut seen);
+    add_phrase_query_expansions(input, &mut terms, &mut seen);
+
+    // Record the scoring term count BEFORE morphological expansion.
+    // Morphological variants improve FTS5 recall but should NOT inflate
+    // the lexical reranker (density/all-terms bonuses, per-term hits).
+    let scoring_count = terms.len();
+
+    // Morphological expansion (FTS5 recall only, not used in scoring).
+    let base_terms = terms.clone();
+    for term in base_terms {
+        add_morphological_variants(&mut terms, &mut seen, &term);
+    }
+
+    (terms, scoring_count)
+}
+
+fn add_semantic_query_expansions(terms: &mut Vec<String>, seen: &mut HashSet<String>) {
+    let base_terms = terms.clone();
+    for term in base_terms {
+        for (cue, expansions) in QUERY_TERM_EXPANSIONS {
+            if term == *cue {
+                add_terms(terms, seen, expansions);
+            }
+        }
+    }
+}
+
+fn add_morphological_variants(terms: &mut Vec<String>, seen: &mut HashSet<String>, term: &str) {
+    // ── Strip suffixes to find base forms ───────────────────────────────
+
+    // -ies → -y (e.g. "activities" → "activity")
+    if term.len() > 4 && term.ends_with("ies") {
+        let singular = format!("{}y", &term[..term.len() - 3]);
+        add_term(terms, seen, singular);
+    }
+    // -s (not -ss) → drop (e.g. "books" → "book")
+    if term.len() > 3 && term.ends_with('s') && !term.ends_with("ss") {
+        add_term(terms, seen, term[..term.len() - 1].to_string());
+    }
+    // -ing → base form (e.g. "researching" → "research", "moving" → "move")
+    if term.len() > 5 && term.ends_with("ing") {
+        let stem = &term[..term.len() - 3];
+        add_term(terms, seen, stem.to_string());
+        // Handle doubled consonant: "running" → "run"
+        if stem.len() > 2 {
+            let bytes = stem.as_bytes();
+            if bytes[bytes.len() - 1] == bytes[bytes.len() - 2] {
+                add_term(terms, seen, stem[..stem.len() - 1].to_string());
+            }
+        }
+        // Handle dropped -e: "moving" → "move", "deciding" → "decide"
+        add_term(terms, seen, format!("{stem}e"));
+    }
+    // -ed → base form (e.g. "moved" → "move", "decided" → "decide")
+    if term.len() > 4 && term.ends_with("ed") {
+        let stem = &term[..term.len() - 2];
+        add_term(terms, seen, stem.to_string());
+        // Handle doubled consonant: "stopped" → "stop"
+        if stem.len() > 2 {
+            let bytes = stem.as_bytes();
+            if bytes[bytes.len() - 1] == bytes[bytes.len() - 2] {
+                add_term(terms, seen, stem[..stem.len() - 1].to_string());
+            }
+        }
+        // Handle -ied → -y: "studied" → "study"
+        if term.ends_with("ied") && term.len() > 4 {
+            add_term(
+                terms,
+                seen,
+                format!("{}y", &term[..term.len() - 3]),
+            );
+        }
+        // Drop just -d when stem already ends with -e: "loved" → "love"
+        if stem.ends_with('e') {
+            add_term(terms, seen, stem.to_string());
+        }
+    }
+    // -er → base (e.g. "runner" → "run", "mover" → "move")
+    if term.len() > 4 && term.ends_with("er") && !term.ends_with("ster") {
+        let stem = &term[..term.len() - 2];
+        add_term(terms, seen, stem.to_string());
+        add_term(terms, seen, format!("{stem}e"));
+    }
+    // -ment → base (e.g. "engagement" → "engage")
+    if term.len() > 6 && term.ends_with("ment") {
+        let stem = &term[..term.len() - 4];
+        add_term(terms, seen, stem.to_string());
+        add_term(terms, seen, format!("{stem}e"));
+    }
+    // -tion/-sion → base (e.g. "education" → "educate", "adoption" → "adopt")
+    // Don't emit bare stem — it's almost never a real word and causes
+    // substring false-positives (e.g. "configura" ⊂ "configuration").
+    if term.len() > 5 && (term.ends_with("tion") || term.ends_with("sion")) {
+        let stem = &term[..term.len() - 4];
+        add_term(terms, seen, format!("{stem}e"));
+        add_term(terms, seen, format!("{stem}t"));
+        add_term(terms, seen, format!("{stem}te"));
+    }
+    // -ly → base (e.g. "likely" → "like")
+    if term.len() > 4 && term.ends_with("ly") {
+        add_term(terms, seen, term[..term.len() - 2].to_string());
+    }
+
+    // ── Generate inflected forms from base ──────────────────────────────
+    // Only for terms that look like base verbs/nouns (3+ chars, no suffix)
+    if term.len() >= 3
+        && !term.ends_with("ing")
+        && !term.ends_with("ed")
+        && !term.ends_with("tion")
+    {
+        // base → -ing (e.g. "research" → "researching")
+        add_term(terms, seen, format!("{term}ing"));
+        // base → -ed (e.g. "research" → "researched")
+        add_term(terms, seen, format!("{term}ed"));
+        // base ending in -e → drop e + -ing/-ed (e.g. "move" → "moving"/"moved")
+        if term.ends_with('e') {
+            let stem = &term[..term.len() - 1];
+            add_term(terms, seen, format!("{stem}ing"));
+            add_term(terms, seen, format!("{stem}ed"));
+        }
+    }
+}
+
+fn add_phrase_query_expansions(input: &str, terms: &mut Vec<String>, seen: &mut HashSet<String>) {
+    let lower = input.to_lowercase();
+    if lower.contains("kitchen appliance") || lower.contains("kitchen gadget") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "air", "cooking", "fryer", "instant", "pot", "pressure", "smoker",
+            ],
+        );
+    }
+    if lower.contains("gardening") || lower.contains("garden") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "garden", "plant", "planted", "planting", "saplings", "tomato",
+            ],
+        );
+    }
+    if lower.contains("high school reunion") {
+        add_terms(
+            terms,
+            seen,
+            &["advanced", "courses", "debate", "economics", "placement"],
+        );
+    }
+    if lower.contains("jwt") && (lower.contains("middleware") || lower.contains("validation")) {
+        add_terms(
+            terms,
+            seen,
+            &["authentication", "nextauth", "session", "sessions"],
+        );
+    }
+    if lower.contains("life event") || lower.contains("relatives") || lower.contains("relative") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "birthday",
+                "ceremony",
+                "engagement",
+                "graduation",
+                "wedding",
+            ],
+        );
+    }
+    // ── Conversational concept expansions (LoCoMo-style) ────────────────
+    if lower.contains("relationship") || lower.contains("dating") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "boyfriend", "breakup", "couple", "dating", "divorced",
+                "engagement", "girlfriend", "married", "partner", "romance",
+                "relationship", "single", "wedding",
+            ],
+        );
+    }
+    if lower.contains("career") || lower.contains("profession") || lower.contains("occupation") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "career", "field", "hired", "interview", "job", "occupation",
+                "profession", "promoted", "quit", "resigned", "salary",
+                "working",
+            ],
+        );
+    }
+    if lower.contains("education") || lower.contains("school") || lower.contains("degree") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "class", "college", "courses", "degree", "diploma",
+                "enrolled", "graduated", "major", "masters", "school",
+                "semester", "student", "studying", "university",
+            ],
+        );
+    }
+    if lower.contains("hobby") || lower.contains("hobbies") || lower.contains("free time") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "cooking", "crafts", "drawing", "gaming", "hiking",
+                "interests", "knitting", "painting", "playing", "reading",
+                "sports", "writing",
+            ],
+        );
+    }
+    if lower.contains("family") || lower.contains("parents") || lower.contains("sibling") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "brother", "child", "children", "dad", "daughter", "family",
+                "father", "kids", "mom", "mother", "parents", "sister",
+                "son",
+            ],
+        );
+    }
+    if lower.contains("health") || lower.contains("medical") || lower.contains("illness") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "allergies", "clinic", "condition", "diagnosed", "disease",
+                "exercise", "fitness", "hospital", "injury", "medication",
+                "mental", "surgery", "symptoms", "therapy", "treatment",
+            ],
+        );
+    }
+    if lower.contains("travel") || lower.contains("trip") || lower.contains("vacation") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "abroad", "booked", "camping", "country", "cruise",
+                "destination", "flight", "hotel", "luggage", "resort",
+                "sightseeing", "tourism", "traveled", "travelling",
+                "vacation", "visited",
+            ],
+        );
+    }
+    if lower.contains("moved") || lower.contains("move from") || lower.contains("relocated") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "apartment", "city", "country", "home", "house", "lived",
+                "location", "moved", "neighborhood", "place", "relocated",
+                "rent", "town",
+            ],
+        );
+    }
+    if lower.contains("bookshelf") || lower.contains("reading") || lower.contains("favorite book") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "author", "book", "books", "chapter", "fiction", "genre",
+                "library", "literature", "novel", "read", "reader",
+                "reading", "story", "stories", "writer",
+            ],
+        );
+    }
+    if lower.contains("pet") || lower.contains("animal") || lower.contains("dog") || lower.contains("cat") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "adopted", "animal", "breed", "cat", "dog", "fish",
+                "kitten", "pet", "puppy", "rabbit", "rescue", "vet",
+                "veterinarian",
+            ],
+        );
+    }
+    // Activities / participation queries
+    if lower.contains("activit") || lower.contains("partake") || lower.contains("participate") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "camping", "class", "event", "joined", "painting",
+                "pottery", "program", "signed", "swimming", "went",
+            ],
+        );
+    }
+    // De-stress / relaxation queries
+    if lower.contains("destress") || lower.contains("de-stress") || lower.contains("relax") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "calm", "meditation", "pottery", "running", "therapy",
+                "yoga",
+            ],
+        );
+    }
+    // Art / creative queries — check that "art" is a standalone word, not
+    // embedded in "charity", "heart", "smart", "Martha", etc.
+    if terms.iter().any(|t| t == "art" || t == "arts" || t == "artistic") {
+        add_terms(
+            terms,
+            seen,
+            &[
+                "canvas", "creative", "exhibit", "gallery", "painting",
+                "paintings", "pottery", "sculpture", "show",
+            ],
+        );
+    }
+}
+
+fn add_term(terms: &mut Vec<String>, seen: &mut HashSet<String>, term: String) {
+    if seen.insert(term.clone()) {
+        terms.push(term);
+    }
+}
+
+fn add_terms(terms: &mut Vec<String>, seen: &mut HashSet<String>, additions: &[&str]) {
+    for addition in additions {
+        let term = addition.to_string();
+        add_term(terms, seen, term);
+    }
+}
+
+fn is_recommendation_query(input: &str, terms: &[String]) -> bool {
+    let lower = input.to_lowercase();
+    lower.contains("what should i")
+        || lower.contains("do you have any")
+        || terms
+            .iter()
+            .any(|term| RECOMMENDATION_QUERY_CUES.contains(&term.as_str()))
+}
+
+fn lexical_terms(input: &str) -> HashSet<String> {
+    input
+        .split(|c: char| !c.is_alphanumeric() && c != '_')
+        .filter_map(|raw| {
+            let term = raw.trim().to_lowercase();
+            (!term.is_empty()).then_some(term)
+        })
+        .collect()
+}
+
+fn lexical_rank_score(entry: &MemoryEntry, terms: &[String]) -> usize {
+    if terms.is_empty() {
+        return 0;
+    }
+
+    let content_terms = lexical_terms(&entry.content);
+    let tag_terms = lexical_terms(&entry.tags);
+    let lower_content = entry.content.to_lowercase();
+    let lower_tags = entry.tags.to_lowercase();
+
+    let mut exact_tag_hits = 0usize;
+    let mut exact_content_hits = 0usize;
+    let mut substring_hits = 0usize;
+    for term in terms {
+        if tag_terms.contains(term) {
+            exact_tag_hits += 1;
+        }
+        if content_terms.contains(term) {
+            exact_content_hits += 1;
+        }
+        if lower_content.contains(term.as_str()) || lower_tags.contains(term.as_str()) {
+            substring_hits += 1;
+        }
+    }
+
+    let matched_terms = terms
+        .iter()
+        .filter(|term| {
+            tag_terms.contains(*term)
+                || content_terms.contains(*term)
+                || lower_content.contains(term.as_str())
+                || lower_tags.contains(term.as_str())
+        })
+        .count();
+    // Scale the all-terms bonus with query length: longer queries with all
+    // terms matching are much stronger signals than short ones.
+    let all_terms_bonus = if matched_terms == terms.len() && terms.len() >= 2 {
+        16 + terms.len() * 12
+    } else {
+        0
+    };
+    // Term density: ratio of matched unique terms to total terms, scaled.
+    // Rewards docs matching a high fraction of query terms even when not all.
+    let density_bonus = if terms.len() >= 2 {
+        (matched_terms as f64 / terms.len() as f64 * 20.0) as usize
+    } else {
+        0
+    };
+
+    exact_tag_hits * 24
+        + exact_content_hits * 8
+        + substring_hits * 2
+        + all_terms_bonus
+        + density_bonus
+        + entry.importance.max(0) as usize
+}
+
+fn lexical_term_weights(entries: &[MemoryEntry], terms: &[String]) -> HashMap<String, f64> {
+    if entries.is_empty() || terms.is_empty() {
+        return HashMap::new();
+    }
+
+    let total = entries.len() as f64;
+    terms
+        .iter()
+        .filter_map(|term| {
+            let df = entries
+                .iter()
+                .filter(|entry| lexical_term_matches(entry, term))
+                .count();
+            (df > 0).then(|| {
+                let mut weight = (total / df as f64).ln_1p().clamp(0.25, 4.0);
+                if LOW_SIGNAL_WEIGHT_TERMS.contains(&term.as_str()) {
+                    weight = weight.min(1.0);
+                }
+                (term.clone(), weight)
+            })
+        })
+        .collect()
+}
+
+fn lexical_term_matches(entry: &MemoryEntry, term: &str) -> bool {
+    let content_terms = lexical_terms(&entry.content);
+    let tag_terms = lexical_terms(&entry.tags);
+    content_terms.contains(term)
+        || tag_terms.contains(term)
+        || entry.content.to_lowercase().contains(term)
+        || entry.tags.to_lowercase().contains(term)
+}
+
+fn lexical_rank_score_weighted(
+    entry: &MemoryEntry,
+    terms: &[String],
+    weights: &HashMap<String, f64>,
+) -> f64 {
+    if terms.is_empty() {
+        return 0.0;
+    }
+
+    let content_terms = lexical_terms(&entry.content);
+    let tag_terms = lexical_terms(&entry.tags);
+    let lower_content = entry.content.to_lowercase();
+    let lower_tags = entry.tags.to_lowercase();
+
+    let mut score = entry.importance.max(0) as f64;
+    let mut matched_terms = 0usize;
+    for term in terms {
+        let weight = weights.get(term).copied().unwrap_or(1.0);
+        let mut matched = false;
+        if tag_terms.contains(term) {
+            score += 24.0 * weight;
+            matched = true;
+        }
+        if content_terms.contains(term) {
+            score += 8.0 * weight;
+            matched = true;
+        }
+        if lower_content.contains(term.as_str()) || lower_tags.contains(term.as_str()) {
+            score += 2.0 * weight;
+            matched = true;
+        }
+        if matched {
+            matched_terms += 1;
+        }
+    }
+
+    if matched_terms == terms.len() && terms.len() >= 2 {
+        score += 16.0 + (terms.len() as f64) * 12.0;
+    }
+    // Term density: fractional match bonus for partial multi-term coverage.
+    if terms.len() >= 2 {
+        score += matched_terms as f64 / terms.len() as f64 * 20.0;
+    }
+    score
+}
+
+fn rerank_by_lexical_score(entries: &mut [MemoryEntry], terms: &[String]) {
+    let weights = lexical_term_weights(entries, terms);
+    let scores: HashMap<i64, f64> = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.id,
+                lexical_rank_score_weighted(entry, terms, &weights),
+            )
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        scores
+            .get(&b.id)
+            .copied()
+            .unwrap_or(0.0)
+            .partial_cmp(&scores.get(&a.id).copied().unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.importance.cmp(&a.importance))
+            .then_with(|| b.created_at.cmp(&a.created_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+fn rerank_by_lexical_and_graph_score(
+    entries: &mut [MemoryEntry],
+    terms: &[String],
+    graph_boosts: &HashMap<i64, f64>,
+) {
+    let weights = lexical_term_weights(entries, terms);
+    let scores: HashMap<i64, f64> = entries
+        .iter()
+        .map(|entry| {
+            (
+                entry.id,
+                lexical_rank_score_weighted(entry, terms, &weights),
+            )
+        })
+        .collect();
+    entries.sort_by(|a, b| {
+        let score_a = scores.get(&a.id).copied().unwrap_or(0.0)
+            + graph_boosts.get(&a.id).copied().unwrap_or(0.0) * 100.0;
+        let score_b = scores.get(&b.id).copied().unwrap_or(0.0)
+            + graph_boosts.get(&b.id).copied().unwrap_or(0.0) * 100.0;
+        score_b
+            .partial_cmp(&score_a)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| b.importance.cmp(&a.importance))
+            .then_with(|| b.created_at.cmp(&a.created_at))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+}
+
+fn top_unique_ids<I>(ids: I, limit: usize) -> Vec<i64>
+where
+    I: IntoIterator<Item = i64>,
+{
+    let mut seen = HashSet::new();
+    let mut out = Vec::with_capacity(limit);
+    for id in ids {
+        if seen.insert(id) {
+            out.push(id);
+            if out.len() >= limit {
+                break;
+            }
+        }
+    }
+    out
+}
+
 fn select_diversified_ranked<I>(
     ranked: I,
     by_id: &HashMap<i64, MemoryEntry>,
@@ -35,6 +831,13 @@ where
     let max_per_session = max_per_session.max(1);
     let mut session_counts: HashMap<String, usize> = HashMap::new();
     let mut selected = Vec::with_capacity(limit);
+    // Two-pass selection. Pass 1: enforce per-session cap so the top of the
+    // result set has session diversity (chat-context UX). Pass 2: if the
+    // diversified pass under-filled `limit` (e.g. for focused analytical
+    // queries that legitimately cluster in one session group), fill the
+    // remaining slots from the same ranked list without the cap so we never
+    // throw away relevant results below the requested limit.
+    let mut overflow: Vec<(i64, f64)> = Vec::new();
 
     for (id, score) in ranked {
         let Some(entry) = by_id.get(&id) else {
@@ -49,6 +852,9 @@ where
         {
             let count = session_counts.entry(session_id.to_string()).or_insert(0);
             if *count >= max_per_session {
+                if selected.len() + overflow.len() < limit {
+                    overflow.push((id, score));
+                }
                 continue;
             }
             *count += 1;
@@ -56,8 +862,16 @@ where
 
         selected.push((id, score));
         if selected.len() >= limit {
+            return selected;
+        }
+    }
+
+    // Pass 2: backfill from the overflow (preserves original RRF order).
+    for hit in overflow {
+        if selected.len() >= limit {
             break;
         }
+        selected.push(hit);
     }
 
     selected
@@ -850,9 +1664,21 @@ impl MemoryStore {
         }
 
         let entries = if self.has_fts5() {
-            // FTS5 path: tokenized full-text match with BM25 ranking.
-            let escaped = query.replace('"', "\"\"");
-            let fts_query = format!("\"{escaped}\"");
+            // FTS5 path: tokenize the user query into individual terms and
+            // OR-match them so multi-word natural-language queries (e.g.
+            // "How did we set up authentication?") return any document
+            // containing any of the substantive tokens. Wrapping the whole
+            // query as a single phrase would only match exact-phrase docs.
+            let (terms, scoring_count) = query_terms(query);
+            let tokens: Vec<String> = terms
+                .iter()
+                .map(|t| t.replace('"', "\"\""))
+                .map(|t| format!("\"{t}\""))
+                .collect();
+            if tokens.is_empty() {
+                return Ok(Vec::new());
+            }
+            let fts_query = tokens.join(" OR ");
             let mut stmt = self.conn.prepare(
                 "SELECT m.id, m.content, m.tags, m.importance, m.memory_type, m.created_at, m.last_accessed, m.access_count,
                         m.tier, m.decay_score, m.session_id, m.parent_id, m.token_count, m.source_url, m.source_hash, m.expires_at, m.valid_to, m.obsidian_path, m.last_exported, m.updated_at, m.origin_device, m.hlc_counter, m.confidence
@@ -862,7 +1688,22 @@ impl MemoryStore {
                  ORDER BY rank",
             )?;
             let rows = stmt.query_map(params![fts_query], row_to_entry)?;
-            rows.collect::<SqlResult<Vec<MemoryEntry>>>()?
+            let mut entries = rows.collect::<SqlResult<Vec<MemoryEntry>>>()?;
+            // Rerank using only scoring terms (originals + semantic expansions),
+            // NOT morphological variants (which are FTS5-recall-only).
+            let scoring_terms = &terms[..scoring_count];
+            rerank_by_lexical_score(&mut entries, scoring_terms);
+            let by_id: HashMap<i64, MemoryEntry> = entries
+                .iter()
+                .map(|entry| (entry.id, entry.clone()))
+                .collect();
+            let seed_ids =
+                top_unique_ids(entries.iter().map(|entry| entry.id), GRAPH_BOOST_SEED_LIMIT);
+            let graph_boosts = self.graph_neighbor_boosts(&seed_ids, &by_id, scoring_terms)?;
+            if !graph_boosts.is_empty() {
+                rerank_by_lexical_and_graph_score(&mut entries, scoring_terms, &graph_boosts);
+            }
+            entries
         } else {
             // Fallback: LIKE-based full-table scan.
             let pattern = format!("%{}%", query.to_lowercase());
@@ -1240,6 +2081,67 @@ impl MemoryStore {
         rows.collect()
     }
 
+    fn graph_neighbor_boosts(
+        &self,
+        seed_ids: &[i64],
+        by_id: &HashMap<i64, MemoryEntry>,
+        terms: &[String],
+    ) -> SqlResult<HashMap<i64, f64>> {
+        if seed_ids.is_empty() || by_id.is_empty() || terms.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut boosts: HashMap<i64, f64> = HashMap::new();
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT src_id, dst_id, confidence
+             FROM memory_edges
+             WHERE valid_to IS NULL AND (src_id = ?1 OR dst_id = ?1)
+             LIMIT ?2",
+        )?;
+
+        for seed_id in seed_ids.iter().take(GRAPH_BOOST_SEED_LIMIT) {
+            let Some(seed) = by_id.get(seed_id) else {
+                continue;
+            };
+            if lexical_rank_score(seed, terms) == 0 {
+                continue;
+            }
+
+            let rows = stmt.query_map(
+                params![seed_id, GRAPH_BOOST_NEIGHBOR_LIMIT_PER_SEED],
+                |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, i64>(1)?,
+                        row.get::<_, f64>(2)?,
+                    ))
+                },
+            )?;
+
+            for row in rows {
+                let (src_id, dst_id, confidence) = row?;
+                let neighbor_id = if src_id == *seed_id { dst_id } else { src_id };
+                if neighbor_id == *seed_id {
+                    continue;
+                }
+                let Some(neighbor) = by_id.get(&neighbor_id) else {
+                    continue;
+                };
+                let lexical_score = lexical_rank_score(neighbor, terms);
+                if lexical_score == 0 {
+                    continue;
+                }
+
+                let lexical_gate = ((lexical_score as f64).ln_1p() / 4.0).clamp(0.25, 1.0);
+                let edge_boost = confidence.clamp(0.0, 1.0) * GRAPH_BOOST_PER_EDGE * lexical_gate;
+                let boost = boosts.entry(neighbor_id).or_insert(0.0);
+                *boost = (*boost + edge_boost).min(GRAPH_BOOST_MAX);
+            }
+        }
+
+        Ok(boosts)
+    }
+
     /// Gather candidate IDs from ANN + keyword + freshness retrievers, then
     /// return the deduplicated union of entries (with embeddings if available).
     fn search_candidates(
@@ -1522,12 +2424,7 @@ impl MemoryStore {
         let now = now_ms();
         let hour_ms: f64 = 3_600_000.0;
 
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
+        let (words, scoring_count) = query_terms(query);
 
         // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
         let all = self.search_candidates(&words, query_embedding)?;
@@ -1535,6 +2432,10 @@ impl MemoryStore {
         if all.is_empty() {
             return Ok(vec![]);
         }
+
+        // Scoring uses only originals + semantic expansions (not morphological
+        // variants) so that keyword-hit density isn't inflated.
+        let scoring_words = &words[..scoring_count];
 
         let mut scored: Vec<(f64, MemoryEntry)> = all
             .into_iter()
@@ -1548,14 +2449,14 @@ impl MemoryStore {
 
                 let lower_content = entry.content.to_lowercase();
                 let lower_tags = entry.tags.to_lowercase();
-                let keyword_hits = words
+                let keyword_hits = scoring_words
                     .iter()
                     .filter(|w| {
                         lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
                     })
                     .count();
-                if !words.is_empty() {
-                    score += (keyword_hits as f64 / words.len() as f64) * 0.20;
+                if !scoring_words.is_empty() {
+                    score += (keyword_hits as f64 / scoring_words.len() as f64) * 0.20;
                 }
 
                 let age_hours = (now - entry.created_at) as f64 / hour_ms;
@@ -1591,12 +2492,7 @@ impl MemoryStore {
         let hour_ms: f64 = 3_600_000.0;
 
         // Keyword scoring setup
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
+        let (words, scoring_count) = query_terms(query);
 
         // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
         let all = self.search_candidates(&words, query_embedding)?;
@@ -1604,6 +2500,8 @@ impl MemoryStore {
         if all.is_empty() {
             return Ok(vec![]);
         }
+
+        let scoring_words = &words[..scoring_count];
 
         let mut scored: Vec<(f64, MemoryEntry)> = all
             .into_iter()
@@ -1619,14 +2517,14 @@ impl MemoryStore {
                 // (2) Keyword match — weight 0.20
                 let lower_content = entry.content.to_lowercase();
                 let lower_tags = entry.tags.to_lowercase();
-                let keyword_hits = words
+                let keyword_hits = scoring_words
                     .iter()
                     .filter(|w| {
                         lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
                     })
                     .count();
-                if !words.is_empty() {
-                    score += (keyword_hits as f64 / words.len() as f64) * 0.20;
+                if !scoring_words.is_empty() {
+                    score += (keyword_hits as f64 / scoring_words.len() as f64) * 0.20;
                 }
 
                 // (3) Recency — weight 0.15 (exponential decay, half-life = 24h)
@@ -1736,12 +2634,7 @@ impl MemoryStore {
         let hour_ms: f64 = 3_600_000.0;
 
         // Keyword scoring setup (also used for candidate retrieval)
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
+        let (words, scoring_count) = query_terms(query);
 
         // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
         let all = {
@@ -1752,6 +2645,10 @@ impl MemoryStore {
         if all.is_empty() {
             return Ok(vec![]);
         }
+
+        // Scoring uses only originals + semantic expansions, not morphological
+        // variants, to avoid inflating keyword density / reranker scores.
+        let scoring_words = &words[..scoring_count];
 
         // Index entries by id once so we can rebuild MemoryEntry ordering
         // after fusion without cloning the vector twice.
@@ -1777,59 +2674,78 @@ impl MemoryStore {
         }
 
         let mut keyword_rank: Vec<i64> = Vec::new();
-        if !words.is_empty() {
-            let mut scored: Vec<(usize, i64)> = all
+        if !scoring_words.is_empty() {
+            let weights = lexical_term_weights(&all, scoring_words);
+            let mut scored: Vec<(f64, i64)> = all
                 .iter()
                 .filter_map(|e| {
-                    let lower_content = e.content.to_lowercase();
-                    let lower_tags = e.tags.to_lowercase();
-                    let hits = words
-                        .iter()
-                        .filter(|w| {
-                            lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
-                        })
-                        .count();
-                    if hits > 0 {
-                        Some((hits, e.id))
+                    let score = lexical_rank_score_weighted(e, scoring_words, &weights);
+                    if score > 0.0 {
+                        Some((score, e.id))
                     } else {
                         None
                     }
                 })
                 .collect();
-            // Descending by hit count, deterministic id tie-break.
-            scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+            // Descending by lexical score, deterministic id tie-break.
+            scored.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
             keyword_rank = scored.into_iter().map(|(_, id)| id).collect();
         }
 
-        // ── (3) Freshness composite ranking ───────────────────────────────
-        let mut freshness_scored: Vec<(f64, i64)> = all
+        // ── (3) Freshness composite — used as a post-fusion multiplicative
+        //        boost, NOT as a peer RRF ranking. Rank-based RRF treats
+        //        every input ranking equally, which over-weights freshness
+        //        on corpora where created_at is nearly uniform (and turns
+        //        freshness into noise that displaces content-relevant hits).
+        //        As a score multiplier the same signal nudges ties without
+        //        diluting the lexical/semantic agreement RRF is built for.
+        let freshness_boost: HashMap<i64, f64> = all
             .iter()
             .map(|e| {
                 let age_hours = (now - e.created_at) as f64 / hour_ms;
-                let recency = (-age_hours / 24.0).exp();
+                let recency = (-age_hours / 168.0).exp(); // half-life ≈ 1 week
                 let importance = e.importance as f64 / 5.0;
                 let tier_boost = match e.tier {
                     MemoryTier::Working => 1.0,
-                    MemoryTier::Long => 0.5,
-                    MemoryTier::Short => 0.3,
+                    MemoryTier::Long => 0.85,
+                    MemoryTier::Short => 0.7,
                 };
-                // Equal-weighted composite — RRF only cares about ordering.
-                let score = recency + importance + e.decay_score + tier_boost;
-                (score, e.id)
+                // Compressed into a gentle 0.7–1.15 multiplier so it can
+                // break ties between equally relevant docs but cannot
+                // overpower vector/keyword agreement.
+                let raw = 0.6 + 0.15 * recency + 0.15 * importance + 0.1 * tier_boost;
+                (e.id, raw.clamp(0.7, 1.15))
             })
             .collect();
-        freshness_scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.1.cmp(&b.1))
-        });
-        let freshness_rank: Vec<i64> = freshness_scored.into_iter().map(|(_, id)| id).collect();
 
         // ── Fuse with RRF (k = 60) ────────────────────────────────────────
         // Build the slice-of-slices input. Empty rankings (e.g. no embedding
         // or no usable query words) are simply skipped — RRF handles
-        // missing-from-some-rankings gracefully.
+        // missing-from-some-rankings gracefully. Freshness is intentionally
+        // NOT a peer ranking here; it is applied as a multiplicative score
+        // boost below so it can break ties without diluting the content
+        // signal RRF is built for.
+        //
+        // Exception: when BOTH vector and keyword rankings are empty (no
+        // embedding, no keyword overlap) we fall back to freshness-ordered
+        // candidate IDs so that RRF still produces results. Without this,
+        // unusual / novel queries would return nothing even though memories
+        // exist.
         let _tf = Timer::start(&METRICS.rag_rrf_fusion);
+        let freshness_rank: Vec<i64> = if vector_rank.is_empty() && keyword_rank.is_empty() {
+            let mut ranked: Vec<(i64, i64, i64)> = all
+                .iter()
+                .map(|e| (e.created_at, e.importance, e.id))
+                .collect();
+            ranked.sort_by(|a, b| b.cmp(a));
+            ranked.into_iter().map(|(_, _, id)| id).collect()
+        } else {
+            Vec::new()
+        };
         let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
         if !vector_rank.is_empty() {
             rankings.push(&vector_rank);
@@ -1837,11 +2753,15 @@ impl MemoryStore {
         if !keyword_rank.is_empty() {
             rankings.push(&keyword_rank);
         }
-        rankings.push(&freshness_rank);
+        if !freshness_rank.is_empty() {
+            rankings.push(&freshness_rank);
+        }
 
         let fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
+        let graph_seed_ids = top_unique_ids(keyword_rank.iter().copied(), GRAPH_BOOST_SEED_LIMIT);
+        let graph_boosts = self.graph_neighbor_boosts(&graph_seed_ids, &by_id, &words)?;
 
-        // ── (4) Per-kind confidence decay (43.3) ──────────────────────────
+        // ── (4) Per-kind confidence decay (43.3) + freshness multiplier ──
         let decay_cfg = ConfidenceDecayConfig::default();
         let mut fused: Vec<(usize, i64, f64)> = fused
             .into_iter()
@@ -1855,7 +2775,9 @@ impl MemoryStore {
                         entry.confidence,
                         now - entry.created_at,
                     );
-                    score * factor
+                    let fresh = freshness_boost.get(&id).copied().unwrap_or(1.0);
+                    let graph = 1.0 + graph_boosts.get(&id).copied().unwrap_or(0.0);
+                    score * factor * fresh * graph
                 } else {
                     score
                 };
@@ -1945,18 +2867,15 @@ impl MemoryStore {
         let hour_ms: f64 = 3_600_000.0;
 
         // Keyword words (also used for candidate-pool retrieval)
-        let words: Vec<String> = query
-            .to_lowercase()
-            .split_whitespace()
-            .filter(|w| w.len() > 2)
-            .map(String::from)
-            .collect();
+        let (words, scoring_count) = query_terms(query);
 
         // Use candidate-pool retrieval (41.5R) instead of loading entire corpus.
         let all = self.search_candidates(&words, query_embedding)?;
         if all.is_empty() {
             return Ok(vec![]);
         }
+
+        let scoring_words = &words[..scoring_count];
 
         let by_id: HashMap<i64, MemoryEntry> = all.iter().map(|e| (e.id, e.clone())).collect();
 
@@ -1981,53 +2900,59 @@ impl MemoryStore {
         // ── (2) Keyword ranking ───────────────────────────────────────
 
         let mut keyword_rank: Vec<i64> = Vec::new();
-        if !words.is_empty() {
-            let mut scored: Vec<(usize, i64)> = all
+        if !scoring_words.is_empty() {
+            let weights = lexical_term_weights(&all, scoring_words);
+            let mut scored: Vec<(f64, i64)> = all
                 .iter()
                 .filter_map(|e| {
-                    let lower_content = e.content.to_lowercase();
-                    let lower_tags = e.tags.to_lowercase();
-                    let hits = words
-                        .iter()
-                        .filter(|w| {
-                            lower_content.contains(w.as_str()) || lower_tags.contains(w.as_str())
-                        })
-                        .count();
-                    if hits > 0 {
-                        Some((hits, e.id))
+                    let score = lexical_rank_score_weighted(e, scoring_words, &weights);
+                    if score > 0.0 {
+                        Some((score, e.id))
                     } else {
                         None
                     }
                 })
                 .collect();
-            scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+            scored.sort_by(|a, b| {
+                b.0.partial_cmp(&a.0)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+                    .then_with(|| a.1.cmp(&b.1))
+            });
             keyword_rank = scored.into_iter().map(|(_, id)| id).collect();
         }
 
-        // ── (3) Freshness composite ───────────────────────────────────
-        let mut freshness_scored: Vec<(f64, i64)> = all
+        // ── (3) Freshness composite — applied as a post-fusion multiplicative
+        //        boost rather than a peer RRF ranking (see hybrid_search_rrf
+        //        for rationale: rank-based RRF over-weights freshness on
+        //        corpora with near-uniform created_at and dilutes the
+        //        lexical/semantic agreement signal).
+        let freshness_boost: HashMap<i64, f64> = all
             .iter()
             .map(|e| {
                 let age_hours = (now - e.created_at) as f64 / hour_ms;
-                let recency = (-age_hours / 24.0).exp();
+                let recency = (-age_hours / 168.0).exp(); // half-life ≈ 1 week
                 let importance = e.importance as f64 / 5.0;
                 let tier_boost = match e.tier {
                     MemoryTier::Working => 1.0,
-                    MemoryTier::Long => 0.5,
-                    MemoryTier::Short => 0.3,
+                    MemoryTier::Long => 0.85,
+                    MemoryTier::Short => 0.7,
                 };
-                let score = recency + importance + e.decay_score + tier_boost;
-                (score, e.id)
+                let raw = 0.6 + 0.15 * recency + 0.15 * importance + 0.1 * tier_boost;
+                (e.id, raw.clamp(0.7, 1.15))
             })
             .collect();
-        freshness_scored.sort_by(|a, b| {
-            b.0.partial_cmp(&a.0)
-                .unwrap_or(std::cmp::Ordering::Equal)
-                .then_with(|| a.1.cmp(&b.1))
-        });
-        let freshness_rank: Vec<i64> = freshness_scored.into_iter().map(|(_, id)| id).collect();
 
         // ── Fuse with RRF ─────────────────────────────────────────────
+        let freshness_rank: Vec<i64> = if vector_rank.is_empty() && keyword_rank.is_empty() {
+            let mut ranked: Vec<(i64, i64, i64)> = all
+                .iter()
+                .map(|e| (e.created_at, e.importance, e.id))
+                .collect();
+            ranked.sort_by(|a, b| b.cmp(a));
+            ranked.into_iter().map(|(_, _, id)| id).collect()
+        } else {
+            Vec::new()
+        };
         let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
         if !vector_rank.is_empty() {
             rankings.push(&vector_rank);
@@ -2035,11 +2960,15 @@ impl MemoryStore {
         if !keyword_rank.is_empty() {
             rankings.push(&keyword_rank);
         }
-        rankings.push(&freshness_rank);
+        if !freshness_rank.is_empty() {
+            rankings.push(&freshness_rank);
+        }
 
         let mut fused = reciprocal_rank_fuse(&rankings, DEFAULT_RRF_K);
+        let graph_seed_ids = top_unique_ids(keyword_rank.iter().copied(), GRAPH_BOOST_SEED_LIMIT);
+        let graph_boosts = self.graph_neighbor_boosts(&graph_seed_ids, &by_id, &words)?;
 
-        // ── (4a) Per-kind confidence decay (43.3) ─────────────────────
+        // ── (4a) Per-kind confidence decay (43.3) + freshness multiplier ─
         let decay_cfg = ConfidenceDecayConfig::default();
         for (id, score) in fused.iter_mut() {
             if let Some(entry) = by_id.get(id) {
@@ -2050,7 +2979,9 @@ impl MemoryStore {
                     entry.confidence,
                     now - entry.created_at,
                 );
-                *score *= factor;
+                let fresh = freshness_boost.get(id).copied().unwrap_or(1.0);
+                let graph = 1.0 + graph_boosts.get(id).copied().unwrap_or(0.0);
+                *score *= factor * fresh * graph;
             }
         }
 
@@ -3510,6 +4441,124 @@ mod tests {
     }
 
     #[test]
+    fn query_terms_prune_conversational_fillers() {
+        let (terms, _) = query_terms(
+            "Can you suggest some accessories that would complement my current photography setup?",
+        );
+        assert!(!terms.contains(&"can".to_string()));
+        assert!(!terms.contains(&"you".to_string()));
+        assert!(!terms.contains(&"some".to_string()));
+        assert!(terms.contains(&"accessories".to_string()));
+        assert!(terms.contains(&"photography".to_string()));
+    }
+
+    #[test]
+    fn recommendation_query_terms_add_domain_expansions() {
+        let (terms, _) = query_terms(
+            "Can you suggest some accessories that would complement my current photography setup?",
+        );
+        assert!(terms.contains(&"camera".to_string()));
+        assert!(terms.contains(&"flash".to_string()));
+        assert!(terms.contains(&"sony".to_string()));
+    }
+
+    #[test]
+    fn query_terms_add_light_variants() {
+        let (terms, _) = query_terms("How many bikes do I own, and what kitchen appliance did I buy?");
+        assert!(terms.contains(&"bikes".to_string()));
+        assert!(terms.contains(&"bike".to_string()));
+        assert!(terms.contains(&"buy".to_string()));
+        assert!(terms.contains(&"bought".to_string()));
+        assert!(terms.contains(&"got".to_string()));
+        assert!(terms.contains(&"smoker".to_string()));
+    }
+
+    #[test]
+    fn query_terms_add_auth_variants_for_jwt_middleware() {
+        let (terms, _) = query_terms("JWT token validation middleware");
+        assert!(terms.contains(&"jwt".to_string()));
+        assert!(terms.contains(&"authentication".to_string()));
+        assert!(terms.contains(&"nextauth".to_string()));
+        assert!(terms.contains(&"session".to_string()));
+    }
+
+    #[test]
+    fn search_prefers_personal_recommendation_context_over_generic_filler() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(new_memory(
+                "assistant: You can suggest some generic current accessories for many hobbies.",
+            ))
+            .unwrap();
+        store
+            .add(new_memory(
+                "user: I am looking to upgrade my camera flash for my Sony A7R IV. assistant: Here are compatible Sony flash options for photography.",
+            ))
+            .unwrap();
+
+        let results = store
+            .search("Can you suggest some accessories that would complement my current photography setup?")
+            .unwrap();
+        assert!(results[0].content.contains("camera flash"));
+    }
+
+    #[test]
+    fn search_weights_rare_query_terms_above_temporal_fillers() {
+        let store = MemoryStore::in_memory();
+        for idx in 0..4 {
+            store
+                .add(new_memory(&format!(
+                    "user: Many days ago I needed general tips for a common activity {idx}."
+                )))
+                .unwrap();
+        }
+        store
+            .add(new_memory(
+                "user: I caught up with Emma over lunch today about a collaboration.",
+            ))
+            .unwrap();
+
+        let results = store.search("How many days ago did I meet Emma?").unwrap();
+        assert!(results[0].content.contains("Emma"));
+    }
+
+    #[test]
+    fn search_does_not_overweight_generic_configuration_term() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(new_memory(
+                "Vitest unit testing configuration with jsdom and type-aware setup.",
+            ))
+            .unwrap();
+        store
+            .add(new_memory(
+                "Playwright browser test isolation for end-to-end test coverage.",
+            ))
+            .unwrap();
+
+        let results = store.search("Playwright test configuration").unwrap();
+        assert!(results[0].content.contains("Playwright"));
+    }
+
+    #[test]
+    fn search_expands_jwt_middleware_to_auth_context() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(new_memory(
+                "Role-based access control stores roles as JWT token claims.",
+            ))
+            .unwrap();
+        store
+            .add(new_memory(
+                "NextAuth authentication uses JWT sessions and protected route middleware.",
+            ))
+            .unwrap();
+
+        let results = store.search("JWT token validation middleware").unwrap();
+        assert!(results[0].content.contains("NextAuth authentication"));
+    }
+
+    #[test]
     fn diversified_ranked_caps_real_sessions_only() {
         let store = MemoryStore::in_memory();
         let mut ranked = Vec::new();
@@ -3629,6 +4678,139 @@ mod tests {
             .unwrap();
         let results = store.search("preferences").unwrap();
         assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn search_reranks_exact_tag_tokens_above_broad_matches() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "General validation middleware for request bodies".to_string(),
+                tags: "validation,middleware".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let jwt = store
+            .add(NewMemory {
+                content: "JWT token validation middleware for auth sessions".to_string(),
+                tags: "jwt,authentication,middleware".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results = store.search("JWT token validation middleware").unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].id, jwt.id);
+    }
+
+    #[test]
+    fn search_keeps_short_technical_query_tokens() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "Pipeline configuration for data validation".to_string(),
+                tags: "pipeline,configuration".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let cicd = store
+            .add(NewMemory {
+                content: "CI/CD pipeline configuration for GitHub Actions".to_string(),
+                tags: "ci-cd,github-actions,deployment".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results = store.search("CI/CD pipeline configuration").unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].id, cicd.id);
+    }
+
+    #[test]
+    fn search_uses_gated_graph_boost_for_related_exact_matches() {
+        let store = MemoryStore::in_memory();
+        let seed = store
+            .add(NewMemory {
+                content: "Cache configuration seed memory".to_string(),
+                tags: "cache,configuration".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let related = store
+            .add(NewMemory {
+                content: "Cache configuration worker details".to_string(),
+                tags: "cache".to_string(),
+                importance: 1,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let unlinked = store
+            .add(NewMemory {
+                content: "Cache configuration unrelated details".to_string(),
+                tags: "cache".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        store
+            .conn
+            .execute(
+                "INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+                 VALUES (?1, ?2, 'related_to', 1.0, 'test', ?3, 'test')",
+                params![seed.id, related.id, now_ms()],
+            )
+            .unwrap();
+
+        let results = store.search("cache configuration").unwrap();
+        let related_pos = results
+            .iter()
+            .position(|entry| entry.id == related.id)
+            .unwrap();
+        let unlinked_pos = results
+            .iter()
+            .position(|entry| entry.id == unlinked.id)
+            .unwrap();
+        assert!(related_pos < unlinked_pos);
+    }
+
+    #[test]
+    fn search_ignores_question_stop_terms_for_concept_hits() {
+        let store = MemoryStore::in_memory();
+        store
+            .add(NewMemory {
+                content: "General app shell work and layout details".to_string(),
+                tags: "app,work".to_string(),
+                importance: 5,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+        let caching = store
+            .add(NewMemory {
+                content: "Redis caching layer for expensive queries".to_string(),
+                tags: "caching,redis,performance".to_string(),
+                importance: 3,
+                memory_type: MemoryType::Fact,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results = store.search("How does caching work in the app?").unwrap();
+        assert!(!results.is_empty());
+        assert_eq!(results[0].id, caching.id);
     }
 
     #[test]

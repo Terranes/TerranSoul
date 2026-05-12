@@ -44,6 +44,7 @@ test-output.txt
 *.log
 *.tmp
 .scratch/
+/.cache/
 /tmp-agent/
 /target-copilot-bench
 /crates/hive-relay/target

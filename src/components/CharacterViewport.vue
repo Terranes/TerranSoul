@@ -128,13 +128,27 @@
                 :value="characterStore.selectedModelId"
                 @change="handleModelChange"
               >
-                <option
-                  v-for="model in characterStore.defaultModels"
-                  :key="model.id"
-                  :value="model.id"
+                <optgroup label="Bundled">
+                  <option
+                    v-for="model in characterStore.defaultModels"
+                    :key="model.id"
+                    :value="model.id"
+                  >
+                    {{ characterStore.resolveModelProfile(model).name }}
+                  </option>
+                </optgroup>
+                <optgroup
+                  v-if="characterStore.userModels.length > 0"
+                  label="Imported"
                 >
-                  {{ model.name }}
-                </option>
+                  <option
+                    v-for="model in characterStore.userModels"
+                    :key="model.id"
+                    :value="model.id"
+                  >
+                    {{ characterStore.resolveModelProfile(model).name }}
+                  </option>
+                </optgroup>
               </select>
               <button
                 class="dropdown-btn"
@@ -149,6 +163,140 @@
                 accept=".vrm"
                 @change="handleVrmImport"
               >
+              <div class="character-profile-editor">
+                <label class="profile-field">
+                  <span>Name</span>
+                  <input
+                    v-model="profileDraftName"
+                    type="text"
+                    maxlength="60"
+                    placeholder="Character name"
+                  >
+                </label>
+                <label class="profile-field">
+                  <span>Gender</span>
+                  <select
+                    v-model="profileDraftGender"
+                    @change="handleProfileGenderChange"
+                  >
+                    <option
+                      v-for="option in genderOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="profile-field profile-field-full">
+                  <span>Persona / role</span>
+                  <input
+                    v-model="profileDraftPersona"
+                    type="text"
+                    maxlength="80"
+                    placeholder="e.g. field researcher"
+                  >
+                </label>
+                <label class="profile-field profile-field-full">
+                  <span>Voice</span>
+                  <input
+                    v-model="profileDraftVoiceName"
+                    type="text"
+                    maxlength="120"
+                    placeholder="e.g. en-US-AnaNeural"
+                  >
+                </label>
+                <div class="profile-grid">
+                  <label class="profile-field">
+                    <span>Age</span>
+                    <select v-model="profileDraftAge">
+                      <option
+                        v-for="option in ageOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="profile-field">
+                    <span>Pitch</span>
+                    <select v-model="profileDraftPitch">
+                      <option
+                        v-for="option in pitchOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="profile-field">
+                    <span>Style</span>
+                    <select v-model="profileDraftStyle">
+                      <option
+                        v-for="option in styleOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                  <label class="profile-field">
+                    <span>Accent</span>
+                    <select v-model="profileDraftEnglishAccent">
+                      <option
+                        v-for="option in englishAccentOptions"
+                        :key="option.value"
+                        :value="option.value"
+                      >
+                        {{ option.label }}
+                      </option>
+                    </select>
+                  </label>
+                </div>
+                <label class="profile-field profile-field-full">
+                  <span>Chinese dialect</span>
+                  <select v-model="profileDraftChineseDialect">
+                    <option
+                      v-for="option in chineseDialectOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <div class="profile-actions">
+                  <button
+                    class="profile-save-btn"
+                    :disabled="profileSaving"
+                    @click="saveCurrentCharacterProfile"
+                  >
+                    {{ profileSaving ? 'Saving…' : 'Save profile' }}
+                  </button>
+                  <button
+                    class="profile-reset-btn"
+                    :disabled="profileSaving"
+                    @click="resetProfileDraft"
+                  >
+                    Discard
+                  </button>
+                </div>
+                <p
+                  v-if="profileStatus"
+                  class="profile-status"
+                >
+                  {{ profileStatus }}
+                </p>
+                <p
+                  v-if="profileError"
+                  class="profile-error"
+                >
+                  {{ profileError }}
+                </p>
+              </div>
             </div>
             <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
                so desktop and pet modes offer the same configurable states. -->
@@ -405,7 +553,20 @@ import { useSettingsStore } from '../stores/settings';
 import { useAudioStore } from '../stores/audio';
 import { useWindowStore } from '../stores/window';
 import { usePersonaStore } from '../stores/persona';
-import { DEFAULT_MODELS } from '../config/default-models';
+import { DEFAULT_MODELS, GENDER_VOICES, type ModelGender } from '../config/default-models';
+import {
+  PERSONA_CHINESE_DIALECT_OPTIONS,
+  PERSONA_ENGLISH_ACCENT_OPTIONS,
+  PERSONA_VOICE_AGE_OPTIONS,
+  PERSONA_VOICE_GENDER_OPTIONS,
+  PERSONA_VOICE_PITCH_OPTIONS,
+  PERSONA_VOICE_STYLE_OPTIONS,
+  type PersonaChineseDialect,
+  type PersonaEnglishAccent,
+  type PersonaVoiceAge,
+  type PersonaVoicePitch,
+  type PersonaVoiceStyle,
+} from '../stores/persona-types';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
@@ -470,6 +631,85 @@ const bgmFileInputRef = ref<HTMLInputElement | null>(null);
 const showUrlDialog = ref(false);
 const urlInput = ref('');
 const karaokeDialogEnabled = computed(() => settingsStore.settings.karaoke_dialog_enabled !== false);
+
+// ── Current character profile editor ────────────────────────────────────────
+const genderOptions = PERSONA_VOICE_GENDER_OPTIONS;
+const ageOptions = PERSONA_VOICE_AGE_OPTIONS;
+const pitchOptions = PERSONA_VOICE_PITCH_OPTIONS;
+const styleOptions = PERSONA_VOICE_STYLE_OPTIONS;
+const englishAccentOptions = PERSONA_ENGLISH_ACCENT_OPTIONS;
+const chineseDialectOptions = PERSONA_CHINESE_DIALECT_OPTIONS;
+const profileDraftName = ref('');
+const profileDraftGender = ref<ModelGender>('female');
+const profileDraftPersona = ref('');
+const profileDraftVoiceName = ref('');
+const profileDraftAge = ref<PersonaVoiceAge>('adult');
+const profileDraftPitch = ref<PersonaVoicePitch>('medium');
+const profileDraftStyle = ref<PersonaVoiceStyle>('natural');
+const profileDraftEnglishAccent = ref<PersonaEnglishAccent>('american');
+const profileDraftChineseDialect = ref<PersonaChineseDialect>('mandarin');
+const profileSaving = ref(false);
+const profileStatus = ref('');
+const profileError = ref('');
+
+function resetProfileDraft() {
+  const profile = characterStore.currentModelProfile();
+  profileDraftName.value = profile.name;
+  profileDraftGender.value = profile.gender;
+  profileDraftPersona.value = profile.persona;
+  profileDraftVoiceName.value = profile.voiceProfile.voiceName;
+  profileDraftAge.value = profile.voiceProfile.age;
+  profileDraftPitch.value = profile.voiceProfile.pitch;
+  profileDraftStyle.value = profile.voiceProfile.style;
+  profileDraftEnglishAccent.value = profile.voiceProfile.englishAccent;
+  profileDraftChineseDialect.value = profile.voiceProfile.chineseDialect;
+  profileStatus.value = '';
+  profileError.value = '';
+}
+
+function usesDefaultVoice(voiceName: string): boolean {
+  const trimmed = voiceName.trim();
+  return !trimmed || Object.values(GENDER_VOICES).some(voice => voice.edgeVoice === trimmed);
+}
+
+function handleProfileGenderChange() {
+  if (usesDefaultVoice(profileDraftVoiceName.value)) {
+    profileDraftVoiceName.value = GENDER_VOICES[profileDraftGender.value].edgeVoice;
+  }
+}
+
+async function saveCurrentCharacterProfile() {
+  profileSaving.value = true;
+  profileStatus.value = '';
+  profileError.value = '';
+  try {
+    await characterStore.updateModelProfile(characterStore.selectedModelId, {
+      name: profileDraftName.value || undefined,
+      gender: profileDraftGender.value,
+      persona: profileDraftPersona.value,
+      voiceProfile: {
+        gender: profileDraftGender.value,
+        age: profileDraftAge.value,
+        pitch: profileDraftPitch.value,
+        style: profileDraftStyle.value,
+        englishAccent: profileDraftEnglishAccent.value,
+        chineseDialect: profileDraftChineseDialect.value,
+        voiceName: profileDraftVoiceName.value,
+      },
+    });
+    profileStatus.value = 'Saved for this character.';
+  } catch (err) {
+    profileError.value = `Profile save failed: ${err}`;
+  } finally {
+    profileSaving.value = false;
+  }
+}
+
+watch(
+  () => [characterStore.selectedModelId, characterStore.modelProfiles] as const,
+  () => resetProfileDraft(),
+  { immediate: true, deep: true },
+);
 
 function handleKaraokeToggle(e: Event) {
   const checked = (e.target as HTMLInputElement).checked;
@@ -1587,6 +1827,90 @@ async function loadModelIntoScene(newPath: string | undefined) {
   background: var(--ts-bg-surface);
   color: var(--ts-text-primary);
 }
+
+.character-profile-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+  background: var(--ts-bg-surface);
+}
+.profile-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.profile-field-full {
+  width: 100%;
+}
+.profile-field span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ts-text-muted);
+  text-transform: uppercase;
+}
+.profile-field input,
+.profile-field select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-sm);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-primary);
+  font-size: 0.78rem;
+  outline: none;
+}
+.profile-field input:focus,
+.profile-field select:focus {
+  border-color: var(--ts-accent);
+  box-shadow: 0 0 0 2px var(--ts-accent-glow);
+}
+.profile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.profile-save-btn,
+.profile-reset-btn {
+  flex: 1 1 90px;
+  padding: 7px 10px;
+  border-radius: var(--ts-radius-sm);
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.profile-save-btn {
+  border: 1px solid var(--ts-accent);
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
+}
+.profile-reset-btn {
+  border: 1px solid var(--ts-border);
+  background: var(--ts-bg-input);
+  color: var(--ts-text-secondary);
+}
+.profile-save-btn:disabled,
+.profile-reset-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.profile-status,
+.profile-error {
+  margin: 0;
+  font-size: 0.72rem;
+}
+.profile-status { color: var(--ts-success); }
+.profile-error { color: var(--ts-error); }
 
 .hidden-file-input {
   display: none;

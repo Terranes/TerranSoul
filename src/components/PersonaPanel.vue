@@ -62,7 +62,10 @@
         />
       </label>
 
-      <section class="pp-voice" data-testid="pp-voice-profile">
+      <section
+        class="pp-voice"
+        data-testid="pp-voice-profile"
+      >
         <header class="pp-section-header">
           <h4>Voice design</h4>
           <span>Used by the persona prompt and TTS-capable voice engines.</span>

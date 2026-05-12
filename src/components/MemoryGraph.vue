@@ -16,7 +16,10 @@
       @pointerup.stop
     >
       <div class="mg-title">
-        <span class="mg-title-icon" aria-hidden="true">⌘</span>
+        <span
+          class="mg-title-icon"
+          aria-hidden="true"
+        >⌘</span>
         <span>Graph view</span>
       </div>
       <div class="mg-top-actions">
@@ -223,7 +226,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 // d3-force-3d ships no TS types and the ambient resolution picks up an
 // incomplete shape. Import as `any` so we can use the full runtime API
 // (forceCollide / forceX / forceY / distanceMax) without fighting types.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 import * as d3force from 'd3-force-3d';
 const forceSimulation = (d3force as any).forceSimulation;
 const forceManyBody = (d3force as any).forceManyBody;
@@ -285,7 +288,7 @@ let resizeObserver: ResizeObserver | null = null;
 
 const nodes = ref<GNode[]>([]);
 const links = ref<GLink[]>([]);
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let sim: any = null;
 
 const nodeCount = computed(() => nodes.value.length);
@@ -1018,9 +1021,9 @@ const renderMode = ref<'lite' | 'webgl'>(initialRenderMode);
 const webglReady = ref(false);
 const webglEl = ref<HTMLDivElement | null>(null);
 // sigma.js + graphology are lazy-loaded so jsdom tests don't import WebGL.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let sigmaInstance: any = null;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 let sigmaGraph: any = null;
 
 async function enableWebgl(): Promise<void> {
@@ -1041,7 +1044,7 @@ async function enableWebgl(): Promise<void> {
       import('graphology'),
       import('sigma'),
     ]);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const Sigma = (sigmaModule as any).default ?? (sigmaModule as any).Sigma;
     sigmaGraph = new Graph({ multi: false, type: 'directed', allowSelfLoops: false });
     sigmaInstance = new Sigma(sigmaGraph, webglEl.value, {
@@ -1052,7 +1055,7 @@ async function enableWebgl(): Promise<void> {
       defaultEdgeColor: theme.value.edge,
       defaultNodeColor: theme.value.accent,
     });
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     sigmaInstance.on('clickNode', (payload: { node: string }) => {
       const id = Number(payload.node);
       if (!Number.isNaN(id)) emit('select', id);
@@ -1162,7 +1165,7 @@ watch(() => props.edgeMode, scheduleRebuild);
 watch([repulsion, linkDistance, gravity], () => {
   if (!sim) return;
   sim.force('charge', forceManyBody().strength(repulsion.value).distanceMax(400));
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const lf = sim.force('link') as any;
   lf?.distance(linkDistance.value);
   sim.force('x', forceX(0).strength(gravity.value));

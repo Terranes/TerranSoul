@@ -71,17 +71,16 @@ flowchart TB
     GATE -->|trivial| INJECT
     GATE -->|needs RAG| HYBRID
 
-    subgraph HYBRID["Hybrid retrieval — 3 retrievers + RRF fusion"]
+    subgraph HYBRID["Hybrid retrieval — vector + lexical RRF"]
         VEC["Vector similarity<br/>HNSW · usearch · 768-dim"]
-        KW["Keyword / FTS5<br/>memories_fts (V21) + INSTR fallback"]
-        FRESH["Recency / freshness"]
+        KW["Lexical / FTS5<br/>exact tags + acronym-aware terms"]
         VEC --> RRF["Reciprocal Rank Fusion<br/>k=60"]
         KW --> RRF
-        FRESH --> RRF
     end
 
-    HYBRID --> SCORE["6-signal scoring<br/>vector·40 + keyword·20 + recency·15<br/>+ importance·10 + decay·10 + tier·5"]
-    SCORE --> DIVERSE["Session diversification<br/>cap noisy session clusters<br/>keep global rows uncapped"]
+    HYBRID --> SCORE["Post-fusion scoring<br/>confidence decay + freshness multiplier"]
+    SCORE --> KG["memory_edges boost<br/>only lexical seed matches<br/>capped tie-breaker"]
+    KG --> DIVERSE["Session diversification<br/>cap noisy session clusters<br/>keep global rows uncapped"]
     DIVERSE --> HYDE{"HyDE?<br/>cold/abstract query"}
     HYDE -->|yes| HYDE_GEN["LLM writes hypothetical answer<br/>→ embed THAT for retrieval"]
     HYDE -->|no| RERANK
@@ -686,6 +685,10 @@ The column is intentionally nullable:
 
 Contentful retrieval queries run a hybrid search that combines six signals into a single relevance score. Short content-light chat turns, such as greetings and acknowledgements, take the fast chat path and skip embedding/search entirely so LocalLLM replies are not delayed by model contention.
 
+The lexical layer uses one shared query-term parser across `search`, `hybrid_search`, and RRF: it keeps short technical acronyms such as `ci`/`cd`/`ui`, filters broad question stop terms such as `how`/`does`/`work`/`app`, adds light variants for common natural-language forms, and ranks candidates by exact tag-token hits, exact content-token hits, substring hits, all-term coverage, and importance. Before final ordering, the reranker computes per-query corpus weights over the candidate pool so rare anchors such as names, objects, and domain terms outrank generic filler terms; broad workflow terms such as `configuration`, `setup`, `test`, and `validation` are capped so they cannot masquerade as rare anchors in small candidate pools. RRF treats vector and lexical ranks as the primary evidence streams; freshness and knowledge-graph edges are post-fusion multipliers so they can break ties without overpowering content relevance.
+
+LongMemEval-S retrieval-only verification (2026-05-11, 500 cleaned questions) with this lexical path: TerranSoul `search` R@5 **99.2 %**, R@10 **99.6 %**, R@20 **100.0 %**, NDCG@10 **91.3 %**, MRR **92.6 %**. This is the comparable retrieval-table number, not official end-to-end LongMemEval QA accuracy.
+
 ```
 final_score =
  0.40 × vector_similarity // Semantic meaning (cosine distance)
@@ -760,7 +763,7 @@ final_score =
 > - **Cloud embedding API** — vector RAG works in free/paid modes too
 > - **Fast chat path** (2026-05-09) — `should_skip_rag` / `shouldUseFastChatPath` skip embed + hybrid search for empty memory stores and short content-light turns, avoiding local embedding model swaps on greetings
 > - **LocalOllama VRAM guard** (2026-05-09) — production state starts with a 5-minute startup quiet window, pre-warms the chat model before the embedding queue starts, pauses local embedding ticks during active chat, sends `keep_alive: 0` on embed calls, `keep_alive: "30m"` on chat calls, and `think:false` on the hot stream so thinking models do not spend seconds silently before visible text
-> - **RRF fusion** — live desktop and paired-mobile chat use thresholded hybrid eligibility followed by Reciprocal Rank Fusion (k=60), session diversification, and query-intent boosts for final prompt ordering
+> - **RRF fusion** — live desktop and paired-mobile chat use thresholded hybrid eligibility followed by Reciprocal Rank Fusion (k=60), corpus-aware exact lexical ranking, capped freshness/KG post-fusion boosts, session diversification, and query-intent boosts for final prompt ordering
 > - **HyDE** — LLM-hypothetical-document embedding for cold/abstract queries
 > - **Cross-encoder rerank** — LLM-as-judge scores (query, doc) pairs 0–10; RRF/HyDE search defaults rerank on and prunes below threshold 0.55 before prompt injection
 > - **Relevance threshold** — only entries above a configurable score are injected

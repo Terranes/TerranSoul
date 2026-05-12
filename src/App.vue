@@ -130,142 +130,142 @@
 
       <!-- Normal mode (or MCP mode): tabbed UI -->
       <template v-else>
-          <!-- Desktop side navigation -->
-          <nav class="app-nav desktop-nav">
-            <button
-              type="button"
-              class="nav-logo nav-logo-btn"
-              :class="{ active: activeTab === 'chat' }"
-              aria-label="Go to Chat"
-              title="Chat"
-              @click="activeTab = 'chat'"
-            >
-              <img
-                :src="appIconUrl"
-                alt="TerranSoul"
-                class="nav-logo-img"
-              >
-            </button>
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              :class="['nav-btn', { active: activeTab === tab.id }]"
-              @click="activeTab = tab.id"
-            >
-              <span
-                class="nav-icon"
-              >
-                <AppTabIcon :name="tab.id" />
-              </span>
-              <span class="nav-label">{{ tab.label }}</span>
-            </button>
-
-            <div class="nav-spacer" />
-
-            <!-- "No brain" warning pill -->
-            <button
-              v-if="!hasBrain"
-              class="nav-btn nav-brain-warn"
-              @click="activeTab = 'brain'"
-            >
-              <span class="nav-icon">⚠</span>
-              <span class="nav-label">Brain</span>
-            </button>
-
-            <!-- Build-mode badge — inline in the sidebar, below spacer.
-                 MCP mode (npm run mcp) takes priority over DEV. -->
-            <FloatingBadge
-              v-if="windowStore.isMcpMode"
-              class="nav-mcp-badge"
-              tone="info"
-              readonly
-              title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
-            >
-              MCP
-            </FloatingBadge>
-            <FloatingBadge
-              v-else-if="windowStore.isDevBuild"
-              class="nav-dev-badge"
-              tone="warning"
-              readonly
-              title="Development build — MCP on port 7422"
-            >
-              DEV
-            </FloatingBadge>
-          </nav>
-
-          <!-- Mobile bottom tab bar (replaces hamburger menu) -->
-          <nav class="mobile-bottom-nav">
-            <!-- Build-mode indicator — first item in the tab row.
-                 MCP mode takes priority over DEV. -->
-            <span
-              v-if="windowStore.isMcpMode"
-              class="mobile-mcp-indicator"
-              title="MCP mode"
-            >MCP</span>
-            <span
-              v-else-if="windowStore.isDevBuild"
-              class="mobile-dev-indicator"
-              title="Development build"
-            >DEV</span>
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              :class="['mobile-tab', { active: activeTab === tab.id }]"
-              @click="activeTab = tab.id"
-            >
-              <span
-                class="mobile-tab-icon"
-              >
-                <AppTabIcon :name="tab.id" />
-              </span>
-              <span class="mobile-tab-label">{{ tab.label }}</span>
-            </button>
-          </nav>
-
-          <!-- Main area -->
-          <main
-            class="app-main"
-            :class="{ 'app-main--chat-viewport': activeTab === 'chat' && !isChatboxMode }"
+        <!-- Desktop side navigation -->
+        <nav class="app-nav desktop-nav">
+          <button
+            type="button"
+            class="nav-logo nav-logo-btn"
+            :class="{ active: activeTab === 'chat' }"
+            aria-label="Go to Chat"
+            title="Chat"
+            @click="activeTab = 'chat'"
           >
-            <ChatView
-              v-show="activeTab === 'chat'"
-              :chatbox-mode="isChatboxMode"
-              @navigate="handleSkillNavigate"
-              @set-display-mode="setDisplayMode"
-              @toggle-pet-mode="togglePetMode"
-            />
-            <SkillTreeView
-              v-if="activeTab === 'skills'"
-              @navigate="handleSkillNavigate"
-            />
-            <BrainView
-              v-if="activeTab === 'brain'"
-              @navigate="handleSkillNavigate"
-            />
-            <MemoryView v-if="activeTab === 'memory'" />
-            <MarketplaceView v-if="activeTab === 'marketplace'" />
-            <MobilePairingView v-if="activeTab === 'mobile'" />
-            <VoiceSetupView
-              v-if="activeTab === 'voice'"
-              @done="activeTab = 'chat'"
-            />
-          </main>
+            <img
+              :src="appIconUrl"
+              alt="TerranSoul"
+              class="nav-logo-img"
+            >
+          </button>
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['nav-btn', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
+          >
+            <span
+              class="nav-icon"
+            >
+              <AppTabIcon :name="tab.id" />
+            </span>
+            <span class="nav-label">{{ tab.label }}</span>
+          </button>
 
-          <!-- Floating quest progress bubble — chat tab only so it doesn't
-             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
-          <QuestBubble
-            v-if="activeTab === 'chat'"
-            @trigger="handleQuestBubble"
+          <div class="nav-spacer" />
+
+          <!-- "No brain" warning pill -->
+          <button
+            v-if="!hasBrain"
+            class="nav-btn nav-brain-warn"
+            @click="activeTab = 'brain'"
+          >
+            <span class="nav-icon">⚠</span>
+            <span class="nav-label">Brain</span>
+          </button>
+
+          <!-- Build-mode badge — inline in the sidebar, below spacer.
+                 MCP mode (npm run mcp) takes priority over DEV. -->
+          <FloatingBadge
+            v-if="windowStore.isMcpMode"
+            class="nav-mcp-badge"
+            tone="info"
+            readonly
+            title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
+          >
+            MCP
+          </FloatingBadge>
+          <FloatingBadge
+            v-else-if="windowStore.isDevBuild"
+            class="nav-dev-badge"
+            tone="warning"
+            readonly
+            title="Development build — MCP on port 7422"
+          >
+            DEV
+          </FloatingBadge>
+        </nav>
+
+        <!-- Mobile bottom tab bar (replaces hamburger menu) -->
+        <nav class="mobile-bottom-nav">
+          <!-- Build-mode indicator — first item in the tab row.
+                 MCP mode takes priority over DEV. -->
+          <span
+            v-if="windowStore.isMcpMode"
+            class="mobile-mcp-indicator"
+            title="MCP mode"
+          >MCP</span>
+          <span
+            v-else-if="windowStore.isDevBuild"
+            class="mobile-dev-indicator"
+            title="Development build"
+          >DEV</span>
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['mobile-tab', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
+          >
+            <span
+              class="mobile-tab-icon"
+            >
+              <AppTabIcon :name="tab.id" />
+            </span>
+            <span class="mobile-tab-label">{{ tab.label }}</span>
+          </button>
+        </nav>
+
+        <!-- Main area -->
+        <main
+          class="app-main"
+          :class="{ 'app-main--chat-viewport': activeTab === 'chat' && !isChatboxMode }"
+        >
+          <ChatView
+            v-show="activeTab === 'chat'"
+            :chatbox-mode="isChatboxMode"
             @navigate="handleSkillNavigate"
-            @update:constellation-open="questConstellationOpen = $event"
+            @set-display-mode="setDisplayMode"
+            @toggle-pet-mode="togglePetMode"
           />
+          <SkillTreeView
+            v-if="activeTab === 'skills'"
+            @navigate="handleSkillNavigate"
+          />
+          <BrainView
+            v-if="activeTab === 'brain'"
+            @navigate="handleSkillNavigate"
+          />
+          <MemoryView v-if="activeTab === 'memory'" />
+          <MarketplaceView v-if="activeTab === 'marketplace'" />
+          <MobilePairingView v-if="activeTab === 'mobile'" />
+          <VoiceSetupView
+            v-if="activeTab === 'voice'"
+            @done="activeTab = 'chat'"
+          />
+        </main>
 
-          <!-- Combo unlock notifications (Chunk 131) -->
-          <ComboToast />
+        <!-- Floating quest progress bubble — chat tab only so it doesn't
+             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
+        <QuestBubble
+          v-if="activeTab === 'chat'"
+          @trigger="handleQuestBubble"
+          @navigate="handleSkillNavigate"
+          @update:constellation-open="questConstellationOpen = $event"
+        />
 
-          <!-- Quest reward ceremony overlay (Chunk 132) -->
-          <QuestRewardCeremony />
+        <!-- Combo unlock notifications (Chunk 131) -->
+        <ComboToast />
+
+        <!-- Quest reward ceremony overlay (Chunk 132) -->
+        <QuestRewardCeremony />
       </template>
     </div>
 

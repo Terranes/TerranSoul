@@ -46,6 +46,7 @@ export default [
       'target-copilot-bench/**',
       'target-mcp/**',
       'mcp-data/**',           // Generated MCP runtime data
+      '.cache/**',             // Build/benchmark caches
     ],
   },
 
@@ -169,6 +170,9 @@ export default [
   {
     files: [
       'src/components/CharacterViewport.vue',
+      'src/components/GraphNodeCrudPanel.vue',
+      'src/components/MemoryGraph.vue',
+      'src/components/ModelPanel.vue',
       'src/components/SkillConstellation.vue',
       'src/components/KnowledgeQuestDialog.vue',
       'src/views/BrainView.vue',

@@ -130,3 +130,7 @@ tauri = { version = "2", features = ["tray-icon", "test"] }
 name = "million_memory"
 harness = false
 required-features = ["native-ann"]
+
+[[bench]]
+name = "agentmemory_quality"
+harness = false

@@ -48,9 +48,12 @@
                 'kq-step--done': step.status === 'done',
                 'kq-step--active': step.status === 'active',
                 'kq-step--pending': step.status === 'pending',
+                'kq-step--error': step.status === 'done' && i === 1 && hasFailures,
+                'kq-step--clickable': step.status === 'done',
               }"
+              @click="step.status === 'done' ? goToStep(i) : undefined"
             >
-              <span class="kq-step-num">{{ step.status === 'done' ? '✓' : i + 1 }}</span>
+              <span class="kq-step-num">{{ step.status === 'done' ? (i === 1 && hasFailures ? '!' : '✓') : i + 1 }}</span>
               <span class="kq-step-icon">{{ step.icon }}</span>
               <span class="kq-step-label">{{ step.label }}</span>
             </div>
@@ -231,11 +234,28 @@
                   </p>
                 </div>
                 <p
-                  v-if="allTasksDone"
+                  v-if="allTasksDone && allSucceeded"
                   class="kq-success-text"
                 >
                   🎉 All sources ingested! {{ totalChunks }} knowledge chunks stored.
                 </p>
+                <div
+                  v-if="allTasksDone && hasFailures"
+                  class="kq-error-summary"
+                >
+                  <p class="kq-error-title">
+                    ⚠️ {{ failedTasks.length }} source{{ failedTasks.length > 1 ? 's' : '' }} failed to process
+                  </p>
+                  <p
+                    v-if="totalChunks > 0"
+                    class="kq-partial-text"
+                  >
+                    {{ totalChunks }} chunks were stored from the successful sources.
+                  </p>
+                  <p class="kq-error-hint">
+                    Check the errors above and retry, or go back to adjust your sources.
+                  </p>
+                </div>
               </div>
             </section>
 
@@ -288,6 +308,7 @@
             >
               Start Now
             </button>
+            <!-- Step 0 (Gather Sources) -->
             <button
               v-if="!prerequisiteDeclined && currentStep === 0 && sources.length > 0"
               class="kq-btn kq-btn-primary"
@@ -295,12 +316,42 @@
             >
               ⚡ Start Learning
             </button>
+            <!-- Step 1 (Learn) -->
             <button
-              v-if="!prerequisiteDeclined && currentStep === 1 && allTasksDone"
+              v-if="!prerequisiteDeclined && currentStep === 1"
+              class="kq-btn kq-btn-secondary"
+              @click="goBack"
+            >
+              ◂ Back
+            </button>
+            <button
+              v-if="!prerequisiteDeclined && currentStep === 1 && allTasksDone && hasFailures"
+              class="kq-btn kq-btn-warn"
+              @click="retryFailed"
+            >
+              🔄 Retry Failed
+            </button>
+            <button
+              v-if="!prerequisiteDeclined && currentStep === 1 && allTasksDone && !hasFailures"
               class="kq-btn kq-btn-primary"
               @click="advanceStep"
             >
               Continue ▸
+            </button>
+            <button
+              v-if="!prerequisiteDeclined && currentStep === 1 && allTasksDone && hasFailures && totalChunks > 0"
+              class="kq-btn kq-btn-secondary"
+              @click="advanceStep"
+            >
+              Continue Anyway ▸
+            </button>
+            <!-- Step 2 (Ready) -->
+            <button
+              v-if="!prerequisiteDeclined && currentStep === 2"
+              class="kq-btn kq-btn-secondary"
+              @click="goBack"
+            >
+              ◂ Back
             </button>
             <button
               v-if="!prerequisiteDeclined && currentStep === 2"
@@ -476,6 +527,13 @@ const allTasksDone = computed(() =>
   taskIds.value.length > 0 &&
   activeTasks.value.every(t => t.status === 'completed' || t.status === 'failed')
 );
+const failedTasks = computed(() =>
+  activeTasks.value.filter(t => t.status === 'failed')
+);
+const hasFailures = computed(() => failedTasks.value.length > 0);
+const allSucceeded = computed(() =>
+  allTasksDone.value && !hasFailures.value
+);
 const totalChunks = computed(() =>
   activeTasks.value.reduce((sum, t) => sum + (t.processed_items ?? 0), 0)
 );
@@ -499,9 +557,9 @@ async function startIngestion() {
   }
 }
 
-// Watch for all tasks completing → auto-advance
+// Watch for all tasks completing → auto-advance only if ALL succeeded
 watch(allTasksDone, (done) => {
-  if (done && currentStep.value === 1) {
+  if (done && currentStep.value === 1 && allSucceeded.value) {
     // Small delay for visual feedback
     setTimeout(() => advanceStep(), 1500);
   }
@@ -511,6 +569,46 @@ watch(allTasksDone, (done) => {
 function advanceStep() {
   if (currentStep.value < 2) {
     currentStep.value++;
+  }
+}
+
+function goBack() {
+  if (currentStep.value > 0) {
+    currentStep.value--;
+  }
+}
+
+function goToStep(index: number) {
+  // Can only navigate to completed steps or the current step
+  if (index < currentStep.value) {
+    currentStep.value = index;
+  }
+}
+
+async function retryFailed() {
+  // Remove failed task ids, keep successful ones
+  const failedIds = new Set(failedTasks.value.map(t => t.id));
+  const failedSources = sources.value.filter((_, i) => {
+    const taskId = taskIds.value[i];
+    return taskId && failedIds.has(taskId);
+  });
+  taskIds.value = taskIds.value.filter(id => !failedIds.has(id));
+
+  // Re-ingest only the failed sources
+  for (const src of failedSources) {
+    try {
+      const result = await taskStore.ingestDocument(
+        src.path,
+        `knowledge,${props.topic.toLowerCase().replace(/\s+/g, '-')}`,
+        5,
+        src.crawlMaxDepth != null && src.crawlMaxPages != null
+          ? { crawlDepth: src.crawlMaxDepth, crawlMaxPages: src.crawlMaxPages }
+          : undefined,
+      );
+      taskIds.value.push(result.task_id);
+    } catch (err) {
+      console.error('Retry ingestion failed:', err);
+    }
   }
 }
 
@@ -692,6 +790,14 @@ watch(() => props.visible, (v) => {
   white-space: nowrap;
 }
 .kq-step--active .kq-step-label { color: var(--ts-quest-gold); font-weight: 600; }
+.kq-step--clickable { cursor: pointer; }
+.kq-step--clickable:hover { opacity: 1; }
+.kq-step--error .kq-step-num {
+  border-color: var(--ts-error);
+  color: var(--ts-error);
+  background: rgba(239, 68, 68, 0.15);
+}
+.kq-step--error::after { background: var(--ts-error); }
 
 /* ═══ Body ═══ */
 .kq-body {
@@ -935,6 +1041,32 @@ watch(() => props.visible, (v) => {
   color: var(--ts-error);
 }
 
+/* ── Error summary ── */
+.kq-error-summary {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid var(--ts-error);
+  border-radius: 8px;
+}
+.kq-error-title {
+  margin: 0 0 6px;
+  font-size: 0.85rem;
+  color: var(--ts-error);
+  font-weight: 700;
+}
+.kq-partial-text {
+  margin: 0 0 4px;
+  font-size: 0.78rem;
+  color: var(--ts-text-secondary);
+}
+.kq-error-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ts-text-muted);
+  font-style: italic;
+}
+
 /* ── Complete ── */
 .kq-complete-card {
   text-align: center;
@@ -984,6 +1116,7 @@ watch(() => props.visible, (v) => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
 }
 .kq-btn {
   padding: 12px 24px;
@@ -1012,6 +1145,14 @@ watch(() => props.visible, (v) => {
 .kq-btn-secondary:hover {
   color: var(--ts-text-bright);
   border-color: var(--ts-quest-border);
+}
+.kq-btn-warn {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid var(--ts-error);
+  color: var(--ts-error);
+}
+.kq-btn-warn:hover {
+  background: rgba(239, 68, 68, 0.2);
 }
 .kq-btn-glow {
   animation: kq-btn-pulse 2s ease-in-out infinite;

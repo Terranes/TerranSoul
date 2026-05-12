@@ -140,7 +140,12 @@ function relTypeColour(rel: string): string {
 function resolveCanvasColour(colour: string): string {
   const match = /^var\((--[^)]+)\)$/.exec(colour);
   if (!match || typeof window === 'undefined') return colour;
-  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || 'white';
+  return getComputedStyle(document.documentElement).getPropertyValue(match[1]).trim() || '#ffffff';
+}
+
+/** Safely read a d3-force coordinate — convert NaN / undefined / null to 0. */
+function safeCoord(v: number | undefined | null): number {
+  return (v != null && Number.isFinite(v)) ? v : 0;
 }
 
 function truncate(text: string, max: number): string {
@@ -278,6 +283,10 @@ function createMesh() {
     scene.remove(mesh);
     mesh.dispose();
   }
+  if (nodes.length === 0) {
+    mesh = null;
+    return;
+  }
   const geo = new SphereGeometry(NODE_RADIUS, 12, 8);
   const mat = new MeshBasicMaterial({ color: 0xffffff });
   mesh = new InstancedMesh(geo, mat, nodes.length);
@@ -285,7 +294,7 @@ function createMesh() {
   const col = new Color();
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    dummy.makeTranslation(n.x ?? 0, n.y ?? 0, n.z ?? 0);
+    dummy.makeTranslation(safeCoord(n.x), safeCoord(n.y), safeCoord(n.z));
     mesh.setMatrixAt(i, dummy);
     const c = COGNITIVE_COLOURS[n.kind] ?? COGNITIVE_COLOURS.semantic;
     mesh.setColorAt(i, col.set(resolveCanvasColour(c)));
@@ -310,8 +319,8 @@ function createEdges() {
   for (const l of links) {
     const s = l.source as GraphNode;
     const t = l.target as GraphNode;
-    positions.push(s.x ?? 0, s.y ?? 0, s.z ?? 0);
-    positions.push(t.x ?? 0, t.y ?? 0, t.z ?? 0);
+    positions.push(safeCoord(s.x), safeCoord(s.y), safeCoord(s.z));
+    positions.push(safeCoord(t.x), safeCoord(t.y), safeCoord(t.z));
     col.set(resolveCanvasColour(relTypeColour(l.relType)));
     colors.push(col.r, col.g, col.b);
     colors.push(col.r, col.g, col.b);
@@ -330,7 +339,7 @@ function updatePositions() {
   const dummy = new Matrix4();
   for (let i = 0; i < nodes.length; i++) {
     const n = nodes[i];
-    dummy.makeTranslation(n.x ?? 0, n.y ?? 0, n.z ?? 0);
+    dummy.makeTranslation(safeCoord(n.x), safeCoord(n.y), safeCoord(n.z));
     mesh.setMatrixAt(i, dummy);
   }
   mesh.instanceMatrix.needsUpdate = true;
@@ -341,8 +350,8 @@ function updatePositions() {
     for (const l of links) {
       const s = l.source as GraphNode;
       const t = l.target as GraphNode;
-      posAttr.setXYZ(idx++, s.x ?? 0, s.y ?? 0, s.z ?? 0);
-      posAttr.setXYZ(idx++, t.x ?? 0, t.y ?? 0, t.z ?? 0);
+      posAttr.setXYZ(idx++, safeCoord(s.x), safeCoord(s.y), safeCoord(s.z));
+      posAttr.setXYZ(idx++, safeCoord(t.x), safeCoord(t.y), safeCoord(t.z));
     }
     posAttr.needsUpdate = true;
   }
@@ -460,7 +469,7 @@ watch(dataVersion, () => {
   position: relative;
   width: 100%;
   height: 100%;
-  min-height: 300px;
+  min-height: 320px;
   overflow: hidden;
   cursor: grab;
   border-radius: 8px;
