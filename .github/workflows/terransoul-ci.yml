@@ -4,101 +4,33 @@ on:
   push:
 
 env:
-  # CI-wide Rust optimizations: skip debug info to cut compile time/cache
-  # size by ~30%, use sparse protocol for faster crate index updates.
   CARGO_INCREMENTAL: '0'
   CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
-  RUSTFLAGS: '-C debuginfo=0'
+  RUSTFLAGS: '-C debuginfo=0 -C strip=none'
+  CARGO_TERM_COLOR: always
 
 jobs:
-  # ── Frontend: type-check, build, unit tests ──────────────────────────────
+  # ── Frontend: lint, build, unit tests ────────────────────────────────────
   frontend:
     runs-on: ubuntu-latest
     permissions:
       contents: read
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+      - uses: actions/checkout@v5
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
 
-      - name: Install frontend dependencies
-        run: npm ci
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+      - run: npm run test
 
-      - name: Lint (ESLint)
-        run: npm run lint
-
-      - name: Type-check and build frontend
-        run: npm run build
-
-      - name: Run Vitest
-        run: npm run test
-
-  # ── Rust: clippy + tests (runs in parallel with frontend) ────────────────
+  # ── Rust: clippy + lib tests + postgres tests ───────────────────────────
   rust:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Cache apt packages
-        uses: actions/cache@v5
-        with:
-          path: ~/apt-cache
-          key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/workflows/terransoul-ci.yml') }}
-
-      - name: Install system dependencies (Tauri / WebKit)
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          # Restore cached .deb files if available
-          if [ -d ~/apt-cache ]; then
-            sudo cp ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
-          fi
-          sudo apt-get update -qq
-          sudo apt-get install -yqq --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-          # Save .deb files for next run
-          mkdir -p ~/apt-cache
-          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
-
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Cargo registry + build
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: cargo-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: cargo-${{ runner.os }}-
-
-      - name: Run cargo clippy
-        working-directory: src-tauri
-        run: cargo clippy --lib --bins --tests -- -D warnings
-
-      - name: Run cargo test
-        working-directory: src-tauri
-        run: cargo test --lib
-
-  # ── Rust + Postgres: backend parity tests ────────────────────────────────
-  rust-postgres:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -119,62 +51,37 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Cache apt packages
-        uses: actions/cache@v5
-        with:
-          path: ~/apt-cache
-          key: apt-tauri-${{ runner.os }}-${{ hashFiles('.github/workflows/terransoul-ci.yml') }}
+      - uses: actions/checkout@v5
 
       - name: Install system dependencies (Tauri / WebKit)
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
-          # Restore cached .deb files if available
-          if [ -d ~/apt-cache ]; then
-            sudo cp ~/apt-cache/*.deb /var/cache/apt/archives/ 2>/dev/null || true
-          fi
           sudo apt-get update -qq
           sudo apt-get install -yqq --no-install-recommends \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libgtk-3-dev \
-            libsoup-3.0-dev \
-            libjavascriptcoregtk-4.1-dev
-          # Save .deb files for next run
-          mkdir -p ~/apt-cache
-          cp /var/cache/apt/archives/*.deb ~/apt-cache/ 2>/dev/null || true
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev \
+            patchelf libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
 
-      - name: Setup Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache Cargo registry + build
-        uses: actions/cache@v5
+      - uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: cargo-pg-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: cargo-pg-${{ runner.os }}-
+          workspaces: src-tauri -> target
 
-      - name: Run cargo clippy with postgres feature
+      - name: Clippy
         working-directory: src-tauri
-        run: cargo clippy --lib --bins --tests --features postgres -- -D warnings
+        run: cargo clippy --lib --tests --features postgres -- -D warnings
 
-      - name: Run postgres-specific tests
+      - name: Build tests
+        working-directory: src-tauri
+        run: cargo test --lib --features postgres --no-run
+
+      - name: Run lib tests
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: Run postgres tests
         working-directory: src-tauri
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/terransoul_test
-        # Serialize postgres tests with --test-threads=1: they share a single
-        # database, so concurrent migration runs race on `CREATE TABLE/INDEX
-        # IF NOT EXISTS` (PostgreSQL surfaces these as "duplicate key value
-        # violates unique constraint pg_class_relname_nsp_index" instead of
-        # treating them as idempotent under concurrency).
         run: cargo test --features postgres -- --include-ignored --test-threads=1 memory::postgres
 
 

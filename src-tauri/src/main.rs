@@ -3,17 +3,6 @@
 use std::path::PathBuf;
 
 fn main() {
-    // CLI flag: `terransoul --mcp-http` runs the repo-local MCP HTTP
-    // server without starting the Tauri UI/tray. This is the container
-    // and CI/research-friendly counterpart to `--mcp-tray`.
-    if std::env::args().any(|a| a == "--mcp-http" || a == "--mcp-headless") {
-        if let Err(e) = terransoul_lib::run_mcp_http() {
-            eprintln!("[mcp-http] fatal: {e}");
-            std::process::exit(1);
-        }
-        return;
-    }
-
     // CLI flag: `terransoul --mcp-stdio` runs as an MCP stdio server
     // (newline-delimited JSON-RPC over stdin/stdout) instead of
     // launching the GUI. See Chunk 15.9 in `rules/milestones.md`.

@@ -318,8 +318,8 @@ npm run dev:vite               # Vite-only dev server (:1420)
 npx vitest run                 # Frontend tests (1738 passing)
 cargo test                     # Backend tests (2383 passing)
 cargo clippy -- -D warnings    # Lint
-npm run mcp                    # Start headless MCP brain (:7423)
-npm run mcp:container          # Start isolated MCP HTTP container (:7423)
+npm run mcp                    # Start MCP brain tray (:7423)
+npm run mcp:container          # Start isolated MCP container (:7423)
 ```
 
 **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cargo clippy -- -D warnings && cargo test`

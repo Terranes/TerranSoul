@@ -66,13 +66,12 @@ pub fn is_dev_build() -> bool {
     cfg!(debug_assertions)
 }
 
-/// Runtime flag set when the process is running as the headless
-/// `--mcp-http` server (a.k.a. "MCP pet mode"). When true, the
-/// initialize handshake reports `serverInfo.name = "terransoul-brain-mcp"`
-/// and `buildMode = "mcp"` instead of the dev/release labels — so
-/// external agents (Copilot, Codex, Claude Code, Clawcode, etc.) can
-/// tell at a glance that they are talking to the repo-local headless
-/// server, not a running app.
+/// Runtime flag set when the process is running as the MCP tray
+/// server (`--mcp-tray`). When true, the initialize handshake reports
+/// `serverInfo.name = "terransoul-brain-mcp"` and `buildMode = "mcp"`
+/// instead of the dev/release labels — so external agents (Copilot,
+/// Codex, Claude Code, Clawcode, etc.) can tell at a glance that they
+/// are talking to the repo-local tray server, not a running app.
 static MCP_PET_MODE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// Mark the current process as running in MCP pet mode. Called by

@@ -3302,7 +3302,7 @@ After every auto-learn extraction, the frontend accumulates a running count of s
 
 ### 21.7 Roadmap gaps (already tracked in §16)
 
-- **Background scheduler** — Step 5 maintenance runs through the shared `brain::maintenance_runtime` tick loop. Both the normal Tauri app and the headless `npm run mcp` / `--mcp-http` runner start the same scheduler, derive intervals from `AppSettings.maintenance_interval_hours`, persist `maintenance_state.json`, and dispatch decay, garbage collection, tier promotion, and LLM edge extraction without requiring the GUI tick loop.
+- **Background scheduler** — Step 5 maintenance runs through the shared `brain::maintenance_runtime` tick loop. Both the normal Tauri app and the `npm run mcp` tray runner start the same scheduler, derive intervals from `AppSettings.maintenance_interval_hours`, persist `maintenance_state.json`, and dispatch decay, garbage collection, tier promotion, and LLM edge extraction without requiring the GUI tick loop.
 - **Conversation-aware extraction** — today extraction sees the whole session as one blob. The Phase 5 roadmap adds *segmented* extraction (e.g. one extraction per topic shift detected by embedding-distance peak).
 - **Edge auto-extraction** — `extract_edges_via_brain` is manual; auto-firing it after each successful `extract_facts` is the next iteration of this loop.
 - **Replay-from-history rebuild** — re-run extraction over old chat logs to backfill memories created before auto-learn existed (planned for Phase 5 alongside the export/import work).
@@ -3528,16 +3528,14 @@ from the first available source in this order: `TERRANSOUL_MCP_SHARED_DIR`,
 This keeps release builds deterministic while letting local dev/release runs
 consume the checked-in `mcp-data/shared/` dataset without repackaging.
 
-**Display-free MCP HTTP profile (`terransoul --mcp-http`, container/CI).** The
+**Containerized MCP profile (`--mcp-tray`, container/CI).** The
 containerized MCP stack uses the same `AppStateGateway` and axum HTTP transport
-as the tray profile, but it does not start the Tauri window, system tray, or
-WebView runtime. `Dockerfile.mcp` builds the release binary with
+as the tray profile. `Dockerfile.mcp` builds the release binary with
 `--no-default-features --features headless-mcp`, bakes in the checked-in
 `mcp-data/shared/` seed snapshot required by the compiled fallback paths, and
-starts `terransoul --mcp-http`. `docker-compose.mcp.yml` keeps runtime state in
-the `terransoul-mcp-data` volume, sets `TERRANSOUL_MCP_BIND=0.0.0.0` inside the
-container, publishes the host side on loopback only (`127.0.0.1:7423`), disables
-idle shutdown with `TERRANSOUL_MCP_IDLE_TIMEOUT=0`, and healthchecks `/health`.
+starts `terransoul --mcp-tray`. `docker-compose.mcp.yml` keeps runtime state in
+the `terransoul-mcp-data` volume, publishes the host side on loopback only
+(`127.0.0.1:7423`), and healthchecks `/health`.
 User-facing aliases are explicit (`npm run mcp:container`,
 `mcp:container:config`, `mcp:container:logs`, `mcp:container:stop`) so
 `npm run mcp` remains the local tray/coding-agent workflow. This container path

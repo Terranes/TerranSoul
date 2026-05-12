@@ -13,6 +13,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "terransoul-scheduler"
 path = "src/bin/scheduler.rs"
 
+[[bin]]
+name = "longmemeval-ipc"
+path = "src/bin/longmemeval_ipc.rs"
+required-features = ["bench-million"]
+
 [build-dependencies]
 protoc-bin-vendored = "3.2.0"
 tauri-build = { version = "2", features = [] }

@@ -181,7 +181,7 @@
 | `teachable_capabilities/` | Teachable capability registry |
 | `vscode_workspace/` | VS Code workspace launcher + registry + resolver |
 | `workflows/` | Workflow engine + resilience (retry, circuit breaker, watchdog) |
-| `lib.rs`, `main.rs` | Tauri entry points; `--mcp-http` headless mode |
+| `lib.rs`, `main.rs` | Tauri entry points; `--mcp-tray` tray mode |
 
 ## Frontend Pinia stores (`src/stores/`)
 
