@@ -482,5 +482,5 @@ Three patterns are **deferred** with rationale recorded:
   - `web/src/components/AgentPane.tsx`
   - `web/src/components/TeamStatusBar.tsx`
   - `web/src/components/SchedulerPanel.tsx`
-- Lessons mirrored to `mcp-data/shared/migrations/020_openagentd_audit_lessons.sql`
+- Lessons mirrored to `mcp-data/shared/memory-seed.sql`
   and `mcp-data/shared/lessons-learned.md`.

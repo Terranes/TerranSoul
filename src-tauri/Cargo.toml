@@ -132,5 +132,5 @@ harness = false
 required-features = ["native-ann"]
 
 [[bench]]
-name = "agentmemory_quality"
+name = "memory_quality"
 harness = false

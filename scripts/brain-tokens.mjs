@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: MIT
 //
-// Token-efficiency calculator for the agentmemory quality benchmark report.
+// Token-efficiency calculator for the memory-quality benchmark report.
 // It compares retrieved-memory context tokens against full-context paste and
 // the upstream-style 200-line MEMORY.md baseline.
 
@@ -15,13 +15,13 @@ const DEFAULT_REPORT = resolve(
   REPO_ROOT,
   'target-copilot-bench',
   'bench-results',
-  'agentmemory_quality.json',
+  'memory_quality.json',
 );
 const FIXTURE_PATH = resolve(
   REPO_ROOT,
   'src-tauri',
   'benches',
-  'agentmemory_quality_fixture.json',
+  'memory_quality_fixture.json',
 );
 const MEMORY_200_LINE_LIMIT = 200;
 
@@ -100,7 +100,7 @@ function main() {
   }
   if (!existsSync(reportPath)) {
     throw new Error(
-      `Missing benchmark report: ${reportPath}\nRun: cd src-tauri && cargo bench --bench agentmemory_quality --target-dir ../target-copilot-bench`,
+      `Missing benchmark report: ${reportPath}\nRun: cd src-tauri && cargo bench --bench memory_quality --target-dir ../target-copilot-bench`,
     );
   }
 

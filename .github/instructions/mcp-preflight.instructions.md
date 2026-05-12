@@ -32,9 +32,8 @@ non-MCP context. Classify it immediately:
 - **Unhealthy / stale server** — rerun `brain_health`; if needed run
    `node scripts/copilot-start-mcp.mjs`, wait for health, and retry. If the
    server is stale, rebuild/relaunch per `rules/agent-mcp-bootstrap.md`.
-- **Missing durable knowledge** — add or refresh the relevant row in
-   `mcp-data/shared/memory-seed.sql` and, when needed for existing DBs, add
-   a numbered migration under `mcp-data/shared/migrations/`.
+- **Missing durable knowledge** — append a new `INSERT INTO memories ... WHERE NOT EXISTS` block to
+   `mcp-data/shared/memory-seed.sql` so the consolidated init snapshot picks it up.
 
 The agent must visibly report the MCP error, root cause, fix, and any
 remaining blocker. A successful non-MCP fallback is not a complete fix.

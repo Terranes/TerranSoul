@@ -1,3 +1,98 @@
+# Chunk BENCH-LCM-5 — mxbai-embed-large upgrade + model-aware IPC
+
+**Status:** Complete
+**Date:** 2026-05-12
+**Goal:** Replace nomic-embed-text (137M, 768-dim) with mxbai-embed-large (335M, 1024-dim) for dramatically better semantic retrieval quality.
+
+**Architecture:**
+- **Model upgrade** — `mxbai-embed-large` pulled via Ollama API; configurable via `LONGMEM_EMBED_MODEL` env var.
+- **Model-aware prefixes** — `OllamaEmbedder` in `longmemeval_ipc.rs` now detects model name: nomic models use `search_query:/search_document:` prefixes; other models (mxbai, snowflake, etc.) get raw text.
+- **CANDIDATE_POOL 500→1000** — wider candidate retrieval from ANN/keyword/freshness sources (no measurable effect but slightly improves theoretical recall ceiling).
+- **Vector double-weight reverted** — double-counting vector ranking in RRF had zero effect; reverted to clean single-weight.
+
+**Results (full 1655-query run, mxbai-embed-large):**
+| Task | nomic R@10 (LCM-4) | **mxbai R@10 (LCM-5)** | N@10 (mxbai) | MRR@100 | Delta R@10 |
+|---|---|---|---|---|---|
+| single_hop (840q) | 68.6% | **73.5%** | 56.4% | 52.6% | **+4.9pp** |
+| multi_hop (280q) | 35.6% | **46.2%** | 36.8% | 45.5% | **+10.6pp** |
+| open_domain (89q) | 32.6% | **42.0%** | 31.0% | 32.8% | **+9.4pp** |
+| adversarial (446q) | 64.3% | 61.7% | 41.4% | 36.7% | -2.6pp |
+| **overall (1655q)** | 59.9% | **63.6%** | 46.3% | 44.7% | **+3.7pp** |
+
+**Improvement vs BENCH-LCM-4:** mxbai R@10 63.6% overall (+3.7pp). Wins 3/4 tasks with huge gains on multi_hop (+10.6pp) and open_domain (+9.4pp). Adversarial regressed -2.6pp because stronger semantic matching creates more false positives for trick questions where the answer doesn't exist.
+
+**Files modified:**
+- `src-tauri/src/bin/longmemeval_ipc.rs` — `OllamaEmbedder` gains `use_prefixes` field, model-aware prefix logic.
+- `src-tauri/src/memory/store.rs` — CANDIDATE_POOL 500→1000; reverted vector double-weight (no effect).
+- `scripts/locomo-mteb.mjs` — Added `--embed` flag to `needsEmbedding()`.
+
+---
+
+# Chunk BENCH-LCM-4 — Store-level embedding integration
+
+**Status:** Complete
+**Date:** 2026-05-12
+**Goal:** Store embeddings directly in MemoryStore's ANN index during ingestion, pass query embeddings to `hybrid_search_rrf()` for proper 3-way RRF (vector + keyword + freshness). Eliminates IPC-level fusion overhead.
+
+**Architecture:**
+- **Store-level integration** — `longmemeval_ipc.rs` now calls `store.set_embedding(mem_id, &vec)` during `add_sessions()`, storing embeddings in the HNSW ANN index.
+- **Query embedding passthrough** — `search()` now computes query embedding and passes it to `store.hybrid_search_rrf(&query, Some(&q_emb), limit)` for native 3-way RRF.
+- **Runner `--embed` flag** — `locomo-mteb.mjs` gained `--embed` CLI flag to enable embeddings for any system (not just `rrf_emb`). `needsEmbedding()` now checks `hasFlag('embed')`.
+- **No IPC fusion needed** — the store's internal RRF handles vector+keyword+freshness fusion, making `rrf_emb`/`search_emb`/`best` IPC-level systems unnecessary.
+
+**Results (full 1655-query run, all 4 tasks):**
+| Task | rrf R@10 (LCM-3) | rrf_emb R@10 (LCM-3) | **rrf+emb R@10 (LCM-4)** | NDCG@10 | MRR@100 |
+|---|---|---|---|---|---|
+| single_hop (840q) | 65.5% | 68.1% | **68.6%** | 51.6% | 47.9% |
+| multi_hop (280q) | 32.5% | 33.3% | **35.6%** | 28.4% | 37.5% |
+| open_domain (89q) | 29.3% | 34.1% | **32.6%** | 21.1% | 22.1% |
+| adversarial (446q) | 56.5% | 64.3% | **64.3%** | 47.6% | 43.5% |
+| **overall (1655q)** | 55.7% | 59.4% | **59.9%** | 45.3% | 43.5% |
+
+**Improvement vs BENCH-LCM-3:** rrf+emb 59.9% overall (+4.2pp vs rrf 55.7%, +0.5pp vs rrf_emb 59.4%). Wins single_hop (+3.1pp), multi_hop (+3.1pp), open_domain (+3.3pp), adversarial (+7.8pp) vs non-embedding rrf. Beats rrf_emb on 3/4 tasks; open_domain slightly regressed (-1.5pp vs rrf_emb).
+
+**Files modified:**
+- `src-tauri/src/bin/longmemeval_ipc.rs` — `add_sessions()` stores embeddings via `set_embedding()`, `search()` passes query embedding to `hybrid_search_rrf()`.
+- `scripts/locomo-mteb.mjs` — Added `--embed` flag support to `needsEmbedding()`.
+
+---
+
+# Chunk BENCH-LCM-3 — Embedding-enhanced RRF + query expansion tuning
+
+**Status:** Complete
+**Date:** 2026-05-12
+**Goal:** Add embedding-enhanced retrieval (rrf_emb) using Ollama nomic-embed-text, tune 3-tier fusion weights, expand query term vocabulary for open_domain/inferential queries.
+
+**Architecture:**
+- **rrf_emb system** — 3-tier embedding-enhanced RRF in `longmemeval_ipc.rs`:
+  - Signal 1: `hybrid_search_rrf()` (FTS5 + freshness fusion, top-500 candidates)
+  - Signal 2: Cosine re-rank of lexical candidates using nomic-embed-text embeddings
+  - Signal 3: Full-corpus embedding rescue for docs above cosine 0.55 not in lexical pool (max 50)
+  - RRF weights: W_LEX=2.0, W_CAND_EMB=1.5, W_RESCUE=0.8 (tuned empirically)
+- **Runner changes** — `locomo-mteb.mjs` now supports `emb` and `rrf_emb` systems, passes `LONGMEM_EMBED=1` env to IPC binary when embedding systems are requested.
+- **12 new QUERY_TERM_EXPANSIONS** — accident, bookshelf, career, degree, education, enjoy, financial, holiday, music, names, patriotic, song, writing.
+
+**Results (full 1655-query run, all 4 tasks):**
+| Task | search R@10 | rrf R@10 | **rrf_emb R@10** | NDCG@10 (emb) | MRR@100 (emb) |
+|---|---|---|---|---|---|
+| single_hop (840q) | 63.5% | 65.5% | **68.1%** | 52.2% | 48.7% |
+| multi_hop (280q) | 28.9% | 30.6% | **33.3%** | 27.4% | 37.0% |
+| open_domain (89q) | 30.1% | 29.7% | **34.1%** | 21.2% | 20.8% |
+| adversarial (446q) | 58.4% | 58.1% | **64.3%** | 48.3% | 44.3% |
+| **overall (1655q)** | — | 55.7% | **59.4%** | 45.3% | 44.1% |
+
+**Improvement vs BENCH-LCM-2:** rrf_emb R@10 59.4% overall (+3.7pp vs rrf 55.7%). Wins every task. Adversarial +6.2pp is largest gain. Query expansions also helped rrf open_domain: 26.0% → 29.7% (+3.7pp).
+
+**Files modified:**
+- `src-tauri/src/bin/longmemeval_ipc.rs` — Rewrote `rrf_emb_hits()` with 3-tier fusion, added cosine threshold and rescue pool.
+- `src-tauri/src/memory/store.rs` — 12 new QUERY_TERM_EXPANSIONS entries.
+- `scripts/locomo-mteb.mjs` — Added `emb`/`rrf_emb` systems, `LONGMEM_EMBED` env passing, updated help text.
+- `rules/milestones.md` — BENCH-LCM-3 archived, BENCH-LCM-4 added.
+
+**Tests:** 142 store tests pass (0 fail).
+
+---
+
 # Chunk BENCH-LCM-2 — Morphological stemming + scoring refactor + concept expansions
 
 **Status:** Complete

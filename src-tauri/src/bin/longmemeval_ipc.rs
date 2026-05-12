@@ -111,6 +111,8 @@ struct OllamaEmbedder {
     client: reqwest::blocking::Client,
     url: String,
     model: String,
+    /// Whether the model uses task-instruction prefixes (nomic-embed-text).
+    use_prefixes: bool,
 }
 
 impl OllamaEmbedder {
@@ -126,24 +128,30 @@ impl OllamaEmbedder {
             .timeout(Duration::from_secs(60))
             .build()
             .ok()?;
+        // nomic-embed-text requires "search_query:"/"search_document:" prefixes.
+        // Other models (mxbai-embed-large, snowflake-arctic-embed2, etc.) do not.
+        let use_prefixes = model.contains("nomic");
         Some(Self {
             client,
             url: format!("{}/api/embeddings", host.trim_end_matches('/')),
             model,
+            use_prefixes,
         })
     }
 
     fn embed(&self, text: &str, role: EmbedRole) -> Result<Vec<f32>, String> {
-        // Cap input length: nomic-embed-text handles ~8k tokens; trim to ~16k
+        // Cap input length: most embed models handle ~8k tokens; trim to ~16k
         // chars (~4k tokens) so very long sessions don't dominate latency.
         let trimmed = if text.len() > 16_000 { &text[..16_000] } else { text };
-        // nomic-embed-text v1.5 requires task-instruction prefixes; without
-        // them retrieval quality collapses to near-random on cross-domain pairs.
-        let prefixed = match role {
-            EmbedRole::Query => format!("search_query: {trimmed}"),
-            EmbedRole::Document => format!("search_document: {trimmed}"),
+        let prompt = if self.use_prefixes {
+            match role {
+                EmbedRole::Query => format!("search_query: {trimmed}"),
+                EmbedRole::Document => format!("search_document: {trimmed}"),
+            }
+        } else {
+            trimmed.to_string()
         };
-        let body = json!({"model": self.model, "prompt": prefixed});
+        let body = json!({"model": self.model, "prompt": prompt});
         let resp = self
             .client
             .post(&self.url)
@@ -249,6 +257,9 @@ fn add_sessions(
             let content = &contents[idx];
             match embedder.embed(content, EmbedRole::Document) {
                 Ok(vec) => {
+                    // Store in both local HashMap (for IPC-level cosine)
+                    // and MemoryStore (for ANN-backed hybrid_search_rrf).
+                    let _ = state.store.set_embedding(*mem_id, &vec);
                     state.embeddings.insert(*mem_id, vec);
                 }
                 Err(_) => {
@@ -284,17 +295,24 @@ fn search(
             .store
             .search(&request.query)
             .map_err(|err| err.to_string())?,
-        "rrf" | "hybrid_search_rrf" => state
-            .store
-            .hybrid_search_rrf(&request.query, None, limit)
-            .map_err(|err| err.to_string())?,
-        "emb" | "rrf_emb" => Vec::new(),
+        "rrf" | "hybrid_search_rrf" => {
+            // If embeddings are available, compute query embedding for the
+            // internal vector ranking signal in hybrid_search_rrf.
+            let q_emb = embedder.and_then(|e| e.embed(&request.query, EmbedRole::Query).ok());
+            state
+                .store
+                .hybrid_search_rrf(&request.query, q_emb.as_deref(), limit)
+                .map_err(|err| err.to_string())?
+        }
+        "emb" | "rrf_emb" | "search_emb" | "best" => Vec::new(),
         other => return Err(format!("unsupported search mode: {other}")),
     };
 
     let hits: Vec<SearchHit> = match mode {
         "emb" => emb_only_hits(state, embedder, &request.query, limit)?,
         "rrf_emb" => rrf_emb_hits(state, embedder, &request.query, limit)?,
+        "search_emb" => search_emb_hits(state, embedder, &request.query, limit)?,
+        "best" => best_hits(state, embedder, &request.query, limit)?,
         _ => entries
             .into_iter()
             .take(limit)
@@ -338,6 +356,215 @@ fn emb_only_hits(
     Ok(hits)
 }
 
+fn best_hits(
+    state: &IndexState,
+    embedder: Option<&OllamaEmbedder>,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    let embedder =
+        embedder.ok_or_else(|| "best mode requires LONGMEM_EMBED=1".to_string())?;
+
+    // Signal 1: search() — FTS5 + IDF-weighted rerank + graph boosts.
+    let search_entries = state.store.search(query).map_err(|err| err.to_string())?;
+
+    // Signal 2: hybrid_search_rrf() — FTS5 + freshness RRF fusion.
+    let rrf_entries = state
+        .store
+        .hybrid_search_rrf(query, None, 500)
+        .map_err(|err| err.to_string())?;
+
+    // Union of candidate IDs from both lexical signals.
+    let mut all_ids: std::collections::HashSet<i64> = std::collections::HashSet::new();
+    for entry in &search_entries {
+        all_ids.insert(entry.id);
+    }
+    for entry in &rrf_entries {
+        all_ids.insert(entry.id);
+    }
+
+    let q = embedder.embed(query, EmbedRole::Query)?;
+
+    // Signal 3: cosine re-rank of all lexical candidates.
+    let mut cand_scored: Vec<(i64, f32)> = all_ids
+        .iter()
+        .filter_map(|id| state.embeddings.get(id).map(|v| (*id, cosine(&q, v))))
+        .collect();
+    cand_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let cand_rank: HashMap<i64, usize> = cand_scored
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, _))| (*id, idx))
+        .collect();
+
+    // Signal 4: embedding rescue from outside lexical pool.
+    const RESCUE_THRESHOLD: f32 = 0.50;
+    const MAX_RESCUE: usize = 100;
+    let mut rescue_scored: Vec<(i64, f32)> = state
+        .embeddings
+        .iter()
+        .filter(|(id, _)| !all_ids.contains(id))
+        .map(|(id, vec)| (*id, cosine(&q, vec)))
+        .filter(|(_, score)| *score > RESCUE_THRESHOLD)
+        .collect();
+    rescue_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    rescue_scored.truncate(MAX_RESCUE);
+    let rescue_rank: HashMap<i64, usize> = rescue_scored
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, _))| (*id, idx))
+        .collect();
+
+    // 4-way weighted RRF fusion.
+    const W_SEARCH: f32 = 2.0;
+    const W_RRF: f32 = 1.5;
+    const W_EMB: f32 = 1.2;
+    const W_RESCUE: f32 = 0.6;
+    let mut scores: HashMap<i64, f32> = HashMap::new();
+    for (rank, entry) in search_entries.iter().enumerate() {
+        let s = W_SEARCH / (RRF_K + (rank as f32) + 1.0);
+        *scores.entry(entry.id).or_insert(0.0) += s;
+    }
+    for (rank, entry) in rrf_entries.iter().enumerate() {
+        let s = W_RRF / (RRF_K + (rank as f32) + 1.0);
+        *scores.entry(entry.id).or_insert(0.0) += s;
+    }
+    for (id, rank) in &cand_rank {
+        let s = W_EMB / (RRF_K + (*rank as f32) + 1.0);
+        *scores.entry(*id).or_insert(0.0) += s;
+    }
+    for (id, rank) in &rescue_rank {
+        let s = W_RESCUE / (RRF_K + (*rank as f32) + 1.0);
+        *scores.entry(*id).or_insert(0.0) += s;
+    }
+
+    // Build session/token maps.
+    let mut session_id_of: HashMap<i64, String> = HashMap::new();
+    let mut token_of: HashMap<i64, i64> = HashMap::new();
+    for entry in search_entries.iter().chain(rrf_entries.iter()) {
+        session_id_of
+            .entry(entry.id)
+            .or_insert_with(|| source_url_to_session_id(entry.source_url.as_deref()));
+        token_of.entry(entry.id).or_insert(entry.token_count);
+    }
+
+    let mut fused: Vec<(i64, f32)> = scores.into_iter().collect();
+    fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let hits = fused
+        .into_iter()
+        .take(limit)
+        .map(|(mem_id, _)| SearchHit {
+            memory_id: mem_id,
+            session_id: session_id_of
+                .get(&mem_id)
+                .cloned()
+                .or_else(|| state.session_ids.get(&mem_id).cloned())
+                .unwrap_or_default(),
+            token_count: token_of
+                .get(&mem_id)
+                .copied()
+                .or_else(|| state.token_counts.get(&mem_id).copied())
+                .unwrap_or(0),
+        })
+        .collect();
+    Ok(hits)
+}
+
+fn search_emb_hits(
+    state: &IndexState,
+    embedder: Option<&OllamaEmbedder>,
+    query: &str,
+    limit: usize,
+) -> Result<Vec<SearchHit>, String> {
+    let embedder =
+        embedder.ok_or_else(|| "search_emb mode requires LONGMEM_EMBED=1".to_string())?;
+
+    // Signal 1: MemoryStore::search (FTS5 + IDF-weighted rerank + graph boosts).
+    let search_entries = state.store.search(query).map_err(|err| err.to_string())?;
+    let search_ids: std::collections::HashSet<i64> =
+        search_entries.iter().map(|e| e.id).collect();
+
+    let q = embedder.embed(query, EmbedRole::Query)?;
+
+    // Signal 2: cosine re-rank of search candidates.
+    let mut cand_scored: Vec<(i64, f32)> = search_ids
+        .iter()
+        .filter_map(|id| state.embeddings.get(id).map(|v| (*id, cosine(&q, v))))
+        .collect();
+    cand_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let cand_rank: HashMap<i64, usize> = cand_scored
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, _))| (*id, idx))
+        .collect();
+
+    // Signal 3: embedding rescue (same as rrf_emb).
+    const RESCUE_THRESHOLD: f32 = 0.50;
+    const MAX_RESCUE: usize = 100;
+    let mut rescue_scored: Vec<(i64, f32)> = state
+        .embeddings
+        .iter()
+        .filter(|(id, _)| !search_ids.contains(id))
+        .map(|(id, vec)| (*id, cosine(&q, vec)))
+        .filter(|(_, score)| *score > RESCUE_THRESHOLD)
+        .collect();
+    rescue_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    rescue_scored.truncate(MAX_RESCUE);
+    let rescue_rank: HashMap<i64, usize> = rescue_scored
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, _))| (*id, idx))
+        .collect();
+
+    // Weighted RRF: search dominant (IDF-weighted scoring is richer), embeddings rerank.
+    const W_LEX: f32 = 2.5;
+    const W_CAND_EMB: f32 = 1.0;
+    const W_RESCUE: f32 = 0.6;
+    let mut rrf: HashMap<i64, f32> = HashMap::new();
+    for (rank, entry) in search_entries.iter().enumerate() {
+        let s = W_LEX / (RRF_K + (rank as f32) + 1.0);
+        *rrf.entry(entry.id).or_insert(0.0) += s;
+    }
+    for (id, rank) in &cand_rank {
+        let s = W_CAND_EMB / (RRF_K + (*rank as f32) + 1.0);
+        *rrf.entry(*id).or_insert(0.0) += s;
+    }
+    for (id, rank) in &rescue_rank {
+        let s = W_RESCUE / (RRF_K + (*rank as f32) + 1.0);
+        *rrf.entry(*id).or_insert(0.0) += s;
+    }
+
+    let mut session_id_of: HashMap<i64, String> = HashMap::new();
+    let mut token_of: HashMap<i64, i64> = HashMap::new();
+    for entry in &search_entries {
+        session_id_of.insert(entry.id, source_url_to_session_id(entry.source_url.as_deref()));
+        token_of.insert(entry.id, entry.token_count);
+    }
+
+    let mut fused: Vec<(i64, f32)> = rrf.into_iter().collect();
+    fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+    let hits = fused
+        .into_iter()
+        .take(limit)
+        .map(|(mem_id, _)| SearchHit {
+            memory_id: mem_id,
+            session_id: session_id_of
+                .get(&mem_id)
+                .cloned()
+                .or_else(|| state.session_ids.get(&mem_id).cloned())
+                .unwrap_or_default(),
+            token_count: token_of
+                .get(&mem_id)
+                .copied()
+                .or_else(|| state.token_counts.get(&mem_id).copied())
+                .unwrap_or(0),
+        })
+        .collect();
+    Ok(hits)
+}
+
 fn rrf_emb_hits(
     state: &IndexState,
     embedder: Option<&OllamaEmbedder>,
@@ -347,44 +574,69 @@ fn rrf_emb_hits(
     let embedder =
         embedder.ok_or_else(|| "rrf_emb mode requires LONGMEM_EMBED=1".to_string())?;
 
-    // FTS5 candidates (already lexically reranked + KG-boosted by MemoryStore::search).
-    let fts_entries = state.store.search(query).map_err(|err| err.to_string())?;
+    // Signal 1: hybrid_search_rrf (FTS5 + freshness RRF fusion).
+    let rrf_entries = state
+        .store
+        .hybrid_search_rrf(query, None, 500)
+        .map_err(|err| err.to_string())?;
+    let rrf_ids: std::collections::HashSet<i64> = rrf_entries.iter().map(|e| e.id).collect();
 
-    // Restrict embedding signal to FTS5's candidate pool. LongMemEval-S filler
-    // sessions (ShareGPT/UltraChat) are large and semantically broad, so a
-    // free-form embedding sweep across the whole haystack drowns the small,
-    // specific gold sessions. Embeddings are most useful as a tiebreaker over
-    // the lexical candidate pool, not as an independent retriever.
-    let candidate_ids: Vec<i64> = fts_entries.iter().map(|e| e.id).collect();
     let q = embedder.embed(query, EmbedRole::Query)?;
-    let mut emb_scored: Vec<(i64, f32)> = candidate_ids
+
+    // Signal 2: cosine re-rank of rrf candidates (always applied).
+    let mut cand_scored: Vec<(i64, f32)> = rrf_ids
         .iter()
         .filter_map(|id| state.embeddings.get(id).map(|v| (*id, cosine(&q, v))))
         .collect();
-    emb_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    let emb_rank: HashMap<i64, usize> = emb_scored
+    cand_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let cand_rank: HashMap<i64, usize> = cand_scored
         .iter()
         .enumerate()
         .map(|(idx, (id, _))| (*id, idx))
         .collect();
 
-    // Weighted RRF: FTS5 dominant, embedding as a tiebreaker. The weights
-    // were tuned empirically on the LongMemEval-S 20-question slice.
-    const W_FTS: f32 = 3.0;
-    const W_EMB: f32 = 1.0;
+    // Signal 3: full-corpus embedding rescue — top-N docs by cosine that
+    // are NOT already in the rrf candidate pool. Uses a threshold to
+    // avoid injecting noise from broad queries.
+    const RESCUE_THRESHOLD: f32 = 0.50;
+    const MAX_RESCUE: usize = 100;
+    let mut rescue_scored: Vec<(i64, f32)> = state
+        .embeddings
+        .iter()
+        .filter(|(id, _)| !rrf_ids.contains(id))
+        .map(|(id, vec)| (*id, cosine(&q, vec)))
+        .filter(|(_, score)| *score > RESCUE_THRESHOLD)
+        .collect();
+    rescue_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    rescue_scored.truncate(MAX_RESCUE);
+    let rescue_rank: HashMap<i64, usize> = rescue_scored
+        .iter()
+        .enumerate()
+        .map(|(idx, (id, _))| (*id, idx))
+        .collect();
+
+    // Weighted RRF fusion: lexical dominant, candidate re-rank medium, rescue low.
+    const W_LEX: f32 = 2.0;
+    const W_CAND_EMB: f32 = 1.5;
+    const W_RESCUE: f32 = 0.8;
     let mut rrf: HashMap<i64, f32> = HashMap::new();
-    for (rank, entry) in fts_entries.iter().enumerate() {
-        let s = W_FTS / (RRF_K + (rank as f32) + 1.0);
+    for (rank, entry) in rrf_entries.iter().enumerate() {
+        let s = W_LEX / (RRF_K + (rank as f32) + 1.0);
         *rrf.entry(entry.id).or_insert(0.0) += s;
     }
-    for (id, rank) in &emb_rank {
-        let s = W_EMB / (RRF_K + (*rank as f32) + 1.0);
+    for (id, rank) in &cand_rank {
+        let s = W_CAND_EMB / (RRF_K + (*rank as f32) + 1.0);
+        *rrf.entry(*id).or_insert(0.0) += s;
+    }
+    for (id, rank) in &rescue_rank {
+        let s = W_RESCUE / (RRF_K + (*rank as f32) + 1.0);
         *rrf.entry(*id).or_insert(0.0) += s;
     }
 
+    // Build session/token maps from all sources.
     let mut session_id_of: HashMap<i64, String> = HashMap::new();
     let mut token_of: HashMap<i64, i64> = HashMap::new();
-    for entry in &fts_entries {
+    for entry in &rrf_entries {
         session_id_of.insert(entry.id, source_url_to_session_id(entry.source_url.as_deref()));
         token_of.insert(entry.id, entry.token_count);
     }

@@ -93,19 +93,19 @@
 
 ## Seed knowledge audit (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/023_seed_knowledge_current_state.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
 - **LESSON: Seed knowledge audit (2026-05-10) corrected stale canonical facts: schema is V20 (not V13/V15/V19 in older notes) and brain_failover_status in headless MCP may return "failover status requires app state" when provider-rotator AppState is absent; this is diagnostics-only and does not block core memory/RAG tools.**
 
 ## Intent routing no-heuristics rule (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/024_intent_classifier_no_heuristic_fallback.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
 - **RULE: Document/setup intent routing must remain classifier + RAG driven.** On malformed/unknown classifier JSON, return `Unknown` and continue normal chat/install flow. Do not force `learn_with_docs`, `teach_ingest`, or `gated_setup` via regex/contains/includes/keyword arrays.
 
 ## Local E2E latency budget (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/025_local_e2e_latency_budget.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
 - **RULE: Local E2E response latency budget (2026-05-10): Playwright tests outside GitHub Actions must fail any assistant/LLM response latency above 2 seconds with an investigation-focused failure message.** Keep diagnostic wait timeouts long enough to collect evidence, but do not resolve latency regressions by increasing Playwright timeouts or relaxing assertions; investigate model warmup, VRAM contention, RAG retrieval, embedding backfill, provider selection, streaming first chunk, and UI state propagation.
 
@@ -113,16 +113,16 @@ Migration: `mcp-data/shared/migrations/025_local_e2e_latency_budget.sql`.
 
 ## Tutorial screenshot and mobile keyboard lessons (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/018_tutorial_screenshot_and_keyboard_offset_lessons.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
 - **LESSON: Tutorial screenshot refresh must be captured and verified step-by-step, not by blind batch scripts.** For each referenced tutorial image, open the exact target view, dismiss overlays, confirm mode state, capture, and visually verify before moving on. If a screenshot reveals a UI defect, fix the UI/state first and recapture immediately.
 - **LESSON: Mobile black-strip and missing-input bug root cause was false keyboard detection in src/composables/useKeyboardDetector.ts.** Plain viewport resizes must not trigger keyboard offset unless an editable element is focused and `visualViewport` is actually reduced versus the layout viewport.
 
 ## Agent-session lesson ingestion gap (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/019_self_improve_agent_session_gap_lessons.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
-- **GAP: TerranSoul self-improve has no ingestion path for lessons learned by an EXTERNAL coding agent (Copilot/Claude Code/Codex) operating in the main checkout.** Until `brain_ingest_lesson` is fully wired, durable agent-session lessons need a numbered SQL migration, a matching `lessons-learned.md` entry, and retrievability verification before completion.
+- **GAP: TerranSoul self-improve has no ingestion path for lessons learned by an EXTERNAL coding agent (Copilot/Claude Code/Codex) operating in the main checkout.** Until `brain_ingest_lesson` is fully wired, durable agent-session lessons need a new INSERT row appended to `mcp-data/shared/memory-seed.sql`, a matching `lessons-learned.md` entry, and retrievability verification before completion.
 
 - Self-improve runs in temporary git worktrees so the main checkout is
   never disturbed. Always read `rules/milestones.md` for the next chunk
@@ -185,11 +185,10 @@ Migration: `mcp-data/shared/migrations/019_self_improve_agent_session_gap_lesson
   `coding/conversation_learning.rs` only routes user-authored chat messages to
   `rules/milestones.md`; `coding/engine.rs` runs in an isolated worktree
   against the configured Coding LLM. Until `brain_ingest_lesson` MCP tool
-  ships and `agent_session_lessons.rs` lands, the agent **must hand-write a
-  numbered `mcp-data/shared/migrations/NNN_*.sql` file plus update this
-  document** when it discovers a procedural rule. See migration `019` for a
-  worked example (screenshot-QA workflow + native-select contrast + chat
-  textarea auto-grow). Verify with `brain_search` before declaring done.
+  ships and `agent_session_lessons.rs` lands, the agent **must append a new
+  INSERT row to `mcp-data/shared/memory-seed.sql` plus update this
+  document** when it discovers a procedural rule. Verify with `brain_search`
+  before declaring done.
 - **Custom CSS token references must match a definition in EVERY theme
   block** of `src/style.css`. The 2026-05-10 chat-bar dropdown contrast bug
   was caused by `var(--ts-text, #e2e8f0)` and `var(--ts-bg-base, #0f172a)` in
@@ -275,8 +274,8 @@ Migration: `mcp-data/shared/migrations/019_self_improve_agent_session_gap_lesson
 
 ## OpenAgentd audit (2026-05-10) — coding workflow patterns
 
-Full audit in `docs/openagentd-audit.md`; durable rows in
-`mcp-data/shared/migrations/020_openagentd_audit_lessons.sql`. Apache-2.0
+Full audit in `docs/openagentd-audit.md`; durable rows synced into
+`mcp-data/shared/memory-seed.sql`. Apache-2.0
 attribution recorded in `CREDITS.md`. Phase 47 in `rules/milestones.md`
 groups the implementable chunks.
 
@@ -349,7 +348,7 @@ groups the implementable chunks.
 
 ## Live chat RAG parity (2026-05-10)
 
-Migration: `mcp-data/shared/migrations/022_live_chat_rrf_intent_rag.sql`.
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
 
 - **RAG pipeline: contentful live chat uses fast-path skip for short/empty turns, thresholded hybrid 6-signal eligibility, then RRF + query-intent ordering for top-5 prompt injection.** Keep the relevance threshold as the
   eligibility gate; do not compare RRF scores directly to that user setting.

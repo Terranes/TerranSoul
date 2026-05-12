@@ -33,16 +33,16 @@ Runtime files stay local and must not be committed:
 MCP self-improve runtime logs are intentionally local: `self_improve_runs.jsonl`,
 `self_improve_gates.jsonl`, and `self_improve_mcp.jsonl` keep only the current
 file plus `.001`, capped at 1 MiB per file. Durable lessons still belong in
-`mcp-data/shared/memory-seed.sql` and numbered seed migrations, not in runtime
-logs.
+`mcp-data/shared/memory-seed.sql`, not in runtime logs.
 
 This split lets the repository share useful MCP knowledge without leaking
 secrets or machine-local agent state.
 
 ## Seed bootstrap model
 
-Fresh databases use a consolidated init snapshot from
-`mcp-data/shared/memory-seed.sql` first, then apply only future numbered
-delta migrations. Historical migration files remain append-only for
-compatibility and auditability, but first boot no longer needs to replay every
-historical script.
+Fresh databases load the single consolidated init snapshot from
+`mcp-data/shared/memory-seed.sql`. New durable knowledge is appended to that
+file as `INSERT INTO memories ... WHERE NOT EXISTS` blocks plus matching
+`INSERT OR IGNORE INTO memory_edges` rows; the runtime loader replays the
+snapshot once on first boot and records the version checksum. Per-chunk
+numbered migration files are no longer used.

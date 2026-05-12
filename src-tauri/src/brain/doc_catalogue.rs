@@ -531,7 +531,7 @@ async fn fetch_from_lm_studio(
 /// only ~3 GB for the embedding model and KV cache, causing constant
 /// VRAM thrash and 5-15s latency spikes. The picks below were verified
 /// against the durable rule in
-/// `mcp-data/shared/migrations/015_local_llm_fast_chat_path.sql`:
+/// `mcp-data/shared/memory-seed.sql` (Local Ollama fast-chat path lesson):
 ///
 /// - VeryHigh (≥32 GB RAM, heuristic for ≥24 GB VRAM) → `gemma4:e4b`
 /// - High (16-32 GB RAM, typical 8-12 GB VRAM)        → `gemma3:4b`
@@ -818,7 +818,7 @@ mod tests {
         assert_eq!(cat.top_picks.len(), 5);
         // VRAM-aware policy: VeryHigh tier prefers the latency-optimal
         // gemma4:e4b, NOT the size-maximised gemma4:31b. See
-        // mcp-data/shared/migrations/015_local_llm_fast_chat_path.sql.
+        // mcp-data/shared/memory-seed.sql (Local Ollama fast-chat path lesson).
         assert_eq!(cat.top_picks["VeryHigh"], "gemma4:e4b");
         assert_eq!(cat.top_picks["Low"], "gemma3:1b");
     }

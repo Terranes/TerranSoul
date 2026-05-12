@@ -29,6 +29,8 @@ const DEFAULT_TASKS = [
   'adversarial',
 ];
 const DEFAULT_SYSTEMS = ['search', 'rrf'];
+const ALL_SYSTEMS = new Set(['search', 'rrf', 'emb', 'rrf_emb', 'search_emb', 'best']);
+const EMB_SYSTEMS = new Set(['emb', 'rrf_emb', 'search_emb', 'best']);
 const DATA_KINDS = ['corpus', 'queries', 'qrels'];
 const METRIC_KS = [1, 5, 10, 20, 100];
 
@@ -89,7 +91,7 @@ Commands:
 
 Options:
   --tasks=<csv>       Tasks to run: ${DEFAULT_TASKS.join(',')} (default: all; sample defaults to single_hop)
-  --systems=<csv>     Systems: search,rrf (default: search,rrf)
+  --systems=<csv>     Systems: search,rrf,emb,rrf_emb (default: search,rrf)
   --limit=<n>         Queries per task; 0 means all (default: sample=10, run=0)
   --top-k=<n>         Retrieval depth requested from MemoryStore (default: 100)
   --data-dir=<path>   Download/cache directory (default: target-copilot-bench/locomo-mteb)
@@ -111,12 +113,15 @@ function assertKnownTasks(tasks) {
 }
 
 function assertKnownSystems(systems) {
-  const allowed = new Set(DEFAULT_SYSTEMS);
   for (const system of systems) {
-    if (!allowed.has(system)) {
-      throw new Error(`unknown system ${system}; use search or rrf`);
+    if (!ALL_SYSTEMS.has(system)) {
+      throw new Error(`unknown system ${system}; use search, rrf, emb, rrf_emb, search_emb, or best`);
     }
   }
+}
+
+function needsEmbedding(systems) {
+  return systems.some(s => EMB_SYSTEMS.has(s)) || hasFlag('embed');
 }
 
 function parquetUrl(task, kind) {
@@ -366,10 +371,11 @@ function writeReports(report, options) {
 }
 
 class JsonlClient {
-  constructor() {
+  constructor({ embed = false } = {}) {
     this.nextId = 1;
     this.pending = new Map();
     this.buffer = '';
+    this.embedEnv = embed ? { LONGMEM_EMBED: '1' } : {};
     this.proc = spawn('cargo', [
       'run',
       '--quiet',
@@ -382,6 +388,7 @@ class JsonlClient {
     ], {
       cwd: REPO_ROOT,
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, ...(this.embedEnv || {}) },
     });
 
     this.proc.stdout.setEncoding('utf8');
@@ -509,7 +516,8 @@ async function runTask(client, task, options) {
 
 async function run(options) {
   await ensureParquetFiles(options.tasks, options);
-  const client = new JsonlClient();
+  const embed = needsEmbedding(options.systems);
+  const client = new JsonlClient({ embed });
   try {
     const byTask = [];
     for (const task of options.tasks) {

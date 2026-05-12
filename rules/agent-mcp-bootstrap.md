@@ -47,8 +47,9 @@ the error as permission to bypass MCP. Use this triage order:
    start or restart with `node scripts/copilot-start-mcp.mjs`; if the
    managed binary is stale, rebuild and relaunch instead of reusing it.
 3. **Knowledge drift.** If the error is caused by missing/stale seed
-   knowledge, update `mcp-data/shared/memory-seed.sql` and add a numbered
-   migration under `mcp-data/shared/migrations/` for existing DBs.
+   knowledge, append a new `INSERT INTO memories ... WHERE NOT EXISTS`
+   block to `mcp-data/shared/memory-seed.sql` so the consolidated init
+   snapshot picks it up.
 
 Always report the original MCP error, the diagnosed root cause, the fix,
 and any remaining blocker. A grep/file-search fallback can be used for

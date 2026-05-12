@@ -32,7 +32,7 @@
 
 ## Next Chunk
 
-Next up: **BENCH-LCM-3 — Candidate pool expansion + single_hop regression fix** (`not-started`).
+Next up: **BENCH-LCM-6 — Fix adversarial regression + combined model strategy** (`not-started`).
 
 ---
 
@@ -44,11 +44,17 @@ Goal: add a direct, reproducible TerranSoul run on the MTEB `LoCoMo` text-retrie
 
 > **Round 2 result (BENCH-LCM-2, 2026-05-12):** 250-query slice shows rrf R@10 **54.4%** (+2.8pp), search R@10 **53.6%** (+2.3pp). multi_hop nearly doubled: 15→33% R@10. Morphological variants now FTS5-recall-only (not scored), fixing the `configuration_term` regression. Added 11 new QUERY_TERM_EXPANSIONS and 3 new phrase expansions (activities, destress, art).
 
+> **Round 3 result (BENCH-LCM-3, 2026-05-12):** Full 1655-query run, all 4 tasks. Added `rrf_emb` system (3-tier embedding-enhanced RRF: lexical+freshness fusion, cosine re-rank of candidates, embedding rescue for semantically-missed docs). rrf_emb **59.4%** R@10 overall (+3.7pp vs rrf 55.7%). Wins every task: single_hop 68.1% (+2.6pp), multi_hop 33.3% (+2.7pp), open_domain 34.1% (+4.4pp), adversarial 64.3% (+6.2pp). Also added 12 new query expansions (career, degree, education, financial, music, etc.).
+
+> **Round 4 result (BENCH-LCM-4, 2026-05-12):** Store-level embedding integration. Embeddings stored in HNSW ANN index, query embeddings passed to `hybrid_search_rrf()` for native 3-way RRF. rrf+emb **59.9%** R@10 overall (+4.2pp vs plain rrf, +0.5pp vs IPC-level rrf_emb). single_hop 68.6%, multi_hop 35.6%, open_domain 32.6%, adversarial 64.3%.
+
+> **Round 5 result (BENCH-LCM-5, 2026-05-12):** Upgraded from nomic-embed-text (137M, 768d) to mxbai-embed-large (335M, 1024d). Massive gains: overall **63.6%** R@10 (+3.7pp). single_hop 73.5% (+4.9pp), multi_hop 46.2% (+10.6pp), open_domain 42.0% (+9.4pp). Adversarial regressed to 61.7% (-2.6pp) — stronger semantic matching creates false positives on trick questions.
+
 > **Loop rule (per user request).** After each `BENCH-LCM-N` chunk completes, re-run the LoCoMo benchmark, diff against the previous round, and open the next fix chunk. Stop only when TerranSoul holds rank 1 on every measured metric.
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-LCM-3 | not-started | Investigate single_hop regression (64→62%), adversarial rrf drop (63→61%). Expand candidate pool for person-name queries. Tune IDF-weight clamps. Re-benchmark and compare. |
+| BENCH-LCM-6 | not-started | Fix adversarial regression (mxbai 61.7% vs nomic 64.3%). Try keyword-emphasis for adversarial queries. Test snowflake-arctic-embed2 as alternative. Explore multi-model ensemble. Target: overall R@10 > 65%, adversarial R@10 > 64%. |
 
 ---
 

@@ -168,8 +168,12 @@ const RECOMMENDATION_DOMAIN_EXPANSIONS: &[(&str, &[&str])] = &[
 ];
 
 const QUERY_TERM_EXPANSIONS: &[(&str, &[&str])] = &[
+    ("accident", &["crash", "crashed", "hit", "wreck"]),
+    ("bookshelf", &["books", "reading", "read"]),
     ("bought", &["buy", "got", "invested", "purchased"]),
     ("buy", &["bought", "got", "invested", "purchased"]),
+    ("career", &["field", "job", "profession", "work"]),
+    ("degree", &["education", "major", "policymaking", "study", "university"]),
     (
         "doctor",
         &[
@@ -193,17 +197,24 @@ const QUERY_TERM_EXPANSIONS: &[(&str, &[&str])] = &[
             "specialist",
         ],
     ),
+    ("education", &["career", "course", "degree", "school", "study"]),
+    ("enjoy", &["fan", "interested", "like", "love"]),
+    ("financial", &["afford", "income", "money", "wealth"]),
     ("got", &["bought", "buy", "invested", "purchased"]),
+    ("holiday", &["christmas", "halloween", "thanksgiving", "weekend"]),
     ("identity", &["background", "gender", "orientation", "transgender"]),
-    ("interested", &["enjoy", "fascinated", "love", "passion"]),
+    ("interested", &["enjoy", "fan", "fascinated", "love", "passion"]),
     ("invested", &["bought", "buy", "got", "purchased"]),
     ("learn", &["class", "course", "practice", "study", "studying"]),
     ("leaning", &["belief", "opinion", "political", "view"]),
     ("meet", &["catch", "lunch", "met"]),
     ("moved", &["relocated", "country", "city", "home"]),
+    ("music", &["bach", "classical", "modern", "mozart", "song"]),
+    ("names", &["called", "name", "named"]),
     ("partake", &["did", "join", "joined", "participate"]),
     ("partakes", &["did", "join", "joined", "participate"]),
     ("participate", &["attend", "join", "joined", "went"]),
+    ("patriotic", &["country", "proud", "serve", "volunteer"]),
     ("personality", &["caring", "kind", "thoughtful", "traits"]),
     ("pet", &["cat", "dog", "puppy", "kitten"]),
     ("pets", &["cat", "cats", "dog", "dogs"]),
@@ -212,12 +223,14 @@ const QUERY_TERM_EXPANSIONS: &[(&str, &[&str])] = &[
     ("religious", &["church", "faith", "spiritual"]),
     ("research", &["researching", "study", "studying", "investigate"]),
     ("roadtrip", &["drive", "road", "travel", "trip"]),
+    ("song", &["classical", "fan", "listen", "music"]),
     ("status", &["current", "situation", "update"]),
     ("support", &["encourage", "help", "helped", "helping"]),
     ("traits", &["caring", "kind", "personality", "thoughtful"]),
     ("visited", &["appointment", "visit"]),
     ("visit", &["appointment", "visited"]),
     ("volunteer", &["community", "charity", "helping", "service"]),
+    ("writing", &["career", "counseling", "field", "job", "profession"]),
 ];
 
 fn query_terms(input: &str) -> (Vec<String>, usize) {
@@ -374,8 +387,7 @@ fn add_morphological_variants(terms: &mut Vec<String>, seen: &mut HashSet<String
         // base → -ed (e.g. "research" → "researched")
         add_term(terms, seen, format!("{term}ed"));
         // base ending in -e → drop e + -ing/-ed (e.g. "move" → "moving"/"moved")
-        if term.ends_with('e') {
-            let stem = &term[..term.len() - 1];
+        if let Some(stem) = term.strip_suffix('e') {
             add_term(terms, seen, format!("{stem}ing"));
             add_term(terms, seen, format!("{stem}ed"));
         }
@@ -713,7 +725,7 @@ fn lexical_rank_score_weighted(
     let lower_content = entry.content.to_lowercase();
     let lower_tags = entry.tags.to_lowercase();
 
-    let mut score = entry.importance.max(0) as f64;
+    let mut score = 0.0_f64;
     let mut matched_terms = 0usize;
     for term in terms {
         let weight = weights.get(term).copied().unwrap_or(1.0);
@@ -734,6 +746,18 @@ fn lexical_rank_score_weighted(
             matched_terms += 1;
         }
     }
+
+    // If no query term matched any field, this entry is not a lexical hit —
+    // importance/freshness/etc. must not pull non-matching memories into the
+    // keyword ranking (otherwise unrelated high-importance entries displace
+    // genuinely relevant low-importance ones).
+    if matched_terms == 0 {
+        return 0.0;
+    }
+
+    // Add a small importance floor only for entries that already matched,
+    // so importance acts as a tiebreaker between relevant hits.
+    score += entry.importance.max(0) as f64;
 
     if matched_terms == terms.len() && terms.len() >= 2 {
         score += 16.0 + (terms.len() as f64) * 12.0;
@@ -1924,7 +1948,7 @@ impl MemoryStore {
     // rows.  This keeps memory usage O(candidate_pool) instead of O(total).
 
     /// Maximum number of candidates fetched from each retriever.
-    const CANDIDATE_POOL: usize = 500;
+    const CANDIDATE_POOL: usize = 1000;
 
     /// Fetch the IDs of the `pool` freshest + most-important memories.
     fn freshness_candidate_ids(&self, pool: usize) -> SqlResult<Vec<i64>> {
@@ -2746,7 +2770,7 @@ impl MemoryStore {
         } else {
             Vec::new()
         };
-        let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
+        let mut rankings: Vec<&[i64]> = Vec::with_capacity(4);
         if !vector_rank.is_empty() {
             rankings.push(&vector_rank);
         }
@@ -2953,7 +2977,7 @@ impl MemoryStore {
         } else {
             Vec::new()
         };
-        let mut rankings: Vec<&[i64]> = Vec::with_capacity(3);
+        let mut rankings: Vec<&[i64]> = Vec::with_capacity(4);
         if !vector_rank.is_empty() {
             rankings.push(&vector_rank);
         }

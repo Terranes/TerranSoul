@@ -6,6 +6,7 @@ qa-screenshots/
 src-tauri/target/
 target/
 target-*/
+!target-copilot-bench/
 target-mcp/
 src-tauri/gen/
 src-tauri/code_index.sqlite
@@ -46,7 +47,8 @@ test-output.txt
 .scratch/
 /.cache/
 /tmp-agent/
-/target-copilot-bench
+/target-copilot-bench/*
+!/target-copilot-bench/bench-results/
 /crates/hive-relay/target
 /mcp-data/wiki
 scripts/*.py
