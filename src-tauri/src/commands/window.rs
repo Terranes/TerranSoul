@@ -181,7 +181,7 @@ pub async fn set_pet_modal_backdrop(
     {
         let _ = opaque;
         let _ = app_handle;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(target_os = "windows")]

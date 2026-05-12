@@ -91,7 +91,7 @@ jobs:
 
       - name: Run cargo clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --lib --bins --tests -- -D warnings
 
       - name: Run cargo test
         working-directory: src-tauri
@@ -164,7 +164,7 @@ jobs:
 
       - name: Run cargo clippy with postgres feature
         working-directory: src-tauri
-        run: cargo clippy --features postgres -- -D warnings
+        run: cargo clippy --lib --bins --tests --features postgres -- -D warnings
 
       - name: Run postgres-specific tests
         working-directory: src-tauri

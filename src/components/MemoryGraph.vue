@@ -1128,7 +1128,7 @@ function toggleRenderMode(): void {
 onMounted(() => {
   refreshTheme();
   resizeCanvas();
-  const onResize: ResizeObserverCallback = () => {
+  const onResize: ResizeObserverCallback = (_entries, _observer) => {
     resizeCanvas();
     if (renderMode.value === 'webgl' && sigmaInstance) {
       try {

@@ -221,7 +221,6 @@ pub fn shell_output_path(worktree: &Path, call_id: &str) -> PathBuf {
 pub fn configure_process_group(cmd: &mut tokio::process::Command) {
     #[cfg(unix)]
     {
-        use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
     #[cfg(windows)]

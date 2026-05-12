@@ -576,6 +576,25 @@ Before writing any non-trivial functionality from scratch, **search for a well-m
 
 ---
 
+## CI Log Access Rule
+
+GitHub Actions logs require sign-in to view. When a CI run fails and the
+agent cannot read the logs (sign-in wall, 404, or empty step output):
+
+1. **Do not guess** the failure from step names, annotations, or badge
+   colours alone.
+2. **Immediately ask the user** to sign in, open the failed step, and
+   paste the error output (or a screenshot) into the chat.
+3. While waiting, **reproduce locally** using the same commands the CI
+   workflow runs (`npm run lint`, `npm run build`, `npm run test`,
+   `cargo clippy --all-targets -- -D warnings`, `cargo test --lib`).
+4. If local reproduction finds the same errors, fix them without waiting
+   for the user. If local reproduction is clean but CI failed, the
+   user-provided logs are essential — do not close the issue until the
+   CI-specific failure is understood.
+
+---
+
 ## Version Control
 
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
