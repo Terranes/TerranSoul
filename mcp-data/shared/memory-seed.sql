@@ -2254,3 +2254,42 @@ WHERE s.content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%'
 -- benchmark/COMPARISON.md + rules/completion-log.md.
 -- (round-by-round BENCH-AM/BENCH-LCM narratives consolidated 2026-05-12)
 -- ────────────────────────────────────────────────────────────────────
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable): The canonical VS Code MCP profile for TerranSoul is `terransoul-brain-mcp` with `type: stdio`, `command: ${workspaceFolder}/target-mcp/release/terransoul.exe`, `args: ["--mcp-stdio"]`, `env.TERRANSOUL_MCP_DATA_DIR: ${workspaceFolder}/mcp-data`. Stdio is mandatory because VS Code substitutes `${env:VAR}` from its own process env at MCP-loader time; if the OS user env var is empty (cold VS Code session, fresh clone, locked-down shell) any HTTP profile with `Authorization: Bearer ${env:TERRANSOUL_MCP_TOKEN_MCP}` produces an empty bearer, the server returns 401, and the loader spins forever showing "Starting MCP servers terransoul-brain-mcp-http... Skip?". The HTTP fallback profile (`terransoul-brain-mcp-http` on :7423) was therefore removed from `.vscode/mcp.json`. Only release/dev HTTP profiles remain (`terransoul-brain` :7421, `terransoul-brain-dev` :7422) and they are useful only when the actual TerranSoul desktop app is running and `TERRANSOUL_MCP_TOKEN`/`_DEV` are set as OS user env vars. The tray / pet-mode runtime is `terransoul.exe --mcp-tray` (full Tauri/Vue UI with main window hidden, system-tray icon visible, MCP HTTP server bound to 7423, WebView2 user-data dir = EBWebView-mcp); it is launched by `npm run mcp` via `scripts/copilot-start-mcp.mjs` and is the recommended desktop pet-mode session for AI coding agents. Do not reintroduce duplicate stdio entries (`terransoul-brain-stdio`) or HTTP variants on :7423 unless explicitly needed for an external HTTP-only client.',
+  'mcp,vs-code,stdio,startup,tray,pet-mode,oauth-dcr,must-not-forget,non-negotiable',
+  10, 'procedure', 1747008000000, 'long', 1.0, 'mcp', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable): Every local development session MUST run TerranSoul MCP via `npm run mcp` (which invokes `node scripts/copilot-start-mcp.mjs` and spawns `target-mcp/release/terransoul.exe --mcp-tray`). The `--mcp-tray` flag goes through the full Tauri builder, hides the main window, and shows a visible system-tray icon on Windows/macOS/Linux so the developer has a real UI handle to confirm MCP is alive and to quit it cleanly. NEVER launch the MCP binary directly with `--mcp-http`: that flag dispatches to `run_mcp_http()` which bypasses Tauri entirely (just axum + tokio), gives no tray icon, no UI surface, and no visible proof the brain is running — making it indistinguishable from a stale/zombie process for the user. If an agent finds a `terransoul.exe --mcp-http` process, it must `Stop-Process` that PID and restart via `npm run mcp` so the tray appears. Verified working 2026-05-12 with PID 58472, tray icon confirmed visible by user. Documented in rules/agent-mcp-bootstrap.md.',
+  'mcp,local-run,tray,mcp-tray,mcp-http,must-not-forget,non-negotiable,bootstrap',
+  10, 'procedure', 1747094400000, 'long', 1.0, 'mcp', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12): LoCoMo adversarial queries regressed -2.6pp R@10 (64.3 → 61.7) when upgrading nomic-embed-text → mxbai-embed-large because stronger semantic embeddings retrieve wrong-entity documents when the query swaps a named entity (e.g. "What did Caroline realize after her charity race?" when the corpus attributes the realization to Melanie — both characters have near-identical charity-race chunks). Fix implemented in `src-tauri/src/bin/longmemeval_ipc.rs` `best_hits()`: (1) added `contents_lower: HashMap<i64,String>` to `IndexState` populated in `add_sessions`; (2) added `proper_noun_tokens(query)` extractor that picks capitalized non-stopword tokens >=3 chars (stoplist includes sentence-starter function words like What/Who/When/Did/Does/The/Is/Are/...); (3) after 4-way weighted RRF fusion but before the final sort, multiply each candidate score by 0.35 if its lowercased content contains NONE of the query proper nouns. The penalty is multiplicative (not a hard filter) so single_hop/multi_hop queries that paraphrase entities ("the runner" vs "Melanie") still surface their targets when no candidate has a proper-noun match. Only the `best` mode (LONGMEM_EMBED=1, default for BENCH-LCM runs) carries this defense; lexical-only `search` and `rrf` modes are unaffected because they do not exhibit the regression. Reproduce with `node scripts/locomo-mteb.mjs run --systems=rrf --embed --limit=0`. Pre-fix baseline: overall 63.6 / adversarial 61.7. Target: overall >=64 / adversarial >=64 without single_hop regression below 72.',
+  'bench-lcm-6,locomo,adversarial,proper-noun,wrong-entity,rrf,best-hits,longmemeval_ipc,mxbai,regression,fix,procedure',
+  9, 'procedure', 1747094400000, 'long', 1.0, 'benchmark', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1747094400000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%'
+  AND d.content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747094400000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
+  AND d.content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%';

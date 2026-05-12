@@ -119,6 +119,84 @@ When you have those five points internalised, the rest of the doc is just specif
 
 ---
 
+## Why Hybrid RAG — Design Rationale
+
+> **Short version:** vector-only RAG fails on multi-hop questions and stale facts. TerranSoul fuses three retrievers — **vector (semantic)**, **knowledge graph (relational)**, and **temporal memory (recency + versioned truth)** — behind RRF + diversification + HyDE + cross-encoder rerank. This is the same hybrid pattern QuarkAndCode describes in *GraphRAG vs Vector RAG* and the [agentmemory + Graphify](https://github.com/rohitg00/agentmemory) pattern for combining structural code maps with temporal user history.
+
+### The three failure modes of pure vector RAG
+
+Vector RAG (chunk → embed → cosine top-k) is the easy default and works for "find me a paragraph that means X." But it consistently breaks on:
+
+1. **Multi-hop / relational reasoning.** "Who approved deployment Y, and who do they report to?" requires following `deployment → approved_by → person → reports_to → person`. Cosine similarity does not encode `reports_to`; it just returns text that *mentions* approvals.
+2. **Schema-heavy / entity-bound questions.** A 2023 data.world benchmark cited by *GraphRAG vs Vector RAG* showed GPT-4 over raw SQL at 16.7 % execution accuracy versus a knowledge-graph (SPARQL) representation at 54.2 % on the same 43 insurance-domain questions — and 0 % vs non-zero in the high-complexity quadrant. Structure matters when the question is about structure.
+3. **Stale-truth conflicts.** As a companion accumulates history, old embeddings keep ranking next to new ones. Without a temporal/decay layer, the system happily mixes "we deprecated X" with "X is the recommended approach" from two months prior. The agentmemory + Graphify pattern fixes this by attaching a **temporal timeline** of observations to the structural graph so newer truths override older ones with explicit provenance.
+
+### TerranSoul's three retrievers (and what each is good at)
+
+| Retriever | Implementation | Strength | Weakness alone |
+|---|---|---|---|
+| **Vector** | HNSW (`usearch`) over per-shard 768/1024-dim embeddings (`nomic-embed-text` / `mxbai-embed-large`) | Fuzzy semantic recall, "meaning-similar" matches, scales to 1M+ rows | No relations, no recency, fragments multi-hop chains |
+| **Knowledge graph** | `memory_edges` table (typed, directional, confidence-weighted edges) + tag-derived implicit edges, plus the Phase-6 entity-resolution layer that deduplicates `Bill G.`/`William Gates` style splits | Multi-hop traversal, explainability via the supporting subgraph, schema-bound questions | Coverage gaps where no edges were extracted; needs maintenance |
+| **Temporal / decay layer** | Per-memory `decay_score`, `last_accessed_at`, source-hash invalidation, append-only versioning (V8), LLM-powered conflict resolution | "What's currently true", contradiction handling, override of stale embeddings | Doesn't help if there are no candidates yet |
+
+A fourth retriever — **lexical FTS5** with corpus-aware acronym + rare-term weighting and broad-term caps — rides alongside to rescue exact identifiers (file paths, error codes, model names) that pure semantic similarity misses.
+
+### How they fuse
+
+```mermaid
+flowchart TB
+    Q["User query"] --> EMBED["Query embed"]
+    Q --> FTS["FTS5 lex"]
+    Q --> ENT["Entity link → graph seed"]
+
+    EMBED --> VEC["Vector candidates"]
+    FTS --> LEX["Lexical candidates"]
+    ENT --> KG["Subgraph traversal<br/>1-hop, capped depth"]
+    EMBED --> FRESH["Freshness retriever<br/>(decay × recency)"]
+
+    VEC --> RRF["Reciprocal Rank Fusion<br/>k=60"]
+    LEX --> RRF
+    KG --> RRF
+    FRESH --> RRF
+
+    RRF --> DIV["Session diversification<br/>(cap noisy clusters)"]
+    DIV --> HYDE{"Cold/abstract<br/>query?"}
+    HYDE -->|yes| HYP["HyDE: LLM writes<br/>hypothetical answer<br/>→ embed that"]
+    HYP --> DIV
+    HYDE -->|no| RR["Cross-encoder rerank<br/>(LLM-as-judge 0-10)"]
+    DIV --> RR
+    RR --> TH["Relevance threshold cutoff"]
+    TH --> INJ["[LONG-TERM MEMORY] block → LLM"]
+```
+
+**Why this exact combination:**
+
+- **RRF over 4 retrievers** is robust to any single retriever returning garbage — the worst case is that retriever contributes nothing, not that it poisons the top-k. This directly addresses the *Meilisearch / Optimum Partners* "route different question types to different backends" pattern by letting all backends vote.
+- **Session diversification with uncapped global rows** ensures one noisy conversation cluster can't drown out the genuinely relevant global memory. Per-session caps are configurable; global rows are intentionally not capped because they represent durable knowledge.
+- **HyDE on cold/abstract queries only** — gated by a cheap heuristic — because HyDE costs an extra LLM call and shouldn't fire on every "hi" turn.
+- **Cross-encoder rerank with the active local brain** when available, because a 0-10 LLM-as-judge score over the top ~30 candidates is dramatically more accurate than raw cosine, and TerranSoul already has the brain running.
+- **Relevance threshold cutoff** is the last guardrail — low-score memories are dropped entirely rather than padded into the prompt. This is what makes the "I don't know" rule in [rules/reality-filter.md](../rules/reality-filter.md) enforceable: if nothing crosses the threshold, the agent doesn't get fake context.
+
+### What "agentmemory + Graphify" maps to in TerranSoul
+
+The agentmemory/Graphify pattern combines a **structural map** (code/file graph) with a **temporal map** (user actions, prior commit goals, past bug fixes, preferences) so an agent can answer "why did we change the auth logic in the API folder?" by locating the API nodes structurally and then pulling the historical conversations linked to those nodes.
+
+TerranSoul implements both halves natively:
+
+- **Structural map** → `memory_edges` + native code intelligence (`code_query`, `code_context`, `code_impact`, `code_rename`) operating over an indexed AST/symbol graph. The graph stores file/function/class dependencies and lets multi-hop traversal answer "what depends on this".
+- **Temporal map** → the three-tier memory (`short` / `working` / `long`), `decay_score`, append-only versioning, source-hash invalidation, LLM-powered conflict resolution, and per-memory `last_accessed_at`. New observations override old ones with explicit provenance and version snapshots.
+- **Unified store** → both maps live in the same SQLite database, so a single hybrid query can fuse "files this function touches" with "what we said about this function last week" without a cross-database join.
+
+This is why the design is *not* "vector-only with a graph bolted on" — the graph, temporal, and lexical retrievers are first-class citizens in the RRF fuser, not optional plugins.
+
+### Measured payoff
+
+On the LongMemEval-S retrieval-only slice (500 cleaned questions), TerranSoul `search` with corpus-aware lexical weighting + gated KG boost hits **R@5 99.2 %, R@10 99.6 %, R@20 100.0 %, NDCG@10 91.3 %, MRR 92.6 %**, ahead of agentmemory's published 95.2/98.6/99.4/87.9/88.2 and MemPalace's ~96.6 % R@5. On the pinned agentmemory `bench:quality` case set, no-vector RRF reaches 67.1 % R@10 / 98.2 % NDCG / 100.0 % MRR. Token-efficiency: 2,798 retrieved-memory tokens/query for the same quality, vs 32,660 tokens/query for full-context paste — **91.4 % cheaper**.
+
+These numbers are the practical justification for the hybrid design over vector-only — and the loop in [rules/milestones.md](../rules/milestones.md) `BENCH-LCM` / `BENCH-AM` keeps pushing them.
+
+---
+
 ## Table of Contents
 
 1. [System Overview](#system-overview)

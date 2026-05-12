@@ -19,19 +19,38 @@
   //                     mcp-token.txt under the Tauri app data dir.
   //        Headless:   `npm run mcp` — auto-generates
   //                     `<repo>/mcp-data/mcp-token.txt`.
-  //   2. Set env vars (one for each profile you use):
+  //   2. Set env vars (one for each HTTP profile you use):
   //
   //      Release (Windows):
   //        $env:TERRANSOUL_MCP_TOKEN = Get-Content "$env:APPDATA/com.terranes.terransoul/mcp-token.txt"
   //      Dev (Windows):
   //        $env:TERRANSOUL_MCP_TOKEN_DEV = Get-Content "$env:APPDATA/com.terranes.terransoul/dev/mcp-token.txt"
-  //      Headless / pet mode:
-  //        $env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content "mcp-data/mcp-token.txt"
   //
   //      On Linux/macOS, replace $env:APPDATA with ~/.local/share.
   //   3. Restart VS Code so the env vars are picked up.
+  //
+  // NOTE: `terransoul-brain-mcp` (headless brain) uses **stdio transport**,
+  // not HTTP, so it requires no env var, no token, and no VS Code restart.
+  // It works on every fresh clone and every new VS Code session out of the
+  // box. The HTTP fallback profile (`terransoul-brain-mcp-http`) was
+  // removed because it hung the VS Code MCP loader whenever the
+  // `TERRANSOUL_MCP_TOKEN_MCP` env var was empty (cold VS Code session,
+  // fresh clone, locked-down shell). Stdio is the single source of truth
+  // for repo-local coding agents. The release/dev HTTP profiles below
+  // are only useful when the actual TerranSoul desktop app is running
+  // and the matching token env var is set in the OS user environment.
 
   "servers": {
+    "terransoul-brain-mcp": {
+      "type": "stdio",
+      "command": "${workspaceFolder}/target-mcp/release/terransoul.exe",
+      "args": [
+        "--mcp-stdio"
+      ],
+      "env": {
+        "TERRANSOUL_MCP_DATA_DIR": "${workspaceFolder}/mcp-data"
+      }
+    },
     "terransoul-brain": {
       "type": "http",
       "url": "http://127.0.0.1:7421/mcp",
@@ -44,23 +63,6 @@
       "url": "http://127.0.0.1:7422/mcp",
       "headers": {
         "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN_DEV}"
-      }
-    },
-    "terransoul-brain-mcp": {
-      "type": "http",
-      "url": "http://127.0.0.1:7423/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN_MCP}"
-      }
-    },
-    "terransoul-brain-stdio": {
-      "type": "stdio",
-      "command": "${workspaceFolder}/target-mcp/release/terransoul.exe",
-      "args": [
-        "--mcp-stdio"
-      ],
-      "env": {
-        "TERRANSOUL_MCP_DATA_DIR": "${workspaceFolder}/mcp-data"
       }
     },
     "github": {

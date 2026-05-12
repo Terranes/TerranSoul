@@ -123,6 +123,52 @@ The MCP auto-starts when VS Code opens the workspace. No manual setup needed.
 
 ---
 
+## Why Hybrid RAG (Vector + Knowledge Graph + Temporal Memory)
+
+Most "RAG" systems are actually **vector-only RAG**: chunk → embed → cosine-similarity → top-k. That pattern is fast and easy, but it loses on three failure modes that matter for a long-running personal companion:
+
+1. **Multi-hop / relational questions** — "Who approved that change, and who do they report to?" Vector search ranks by surface similarity, not by following an explicit relationship chain. A knowledge graph with typed edges (`works_for`, `depends_on`, `approved_by`, `child_of`, …) traverses the chain deterministically and returns the supporting subgraph with provenance.
+2. **Temporal correctness** — "Why did we change the auth flow last week?" Pure vector stores happily return a stale paragraph from two months ago next to yesterday's decision. A temporal memory layer (per-memory `decay_score`, append-only versioning, recency multipliers) ensures newer truths override older ones rather than blending into a contradictory soup.
+3. **"What's actually relevant to *me*"** — Vector similarity has no notion of which files, projects, or people the user actually interacts with. A user-history / observation layer biases retrieval toward your active workspace and recent decisions.
+
+TerranSoul's brain is a deliberate **Hybrid RAG**: vector for breadth, graph for depth, temporal layer for currency, and a corpus-aware lexical/RRF fuser on top so none of the three signals can starve the others.
+
+```
+       ┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
+       │ Vector (HNSW)    │        │ Knowledge Graph  │        │ Temporal Memory  │
+       │ semantic recall  │        │ memory_edges     │        │ decay + versions │
+       │ "meaning-similar"│        │ "who/what/why"   │        │ "what's current" │
+       └────────┬─────────┘        └────────┬─────────┘        └────────┬─────────┘
+                └──────────────┬────────────┴─────────────┬─────────────┘
+                               ▼                          ▼
+                  ┌─────────────────────────────┐   ┌──────────────────────┐
+                  │  Reciprocal Rank Fusion     │   │  Lexical / FTS5      │
+                  │  k=60 across all retrievers │   │  acronym + rare-term │
+                  └──────────────┬──────────────┘   └─────────┬────────────┘
+                                 ▼                            ▼
+                          ┌──────────────────────────────────────┐
+                          │ Session-diversified candidate pool   │
+                          │ → HyDE (cold queries) → cross-encoder│
+                          │ rerank → relevance threshold         │
+                          └──────────────────┬───────────────────┘
+                                             ▼
+                               [LONG-TERM MEMORY] block → LLM
+```
+
+**What that gives you concretely:**
+
+- *Vector* finds the paragraph that "means" your question (Vector RAG strength: fast, scalable, fuzzy).
+- *Graph* (the `memory_edges` table, populated from extracted entities + tags) lets the retriever follow `manager → approved_by → deployment` chains that vectors fragment. This is the [GraphRAG](docs/brain-advanced-design.md#6-knowledge-graph-vision) pattern.
+- *Temporal layer* — decay scores, source-hash invalidation, LLM-powered contradiction resolution, and non-destructive version history — keeps stale facts from drowning out new ones, the way agent-memory frameworks like Graphify/Cognee describe.
+- *Lexical / FTS5 with corpus-aware acronym + rare-term weighting* rescues exact-match queries (file paths, IDs, version numbers) that pure semantic similarity routinely misses.
+- *RRF + diversification + HyDE + cross-encoder rerank* turn the four candidate streams into one tight, deduplicated, scored top-k. Measured: **LongMemEval-S R@10 99.6 %, NDCG@10 91.3 %, MRR 92.6 %** — beats published agentmemory and MemPalace numbers on the comparable retrieval slice.
+
+**When this stops being academic:** the moment you start using TerranSoul daily, your brain accumulates conversations, documents, code, persona drift, and decisions. After a few weeks, a vector-only store starts surfacing "plausible-but-wrong" old notes. The hybrid design is what keeps the companion *reliable enough to trust* over months.
+
+> Deep dive: [docs/brain-advanced-design.md](docs/brain-advanced-design.md) · The GraphRAG-vs-Vector RAG comparison and the agentmemory + Graphify hybrid pattern that informed this design are credited in [CREDITS.md](CREDITS.md).
+
+---
+
 ## Harness + Context Engineering
 
 TerranSoul's 3D assistant is not only a chat UI + avatar layer. It is built on a coding harness and context-engineering stack that keeps agent work reliable over long sessions.

@@ -38,6 +38,7 @@ mcp-data/tmp/
 mcp-data/sessions/
 mcp-data/worktrees/
 .vscode/.mcp-token
+.vscode/.mcp-restart-needed
 
 # Agent / dev session scratch — never commit (see rules/prompting-rules.md
 # "Clean Up Temporary Files After Each Session").

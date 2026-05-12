@@ -195,6 +195,51 @@ fn cosine(a: &[f32], b: &[f32]) -> f32 {
     dot / (na.sqrt() * nb.sqrt())
 }
 
+/// Extract proper-noun-like tokens from a query: capitalized words ≥3 chars
+/// that are not common English sentence-starters / function words.
+///
+/// Used in `best_hits` to defend against adversarial wrong-attribution queries
+/// (e.g. "What did Caroline realize after her charity race?" where the target
+/// document is about Melanie). Candidates lacking ALL of the query's proper
+/// nouns are penalized in the final fusion score.
+fn proper_noun_tokens(query: &str) -> Vec<String> {
+    // Sentence-starter / function-word stoplist (lowercased).
+    const STOP: &[&str] = &[
+        "what", "who", "when", "where", "why", "how", "which", "whose", "whom",
+        "did", "does", "do", "is", "are", "was", "were", "will", "would",
+        "can", "could", "should", "shall", "may", "might", "must",
+        "has", "have", "had", "the", "and", "but", "or", "not", "for", "with",
+        "from", "into", "onto", "about", "after", "before", "during", "while",
+        "between", "among", "this", "that", "these", "those", "there", "their",
+        "they", "them", "his", "her", "him", "she", "he", "you", "your", "yours",
+        "our", "ours", "us", "we", "my", "mine", "i", "me", "it", "its",
+    ];
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for raw in query.split(|c: char| !c.is_alphanumeric() && c != '\'') {
+        if raw.len() < 3 {
+            continue;
+        }
+        let first = raw.chars().next().unwrap();
+        if !first.is_ascii_uppercase() {
+            continue;
+        }
+        let lower = raw.to_lowercase();
+        if STOP.contains(&lower.as_str()) {
+            continue;
+        }
+        // Require at least one more letter (skip pure-numeric or single-letter
+        // edge cases that survived the length check).
+        if !raw.chars().any(|c| c.is_alphabetic()) {
+            continue;
+        }
+        if seen.insert(lower.clone()) {
+            out.push(lower);
+        }
+    }
+    out
+}
+
 // ---- Index state ----------------------------------------------------------
 
 struct IndexState {
@@ -202,6 +247,7 @@ struct IndexState {
     embeddings: HashMap<i64, Vec<f32>>,
     session_ids: HashMap<i64, String>,
     token_counts: HashMap<i64, i64>,
+    contents_lower: HashMap<i64, String>,
 }
 
 impl IndexState {
@@ -211,6 +257,7 @@ impl IndexState {
             embeddings: HashMap::new(),
             session_ids: HashMap::new(),
             token_counts: HashMap::new(),
+            contents_lower: HashMap::new(),
         }
     }
 
@@ -219,6 +266,7 @@ impl IndexState {
         self.embeddings.clear();
         self.session_ids.clear();
         self.token_counts.clear();
+        self.contents_lower.clear();
     }
 }
 
@@ -253,6 +301,9 @@ fn add_sessions(
         if let Some(session) = request.sessions.get(idx) {
             state.session_ids.insert(*mem_id, session.session_id.clone());
         }
+        state
+            .contents_lower
+            .insert(*mem_id, contents[idx].to_lowercase());
         if let Some(embedder) = embedder {
             let content = &contents[idx];
             match embedder.embed(content, EmbedRole::Document) {
@@ -449,6 +500,34 @@ fn best_hits(
     }
 
     let mut fused: Vec<(i64, f32)> = scores.into_iter().collect();
+
+    // Adversarial proper-noun defense (BENCH-LCM-6, 2026-05-12).
+    //
+    // LoCoMo adversarial queries often swap one named entity for another
+    // ("What did Caroline realize after her charity race?" when the corpus
+    // attributes the realization to Melanie). Strong semantic models like
+    // mxbai retrieve both characters' charity-race chunks regardless of name
+    // because the surrounding context is near-identical. We defend by
+    // detecting capitalized non-stopword tokens in the query and down-weighting
+    // any candidate whose lowercased content contains NONE of them.
+    //
+    // The penalty is multiplicative (0.35×) rather than a hard filter so that
+    // single_hop and multi_hop queries — which sometimes paraphrase the named
+    // entity (e.g. "the runner" instead of "Melanie") — can still surface
+    // their target document when no proper-noun match exists for any candidate.
+    let q_nouns = proper_noun_tokens(query);
+    if !q_nouns.is_empty() {
+        const PROPER_NOUN_PENALTY: f32 = 0.35;
+        for (id, score) in fused.iter_mut() {
+            if let Some(text) = state.contents_lower.get(id) {
+                let has_any = q_nouns.iter().any(|n| text.contains(n.as_str()));
+                if !has_any {
+                    *score *= PROPER_NOUN_PENALTY;
+                }
+            }
+        }
+    }
+
     fused.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
     let hits = fused

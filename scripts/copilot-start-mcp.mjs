@@ -335,6 +335,105 @@ for (const tokenPath of ['.vscode/.mcp-token', 'mcp-data/mcp-token.txt']) {
   }
 }
 
+// ─── Bulletproof MCP-token sync ──────────────────────────────────────────
+// Goal: VS Code's `terransoul-brain-mcp` profile must never get stuck on
+// "Starting MCP servers..." because of a missing/stale bearer token.
+//
+// Three failure modes we defend against:
+//   1. User just installed → user-env has no TERRANSOUL_MCP_TOKEN_MCP.
+//   2. Token file changed (rare — token is stable per data dir, but possible
+//      after `mcp-data/` was deleted) → user-env is stale.
+//   3. setx already updated user-env, but the currently running VS Code
+//      process still has the OLD value because env-var changes only
+//      propagate to NEW child processes.
+//
+// On Windows we use `setx` for persistence + a one-shot ".mcp-restart-needed"
+// marker file that the task output prints loudly when case 3 is detected.
+// The marker is cleared on every successful run where the running shell
+// already has the right token, so steady-state is silent.
+function readUserEnvVar(name) {
+  if (process.platform !== 'win32') return null
+  const result = spawnSync(
+    'powershell',
+    ['-NoProfile', '-Command', `[Environment]::GetEnvironmentVariable('${name}','User')`],
+    { encoding: 'utf8', windowsHide: true },
+  )
+  if (result.status !== 0) return null
+  return (result.stdout || '').trim() || null
+}
+
+try {
+  const tokenFile = path.join(repoRoot, '.vscode', '.mcp-token')
+  const restartMarker = path.join(repoRoot, '.vscode', '.mcp-restart-needed')
+  if (fs.existsSync(tokenFile)) {
+    const token = fs.readFileSync(tokenFile, 'utf8').trim()
+    if (token) {
+      // Always set in current process so any tool spawned from this script can authenticate.
+      process.env.TERRANSOUL_MCP_TOKEN_MCP = token
+
+      if (process.platform === 'win32') {
+        const userEnv = readUserEnvVar('TERRANSOUL_MCP_TOKEN_MCP')
+        const shellEnv = process.env.TERRANSOUL_MCP_TOKEN_MCP_RUNTIME || process.env.TERRANSOUL_MCP_TOKEN_MCP_PARENT || null
+        // Note: when this script runs as a VS Code task, process.env reflects
+        // what VS Code had when the task started, so a non-empty inherited
+        // value tells us VS Code is already authenticated. An empty inherited
+        // value while userEnv is correct = case 3 (restart needed).
+        const inherited = process.env.TERRANSOUL_MCP_TOKEN_MCP_INHERITED || shellEnv
+
+        if (userEnv !== token) {
+          const result = spawnSync('setx', ['TERRANSOUL_MCP_TOKEN_MCP', token], {
+            stdio: ['ignore', 'ignore', 'ignore'],
+            windowsHide: true,
+          })
+          if (result.status === 0) {
+            console.log('[copilot-mcp] TERRANSOUL_MCP_TOKEN_MCP synced to Windows user env (setx).')
+            // Drop the marker — the currently running VS Code definitely has stale env.
+            try {
+              fs.writeFileSync(restartMarker, `${new Date().toISOString()}\n${token.slice(0, 8)}…\n`)
+            } catch {
+              // best-effort
+            }
+            console.log('')
+            console.log('  ┌─────────────────────────────────────────────────────────────────────┐')
+            console.log('  │  ⚠ ONE-TIME ACTION REQUIRED:                                        │')
+            console.log('  │  TERRANSOUL_MCP_TOKEN_MCP was just persisted. The currently         │')
+            console.log('  │  running VS Code window has a stale (empty) copy.                   │')
+            console.log('  │  Close ALL VS Code windows (incl. tray) and reopen this workspace   │')
+            console.log('  │  once. After that, MCP will auto-authenticate forever.              │')
+            console.log('  └─────────────────────────────────────────────────────────────────────┘')
+            console.log('')
+          } else {
+            console.log('[copilot-mcp] setx TERRANSOUL_MCP_TOKEN_MCP failed; run manually:')
+            console.log(`               setx TERRANSOUL_MCP_TOKEN_MCP <token from .vscode/.mcp-token>`)
+          }
+        } else if (inherited && inherited !== token) {
+          // User env is correct but our parent (the VS Code task host) still
+          // has a stale value → tell user clearly that one restart is needed.
+          try {
+            fs.writeFileSync(restartMarker, `${new Date().toISOString()}\nstale-parent\n`)
+          } catch {
+            // best-effort
+          }
+          console.log('[copilot-mcp] User env is correct but VS Code task host has stale value — close VS Code fully and reopen once.')
+        } else {
+          // Steady state — everything in sync. Clear the marker if present.
+          if (fs.existsSync(restartMarker)) {
+            try { fs.unlinkSync(restartMarker) } catch { /* best-effort */ }
+          }
+          console.log('[copilot-mcp] MCP token already synced to Windows user env — VS Code can authenticate.')
+        }
+      } else {
+        // Unix: we can't auto-persist into the user shell, so print an export hint.
+        // The user only needs to run this once per machine.
+        console.log('[copilot-mcp] hint: add this to your shell rc once so VS Code inherits it:')
+        console.log('               export TERRANSOUL_MCP_TOKEN_MCP="$(cat \'' + tokenFile + '\')"')
+      }
+    }
+  }
+} catch (error) {
+  console.log(`[copilot-mcp] token env sync skipped: ${error.message}`)
+}
+
 if (smoke) {
   try {
     if (process.platform === 'win32') {

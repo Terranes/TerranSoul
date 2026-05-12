@@ -14,8 +14,16 @@ A **headless MCP HTTP server** that exposes TerranSoul's brain
 agents over JSON-RPC on `http://127.0.0.1:7423/mcp`.
 
 Internally it is the Rust binary launched as
-`cargo run -- --mcp-http`, which puts the process into **MCP pet
-mode**:
+`target-mcp/release/terransoul.exe --mcp-tray`, which puts the
+process into **MCP pet mode with a visible system-tray icon**:
+
+> **Local-run rule:** every local session must use `npm run mcp`
+> (which routes through `scripts/copilot-start-mcp.mjs` and passes
+> `--mcp-tray`). **Never launch the headless MCP binary directly
+> with `--mcp-http`** — that path bypasses Tauri and gives no tray
+> icon, no UI handle, and no visible proof that MCP is running. If
+> an agent finds a `--mcp-http` process running, it must stop it
+> and restart via `npm run mcp` (or `node scripts/copilot-start-mcp.mjs`).
 
 - `serverInfo.name` = `terransoul-brain-mcp`
 - `serverInfo.buildMode` = `mcp` (not `dev`, not `release`)
@@ -57,7 +65,7 @@ emergency context, but it does not close the MCP error.
 
 ### Priority — release > dev > mcp
 
-Both the headless (`--mcp-http`) and pet-mode stdio
+Both the tray (`--mcp-tray`) and pet-mode stdio
 (`--mcp-stdio` with `TERRANSOUL_MCP_DATA_DIR` set) runners probe
 `127.0.0.1:7421` and `127.0.0.1:7422` at startup. If either
 answers, the runner **refuses to start** — the user already has a
@@ -113,11 +121,13 @@ that touch this surface MUST NOT:
    locks, sessions, worktrees) are ignored. Wiping ignored runtime
    state only costs the agent its locally-ingested dev knowledge;
    nothing user-owned is lost.
-6. **Trigger any user-facing onboarding.** The headless runner has
-   **no UI surface** — no Vue app, no skill tree, no charisma
-   panel, no persona drift prompts, no notifications, no system
-   tray. Quest unlocks, charisma teaching flows, brain-mode
-   pickers, voice setup, persona-pack imports, and every other
+6. **Trigger any user-facing onboarding.** The runner shows **only
+   a system-tray icon** (so the developer can confirm MCP is alive
+   and quit it) — no Vue main-window UI, no skill tree, no
+   charisma panel, no persona drift prompts, no toast
+   notifications. Quest unlocks, charisma teaching flows,
+   brain-mode pickers, voice setup, persona-pack imports, and
+   every other
    onboarding/wizard prompt the companion app would show simply
    **cannot fire** in this process. If a code path tries to surface
    one (via emit/notification/dialog), that is a bug — file it as
@@ -356,7 +366,7 @@ speaks MCP works unchanged.
 
 | Agent | How it reaches `npm run mcp` |
 |---|---|
-| GitHub Copilot (VS Code) | Already wired in `.vscode/mcp.json` as `terransoul-brain-mcp`. Set `$env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content mcp-data/mcp-token.txt`, restart VS Code, then ask Copilot to use `brain_*` tools. |
+| GitHub Copilot (VS Code) | Already wired in `.vscode/mcp.json` as `terransoul-brain-mcp` using **stdio transport** — VS Code spawns `target-mcp/release/terransoul.exe --mcp-stdio` as a child process with `TERRANSOUL_MCP_DATA_DIR` pointed at the repo's `mcp-data/`. No bearer token, no env var, no VS Code restart, no auto-start required. Works on every fresh clone and every new VS Code session out of the box. For agents that explicitly need HTTP, the legacy `terransoul-brain-mcp-http` entry still points at `:7423` and uses `${env:TERRANSOUL_MCP_TOKEN_MCP}`. |
 | Codex CLI | Add an HTTP MCP entry pointing at `http://127.0.0.1:7423/mcp` with the bearer token from `mcp-data/mcp-token.txt`. |
 | Claude Code | Same — register an HTTP MCP server at port 7423 with the bearer token. |
 | Clawcode | Same — register an HTTP MCP server at port 7423 with the bearer token. |

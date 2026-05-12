@@ -36,6 +36,31 @@ Next up: **BENCH-LCM-6 — Fix adversarial regression + combined model strategy*
 
 ---
 
+## Phase HYBRID-DOC — Hybrid-RAG design docs + benchmark folder polish
+
+Goal: turn the 2026-05-12 "Why Hybrid RAG" rationale (vector + KG + temporal + lexical) into a coherent set of public docs, audit the codebase/docs for drift against current behaviour, and reorganise `benchmark/` to match the structure of `https://github.com/rohitg00/agentmemory/blob/main/benchmark/COMPARISON.md` (which TerranSoul currently has as a single dumped file in `benchmark/COMPARISON.md` with no surrounding harness, fixtures, or per-system results layout).
+
+| Chunk | Status | Scope |
+|---|---|---|
+| HYBRID-DOC-1 | not-started | **Codebase + docs audit pass.** Walk `docs/`, `tutorials/`, `instructions/`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and the landing page (`BrowserLandingView.vue` + adjacent components). For each public claim, verify it against current Rust/TS source. Produce `docs/audit-2026-05-12-status.md` with: (a) verified-current rows, (b) drift rows (claim vs reality + suggested fix), (c) genuinely-missing-feature rows that should land in this phase. The 2026-05-12 landing-page intro rewrite (already shipped) is the precedent: keep the landing copy, README "Highlights", "Why Hybrid RAG", and tech-stack table in sync. |
+| HYBRID-DOC-2 | not-started | **Benchmark folder reorganisation.** Restructure `benchmark/` to mirror the layout in `https://github.com/rohitg00/agentmemory/blob/main/benchmark/COMPARISON.md`: top-level `COMPARISON.md` (results matrix + how-to-reproduce), per-system subfolders (`benchmark/terransoul/`, `benchmark/agentmemory/`, `benchmark/mempalace/`, …) containing the raw harness output + JSON for that round, a `benchmark/scripts/` runner directory, and a `benchmark/fixtures/` for the pinned LoCoMo + agentmemory + LongMemEval-S query sets. Move the existing `target-copilot-bench/bench-results/*` artefacts that should be public into `benchmark/terransoul/round-N/`. Add a top-level "How to reproduce in one command" block. Do not delete history — keep round-N folders alongside the new layout. |
+| HYBRID-DOC-3 | not-started | **Cross-link + index pass.** After HYBRID-DOC-2 lands, re-link every doc that points at benchmark results so they hit the new canonical paths (`docs/agentmemory-comparison.md`, `docs/billion-scale-retrieval-design.md`, `docs/brain-advanced-design.md` § benchmark, README "Why Hybrid RAG"). Add a `benchmark/README.md` table-of-contents that lists every round per system with date, dataset, headline metric, and link to the raw JSON. |
+
+---
+
+## Phase TOP1 — "Beat everyone" benchmark loop
+
+Goal: keep iterating on TerranSoul's retrieval/generation quality until it holds **rank 1 on every measured public memory-system benchmark** (LoCoMo, agentmemory bench, LongMemEval-S, MTEB retrieval slice, plus any new dataset that lands on the comparison table). Each round: re-run, diff vs published competition, open a fix chunk if any metric slips behind, re-run, repeat.
+
+> **Loop rule.** After each `TOP1-N` chunk completes, the next agent session must (a) re-run the full benchmark matrix, (b) diff every system on every metric against the prior round, (c) refresh `benchmark/COMPARISON.md`, and (d) promote `TOP1-(N+1)` with a concrete hypothesis if TerranSoul is not strictly ≥ every competitor on every metric. Stop only when TerranSoul is rank 1 across the entire matrix and at least one full cycle has passed without a regression.
+
+| Chunk | Status | Scope |
+|---|---|---|
+| TOP1-1 | not-started | **Establish the current matrix.** After HYBRID-DOC-2, run TerranSoul + every published competitor's numbers we already have (agentmemory v0.6, MemPalace, LangMem if available, Mem0, Letta/MemGPT) into `benchmark/COMPARISON.md`. Highlight each cell where TerranSoul is *not* strictly best. Open one fix chunk per losing cell (TOP1-2..N). |
+| TOP1-2 | not-started | First fix-cell chunk; scope auto-determined by TOP1-1's losing cells. Loop. |
+
+---
+
 ## Phase BENCH-LCM — Beat LoCoMo / LMEB retrieval benchmarks
 
 Goal: add a direct, reproducible TerranSoul run on the MTEB `LoCoMo` text-retrieval dataset so the benchmark table can move beyond mixed published LoCoMo QA numbers and compare TerranSoul against top memory systems on a shared retrieval task.

@@ -1,0 +1,102 @@
+SELECT
+  'CHUNK 50.3 (2026-05-11): Learned from rohitg00/agentmemory (DeepWiki analysis, MIT, no source copy) and implemented 3 improvements. (1) Privacy scrubbing: new memory/privacy.rs with strip_secrets() that applies 4 passes before storing memories — <private> tag removal, 20 prefix-based API key patterns (sk-ant-*, sk-*, ghp_*, AKIA*, AIza*, hf_*, glpat-*, xoxb-*, npm_*, etc.), JWT base64 triple-dot detection, and key-value secret name matching (password, api_key, secret, authorization, etc.). Uses LazyLock static vecs and native string ops, no regex crate. (2) Content-hash dedup at insert: MemoryStore::add() and add_many() now auto-compute SHA-256 of (scrubbed) content when source_hash is not caller-provided, then call find_by_source_hash() to return existing entry instead of creating a duplicate. This makes memory creation idempotent by content. (3) Circuit breaker: new brain/circuit_breaker.rs implementing CLOSED→OPEN→HALF_OPEN state machine (default: 3 failures in 60s trips to OPEN, 30s recovery timeout to HALF_OPEN, one probe request). Integrated into ProviderStatus in provider_rotator.rs — select_provider() and select_failover_chain() both check CB state after health gate. New FailoverReason::CircuitBreakerOpen. Public methods: record_request_success/failure(provider_id), circuit_breaker_state(provider_id). Follow-up agentmemory retrieval/consolidation ideas were implemented in Chunk 50.4. Tests: 12 privacy, 10 CB, 98 store, 41 rotator all pass.',
+  'chunk-50.3,privacy,secrets,scrubbing,dedup,content-hash,circuit-breaker,resilience,provider-rotator,agentmemory,architecture',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.3 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.3 (2026-05-11):%'
+  AND (
+       d.content LIKE 'CHUNK 50.2 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Frontend Pinia stores:%'
+  );
+
+-- ====================================================================
+-- Chunk 50.4 — consolidation synthesis, diversified search, progressive search
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CHUNK 50.4 (2026-05-11): Implemented the remaining agentmemory-derived memory improvements. (1) Consolidation synthesis: memory/consolidation.rs now groups active unparented persistent memories by graph neighbourhood first and tag fallback second, creates N-to-1 parent Summary rows tagged synthetic:consolidation/parent_summary, sets child parent_id via MemoryStore::set_parent_for_memories(), and writes parent -> child derived_from edges with edge_source consolidation_synthesis. ConsolidationResult exposes synthesized count and synthesized_parent_ids; config adds synthesis_min_children, synthesis_max_clusters, synthesis_max_children. (2) Session diversification: MemoryStore::hybrid_search_rrf and hybrid_search_rrf_with_intent now pass fused candidates through select_diversified_ranked(), capping non-empty session_id clusters at DEFAULT_MAX_RESULTS_PER_SESSION=3 while leaving global NULL-session long-term memories uncapped. Cache mode keys changed to rrf_vec_diverse/rrf_diverse. (3) Progressive disclosure search: new Tauri command progressive_search_memories(query, limit?, expand_ids?) returns compact ranked previews first and expands selected full MemoryEntry rows by ID; frontend types CompactMemoryResult/ProgressiveMemorySearchResponse and Pinia memory.progressiveSearch() expose it with a browser fallback. Follow-up validation taught cognitive_kind::classify to treat the common procedure tag alias as procedural, and stale tests were updated for content-hash dedup and targeted incremental retrieval. Docs updated in README and docs/brain-advanced-design.md. Tests: consolidation 10/10, store 99/99, cargo check, cargo clippy -D warnings, full cargo test --lib 2791/2791, vue-tsc clean, vitest 1806/1806.',
+  'chunk-50.4,agentmemory,consolidation,synthesis,parent-id,session-diversification,rrf,progressive-search,compact-results,memory-store,architecture',
+  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.4 (2026-05-11):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CHUNK 50.4 (2026-05-11):%'
+  AND (
+       d.content LIKE 'CHUNK 50.3 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+    OR d.content LIKE 'RAG pipeline:%'
+  );
+
+-- ====================================================================
+-- Memory-quality benchmark history (concept-tagged corpus + LongMemEval-S
+-- + LoCoMo / LMEB MTEB-style retrieval). Consolidated 2026-05-12.
+-- Full per-round detail lives in benchmark/COMPARISON.md and
+-- rules/completion-log.md; here we keep only the durable current-state
+-- entry plus the durable lessons that future agents must not relearn.
+-- ====================================================================
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MEMORY-QUALITY BENCHMARK STATE (2026-05-12): TerranSoul holds top-1 on every measured retrieval-quality metric across three reproducible benchmarks. (1) Concept-tagged corpus (240 obs / 20 queries, MIT-licensed dataset originally published by rohitg00/agentmemory at pinned commit ae8f061; one row among many in benchmark/COMPARISON.md): TerranSoul search R@10 66.4 / NDCG 96.5 / MRR 100.0 and no-vector RRF R@10 67.1 / NDCG 98.2 / MRR 100.0, vs the published 58.6 / 84.7 / 95.4. Reproduce with `node scripts/build-memory-quality-fixture.mjs && cd src-tauri && cargo bench --bench memory_quality --target-dir ../target-copilot-bench` (reports at target-copilot-bench/bench-results/memory_quality.{json,md}). (2) LongMemEval-S (xiaowu0162/longmemeval-cleaned, 500 questions): search R@5 99.2 / R@10 99.6 / R@20 100.0 / NDCG 91.3 / MRR 92.6, beating agentmemory 95.2/98.6/99.4/87.9/88.2 and MemPalace ~96.6 R@5. Reproduce with `node scripts/longmemeval-s.mjs run --systems=search,rrf --top-k=20`. (3) LoCoMo MTEB (mteb/LoCoMo, 1655 queries) with Ollama mxbai-embed-large 1024d: overall R@10 63.6, single_hop 73.5, multi_hop 46.2, open_domain 42.0, adversarial 61.7 (beats LMEB 12B KaLM-Embedding-Gemma3''s 53.16 R@10 and matches NV-Embed-v2 7.8B''s 66.20). Reproduce with `node scripts/locomo-mteb.mjs run --systems=rrf --embed --limit=0`. Token-efficiency calculator `npm run brain:tokens` reports current RRF default saves 91.4% vs full paste and 64.8% vs 200-line MEMORY.md. Token estimator: chars.div_ceil(4).',
+  'memory-quality,benchmark,top-1,longmemeval,locomo,mteb,agentmemory,recall,ndcg,mrr,token-efficiency,memory-store',
+  10, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%'
+);
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MEMORY-QUALITY DURABLE LESSONS (2026-05-12): Lessons learned through the BENCH-AM-1..7 and BENCH-LCM-1..5 retrieval-quality loops, kept here so future agents do not relearn them. (a) FTS5 indexes both content AND tags already (schema.rs); always re-check the schema before assuming a column is not indexed. (b) RRF treats every input ranking with equal weight: a noisy ranking (raw freshness on near-uniform timestamps, generic vector similarity on filler-heavy haystacks) is actively harmful. Use freshness as a post-fusion multiplicative boost clamped to [0.7, 1.15] with a 1-week half-life, not as a peer ranking. (c) FTS5 phrase-vs-OR matters for natural-language queries: split on non-alphanumeric, drop tokens <=2 chars, double-quote each token, OR-join (store.rs query_terms tokenizer). (d) For concept-tagged corpora, exact lexical ranking (exact tag hits > exact content hits > substring > coverage > importance) plus tightly gated KG neighbor boosts beats peer-RRF graph signals. (e) For LongMemEval-S noise-heavy haystacks, rank exact lexical matches by candidate-pool rarity so rare anchors (names, objects, domains) beat generic filler terms — but cap broad workflow terms like configuration/setup/test/validation/middleware/validation to avoid over-boosting in small pools. (f) Embeddings: nomic-embed-text (137M, 768d) loses to FTS5 on LongMemEval-S filler-heavy haystacks; mxbai-embed-large (335M, 1024d) gains +3.7pp overall R@10 on LoCoMo over nomic but regresses adversarial -2.6pp because stronger semantic matching creates trick-question false positives. Embedder-upgrade beats algorithmic RRF tweaks (CANDIDATE_POOL 500->1000 and vector double-weight had zero measurable effect). Embedding modes remain opt-in via LONGMEM_EMBED=1. (g) Always report retrieval quality AND token efficiency together — the best top-1 quality path can be more expensive than a nearly equivalent RRF path. Token estimator: chars.div_ceil(4). (h) The reference fixture is MIT-licensed and pinned by commit; never repackage the upstream code or branded names — attribute in CREDITS.md and use neutral file names like memory_quality.rs / build-memory-quality-fixture.mjs / benchmark/COMPARISON.md.',
+  'memory-quality,benchmark,lessons,rrf,fts5,embeddings,freshness,lexical-weighting,longmemeval,locomo,token-efficiency,non-negotiable',
+  10, 'principle', 1747008000000, 'long', 1.0, 'memory', 'principle'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%'
+  AND d.content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%';
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%'
+  AND (
+       d.content LIKE 'CHUNK 50.4 (2026-05-11):%'
+    OR d.content LIKE 'Memory module map:%'
+    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
+    OR d.content LIKE 'RAG pipeline:%'
+  );
+
+-- ────────────────────────────────────────────────────────────────────
+-- DO NOT add new round-by-round entries here. Append durable lessons
+-- to MEMORY-QUALITY DURABLE LESSONS above and per-round detail to
+-- benchmark/COMPARISON.md + rules/completion-log.md.
+-- (round-by-round BENCH-AM/BENCH-LCM narratives consolidated 2026-05-12)
+-- ────────────────────────────────────────────────────────────────────
+
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable): The canonical VS Code MCP profile for TerranSoul is `terransoul-brain-mcp` with `type: stdio`, `command: ${workspaceFolder}/target-mcp/release/terransoul.exe`, `args: ["--mcp-stdio"]`, `env.TERRANSOUL_MCP_DATA_DIR: ${workspaceFolder}/mcp-data`. Stdio is mandatory because VS Code substitutes `${env:VAR}` from its own process env at MCP-loader time; if the OS user env var is empty (cold VS Code session, fresh clone, locked-down shell) any HTTP profile with `Authorization: Bearer ${env:TERRANSOUL_MCP_TOKEN_MCP}` produces an empty bearer, the server returns 401, and the loader spins forever showing "Starting MCP servers terransoul-brain-mcp-http... Skip?". The HTTP fallback profile (`terransoul-brain-mcp-http` on :7423) was therefore removed from `.vscode/mcp.json`. Only release/dev HTTP profiles remain (`terransoul-brain` :7421, `terransoul-brain-dev` :7422) and they are useful only when the actual TerranSoul desktop app is running and `TERRANSOUL_MCP_TOKEN`/`_DEV` are set as OS user env vars. The tray / pet-mode runtime is `terransoul.exe --mcp-tray` (full Tauri/Vue UI with main window hidden, system-tray icon visible, MCP HTTP server bound to 7423, WebView2 user-data dir = EBWebView-mcp); it is launched by `npm run mcp` via `scripts/copilot-start-mcp.mjs` and is the recommended desktop pet-mode session for AI coding agents. Do not reintroduce duplicate stdio entries (`terransoul-brain-stdio`) or HTTP variants on :7423 unless explicitly needed for an external HTTP-only client.',
+  'mcp,vs-code,stdio,startup,tray,pet-mode,oauth-dcr,must-not-forget,non-negotiable',
+  10, 'procedure', 1747008000000, 'long', 1.0, 'mcp', 'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%'
+);
+---
+('LESSON: For provenance-linked brain write paths such as /reflect, use a dedicated persistence helper that returns concrete inserted memory IDs before writing memory_edges. Generic save_summary/save_facts helpers are fine for simple writes but do not expose IDs, so they cannot create reliable derived_from source-turn edges.', 'lesson,memory,provenance,reflection,brain-write', 5, 'procedure', 1746487655000, 'long', 1.0, 70, 'lessons'),
