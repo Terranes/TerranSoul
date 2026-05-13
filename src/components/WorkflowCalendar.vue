@@ -2,25 +2,48 @@
   <div class="wfc-root">
     <header class="wfc-header">
       <div class="wfc-nav">
-        <button class="wfc-nav-btn" @click="store.shiftCalendarWeek(-1)" aria-label="Previous week">‹</button>
-        <button class="wfc-today-btn" @click="store.jumpCalendarToToday()">Today</button>
-        <button class="wfc-nav-btn" @click="store.shiftCalendarWeek(1)" aria-label="Next week">›</button>
+        <button
+          class="wfc-nav-btn"
+          aria-label="Previous week"
+          @click="store.shiftCalendarWeek(-1)"
+        >
+          ‹
+        </button>
+        <button
+          class="wfc-today-btn"
+          @click="store.jumpCalendarToToday()"
+        >
+          Today
+        </button>
+        <button
+          class="wfc-nav-btn"
+          aria-label="Next week"
+          @click="store.shiftCalendarWeek(1)"
+        >
+          ›
+        </button>
       </div>
-      <h3 class="wfc-range">{{ rangeLabel }}</h3>
+      <h3 class="wfc-range">
+        {{ rangeLabel }}
+      </h3>
       <div class="wfc-nav-spacer" />
     </header>
 
     <div class="wfc-grid">
       <!-- Day headers -->
       <div class="wfc-day-headers">
-        <div class="wfc-time-col-header"></div>
+        <div class="wfc-time-col-header" />
         <div
           v-for="(day, i) in weekDays"
           :key="i"
           :class="['wfc-day-header', { 'wfc-day-today': isToday(day) }]"
         >
-          <div class="wfc-day-name">{{ dayName(day) }}</div>
-          <div class="wfc-day-num">{{ day.getDate() }}</div>
+          <div class="wfc-day-name">
+            {{ dayName(day) }}
+          </div>
+          <div class="wfc-day-num">
+            {{ day.getDate() }}
+          </div>
         </div>
       </div>
 
@@ -56,7 +79,11 @@
             :title="`${ev.title} — ${formatTime(ev.start_at)}`"
             @click="onEventClick(ev.workflow_id)"
           >
-            <span v-if="ev.recurring" class="wfc-event-recurring" aria-label="Recurring">↻</span>
+            <span
+              v-if="ev.recurring"
+              class="wfc-event-recurring"
+              aria-label="Recurring"
+            >↻</span>
             <span class="wfc-event-title">{{ ev.title }}</span>
             <span class="wfc-event-time">{{ formatTime(ev.start_at) }}</span>
           </div>

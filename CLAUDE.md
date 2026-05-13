@@ -16,9 +16,9 @@
 
 **In local sessions, execute this before any other work. Skipping is a violation.**
 
-1. Call `brain_health` (MCP tool) or `GET http://127.0.0.1:7423/health`.
+1. Call `brain_health` (MCP tool) or run `node scripts/mcp-tray-proxy.mjs --probe` / check `/health` on `:7421`, `:7423`, then `:7422`.
 2. If healthy → `brain_search` / `brain_suggest_context` with the current task before broad repo searches.
-3. If not healthy → run `node scripts/copilot-start-mcp.mjs`, wait, retry.
+3. If not healthy → run `node scripts/copilot-start-mcp.mjs` to reuse release/tray/dev or start the tray, wait, retry.
 4. If MCP cannot start → record the blocker. Do NOT silently skip.
 5. After MCP succeeds → show a user-visible MCP receipt with health/provider and the `brain_search` / `brain_suggest_context` topic used. Hidden tool calls are not enough.
 6. If an MCP call errors → do not silently fall back. Classify the error as bad tool arguments/contract mismatch, unhealthy or stale server, or missing durable knowledge; fix the MCP schema/adapter/gateway, restart/rebuild the server, or update `mcp-data/shared/` plus a numbered seed migration as appropriate. Add a regression test for code changes and report the root cause/fix.
@@ -38,11 +38,11 @@ Read the following files for full project context (in order of priority):
 
 - **Tech:** Vue 3 + Tauri 2 + Rust + Three.js/VRM + SQLite + Ollama
 - **Frontend:** `src/` — Vue 3.5 + TypeScript 5.x, Pinia stores, Vite 6
-- **Backend:** `src-tauri/src/` — Rust async (Tokio), 150+ Tauri commands
+- **Backend:** `src-tauri/src/` — Rust async (Tokio), 349 Tauri commands
 - **Tests:** `npx vitest run` (frontend), `cargo test` (backend), `cargo clippy -- -D warnings`
 - **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`
-- **MCP Brain:** mandatory every session; Copilot setup auto-starts headless MCP on :7423, otherwise check/reuse/start `npm run mcp` or use app MCP on :7421/:7422
-- **MCP Quick Setup:** auto-start script is `node scripts/copilot-start-mcp.mjs`; for manual runs use `npm run mcp`, set `TERRANSOUL_MCP_TOKEN_MCP` from `.vscode/.mcp-token`, verify with `brain_health`, then use `brain_search` / `brain_suggest_context` before broad repo searches
+- **MCP Brain:** mandatory every session; reuse release `:7421`, MCP tray `:7423`, or dev `:7422` in that order, otherwise start the tray with `npm run mcp`
+- **MCP Quick Setup:** auto-start script is `node scripts/copilot-start-mcp.mjs`; for manual checks use `node scripts/mcp-tray-proxy.mjs --probe` or `npm run mcp`. Reuse release `:7421`, tray `:7423`, or dev `:7422` in that order, verify with `brain_health`, then use `brain_search` / `brain_suggest_context` before broad repo searches
 - **Dev Server:** `npm run dev` (Vite on :1420)
 
 ## Session Protocol

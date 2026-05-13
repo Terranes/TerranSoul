@@ -63,8 +63,6 @@ actually works on your machine (RAM-aware, network-aware).
 
 ## 2. The Three Workflow Kinds
 
-![Three workflow kinds — sequential, parallel, and DAG — with node diagrams](screenshots/multi-agent-workflows/02-workflow-kinds.png)
-
 | Kind | When to use | Examples |
 |---|---|---|
 | `coding` | Anything that touches code in this repo | "Refactor auth to OAuth2", "Add a Pinia store for X" |
@@ -77,8 +75,6 @@ is the same YAML format under the hood.
 ---
 
 ## 3. Anatomy of a Workflow Plan
-
-![YAML plan editor showing steps, agents, and dependencies](screenshots/multi-agent-workflows/03-plan-anatomy.png)
 
 Plans persist as YAML files in `<data_dir>/workflow_plans/<id>.yaml`.
 A typical plan:
@@ -172,8 +168,6 @@ parallel automatically.
 
 ## 4. Quick Start: Create Your First Plan
 
-![New Plan dialog with template selection and name field](screenshots/multi-agent-workflows/04-create-plan.png)
-
 1. **Right-click** the pet character → **Multi-agent workflows…**
 2. Click **+ New Workflow**.
 3. Type your request: *"Add a markdown export button to the chat view"*.
@@ -188,8 +182,6 @@ favourite editor — both flows update through the same
 ---
 
 ## 5. Switching LLMs per Agent
-
-![Agent configuration panel showing LLM model dropdown per agent role](screenshots/multi-agent-workflows/05-switch-llms.png)
 
 Open a plan → **Steps** section. Each step has an **LLM** dropdown that
 groups recommendations by tier:
@@ -214,8 +206,6 @@ are also possible via direct YAML edit if you need finer-grained control.
 ---
 
 ## 6. Recurring Schedules (Teams-Style)
-
-![Schedule editor with daily/weekly/cron recurrence options](screenshots/multi-agent-workflows/06-schedules.png)
 
 Open a plan → **Add schedule (recurring)** disclosure. Pick a pattern:
 
@@ -253,8 +243,6 @@ the UI fast).
 
 ## 7. Calendar View
 
-![Calendar view showing scheduled workflow runs across the week](screenshots/multi-agent-workflows/07-calendar.png)
-
 The **Calendar** tab is a 7-day × 24-hour grid styled after Microsoft
 Teams calendar. Each plan's projected occurrences appear as colored
 blocks:
@@ -274,8 +262,6 @@ how many plans exist.
 ---
 
 ## 8. Worked Example — Self-Improve from a Chat Suggestion
-
-![Self-improve workflow executing — steps completing with green checkmarks](screenshots/multi-agent-workflows/08-self-improve-example.png)
 
 This example shows how the multi-agent system pairs with TerranSoul's
 **Self-Improve** loop. Scenario: while chatting, you say *"You should
@@ -348,8 +334,6 @@ self-improvement closing the loop.**
 
 ## 9. Best-Practice Patterns Absorbed
 
-![Pattern reference table showing adopted agent orchestration patterns](screenshots/multi-agent-workflows/09-best-practices.png)
-
 The system implements three patterns from Anthropic's
 *Building Effective Agents*:
 
@@ -371,8 +355,6 @@ is a finite DAG, no `while True:` loops.
 ---
 
 ## 10. CLI / Programmatic Access
-
-![Terminal showing CLI commands for workflow creation and execution](screenshots/multi-agent-workflows/10-cli-access.png)
 
 All ten Tauri commands are also reachable via the brain MCP server on
 `127.0.0.1:7421` for AI coding assistants:

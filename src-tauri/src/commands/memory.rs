@@ -300,7 +300,7 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
             .collect()
     }; // lock released before await
 
-    let facts = if let Some(mode) = brain_mode {
+    let facts = if let Some(mode) = brain_mode.clone() {
         // Chunk 26.2b — route through the topic-segmenter so a chat
         // that wandered across topics produces a focused per-topic
         // fact list instead of one jumbled blob. Falls back to
@@ -329,10 +329,126 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
         crate::memory::brain_memory::extract_facts(&model, &history).await
     };
 
-    let count = {
+    let brain_mode_for_refine = brain_mode;
+
+    // CHAT-PARITY-4 (2026-05-13): snapshot the pre-save high-water mark
+    // so we can enumerate facts inserted during this turn for the
+    // `auto_detect_conflicts` post-pass below. Captured BEFORE the save
+    // block so a row inserted by save_facts / save_facts_refined satisfies
+    // `id > pre_max_id`. SELECT MAX(id) on a fresh table returns NULL ⇒
+    // we map to 0 so the comparison still works for the first ever fact.
+    let pre_max_id: i64 = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .conn()
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) FROM memories",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    };
+
+    let count = if let Some(mode) = brain_mode_for_refine.as_ref() {
+        // Brain available → refine each fact through the LLM so we
+        // update existing knowledge instead of accumulating duplicates.
+        // Falls back to plain insert per-fact when the LLM is
+        // unreachable, so we never silently lose extracted facts.
+        let stats = crate::memory::refine::save_facts_refined(
+            &facts,
+            mode,
+            &state.provider_rotator,
+            &state.memory_store,
+        )
+        .await;
+        stats.total_writes()
+    } else {
+        // No brain configured (e.g. legacy Ollama-only path during
+        // first-boot bootstrap) → original blind-insert behaviour.
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         crate::memory::brain_memory::save_facts(&facts, &store)
     };
+
+    // CHAT-PARITY-4 (2026-05-13): auto-detect contradictions on
+    // chat-extracted facts when the user opted in via
+    // `AppSettings.auto_detect_conflicts` (default `false`). For each
+    // fact inserted in this turn (id > `pre_max_id`), embed the content,
+    // ask the store for a high-cosine (≥ 0.85) near-duplicate, then ask
+    // the active brain whether the new fact actually CONTRADICTS the
+    // existing one. If yes, the pure helper `record_contradiction_if`
+    // opens a `memory_conflicts` row so the user can pick a winner.
+    //
+    // The explicit `add_memory` Tauri command has had unconditional
+    // auto-detect since Chunk 17.2 — that path is for user-driven memory
+    // creation. This block extends the same pattern to chat-extracted
+    // facts but keeps it opt-in because each near-duplicate ingest costs
+    // one LLM round-trip and chat sessions typically extract many facts.
+    //
+    // Best-effort throughout: every step is silently skipped on lock
+    // poisoning, embedding failure, or brain unreachability so the
+    // primary fact-save count stays authoritative.
+    if count > 0 {
+        let auto_detect = state
+            .app_settings
+            .lock()
+            .map(|s| s.auto_detect_conflicts)
+            .unwrap_or(false);
+        let active_model = state
+            .active_brain
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        if auto_detect {
+            if let Some(ref model) = active_model {
+                let new_rows: Vec<(i64, String)> = (|| -> Vec<(i64, String)> {
+                    let Ok(s) = state.memory_store.lock() else {
+                        return Vec::new();
+                    };
+                    let Ok(mut stmt) = s.conn().prepare(
+                        "SELECT id, content FROM memories WHERE id > ?1 ORDER BY id ASC",
+                    ) else {
+                        return Vec::new();
+                    };
+                    let Ok(rows) = stmt.query_map(rusqlite::params![pre_max_id], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                    }) else {
+                        return Vec::new();
+                    };
+                    rows.filter_map(|r| r.ok()).collect()
+                })();
+                let agent = crate::brain::OllamaAgent::new(model);
+                for (new_id, new_content) in new_rows {
+                    let Some(emb) = embed(&state, &new_content).await else {
+                        continue;
+                    };
+                    let dup_opt = match state.memory_store.lock() {
+                        Ok(s) => s
+                            .find_duplicate(&emb, 0.85)
+                            .ok()
+                            .flatten()
+                            .filter(|&dup_id| dup_id != new_id)
+                            .and_then(|dup_id| {
+                                s.get_by_id(dup_id).ok().map(|d| (dup_id, d.content))
+                            }),
+                        Err(_) => None,
+                    };
+                    let Some((dup_id, dup_content)) = dup_opt else {
+                        continue;
+                    };
+                    let Some(verdict) =
+                        agent.check_contradiction(&dup_content, &new_content).await
+                    else {
+                        continue;
+                    };
+                    if let Ok(s) = state.memory_store.lock() {
+                        let _ = crate::memory::conflicts::record_contradiction_if(
+                            &s, new_id, dup_id, &verdict,
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // Chunk 26.3 — auto-fire edge extraction so newly-learned facts
     // immediately participate in the typed-edge knowledge graph instead of
@@ -723,10 +839,7 @@ pub async fn set_ann_quantization(
 /// exceeds the threshold (20%). Returns the vector count after compaction,
 /// or 0 if compaction was not needed or no index exists.
 #[tauri::command]
-pub async fn compact_ann(
-    state: State<'_, AppState>,
-    force: Option<bool>,
-) -> Result<usize, String> {
+pub async fn compact_ann(state: State<'_, AppState>, force: Option<bool>) -> Result<usize, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     if !force.unwrap_or(false) && !store.ann_needs_compaction() {
         return Ok(0);
@@ -812,6 +925,91 @@ pub async fn hybrid_search_memories_rrf(
     store
         .hybrid_search_rrf(&query, query_emb.as_deref(), limit)
         .map_err(|e| e.to_string())
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CompactMemoryResult {
+    pub id: i64,
+    pub rank: usize,
+    pub title: String,
+    pub preview: String,
+    pub tags: String,
+    pub importance: i64,
+    pub memory_type: String,
+    pub tier: String,
+    pub created_at: i64,
+    pub updated_at: Option<i64>,
+    pub session_id: Option<String>,
+    pub parent_id: Option<i64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProgressiveMemorySearchResponse {
+    pub compact: Vec<CompactMemoryResult>,
+    pub expanded: Vec<MemoryEntry>,
+}
+
+/// Progressive disclosure search: return compact ranked metadata first, and
+/// optionally expand selected IDs into full `MemoryEntry` payloads.
+#[tauri::command]
+pub async fn progressive_search_memories(
+    query: String,
+    limit: Option<usize>,
+    expand_ids: Option<Vec<i64>>,
+    state: State<'_, AppState>,
+) -> Result<ProgressiveMemorySearchResponse, String> {
+    let limit = limit.unwrap_or(10).clamp(1, 50);
+    let query_emb = embed(&state, &query).await;
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let results = store
+        .hybrid_search_rrf(&query, query_emb.as_deref(), limit)
+        .map_err(|e| e.to_string())?;
+
+    let compact = results
+        .iter()
+        .enumerate()
+        .map(|(idx, entry)| compact_result(entry, idx + 1))
+        .collect();
+
+    let expanded = expand_ids
+        .unwrap_or_default()
+        .into_iter()
+        .take(20)
+        .filter_map(|id| store.get_by_id(id).ok())
+        .collect();
+
+    Ok(ProgressiveMemorySearchResponse { compact, expanded })
+}
+
+fn compact_result(entry: &MemoryEntry, rank: usize) -> CompactMemoryResult {
+    CompactMemoryResult {
+        id: entry.id,
+        rank,
+        title: compact_text(&entry.content, 80),
+        preview: compact_text(&entry.content, 240),
+        tags: entry.tags.clone(),
+        importance: entry.importance,
+        memory_type: entry.memory_type.as_str().to_string(),
+        tier: entry.tier.as_str().to_string(),
+        created_at: entry.created_at,
+        updated_at: entry.updated_at,
+        session_id: entry.session_id.clone(),
+        parent_id: entry.parent_id,
+    }
+}
+
+fn compact_text(content: &str, max_chars: usize) -> String {
+    let clean = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    if clean.chars().count() <= max_chars {
+        return clean;
+    }
+    let mut text = clean
+        .chars()
+        .take(max_chars.saturating_sub(3))
+        .collect::<String>();
+    text.push_str("...");
+    text
 }
 
 /// **HyDE** — Hypothetical Document Embeddings retrieval (Gao et al., 2022).
@@ -1390,6 +1588,55 @@ pub async fn delete_memory_edge(edge_id: i64, state: State<'_, AppState>) -> Res
     Ok(())
 }
 
+/// Update mutable fields of an existing edge in-place.
+///
+/// Any combination of `rel_type`, `confidence`, and `source` may be omitted
+/// (`None`) to leave that field unchanged. Returns the refreshed edge.
+#[tauri::command]
+pub async fn update_memory_edge(
+    edge_id: i64,
+    rel_type: Option<String>,
+    confidence: Option<f64>,
+    source: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<MemoryEdge, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let src_parsed = source.as_deref().map(EdgeSource::parse);
+    let edge = store
+        .update_edge(edge_id, rel_type.as_deref(), confidence, src_parsed)
+        .map_err(|e| e.to_string())?;
+    drop(store);
+    state.kg_cache.invalidate(&[edge.src_id, edge.dst_id]);
+    Ok(edge)
+}
+
+/// Detach a memory from the graph by deleting every incident edge.
+///
+/// Returns the count of edges removed. Useful for the "Detach all" UX action
+/// on the graph node-detail panel — the memory itself remains intact.
+#[tauri::command]
+pub async fn detach_memory_node(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    // Collect neighbour ids before deleting so we can invalidate KG cache.
+    let neighbours: Vec<i64> = store
+        .get_edges_for(memory_id, EdgeDirection::Both)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .flat_map(|e| [e.src_id, e.dst_id])
+        .collect();
+    let removed = store
+        .delete_edges_for_memory(memory_id)
+        .map_err(|e| e.to_string())?;
+    drop(store);
+    let mut affected: Vec<i64> = neighbours;
+    affected.push(memory_id);
+    state.kg_cache.invalidate(&affected);
+    Ok(removed)
+}
+
 /// List all edges in the graph.
 #[tauri::command]
 pub async fn list_memory_edges(state: State<'_, AppState>) -> Result<Vec<MemoryEdge>, String> {
@@ -1929,6 +2176,271 @@ pub async fn judgment_apply(
         &query,
         limit.unwrap_or(5),
     ))
+}
+
+/// Return a paged, LOD view of the memory knowledge graph.
+///
+/// The frontend graph viewport cannot render more than a few thousand
+/// nodes at once even with a WebGL renderer; at billion-node scale it
+/// cannot even hold them in JS memory. This command returns at most
+/// `limit` (default 2 000, hard cap 10 000) nodes plus the edges that
+/// connect them, with three LOD modes:
+///
+/// * `"overview"` — one supernode per cognitive kind.
+/// * `"cluster"` — real nodes inside `focus_kind`, supernodes for the rest.
+/// * `"detail"`  — real nodes near `focus_id`, ranked by degree / importance.
+///
+/// See `docs/billion-scale-retrieval-design.md` Phase 1 + Phase 5.
+///
+/// At scale, this command avoids loading the entire graph into memory:
+/// - **Detail zoom with focus_id**: uses paged adjacency (covering indexes)
+///   to fetch only the focus node's neighbourhood.
+/// - **Overview zoom**: uses pre-aggregated `memory_graph_clusters` when
+///   available, falling back to full scan for fresh databases.
+/// - **Cluster zoom** / no focus: falls back to the Phase 1 pure function
+///   `build_graph_page` (loads all entries + edges).
+#[tauri::command]
+pub async fn memory_graph_page(
+    focus_id: Option<i64>,
+    focus_kind: Option<String>,
+    zoom: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::graph_page::GraphPageResponse, String> {
+    use crate::memory::graph_page::{
+        build_graph_page, GraphEdge, GraphNode, GraphPageRequest, GraphPageResponse, GraphZoom,
+        DEFAULT_GRAPH_LIMIT, MAX_GRAPH_NODES,
+    };
+    use crate::memory::CognitiveKind;
+
+    let zoom = match zoom.as_deref().unwrap_or("detail") {
+        "overview" => GraphZoom::Overview,
+        "cluster" => GraphZoom::Cluster,
+        _ => GraphZoom::Detail,
+    };
+    let focus_kind = focus_kind.as_deref().and_then(|s| match s {
+        "episodic" => Some(CognitiveKind::Episodic),
+        "semantic" => Some(CognitiveKind::Semantic),
+        "procedural" => Some(CognitiveKind::Procedural),
+        "judgment" => Some(CognitiveKind::Judgment),
+        "negative" => Some(CognitiveKind::Negative),
+        _ => None,
+    });
+    let limit_val = limit
+        .unwrap_or(DEFAULT_GRAPH_LIMIT)
+        .clamp(1, MAX_GRAPH_NODES);
+
+    // ── Fast path: Detail zoom with a focus node (paged adjacency) ──
+    if let (GraphZoom::Detail, Some(fid)) = (&zoom, focus_id) {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let page = store
+            .get_edges_paged(fid, limit_val, 0, None)
+            .map_err(|e| e.to_string())?;
+        let (total_nodes, total_edges) = store.graph_totals().map_err(|e| e.to_string())?;
+
+        // Collect neighbour ids from edges.
+        let mut neighbour_ids: Vec<i64> = Vec::with_capacity(page.edges.len() + 1);
+        neighbour_ids.push(fid);
+        for e in &page.edges {
+            let other = if e.src_id == fid { e.dst_id } else { e.src_id };
+            if !neighbour_ids.contains(&other) {
+                neighbour_ids.push(other);
+            }
+        }
+
+        // Load only the focus node + its immediate neighbours.
+        let entries = store
+            .get_entries_by_ids(&neighbour_ids)
+            .map_err(|e| e.to_string())?;
+
+        // Build response.
+        let mut nodes: Vec<GraphNode> = entries
+            .iter()
+            .map(|entry| {
+                let kind = crate::memory::cognitive_kind::classify(
+                    &entry.memory_type,
+                    &entry.tags,
+                    &entry.content,
+                );
+                let degree = page
+                    .edges
+                    .iter()
+                    .filter(|e| e.src_id == entry.id || e.dst_id == entry.id)
+                    .count() as i64;
+                GraphNode {
+                    id: format!("m-{}", entry.id),
+                    label: entry.content.chars().take(80).collect(),
+                    kind: kind.as_str().to_string(),
+                    tier: entry.tier.as_str().to_string(),
+                    importance: entry.importance,
+                    degree,
+                    is_supernode: false,
+                    count: 1,
+                    origin_device: entry.origin_device.clone().unwrap_or_default(),
+                }
+            })
+            .collect();
+        nodes.sort_by_key(|n| std::cmp::Reverse(n.degree));
+
+        let edges: Vec<GraphEdge> = page
+            .edges
+            .iter()
+            .map(|e| GraphEdge {
+                source: format!("m-{}", e.src_id),
+                target: format!("m-{}", e.dst_id),
+                rel_type: e.rel_type.clone(),
+                weight: e.confidence,
+            })
+            .collect();
+
+        return Ok(GraphPageResponse {
+            nodes,
+            edges,
+            total_nodes,
+            total_edges,
+            truncated: page.has_more,
+            zoom: GraphZoom::Detail,
+        });
+    }
+
+    // ── Fallback path: load all entries + edges (Phase 1 behaviour) ──
+    let (entries, edges) = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let entries = store.get_all().map_err(|e| e.to_string())?;
+        let edges = store.list_edges().map_err(|e| e.to_string())?;
+        (entries, edges)
+    };
+
+    let req = GraphPageRequest {
+        focus_id,
+        focus_kind,
+        zoom,
+        limit,
+    };
+    Ok(build_graph_page(&entries, &edges, &req))
+}
+
+/// Preview deterministic disk-backed ANN migration candidates without writing sidecars.
+#[tauri::command]
+pub async fn disk_ann_plan_preview(
+    threshold: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::disk_backed_ann::DiskAnnPlan, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .disk_ann_plan(
+            threshold.unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Return disk-backed ANN migration readiness: eligible candidates, sidecars present,
+/// and missing sidecar count.
+#[tauri::command]
+pub async fn disk_ann_migration_status(
+    threshold: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::disk_backed_ann::DiskAnnHealthSummary, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .disk_ann_health_summary(
+            threshold.unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Execute one disk-backed ANN migration batch by writing IVF-PQ sidecars for
+/// top eligible shards.
+#[tauri::command]
+pub async fn run_disk_ann_migration(
+    threshold: Option<usize>,
+    max_shards: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::disk_backed_ann::DiskAnnMigrationReport, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .run_disk_ann_migration_job(
+            threshold.unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD),
+            max_shards
+                .unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN),
+        )
+        .map_err(|e| e.to_string())
+}
+
+// ── Chunk 50.1 — Shard health, router health, and graph observability ─────────
+
+/// Per-shard capacity and index health summary (shard backpressure, Chunk 48.7).
+/// Returns health status for every shard that has at least one entry.
+/// `max_entries` sets the per-shard capacity threshold (default: 2 million).
+#[tauri::command]
+pub async fn shard_health(
+    max_entries: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::shard_backpressure::ShardHealthSummary, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .shard_health_summary(
+            max_entries.unwrap_or(crate::memory::shard_backpressure::DEFAULT_SHARD_MAX_ENTRIES),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Coarse shard router health metadata (Chunk 48.3).
+/// Reports built-at timestamp, centroid count, staleness, and refresh eligibility.
+#[tauri::command]
+pub async fn router_health(
+    state: State<'_, AppState>,
+) -> Result<crate::memory::shard_router::RouterHealth, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.router_health_summary()
+}
+
+/// Explicitly rebuild the coarse shard router from a 1% sample of embeddings.
+/// Useful after large bulk ingests or when the router is stale.
+/// Returns the number of centroids added.
+#[tauri::command]
+pub async fn rebuild_shard_router(state: State<'_, AppState>) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.build_shard_router()
+}
+
+/// Rebalance all shard ANN indices from live embeddings.
+/// Use this after a large migration or schema change to rebuild all per-shard HNSW indices.
+/// Returns the total vector count across all shards.
+#[tauri::command]
+pub async fn rebalance_ann_shards(state: State<'_, AppState>) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.rebalance_shards()
+}
+
+/// Refresh the `memory_graph_clusters` pre-aggregated stats table.
+/// Called automatically during nightly compaction; call explicitly after large ingests.
+/// Returns the number of cluster rows written.
+#[tauri::command]
+pub async fn refresh_graph_clusters(state: State<'_, AppState>) -> Result<usize, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.refresh_graph_clusters().map_err(|e| e.to_string())
+}
+
+/// Return the top-K memory nodes ranked by graph degree (in + out edges).
+/// Optionally filter by cognitive_kind (e.g. "semantic", "episodic").
+#[tauri::command]
+pub async fn get_top_degree_nodes(
+    kind: Option<String>,
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::graph_paging::DegreeNode>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .get_top_degree_nodes(kind.as_deref(), limit.unwrap_or(20))
+        .map_err(|e| e.to_string())
+}
+
+/// Return total node and edge counts for the graph overview.
+#[tauri::command]
+pub async fn graph_totals(state: State<'_, AppState>) -> Result<(i64, i64), String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.graph_totals().map_err(|e| e.to_string())
 }
 
 #[cfg(all(test, feature = "wasm-sandbox"))]

@@ -83,11 +83,11 @@ export type ModelTier = 's' | 'a' | 'b' | 'c' | 'd';
  *   - DEX 12 ← HumanEval: TinyLlama 10.4, Llama 3.2 1B 25.0
  */
 export const TIER_BOOSTS: Record<ModelTier, Partial<StatSnapshot>> = {
-  s: { intelligence: 85, wisdom: 70, dexterity: 85 },
-  a: { intelligence: 78, wisdom: 55, dexterity: 70 },
-  b: { intelligence: 70, wisdom: 40, dexterity: 55 },
-  c: { intelligence: 55, wisdom: 22, dexterity: 35 },
-  d: { intelligence: 25, wisdom: 8,  dexterity: 12 },
+  s: { intelligence: 30, wisdom: 28, dexterity: 24 },
+  a: { intelligence: 24, wisdom: 20, dexterity: 18 },
+  b: { intelligence: 18, wisdom: 15, dexterity: 14 },
+  c: { intelligence: 12, wisdom: 10, dexterity: 9 },
+  d: { intelligence: 8, wisdom: 7,  dexterity: 6 },
 };
 
 /**

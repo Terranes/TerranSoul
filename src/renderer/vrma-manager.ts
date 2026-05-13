@@ -43,7 +43,7 @@ export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   { label: 'Idle',        path: '/animations/idle.vrma',        loop: true,  mood: undefined,     motionKey: 'idle' },
   { label: 'Ladylike',    path: '/animations/ladylike.vrma',    loop: true,                       motionKey: 'ladylike' },
   { label: 'Walk',        path: '/animations/walk.vrma',        loop: true,                       motionKey: 'walk' },
-  { label: 'Greeting',    path: '/animations/greeting.vrma',    loop: false, mood: 'happy',       motionKey: 'greeting' },
+  { label: 'Greeting',    path: '/animations/greeting.vrma',    loop: false,                      motionKey: 'greeting' },
   { label: 'Peace Sign',  path: '/animations/peace-sign.vrma',  loop: false,                      motionKey: 'peace' },
   { label: 'Spin',        path: '/animations/spin.vrma',        loop: false,                      motionKey: 'spin' },
   { label: 'Model Pose',  path: '/animations/model-pose.vrma',  loop: false, mood: 'relaxed',     motionKey: 'pose' },
@@ -60,7 +60,7 @@ export const VRMA_ANIMATIONS: VrmaAnimationEntry[] = [
   // Additional
   { label: 'Waiting',     path: '/animations/waiting.vrma',     loop: true,                       motionKey: 'waiting' },
   { label: 'Appearing',   path: '/animations/appearing.vrma',   loop: false,                      motionKey: 'appearing' },
-  { label: 'Liked',       path: '/animations/liked.vrma',       loop: false,                      motionKey: 'liked' },
+  { label: 'Liked',       path: '/animations/liked.vrma',       loop: false, mood: 'happy',       motionKey: 'liked' },
 ];
 
 /** All valid motion keys the LLM can emit. Used for prompt and validation. */
@@ -282,7 +282,15 @@ export class VrmaManager {
 
       // Cast through unknown to bypass private property incompatibility between
       // @pixiv/three-vrm and @pixiv/three-vrm-animation's internal VRMCore types.
+      // Suppress the known "VRMLookAtQuaternionProxy is not found" warning from
+      // the library — it auto-creates the proxy and the warning is harmless.
+      const origWarn = console.warn;
+      console.warn = (...args: unknown[]) => {
+        if (typeof args[0] === 'string' && args[0].includes('VRMLookAtQuaternionProxy')) return;
+        origWarn.apply(console, args);
+      };
       const clip = createVRMAnimationClip(vrmAnimation, this.currentVrm as unknown as Parameters<typeof createVRMAnimationClip>[1]);
+      console.warn = origWarn;
       if (clip) {
         this.clipCache.set(path, clip);
       }

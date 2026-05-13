@@ -280,7 +280,10 @@
       role="status"
       aria-live="polite"
     >
-      <span class="bv-embed-queue__icon" aria-hidden="true">🔄</span>
+      <span
+        class="bv-embed-queue__icon"
+        aria-hidden="true"
+      >🔄</span>
       <span class="bv-embed-queue__text">
         Self-healing embeddings:
         <strong>{{ embedQueueStatus.pending }}</strong> pending
@@ -294,6 +297,238 @@
     <!-- ── Brain Capacity & Storage (Chunk 38.5 — unified config) ──────────── -->
     <section class="bv-capacity-section">
       <BrainCapacityPanel />
+    </section>
+
+    <!-- ── Context Folders — user-defined knowledge directories ────────────── -->
+    <section class="bv-context-folders-section">
+      <h3 class="bv-section-title">
+        📂 Context Folders
+      </h3>
+      <p class="bv-context-warning">
+        ⚠️ Not recommended for large directories. Scanning is brute-force
+        (like Copilot / Claude workspace indexing) and can be slow for folders
+        with thousands of files.
+      </p>
+
+      <div class="bv-context-add">
+        <input
+          v-model="contextFolderInput"
+          type="text"
+          class="bv-context-input"
+          placeholder="Paste folder path (e.g. D:\Docs\Notes)"
+          data-testid="bv-context-folder-input"
+          @keydown.enter="addContextFolder"
+        >
+        <button
+          class="bv-btn bv-btn--accent"
+          data-testid="bv-context-folder-add"
+          :disabled="!contextFolderInput.trim()"
+          @click="addContextFolder"
+        >
+          Add Folder
+        </button>
+        <button
+          class="bv-btn bv-btn--secondary"
+          data-testid="bv-context-folder-sync"
+          :disabled="(contextFolders?.length ?? 0) === 0 || isSyncing"
+          @click="syncAllContextFolders"
+        >
+          {{ isSyncing ? 'Syncing…' : '🔄 Sync All' }}
+        </button>
+      </div>
+
+      <div
+        v-if="!contextFolders || contextFolders.length === 0"
+        class="bv-context-empty"
+      >
+        No context folders configured. Add a folder path above to start
+        ingesting local documents into the brain.
+      </div>
+
+      <ul
+        v-else
+        class="bv-context-list"
+      >
+        <li
+          v-for="folder in contextFolders"
+          :key="folder.path"
+          class="bv-context-item"
+          :class="{ 'bv-context-item--disabled': !folder.enabled }"
+        >
+          <label class="bv-context-toggle">
+            <input
+              type="checkbox"
+              :checked="folder.enabled"
+              @change="toggleFolder(folder.path, !folder.enabled)"
+            >
+          </label>
+          <div class="bv-context-info">
+            <span class="bv-context-label">{{ folder.label }}</span>
+            <span class="bv-context-path">{{ folder.path }}</span>
+            <span
+              v-if="folder.last_synced_at > 0"
+              class="bv-context-meta"
+            >
+              Last synced: {{ formatDate(folder.last_synced_at) }}
+              · {{ folder.last_file_count }} files
+            </span>
+          </div>
+          <button
+            class="bv-btn bv-btn--danger-sm"
+            title="Remove folder"
+            @click="removeFolder(folder.path)"
+          >
+            ✕
+          </button>
+        </li>
+      </ul>
+
+      <div
+        v-if="syncResult"
+        class="bv-context-result"
+      >
+        Synced {{ syncResult.folders_synced }} folder(s),
+        {{ syncResult.files_ingested }} file(s) ingested.
+        <span
+          v-if="syncResult.errors.length > 0"
+          class="bv-context-errors"
+        >
+          {{ syncResult.errors.length }} error(s).
+        </span>
+      </div>
+
+      <!-- Conversion tools -->
+      <div class="bv-context-conversion">
+        <h4 class="bv-context-conversion-title">
+          🔄 Context ↔ Knowledge Conversion
+        </h4>
+        <p class="bv-context-conversion-hint">
+          Convert raw context-folder chunks into consolidated knowledge entries
+          for better RAG retrieval, or export knowledge back to portable files.
+        </p>
+
+        <div
+          v-if="contextMemoryInfo"
+          class="bv-context-stats"
+        >
+          {{ contextMemoryInfo.total_memories }} context memories
+          ({{ Math.round(contextMemoryInfo.total_tokens / 1000) }}k tokens)
+          across {{ contextMemoryInfo.by_folder.length }} folder(s).
+        </div>
+
+        <div class="bv-context-conversion-actions">
+          <button
+            class="bv-btn bv-btn--secondary"
+            data-testid="bv-context-convert"
+            :disabled="isConverting || !contextMemoryInfo || contextMemoryInfo.total_memories === 0"
+            @click="convertToKnowledge"
+          >
+            {{ isConverting ? 'Converting…' : '📚 Convert to Knowledge' }}
+          </button>
+
+          <div class="bv-context-export-row">
+            <input
+              v-model="exportFolderInput"
+              type="text"
+              class="bv-context-input bv-context-export-input"
+              placeholder="Export path (e.g. D:\Export\Knowledge)"
+              data-testid="bv-context-export-input"
+            >
+            <button
+              class="bv-btn bv-btn--secondary"
+              data-testid="bv-context-export"
+              :disabled="!exportFolderInput.trim() || isExporting"
+              @click="exportKnowledge"
+            >
+              {{ isExporting ? 'Exporting…' : '💾 Export to Files' }}
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-if="conversionResult"
+          class="bv-context-result"
+        >
+          {{ conversionResult.summary }}
+        </div>
+        <div
+          v-if="exportResult"
+          class="bv-context-result"
+        >
+          Exported {{ exportResult.files_written }} file(s) to {{ exportResult.output_dir }}.
+        </div>
+
+        <!-- Knowledge Graph ↔ Files -->
+        <div class="bv-kg-section">
+          <h4 class="bv-context-conversion-title">
+            🕸️ Knowledge Graph ↔ Files
+          </h4>
+          <p class="bv-context-conversion-hint">
+            Import a text file as a structured KG subgraph (root → chunks with edges),
+            or export a KG subtree starting from memory IDs.
+          </p>
+
+          <!-- File → KG import -->
+          <div class="bv-kg-import-row">
+            <input
+              v-model="kgImportFilePath"
+              type="text"
+              class="bv-context-input"
+              placeholder="File path to import (e.g. D:\Docs\notes.md)"
+              data-testid="bv-kg-import-input"
+            >
+            <button
+              class="bv-btn bv-btn--secondary"
+              data-testid="bv-kg-import-btn"
+              :disabled="!kgImportFilePath.trim() || isKgImporting"
+              @click="importFileToKg"
+            >
+              {{ isKgImporting ? 'Importing…' : '📥 Import to KG' }}
+            </button>
+          </div>
+          <div
+            v-if="kgImportResult"
+            class="bv-context-result"
+          >
+            {{ kgImportResult.summary }}
+          </div>
+
+          <!-- KG → files export -->
+          <div class="bv-kg-export-row">
+            <input
+              v-model="kgExportRootIds"
+              type="text"
+              class="bv-context-input bv-kg-ids-input"
+              placeholder="Root memory IDs (comma-separated, e.g. 42,78)"
+              data-testid="bv-kg-export-ids"
+            >
+            <input
+              v-model="kgExportDir"
+              type="text"
+              class="bv-context-input"
+              placeholder="Output directory"
+              data-testid="bv-kg-export-dir"
+            >
+            <button
+              class="bv-btn bv-btn--secondary"
+              data-testid="bv-kg-export-btn"
+              :disabled="!kgExportRootIds.trim() || !kgExportDir.trim() || isKgExporting"
+              @click="exportKgSubtree"
+            >
+              {{ isKgExporting ? 'Exporting…' : '📤 Export KG Subtree' }}
+            </button>
+          </div>
+          <div
+            v-if="kgExportResult"
+            class="bv-context-result"
+          >
+            Exported {{ kgExportResult.nodes_exported }} nodes,
+            {{ kgExportResult.edges_exported }} edges,
+            {{ kgExportResult.files_written }} files
+            to {{ kgExportResult.output_dir }}.
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ── Knowledge Wiki operations (graph + LLM-wiki pattern) ────────────── -->
@@ -817,43 +1052,6 @@
       <PersonaPanel />
     </section>
 
-    <!-- ── Mini memory graph ───────────────────────────────────────────────── -->
-    <section class="bv-graph-section">
-      <header class="bv-graph-header">
-        <h3>🌌 Memory graph</h3>
-        <span class="bv-graph-subtitle">
-          Top {{ topMemories.length }} most-connected
-          {{ topMemories.length === 1 ? 'memory' : 'memories' }} ·
-          <button
-            class="bv-link"
-            @click="$emit('navigate', 'memory')"
-          >Open full explorer →</button>
-        </span>
-      </header>
-      <div
-        v-if="topMemories.length === 0"
-        class="bv-graph-empty"
-      >
-        No memories yet — chat with your brain or
-        <button
-          class="bv-link"
-          @click="$emit('navigate', 'memory')"
-        >
-          add one
-        </button>.
-      </div>
-      <div
-        v-else
-        class="bv-graph-wrap"
-      >
-        <MemoryGraph
-          :memories="topMemories"
-          :edges="topEdges"
-          edge-mode="typed"
-        />
-      </div>
-    </section>
-
     <!-- ── Danger zone ─────────────────────────────────────────────────────── -->
     <section
       class="bv-card bv-danger-zone"
@@ -915,12 +1113,10 @@ import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.v
 import WikiPanel from '../components/WikiPanel.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import LanSharePanel from '../components/LanSharePanel.vue';
-import MemoryGraph from '../components/MemoryGraph.vue';
 import PromptCommandsPanel from '../components/PromptCommandsPanel.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
 import AICodingIntegrationsView from './AICodingIntegrationsView.vue';
-import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
 
@@ -1423,31 +1619,6 @@ watch(
   { immediate: true },
 );
 
-// ── Top-N memory subgraph ──────────────────────────────────────────────────
-
-const topMemories = computed<MemoryEntry[]>(() => {
-  const memories = memory.memories ?? [];
-  if (memories.length === 0) return [];
-  // Score = edge degree + importance + decay so the mini-graph shows what
-  // matters most. Cap at 12 nodes so the viewport stays readable.
-  const degree = new Map<number, number>();
-  for (const e of memory.edges ?? []) {
-    degree.set(e.src_id, (degree.get(e.src_id) ?? 0) + 1);
-    degree.set(e.dst_id, (degree.get(e.dst_id) ?? 0) + 1);
-  }
-  const scored = [...memories].map(m => ({
-    m,
-    s: (degree.get(m.id) ?? 0) * 3 + m.importance + m.decay_score,
-  }));
-  scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, 12).map(x => x.m);
-});
-
-const topEdges = computed(() => {
-  const ids = new Set(topMemories.value.map(m => m.id));
-  return (memory.edges ?? []).filter(e => ids.has(e.src_id) && ids.has(e.dst_id));
-});
-
 // ── Refresh ────────────────────────────────────────────────────────────────
 
 const conversation = useConversationStore();
@@ -1767,9 +1938,180 @@ async function refresh() {
       loadBrainSelection(),
       loadAutoLearnPolicy(),
       appSettings.loadSettings(),
+      refreshContextFolders(),
     ]);
   } finally {
     isRefreshing.value = false;
+  }
+}
+
+// ── Context Folders ──────────────────────────────────────────────────────
+type ContextFolderEntry = { path: string; label: string; enabled: boolean; last_synced_at: number; last_file_count: number };
+type SyncResult = { folders_synced: number; files_ingested: number; errors: string[] };
+
+const contextFolderInput = ref('');
+const contextFolders = ref<ContextFolderEntry[]>([]);
+const isSyncing = ref(false);
+const syncResult = ref<SyncResult | null>(null);
+
+async function refreshContextFolders() {
+  try {
+    contextFolders.value = await invoke<ContextFolderEntry[]>('list_context_folders');
+  } catch { /* Tauri unavailable */ }
+}
+
+async function addContextFolder() {
+  const path = contextFolderInput.value.trim();
+  if (!path) return;
+  try {
+    await invoke('add_context_folder', { folderPath: path });
+    contextFolderInput.value = '';
+    await refreshContextFolders();
+  } catch (err) {
+    console.warn('[BrainView] add context folder failed:', err);
+    alert(String(err));
+  }
+}
+
+async function removeFolder(path: string) {
+  try {
+    await invoke('remove_context_folder', { folderPath: path });
+    await refreshContextFolders();
+  } catch (err) {
+    console.warn('[BrainView] remove context folder failed:', err);
+  }
+}
+
+async function toggleFolder(path: string, enabled: boolean) {
+  try {
+    await invoke('toggle_context_folder', { folderPath: path, enabled });
+    await refreshContextFolders();
+  } catch (err) {
+    console.warn('[BrainView] toggle context folder failed:', err);
+  }
+}
+
+async function syncAllContextFolders() {
+  isSyncing.value = true;
+  syncResult.value = null;
+  try {
+    syncResult.value = await invoke<SyncResult>('sync_context_folders');
+    await refreshContextFolders();
+  } catch (err) {
+    console.warn('[BrainView] sync context folders failed:', err);
+    alert(String(err));
+  } finally {
+    isSyncing.value = false;
+  }
+}
+
+function formatDate(ms: number): string {
+  if (!ms) return 'Never';
+  return new Date(ms).toLocaleString();
+}
+
+// ── Context ↔ Knowledge Conversion ──────────────────────────────────────
+type ContextMemoryInfo = { total_memories: number; total_tokens: number; by_folder: { label: string; count: number }[] };
+type ConversionResult = { source_chunks: number; knowledge_entries_created: number; summary: string };
+type ExportResult = { files_written: number; output_dir: string };
+
+const contextMemoryInfo = ref<ContextMemoryInfo | null>(null);
+const isConverting = ref(false);
+const conversionResult = ref<ConversionResult | null>(null);
+const exportFolderInput = ref('');
+const isExporting = ref(false);
+const exportResult = ref<ExportResult | null>(null);
+
+async function refreshContextMemoryInfo() {
+  try {
+    contextMemoryInfo.value = await invoke<ContextMemoryInfo>('list_context_folder_memories');
+  } catch { /* Tauri unavailable */ }
+}
+
+async function convertToKnowledge() {
+  isConverting.value = true;
+  conversionResult.value = null;
+  try {
+    conversionResult.value = await invoke<ConversionResult>('convert_context_to_knowledge', {});
+    await refreshContextMemoryInfo();
+  } catch (err) {
+    console.warn('[BrainView] convert context failed:', err);
+    alert(String(err));
+  } finally {
+    isConverting.value = false;
+  }
+}
+
+async function exportKnowledge() {
+  const dir = exportFolderInput.value.trim();
+  if (!dir) return;
+  isExporting.value = true;
+  exportResult.value = null;
+  try {
+    exportResult.value = await invoke<ExportResult>('export_knowledge_to_folder', {
+      outputDir: dir,
+      tagFilter: 'context-folder',
+      minImportance: 1,
+    });
+  } catch (err) {
+    console.warn('[BrainView] export knowledge failed:', err);
+    alert(String(err));
+  } finally {
+    isExporting.value = false;
+  }
+}
+
+// ── Knowledge Graph ↔ Files ──────────────────────────────────────────
+type FileToKgResult = { file_path: string; chunks_created: number; edges_created: number; root_id: number | null; summary: string };
+type KgSubtreeExportResult = { root_ids: number[]; nodes_exported: number; edges_exported: number; files_written: number; output_dir: string };
+
+const kgImportFilePath = ref('');
+const isKgImporting = ref(false);
+const kgImportResult = ref<FileToKgResult | null>(null);
+
+const kgExportRootIds = ref('');
+const kgExportDir = ref('');
+const isKgExporting = ref(false);
+const kgExportResult = ref<KgSubtreeExportResult | null>(null);
+
+async function importFileToKg() {
+  const fp = kgImportFilePath.value.trim();
+  if (!fp) return;
+  isKgImporting.value = true;
+  kgImportResult.value = null;
+  try {
+    kgImportResult.value = await invoke<FileToKgResult>('import_file_to_knowledge_graph', {
+      filePath: fp,
+    });
+    await refreshContextMemoryInfo();
+  } catch (err) {
+    console.warn('[BrainView] file-to-KG import failed:', err);
+    alert(String(err));
+  } finally {
+    isKgImporting.value = false;
+  }
+}
+
+async function exportKgSubtree() {
+  const ids = kgExportRootIds.value
+    .split(',')
+    .map((s) => parseInt(s.trim(), 10))
+    .filter((n) => !isNaN(n) && n > 0);
+  const dir = kgExportDir.value.trim();
+  if (ids.length === 0 || !dir) return;
+  isKgExporting.value = true;
+  kgExportResult.value = null;
+  try {
+    kgExportResult.value = await invoke<KgSubtreeExportResult>('export_kg_subtree', {
+      rootIds: ids,
+      outputDir: dir,
+      maxHops: 2,
+    });
+  } catch (err) {
+    console.warn('[BrainView] KG subtree export failed:', err);
+    alert(String(err));
+  } finally {
+    isKgExporting.value = false;
   }
 }
 
@@ -1777,6 +2119,7 @@ onMounted(async () => {
   await refresh();
   await selfImprove.initialise();
   await refreshEmbedQueueStatus();
+  await refreshContextMemoryInfo();
   embedQueuePollHandle = setInterval(refreshEmbedQueueStatus, 5_000);
 });
 
@@ -1793,6 +2136,7 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  width: 100%;
   padding: 1rem;
   height: 100%;
   overflow-y: auto;
@@ -1968,6 +2312,13 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .bv-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.bv-btn--accent {
+  background: var(--ts-accent);
+  color: var(--ts-text-on-accent);
+}
+.bv-btn--accent:hover {
+  background: var(--ts-accent-hover);
+}
 .bv-btn-primary {
   background: var(--ts-gradient-accent);
   color: white;
@@ -2058,6 +2409,191 @@ onUnmounted(() => {
 /* ── Brain Capacity section ─────────────────────────────────────────────── */
 .bv-capacity-section {
   margin: 0.5rem 0;
+}
+
+/* ── Context Folders section ────────────────────────────────────────────── */
+.bv-context-folders-section {
+  margin: 0.5rem 0;
+  padding: var(--ts-space-md);
+  background: var(--ts-bg-surface);
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
+}
+.bv-section-title {
+  margin: 0 0 var(--ts-space-sm);
+  font-size: var(--ts-text-lg);
+  color: var(--ts-text-primary);
+}
+.bv-context-warning {
+  margin: 0 0 var(--ts-space-sm);
+  padding: var(--ts-space-sm);
+  font-size: var(--ts-text-sm);
+  color: var(--ts-warning);
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: var(--ts-radius-sm);
+}
+.bv-context-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-space-sm);
+  margin-bottom: var(--ts-space-sm);
+}
+.bv-context-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--ts-space-xs) var(--ts-space-sm);
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border-medium);
+  border-radius: var(--ts-radius-sm);
+  color: var(--ts-text-primary);
+  font-size: var(--ts-text-sm);
+}
+.bv-context-input::placeholder {
+  color: var(--ts-text-muted);
+}
+.bv-context-empty {
+  padding: var(--ts-space-md);
+  text-align: center;
+  color: var(--ts-text-muted);
+  font-size: var(--ts-text-sm);
+}
+.bv-context-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ts-space-xs);
+}
+.bv-context-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-space-sm);
+  padding: var(--ts-space-xs) var(--ts-space-sm);
+  background: var(--ts-bg-elevated);
+  border: 1px solid var(--ts-border-subtle);
+  border-radius: var(--ts-radius-sm);
+}
+.bv-context-item--disabled {
+  opacity: 0.5;
+}
+.bv-context-toggle input {
+  cursor: pointer;
+}
+.bv-context-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.bv-context-label {
+  font-size: var(--ts-text-base);
+  color: var(--ts-text-primary);
+  font-weight: 500;
+}
+.bv-context-path {
+  font-size: var(--ts-text-xs);
+  color: var(--ts-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bv-context-meta {
+  font-size: var(--ts-text-xs);
+  color: var(--ts-text-secondary);
+}
+.bv-context-result {
+  margin-top: var(--ts-space-sm);
+  padding: var(--ts-space-sm);
+  font-size: var(--ts-text-sm);
+  color: var(--ts-success);
+  background: rgba(52, 211, 153, 0.08);
+  border-radius: var(--ts-radius-sm);
+}
+.bv-context-errors {
+  color: var(--ts-error);
+}
+.bv-btn--danger-sm {
+  padding: 2px 6px;
+  font-size: var(--ts-text-xs);
+  background: transparent;
+  color: var(--ts-error);
+  border: 1px solid rgba(248, 113, 113, 0.3);
+  border-radius: var(--ts-radius-sm);
+  cursor: pointer;
+}
+.bv-btn--danger-sm:hover {
+  background: rgba(248, 113, 113, 0.15);
+}
+.bv-btn--secondary {
+  padding: var(--ts-space-xs) var(--ts-space-sm);
+  font-size: var(--ts-text-sm);
+  background: var(--ts-bg-elevated);
+  color: var(--ts-text-secondary);
+  border: 1px solid var(--ts-border-medium);
+  border-radius: var(--ts-radius-sm);
+  cursor: pointer;
+}
+.bv-btn--secondary:hover {
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-primary);
+}
+
+/* Context ↔ Knowledge conversion */
+.bv-context-conversion {
+  margin-top: var(--ts-space-md);
+  padding: var(--ts-space-sm);
+  border: 1px dashed var(--ts-border-medium);
+  border-radius: var(--ts-radius-sm);
+}
+.bv-context-conversion-title {
+  margin: 0 0 var(--ts-space-xs);
+  font-size: var(--ts-text-sm);
+  color: var(--ts-text-primary);
+}
+.bv-context-conversion-hint {
+  margin: 0 0 var(--ts-space-sm);
+  font-size: var(--ts-text-xs);
+  color: var(--ts-text-muted);
+}
+.bv-context-stats {
+  margin-bottom: var(--ts-space-sm);
+  font-size: var(--ts-text-xs);
+  color: var(--ts-text-secondary);
+}
+.bv-context-conversion-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ts-space-xs);
+}
+.bv-context-export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-space-xs);
+  align-items: center;
+}
+.bv-context-export-input {
+  flex: 1;
+}
+
+/* Knowledge Graph ↔ Files */
+.bv-kg-section {
+  margin-top: var(--ts-space-md);
+  padding: var(--ts-space-sm);
+  border: 1px dashed var(--ts-border-medium);
+  border-radius: var(--ts-radius-sm);
+}
+.bv-kg-import-row,
+.bv-kg-export-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ts-space-xs);
+  align-items: center;
+  margin-bottom: var(--ts-space-xs);
+}
+.bv-kg-ids-input {
+  max-width: 200px;
 }
 
 .bv-wiki-section {
@@ -2156,33 +2692,6 @@ onUnmounted(() => {
 
 /* ── Stats section ─────────────────────────────────────────────────────── */
 .bv-stats-section { /* BrainStatSheet brings its own styling. */ }
-
-/* ── Mini graph ────────────────────────────────────────────────────────── */
-.bv-graph-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
-  background: var(--ts-bg-surface);
-  border: 1px solid var(--ts-border);
-  border-radius: 10px;
-}
-.bv-graph-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.bv-graph-header h3 { margin: 0; font-size: 0.95rem; color: var(--ts-text-primary); }
-.bv-graph-subtitle { font-size: 0.8rem; color: var(--ts-text-muted); }
-.bv-graph-empty {
-  padding: 2rem;
-  text-align: center;
-  color: var(--ts-text-muted);
-}
-.bv-graph-wrap { height: 320px; }
-.bv-graph-wrap > * { height: 100%; }
 
 .bv-link {
   background: none;
@@ -2373,5 +2882,17 @@ onUnmounted(() => {
   .bv-hero { padding: 0.85rem 0.75rem; gap: 0.75rem; }
   .bv-hero-title { font-size: 1.2rem; }
   .bv-section-title { font-size: 0.7rem; }
+  .bv-context-input,
+  .bv-context-export-input,
+  .bv-kg-ids-input {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .bv-kg-import-row .bv-btn,
+  .bv-kg-export-row .bv-btn,
+  .bv-context-export-row .bv-btn {
+    width: 100%;
+    white-space: normal;
+  }
 }
 </style>

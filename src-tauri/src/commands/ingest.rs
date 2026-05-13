@@ -19,6 +19,98 @@ pub struct IngestStartResult {
     pub source_type: String,
 }
 
+const DEFAULT_CRAWL_MAX_DEPTH: usize = 2;
+const MIN_CRAWL_MAX_DEPTH: usize = 1;
+const MAX_CRAWL_MAX_DEPTH: usize = 5;
+const DEFAULT_CRAWL_MAX_PAGES: usize = 20;
+const MIN_CRAWL_MAX_PAGES: usize = 1;
+const MAX_CRAWL_MAX_PAGES: usize = 100;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CrawlConfig {
+    max_depth: usize,
+    max_pages: usize,
+}
+
+impl Default for CrawlConfig {
+    fn default() -> Self {
+        Self {
+            max_depth: DEFAULT_CRAWL_MAX_DEPTH,
+            max_pages: DEFAULT_CRAWL_MAX_PAGES,
+        }
+    }
+}
+
+impl CrawlConfig {
+    fn from_optional(max_depth: Option<usize>, max_pages: Option<usize>, fallback: Self) -> Self {
+        Self {
+            max_depth: max_depth
+                .unwrap_or(fallback.max_depth)
+                .clamp(MIN_CRAWL_MAX_DEPTH, MAX_CRAWL_MAX_DEPTH),
+            max_pages: max_pages
+                .unwrap_or(fallback.max_pages)
+                .clamp(MIN_CRAWL_MAX_PAGES, MAX_CRAWL_MAX_PAGES),
+        }
+    }
+}
+
+fn parse_embedded_crawl_config(rest: &str) -> Option<(CrawlConfig, String)> {
+    let (config_part, url_part) = rest.split_once(':')?;
+    let mut max_depth = None;
+    let mut max_pages = None;
+
+    for part in config_part.split(',') {
+        let (key, value) = part.split_once('=')?;
+        match key.trim() {
+            "depth" => max_depth = value.trim().parse::<usize>().ok(),
+            "pages" => max_pages = value.trim().parse::<usize>().ok(),
+            _ => return None,
+        }
+    }
+
+    if max_depth.is_none() && max_pages.is_none() {
+        return None;
+    }
+
+    Some((
+        CrawlConfig::from_optional(max_depth, max_pages, CrawlConfig::default()),
+        url_part.trim().to_string(),
+    ))
+}
+
+fn parse_crawl_source(source: &str) -> Option<(String, CrawlConfig)> {
+    let rest = source.strip_prefix("crawl:")?.trim();
+    if let Some((config, url)) = parse_embedded_crawl_config(rest) {
+        return Some((url, config));
+    }
+    Some((rest.to_string(), CrawlConfig::default()))
+}
+
+fn format_crawl_source(url: &str, config: CrawlConfig) -> String {
+    format!(
+        "crawl:depth={},pages={}:{}",
+        config.max_depth,
+        config.max_pages,
+        url.trim()
+    )
+}
+
+fn canonicalize_crawl_source(
+    source: &str,
+    max_depth: Option<usize>,
+    max_pages: Option<usize>,
+) -> String {
+    if max_depth.is_none() && max_pages.is_none() {
+        return source.to_string();
+    }
+
+    let Some((url, existing_config)) = parse_crawl_source(source) else {
+        return source.to_string();
+    };
+    let config = CrawlConfig::from_optional(max_depth, max_pages, existing_config);
+    format_crawl_source(&url, config)
+}
+
 #[derive(Debug, Clone)]
 struct IngestChunk {
     text: String,
@@ -47,6 +139,8 @@ pub async fn ingest_document(
     source: String,
     tags: Option<String>,
     importance: Option<i64>,
+    crawl_depth: Option<usize>,
+    crawl_max_pages: Option<usize>,
     app_handle: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<IngestStartResult, String> {
@@ -54,6 +148,8 @@ pub async fn ingest_document(
         source,
         tags,
         importance,
+        crawl_depth,
+        crawl_max_pages,
         Some(app_handle),
         state.inner().clone(),
     )
@@ -67,21 +163,34 @@ pub async fn ingest_document_silent(
     source: String,
     tags: Option<String>,
     importance: Option<i64>,
+    crawl_depth: Option<usize>,
+    crawl_max_pages: Option<usize>,
     state: AppState,
 ) -> Result<IngestStartResult, String> {
-    start_ingest(source, tags, importance, None, state).await
+    start_ingest(
+        source,
+        tags,
+        importance,
+        crawl_depth,
+        crawl_max_pages,
+        None,
+        state,
+    )
+    .await
 }
 
 async fn start_ingest(
     source: String,
     tags: Option<String>,
     importance: Option<i64>,
+    crawl_depth: Option<usize>,
+    crawl_max_pages: Option<usize>,
     app_handle: Option<AppHandle>,
     state: AppState,
 ) -> Result<IngestStartResult, String> {
     let tags = tags.unwrap_or_else(|| "imported".to_string());
     let importance = importance.unwrap_or(4).clamp(1, 5);
-    let source_trimmed = source.trim().to_string();
+    let source_trimmed = canonicalize_crawl_source(source.trim(), crawl_depth, crawl_max_pages);
 
     let source_type = if source_trimmed.starts_with("crawl:") {
         "crawl"
@@ -94,9 +203,9 @@ async fn start_ingest(
     let description = match source_type {
         "crawl" => format!(
             "Crawling {}",
-            source_trimmed
-                .strip_prefix("crawl:")
-                .unwrap_or(&source_trimmed)
+            parse_crawl_source(&source_trimmed)
+                .map(|(url, _)| url)
+                .unwrap_or_else(|| source_trimmed.clone())
         ),
         "url" => format!("Importing {}", source_trimmed),
         _ => format!(
@@ -338,9 +447,18 @@ async fn run_ingest_task(
     }
 
     let (text, source_url) = if source.starts_with("crawl:") {
-        let url = source.strip_prefix("crawl:").unwrap().trim();
-        let crawled =
-            crawl_website_with_progress(url, 2, 20, task_id, cancel_flag, emitter, state).await?;
+        let (url, crawl_config) =
+            parse_crawl_source(source).ok_or_else(|| "Invalid crawl source.".to_string())?;
+        let crawled = crawl_website_with_progress(
+            &url,
+            crawl_config.max_depth,
+            crawl_config.max_pages,
+            task_id,
+            cancel_flag,
+            emitter,
+            state,
+        )
+        .await?;
         (crawled, url.to_string())
     } else if source.starts_with("http://") || source.starts_with("https://") {
         let text = fetch_url(source, state).await?;
@@ -1242,19 +1360,23 @@ async fn crawl_website_with_progress(
 
         visited.insert(url.clone());
 
-        emit_progress(
-            emitter,
-            task_id,
-            ((visited.len() * 25) / max_pages.max(1)) as u8,
-            &format!(
-                "Crawling {}/{}: {}",
+        emitter.emit(TaskProgressEvent {
+            id: task_id.to_string(),
+            kind: TaskKind::Crawl,
+            status: TaskStatus::Running,
+            progress: ((visited.len() * 25) / max_pages.max(1)) as u8,
+            description: format!(
+                "Crawling {}/{} (depth {}/{}): {}",
                 visited.len(),
                 max_pages,
+                depth,
+                max_depth,
                 truncate_url(&url)
             ),
-            visited.len(),
-            max_pages,
-        );
+            processed_items: visited.len(),
+            total_items: max_pages,
+            error: None,
+        });
 
         let response = match state
             .ollama_client
@@ -1443,6 +1565,29 @@ mod tests {
         assert_eq!(truncate_url("https://x.com"), "https://x.com");
         let long = "https://example.com/very/long/path/that/exceeds/sixty/characters/easily";
         assert!(truncate_url(long).ends_with('…'));
+    }
+
+    #[test]
+    fn crawl_source_parser_keeps_legacy_prefix_defaults() {
+        let (url, config) = parse_crawl_source("crawl:https://example.com/docs").unwrap();
+        assert_eq!(url, "https://example.com/docs");
+        assert_eq!(config.max_depth, DEFAULT_CRAWL_MAX_DEPTH);
+        assert_eq!(config.max_pages, DEFAULT_CRAWL_MAX_PAGES);
+    }
+
+    #[test]
+    fn crawl_source_parser_reads_and_clamps_embedded_limits() {
+        let (url, config) =
+            parse_crawl_source("crawl:depth=99,pages=500:https://example.com/docs").unwrap();
+        assert_eq!(url, "https://example.com/docs");
+        assert_eq!(config.max_depth, MAX_CRAWL_MAX_DEPTH);
+        assert_eq!(config.max_pages, MAX_CRAWL_MAX_PAGES);
+    }
+
+    #[test]
+    fn canonicalize_crawl_source_embeds_custom_limits_for_resume() {
+        let source = canonicalize_crawl_source("crawl:https://example.com/docs", Some(3), Some(42));
+        assert_eq!(source, "crawl:depth=3,pages=42:https://example.com/docs");
     }
 
     #[test]

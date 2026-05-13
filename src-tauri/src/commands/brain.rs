@@ -153,6 +153,69 @@ pub async fn install_ollama(app: AppHandle) -> Result<String, String> {
     .await
 }
 
+/// Pre-load the active local Ollama chat model into VRAM with a long
+/// `keep_alive`, so the next user reply lands in milliseconds instead of
+/// paying a 10–20 s cold-load.
+///
+/// Called from the frontend at:
+/// - First-launch wizard, immediately after the recommended model is pulled.
+/// - App start (when LocalOllama is the active mode).
+/// - Brain-mode change to LocalOllama.
+///
+/// Resolves the model from the explicit `model` argument, the active
+/// brain mode, or the registered chat model — in that order. No-op if
+/// none is available. Awaitable so UIs can show "Warming up…" progress.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn warmup_local_ollama(
+    state: State<'_, AppState>,
+    model: Option<String>,
+) -> Result<u64, String> {
+    let resolved = model
+        .filter(|m| !m.trim().is_empty())
+        .or_else(|| state.active_brain.lock().ok().and_then(|m| m.clone()))
+        .or_else(|| {
+            state.brain_mode.lock().ok().and_then(|m| match m.clone() {
+                Some(brain::BrainMode::LocalOllama { model }) => Some(model),
+                _ => None,
+            })
+        })
+        .or_else(brain::ollama_agent::registered_chat_model_for_warmup)
+        .ok_or_else(|| "no local Ollama model configured".to_string())?;
+
+    // Register so every future embed call re-warms this model.
+    brain::ollama_agent::set_chat_model_for_warmup(&resolved);
+    // Push the chat-activity quiet window so the embedding worker does not
+    // race the warm-up to load nomic-embed-text and evict the chat model.
+    state.mark_chat_activity_now();
+
+    let client = state.ollama_client.clone();
+    let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
+    // 1-token streamed chat forces Ollama to load the weights and warm
+    // the same streaming endpoint used by the first real user reply.
+    let body = serde_json::json!({
+        "model": resolved,
+        "messages": [{ "role": "user", "content": "Hi" }],
+        "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+        "stream": true,
+        "think": false,
+        "keep_alive": "30m",
+    });
+    let started = std::time::Instant::now();
+    let resp = client
+        .post(&url)
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("warm-up request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("warm-up returned status {}", resp.status()));
+    }
+    let _ = resp.bytes().await;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
+    eprintln!("[warmup_local_ollama] {resolved} loaded in {elapsed_ms} ms");
+    Ok(elapsed_ms)
+}
+
 /// List all Ollama models installed on this machine.
 #[tauri::command]
 pub async fn get_ollama_models(
@@ -327,14 +390,22 @@ pub async fn unload_lm_studio_model(
 
 /// Set the active brain model. Persists the choice to disk.
 /// After calling this, subsequent chat messages will be routed through Ollama.
+///
+/// Also fires a background warm-up so the very next user reply does not pay
+/// the 10-20 s cold-load cost when the user picks LocalOllama via the UI
+/// after app startup (the boot-time warm-up is a no-op when no LocalOllama
+/// brain mode is configured yet).
 #[tauri::command(rename_all = "camelCase")]
 pub async fn set_active_brain(
     model_name: String,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     brain::save_brain(&state.data_dir, &model_name)?;
-    let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
-    *brain = Some(model_name);
+    {
+        let mut brain = state.active_brain.lock().map_err(|e| e.to_string())?;
+        *brain = Some(model_name);
+    }
+    crate::spawn_local_ollama_warmup(&state, "set-active-brain");
     Ok(())
 }
 
@@ -410,6 +481,11 @@ pub async fn set_brain_mode(mode: BrainMode, state: State<'_, AppState>) -> Resu
         let mut brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?;
         *brain_mode = Some(mode);
     }
+
+    // If the user just switched to LocalOllama (e.g. picked it in the UI
+    // after app launch), fire the chat-model warm-up now so the next reply
+    // does not pay a 10-20 s cold-load. No-op for cloud providers.
+    crate::spawn_local_ollama_warmup(&state, "set-brain-mode");
 
     // The chosen embedding model and any "model X doesn't support
     // embeddings" memo from `brain::ollama_agent` are tied to whichever
@@ -643,9 +719,76 @@ pub async fn classify_intent(
     state: State<'_, AppState>,
 ) -> Result<IntentDecision, String> {
     let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
-    let decision =
-        brain::classify_user_intent(&text, brain_mode.as_ref(), &state.provider_rotator).await;
+    let knowledge_context = retrieved_intent_context(&state, &text)?;
+    let decision = brain::classify_user_intent(
+        &text,
+        brain_mode.as_ref(),
+        &state.provider_rotator,
+        knowledge_context.as_deref(),
+    )
+    .await;
     Ok(decision)
+}
+
+fn retrieved_intent_context(state: &AppState, text: &str) -> Result<Option<String>, String> {
+    if brain::intent_classifier::should_use_fast_chat_path(text) {
+        return Ok(None);
+    }
+
+    let (settings, entries) = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let settings = store
+            .system_default_settings("intent-classifier", 8)
+            .map_err(|e| e.to_string())?;
+        let entries = store
+            .hybrid_search_rrf(text, None, 5)
+            .or_else(|_| store.search(text))
+            .map_err(|e| e.to_string())?;
+        (settings, entries)
+    };
+
+    if settings.is_empty() && entries.is_empty() {
+        return Ok(None);
+    }
+
+    let mut block = String::new();
+    let mut seen = std::collections::HashSet::new();
+
+    if !settings.is_empty() {
+        block.push_str("System/default settings (user-customizable):\n");
+        for entry in settings.iter().take(8) {
+            seen.insert(entry.id);
+            append_intent_context_entry(&mut block, entry);
+        }
+    }
+
+    let mut wrote_relevant_header = false;
+    for entry in entries.iter().take(5) {
+        if seen.contains(&entry.id) {
+            continue;
+        }
+        if !wrote_relevant_header {
+            if !block.is_empty() {
+                block.push('\n');
+            }
+            block.push_str("Relevant app/RAG knowledge:\n");
+            wrote_relevant_header = true;
+        }
+        append_intent_context_entry(&mut block, entry);
+    }
+
+    Ok(Some(crate::memory::format_retrieved_context_pack(&block)))
+}
+
+fn append_intent_context_entry(block: &mut String, entry: &crate::memory::store::MemoryEntry) {
+    block.push_str("- ");
+    if !entry.tags.trim().is_empty() {
+        block.push('[');
+        block.push_str(entry.tags.trim());
+        block.push_str("] ");
+    }
+    block.push_str(entry.content.trim());
+    block.push('\n');
 }
 
 /// Factory-reset the brain: undo auto-configured components (brain, voice,
@@ -1158,8 +1301,7 @@ pub async fn switch_embedding_model(
         }
 
         // Update registry progress.
-        let updated =
-            embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
+        let updated = embedding_registry::update_migration_progress(&state.data_dir, batch_count)?;
 
         let _ = app_handle.emit(
             "embedding-migration-progress",

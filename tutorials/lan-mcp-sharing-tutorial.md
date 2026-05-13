@@ -37,7 +37,7 @@ database.
 
 ## 1. What You Are Building
 
-![Architecture diagram — Alice’s desktop sharing brain to Bob’s device over LAN](screenshots/lan-mcp-sharing/01-architecture.png)
+![Brain overview panel](screenshots/lan-mcp-sharing/01-brain-overview.png)
 
 ```text
 Alice's desktop TerranSoul
@@ -68,7 +68,6 @@ Alice's whole `memory.db`, and discovery does not broadcast the bearer token.
 
 ## 2. Alice Teaches Her Local Brain
 
-![Alice’s TerranSoul with ingested Vietnamese law documents visible in Memory tab](screenshots/lan-mcp-sharing/02-teach-brain.png)
 
 Alice first imports the knowledge she wants TerranSoul to retrieve. For this
 example, she stores notes such as:
@@ -90,8 +89,6 @@ importance: 4
 
 ## 3. Alice Enables LAN Mode
 
-![Settings → Network panel with LAN Sharing toggle enabled](screenshots/lan-mcp-sharing/03-enable-lan.png)
-
 On Alice's desktop:
 
 1. Open **Brain**.
@@ -104,8 +101,6 @@ stop and start it again so it rebinds for LAN access.
 
 ## 4. Alice Starts the MCP Server
 
-![Terminal showing MCP server binding to LAN address on port 7421](screenshots/lan-mcp-sharing/04-start-mcp.png)
-
 Still on Alice's desktop:
 
 1. In **AI Coding Integrations**, start the MCP server.
@@ -116,16 +111,12 @@ TerranSoul binds the server to LAN interfaces instead of loopback-only.
 
 ## 5. Alice Starts Sharing Her Brain
 
-![Brain sharing panel showing access mode selection and advertised URL](screenshots/lan-mcp-sharing/05-share-brain.png)
-
 Still on Alice's desktop:
 
 1. In **Share Your Brain**, enter a name such as `Alice - Vietnamese law notes`.
 2. Choose **Token required** or **Public read-only**.
 3. Click **Start Sharing**.
 4. If using token mode, click **Copy** next to the token and share it only with trusted devices.
-
-![Alice starts sharing her Vietnamese law notes](screenshots/lan-mcp-alice-host.svg)
 
 What happens under the hood:
 
@@ -138,7 +129,6 @@ What happens under the hood:
 
 ## 6. Bob Discovers Alice’s Brain
 
-![Bob’s device showing discovered LAN brain with Alice’s name and topic](screenshots/lan-mcp-sharing/06-discover-brain.png)
 
 On Bob's TerranSoul desktop:
 
@@ -149,14 +139,11 @@ On Bob's TerranSoul desktop:
    memory count.
 5. Click **Connect** to copy Alice's host and port into the manual form.
 
-![Bob scans the LAN and finds Alice's brain](screenshots/lan-mcp-client-discover.svg)
-
 If discovery fails, Bob can still connect manually with Alice's LAN IP, MCP
 port, and the matching access mode. Token mode also needs Alice's token.
 
 ## 7. Bob Connects with the Matching Access Mode
 
-![Bob’s connection dialog showing public_read_only mode matching](screenshots/lan-mcp-sharing/07-connect.png)
 
 Bob uses the access mode Alice selected:
 
@@ -167,15 +154,12 @@ Bob uses the access mode Alice selected:
 5. If Alice chose token mode, paste the token.
 6. Click **Connect**.
 
-![Bob connects to Alice's remote brain](screenshots/lan-mcp-client-connect.svg)
-
 TerranSoul validates the connection by calling Alice's remote `/health` route.
 After success, Bob sees Alice under **Connected Brains**. In public mode, Bob
 can search but cannot call write tools or code-intelligence tools through LAN.
 
 ## 8. Bob Retrieves Vietnamese Law Context
 
-![Bob’s chat showing RAG answer sourced from Alice’s shared brain](screenshots/lan-mcp-sharing/08-retrieve-context.png)
 
 Now Bob can ask Alice's brain for targeted context without copying her whole
 memory database.
@@ -190,8 +174,6 @@ In **Search All Connected Brains**, Bob enters the query and clicks **Search**.
 TerranSoul sends an authenticated MCP `brain_search` request to Alice's machine,
 then shows scored snippets tagged with Alice's brain name.
 
-![Bob retrieves legal context from Alice's brain](screenshots/lan-mcp-remote-search.svg)
-
 Good retrieval results should show:
 
 - Source brain name, such as `Alice - Vietnamese law notes`.
@@ -200,8 +182,6 @@ Good retrieval results should show:
 - Tags such as `vietnamese-law,labor,contracts`.
 
 ## 9. Security Checklist
-
-![Security settings panel showing auth mode and access controls](screenshots/lan-mcp-sharing/09-security.png)
 
 - Use this only on a trusted LAN. Do not enable it on airport, cafe, hotel, or
   public Wi-Fi.

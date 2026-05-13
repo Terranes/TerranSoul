@@ -16,12 +16,14 @@ before planning, before implementing. Skipping this in a local session is
 a violation.**
 
 1. **Check MCP health** — call `brain_health` (the MCP tool). If tools are
-   not loaded yet, check `GET http://127.0.0.1:7423/health` (or `:7421`/`:7422`).
+   not loaded yet, run `node scripts/mcp-tray-proxy.mjs --probe` or check
+   `/health` on `:7421`, `:7423`, then `:7422`.
 2. **If MCP is healthy** — call `brain_search` or `brain_suggest_context`
    with the current task/chunk topic before doing broad repo searches.
-3. **If MCP is not healthy** — start it: run
-   `node scripts/copilot-start-mcp.mjs` in a terminal, wait for health,
-   then proceed to step 2.
+3. **If MCP is not healthy** — start or reuse it: run
+   `node scripts/copilot-start-mcp.mjs` in a terminal. It reuses an open
+   release/tray/dev MCP server when authenticated, otherwise starts the tray;
+   wait for health, then proceed to step 2.
 4. **If MCP cannot start** (build failure, missing deps) — record the exact
    blocker in your progress report. Do NOT silently skip this step.
 5. **Show the MCP receipt** — immediately after MCP preflight succeeds, send a
@@ -76,7 +78,7 @@ Frontend (WebView — Vue 3 + TS)
   └── Design system: CSS custom properties (--ts-* tokens in style.css)
       ↕ Tauri IPC (invoke / emit)
 Rust Core Engine (src-tauri/src/)
-  ├── commands/ — 150+ Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
+  ├── commands/ — 349 Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
   ├── brain/ — LLM providers: OllamaAgent, OpenAiClient, FreeProvider, ProviderRotator
   │   ├── model_recommender.rs — RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6 cloud)
   │   ├── ollama_agent.rs — embed_text(), hyde_complete(), rerank_score()
@@ -130,7 +132,7 @@ Every chat message triggers:
 6. Top-k injected as `[LONG-TERM MEMORY]` block in system prompt
 7. Keyword fallback when Ollama is unreachable
 
-**Vector support:** Ollama `nomic-embed-text` (768-dim) locally, or cloud embedding API (`/v1/embeddings`) for paid/free modes. HNSW ANN index via `usearch` for O(log n) scaling to 1M+ entries.
+**Vector support:** Ollama `mxbai-embed-large` (1024-dim, current default — promoted in BENCH-LCM-5) or `nomic-embed-text` (768-dim, lightweight fallback) locally; cloud embedding API (`/v1/embeddings`) for paid/free modes. HNSW ANN index via `usearch` for O(log n) scaling to 1M+ entries. Storage is sharded into **15 logical shards** (3 tiers × 5 cognitive_kinds), router-routed by default with a `ShardMode::AllShards` toggle for bench baselines (BENCH-SCALE-2).
 
 ## Skill Tree Quest System
 
@@ -142,7 +144,7 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - **State**: `AppState(Arc<AppStateInner>)` — cheaply clonable Arc newtype; all fields accessed via auto-`Deref`. Enables background servers (MCP, gRPC) to hold references without lifetime issues.
 - **Streaming**: SSE via Tauri events (`llm-chunk`), parsed by `StreamTagParser` state machine
 - **Error handling**: `?` operator, `thiserror` for typed errors, never `.unwrap()` in library code
-- **Testing**: Vitest for frontend (1164 tests), `cargo test` for Rust (1075+ tests)
+- **Testing**: Vitest for frontend (1738+ tests), `cargo test` for Rust (2836+ tests)
 - **CSS**: Use `var(--ts-*)` design tokens from `src/style.css`, never hardcode hex colors
 
 ## Coding Standards
@@ -262,26 +264,27 @@ When the "Continue" prompt is received with no other context, follow steps 1–3
 ### MCP Server
 
 TerranSoul exposes its brain via MCP on three ports — `7421` (release
-app), `7422` (dev app), and `7423` (headless `npm run mcp` "pet mode"
-runner used by AI coding agents). All three are wired into
-`.vscode/mcp.json` as `terransoul-brain`, `terransoul-brain-dev`, and
-`terransoul-brain-mcp`. Use the brain tools (`brain_search`,
+app), `7422` (dev app), and `7423` (`npm run mcp` tray runner used by
+AI coding agents). `.vscode/mcp.json` exposes one workspace profile,
+`terransoul-brain-mcp`, as a stdio proxy that attaches to those ports in
+release > tray > dev priority order. Use the brain tools (`brain_search`,
 `brain_ingest`, `brain_health`, etc.) to access the companion's memory
 during coding sessions.
 
-For dev/coding work, prefer the headless runner: Copilot setup steps run
-`node scripts/copilot-start-mcp.mjs` automatically; manual sessions can run
-`npm run mcp`. The headless brain starts on `127.0.0.1:7423` with state in
-`<repo>/mcp-data/` (no collision with `npm run dev` or a running app, no
-end-user data touched). It writes the current bearer token to `.vscode/.mcp-token`;
-set `TERRANSOUL_MCP_TOKEN_MCP` from that file for VS Code's
-`terransoul-brain-mcp` profile, verify `GET http://127.0.0.1:7423/health`,
-then call `brain_health`. **Local-session rule (skip when `GITHUB_ACTIONS=true`):** every
-coding agent in a local session must check/reuse/start TerranSoul MCP at session
-start, call `brain_health` plus a relevant `brain_search` / `brain_suggest_context`
-before broad repo exploration when MCP is available, and feed durable
-self-improve lessons back into `mcp-data/shared/` or the rules/docs rather
-than leaving them only in chat. If MCP is blocked, record the blocker in
-the progress/final report. Full procedure, scope limits, and per-agent setup
-live in [rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read
-it before invoking `npm run mcp`.
+For dev/coding work, prefer reusing an existing release/tray/dev MCP server.
+Copilot setup steps run `node scripts/copilot-start-mcp.mjs` automatically;
+manual sessions can run `npm run mcp`. The tray runner starts on
+`127.0.0.1:7423` with state in `<repo>/mcp-data/` (no collision with
+`npm run dev` or a running app, no end-user data touched). The workspace
+`terransoul-brain-mcp` profile uses `scripts/mcp-tray-proxy.mjs`, which
+attaches to release `:7421`, tray `:7423`, or dev `:7422` in priority order
+and reads token files itself. **Local-session rule (skip when
+`GITHUB_ACTIONS=true`):** every coding agent in a local session must
+check/reuse/start TerranSoul MCP at session start, call `brain_health` plus a
+relevant `brain_search` / `brain_suggest_context` before broad repo exploration
+when MCP is available, and feed durable self-improve lessons back into
+`mcp-data/shared/` or the rules/docs rather than leaving them only in chat. If
+MCP is blocked, record the blocker in the progress/final report. Full procedure,
+scope limits, and per-agent setup live in
+[rules/agent-mcp-bootstrap.md](rules/agent-mcp-bootstrap.md) — read it before
+invoking `npm run mcp`.

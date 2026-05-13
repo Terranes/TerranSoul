@@ -29,6 +29,13 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::Path;
 use uuid::Uuid;
 
+pub const VERIFY_BEFORE_CLAIM_MEMBER_PHRASE: &str =
+    "Members must read the result of every tool call and never claim success on a tool error.";
+pub const VERIFY_BEFORE_CLAIM_MEMBER_FOLLOWUP_PHRASE: &str =
+    "After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.";
+pub const VERIFY_BEFORE_CLAIM_LEAD_PHRASE: &str =
+    "Lead must sanity-check a member's done claim with a cheap read when feasible.";
+
 // ---------------------------------------------------------------------------
 // Agent Roles
 // ---------------------------------------------------------------------------
@@ -67,12 +74,12 @@ impl AgentRole {
     /// Default system prompt preamble for this role.
     pub fn system_preamble(self) -> &'static str {
         match self {
-            Self::Planner => "You are a meticulous task planner. Break complex requests into clear, actionable steps. Output a structured YAML plan. Consider dependencies between steps and which specialist agent should handle each one.",
-            Self::Coder => "You are an expert software engineer. Write clean, idiomatic, well-tested code. Follow project conventions. Never leave placeholder or TODO code.",
-            Self::Reviewer => "You are a thorough code reviewer. Check for bugs, security issues, performance problems, and style violations. Provide specific, actionable feedback with file and line references.",
-            Self::Tester => "You are a testing specialist. Design comprehensive test cases, run test suites, and report results clearly. Cover edge cases and failure modes.",
-            Self::Researcher => "You are a skilled researcher. Gather relevant information from documentation, codebases, and knowledge bases. Synthesize findings into concise, actionable summaries.",
-            Self::Orchestrator => "You are a workflow orchestrator. Coordinate between specialist agents, decide when to escalate to the user, and ensure the overall goal is achieved efficiently.",
+            Self::Planner => "You are a meticulous task planner. Break complex requests into clear, actionable steps. Output a structured YAML plan. Consider dependencies between steps and which specialist agent should handle each one. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.",
+            Self::Coder => "You are an expert software engineer. Write clean, idiomatic, well-tested code. Follow project conventions. Never leave placeholder or TODO code. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.",
+            Self::Reviewer => "You are a thorough code reviewer. Check for bugs, security issues, performance problems, and style violations. Provide specific, actionable feedback with file and line references. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.",
+            Self::Tester => "You are a testing specialist. Design comprehensive test cases, run test suites, and report results clearly. Cover edge cases and failure modes. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.",
+            Self::Researcher => "You are a skilled researcher. Gather relevant information from documentation, codebases, and knowledge bases. Synthesize findings into concise, actionable summaries. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.",
+            Self::Orchestrator => "You are a workflow orchestrator. Coordinate between specialist agents, decide when to escalate to the user, and ensure the overall goal is achieved efficiently. Members must read the result of every tool call and never claim success on a tool error. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion. Lead must sanity-check a member's done claim with a cheap read when feasible.",
         }
     }
 
@@ -1074,6 +1081,26 @@ mod tests {
                 "{role} should have a balanced recommendation"
             );
         }
+    }
+
+    #[test]
+    fn verify_before_claim_phrases_are_present_in_role_prompts() {
+        for role in [
+            AgentRole::Planner,
+            AgentRole::Coder,
+            AgentRole::Reviewer,
+            AgentRole::Tester,
+            AgentRole::Researcher,
+        ] {
+            let prompt = role.system_preamble();
+            assert!(prompt.contains(VERIFY_BEFORE_CLAIM_MEMBER_PHRASE));
+            assert!(prompt.contains(VERIFY_BEFORE_CLAIM_MEMBER_FOLLOWUP_PHRASE));
+        }
+
+        let lead_prompt = AgentRole::Orchestrator.system_preamble();
+        assert!(lead_prompt.contains(VERIFY_BEFORE_CLAIM_MEMBER_PHRASE));
+        assert!(lead_prompt.contains(VERIFY_BEFORE_CLAIM_MEMBER_FOLLOWUP_PHRASE));
+        assert!(lead_prompt.contains(VERIFY_BEFORE_CLAIM_LEAD_PHRASE));
     }
 
     #[test]

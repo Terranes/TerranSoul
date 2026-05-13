@@ -261,6 +261,15 @@ const STAT_WEIGHTS: Record<StatId, Record<string, number>> = {
 const STAT_BASE = 1;
 
 /**
+ * Global scale for per-skill stat weights.
+ *
+ * Rebalanced in May 2026 so the recommended setup lands around
+ * Lv. ~20 (with INT/WIS around ~20), while stronger model tiers can still
+ * push significantly higher.
+ */
+const STAT_WEIGHT_SCALE = 0.12;
+
+/**
  * Compute a single stat from a list of active skill IDs.
  * Pure & deterministic — easy to unit-test.
  *
@@ -277,7 +286,7 @@ export function computeStat(
   const weights = STAT_WEIGHTS[statId];
   let sum = STAT_BASE;
   for (const skillId of activeSkillIds) {
-    sum += weights[skillId] ?? 0;
+    sum += (weights[skillId] ?? 0) * STAT_WEIGHT_SCALE;
   }
   if (brainBoost) {
     sum += brainBoost[statId] ?? 0;

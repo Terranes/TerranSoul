@@ -309,6 +309,16 @@ fn describe_tool(tool_name: &str, args: &Value) -> (String, String) {
             let url = arg_text(args, "url").unwrap_or_else(|| "the requested source".into());
             ("URL ingest".into(), format!("ingesting {url}"))
         }
+        "brain_append" => {
+            let id = args["id"]
+                .as_i64()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "an existing entry".into());
+            (
+                "Memory append".into(),
+                format!("appending update to memory {id}"),
+            )
+        }
         "brain_health" => ("Brain health check".into(), "checking brain health".into()),
         other => (other.replace('_', " "), format!("running {other}")),
     }

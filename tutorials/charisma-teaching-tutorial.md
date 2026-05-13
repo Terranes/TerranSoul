@@ -110,8 +110,6 @@ Untested → Learning → Proven → Canon.
 
 ## 2. The Four Maturity Tiers
 
-![Tier progression diagram: Untested → Learning → Proven → Canon with thresholds](screenshots/charisma-teaching/02-maturity-tiers.png)
-
 | Tier | Symbol | Rule | Meaning |
 |---|---|---|---|
 | **Untested** | ⏺ | Never used by the LLM since taught | Brand new — even the brain doesn't know about it yet |
@@ -128,8 +126,6 @@ so the UI never disagrees with the backend.
 ---
 
 ## 3. The Charisma Management Panel
-
-![Charisma panel with 3 tabs and summary dashboard showing tier counts](screenshots/charisma-teaching/03-management-panel.png)
 
 **Open:** right-click the pet character → **Charisma — Teach me…**
 
@@ -163,8 +159,6 @@ naturally falls on actionable Proven items.
 ---
 
 ## 4. How to Teach — Three Worked Examples
-
-![Side-by-side showing expression capture, motion recording, and trait editing](screenshots/charisma-teaching/04-teaching-examples.png)
 
 ### 4.1 Teaching a facial expression ("Smug")
 
@@ -211,8 +205,6 @@ charisma. Instead:
 ---
 
 ## 5. Self-Improve Integration — Promote → Workflow → Source
-
-![Promote flow diagram from Charisma panel through 4-step DAG to source code](screenshots/charisma-teaching/05-self-improve.png)
 
 The promote button does **not** edit source files directly. Instead it
 delegates to the **multi-agent workflow runner** built in Chunk 30.3.
@@ -292,8 +284,6 @@ appends rather than overwrites.
 
 ## 6. Worked End-to-End Example — “indeed”
 
-![Timeline showing the 10-day journey from trait addition to Canon promotion](screenshots/charisma-teaching/06-worked-example.png)
-
 > A chat user says *"You should pepper 'indeed' into your responses."*
 > By the end of this example, the word "indeed" is shipping with every
 > future copy of TerranSoul.
@@ -342,8 +332,6 @@ learning → measurement → promotion → bundled default → next install**.
 
 ## 7. Removing / Forgetting Things
 
-![Delete and demote options shown on Charisma panel rows](screenshots/charisma-teaching/07-removing.png)
-
 The Charisma panel has a **Delete** button per row that removes only
 the stats — the underlying `LearnedExpression` / `LearnedMotion` /
 trait quirk stays. To delete the underlying asset, use the Persona
@@ -367,8 +355,6 @@ shipping something to every future install.
 
 ## 8. Where Charisma Lives in the Codebase
 
-![Codebase map showing Rust backend, Pinia store, and Vue component relationships](screenshots/charisma-teaching/08-codebase-map.png)
-
 | File | Role |
 |---|---|
 | [src-tauri/src/persona/charisma.rs](../src-tauri/src/persona/charisma.rs) | Data model + maturity rules + atomic JSON persistence + `build_promotion_plan()` |
@@ -386,8 +372,6 @@ file, atomic write, schema-versioned).
 ---
 
 ## 9. Design Rationale — Why This Shape?
-
-![Design decision tree explaining separation of stats from assets](screenshots/charisma-teaching/09-design-rationale.png)
 
 - **Why a separate stats file?** Because we want to delete a learned
   expression *without* losing the lesson "this expression was

@@ -1,6 +1,9 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { tryContainerFallback } from './brain-container-fallback';
+import { useConversationStore } from './conversation';
+import { streamChatCompletion } from '../utils/free-api-client';
 import type {
   AgentRole,
   AgentRouteConfig,
@@ -412,6 +415,27 @@ export const useBrainStore = defineStore('brain', () => {
     activeBrain.value = modelName;
   }
 
+  /**
+   * Pre-load the active local Ollama chat model into VRAM with a long
+   * `keep_alive` so the next user reply lands in milliseconds instead of
+   * paying a 10–20s cold-load on consumer GPUs.
+   *
+   * Fire-and-forget: returns immediately. Errors are swallowed (the chat
+   * path will still work, just with a one-time cold-start). Call after
+   * installing a recommended model, on app start when LocalOllama is
+   * active, and on brain-mode change to LocalOllama.
+   */
+  async function warmupLocalOllama(model?: string): Promise<number | null> {
+    try {
+      const ms = await invoke<number>('warmup_local_ollama', {
+        model: model ?? null,
+      });
+      return ms;
+    } catch {
+      return null;
+    }
+  }
+
   async function clearActiveBrain(): Promise<void> {
     await invoke('clear_active_brain');
     activeBrain.value = null;
@@ -524,6 +548,9 @@ export const useBrainStore = defineStore('brain', () => {
     // Update legacy activeBrain for backwards compatibility
     if (mode.mode === 'local_ollama') {
       activeBrain.value = mode.model;
+      // Pre-warm chat model into VRAM in the background so the first
+      // user reply is fast. Fire-and-forget — no await.
+      void warmupLocalOllama(mode.model);
     } else {
       activeBrain.value = null;
     }
@@ -635,12 +662,42 @@ export const useBrainStore = defineStore('brain', () => {
     }
   }
 
+  /**
+   * If brain is configured for cloud (free_api) but Ollama is running
+   * locally with at least one model installed, auto-upgrade to local_ollama
+   * for dramatically lower latency (~400ms vs 5-25s for free cloud APIs).
+   * Runs once at app startup — never overwrites an explicit user choice
+   * of paid_api or local_lm_studio.
+   */
+  async function maybeUpgradeToLocalOllama(): Promise<boolean> {
+    if (!brainMode.value || brainMode.value.mode !== 'free_api') return false;
+    try {
+      await checkOllamaStatus();
+      if (!ollamaStatus.value.running) return false;
+      await fetchInstalledModels();
+      if (installedModels.value.length === 0) return false;
+      await fetchSystemInfo();
+      const best = ramAwareFallback(systemInfo.value?.total_ram_mb);
+      const match = installedModels.value.find(m => m.name === best)
+        ?? installedModels.value[0];
+      await setBrainMode({ mode: 'local_ollama', model: match.name });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** RAM-aware fallback when the catalogue/recommendations are unavailable. */
   function ramAwareFallback(totalRamMb?: number): string {
     const ram = totalRamMb ?? 0;
-    if (ram >= 32_768) return 'gemma4:31b';
-    if (ram >= 16_384) return 'gemma4:e4b';
-    if (ram >= 8_192) return 'gemma4:e2b';
+    // Optimised for sub-1 s first-token latency on consumer GPUs.
+    // VRAM (not RAM) is the real constraint for interactive chat.
+    // gemma3:4b (3.1 GB) is the sweet spot: fits any 8+ GB GPU with
+    // room for nomic-embed-text, and delivers <500 ms TTFT.
+    // gemma4:e4b (8.9 GB) is slower on 12 GB GPUs and causes VRAM
+    // contention with embeddings — only recommend on ≥24 GB VRAM systems.
+    if (ram >= 49_152) return 'gemma4:e4b'; // 48+ GB RAM likely has ≥24 GB VRAM
+    if (ram >= 8_192) return 'gemma3:4b';
     if (ram >= 4_096) return 'gemma3:1b';
     return 'tinyllama';
   }
@@ -749,17 +806,36 @@ export const useBrainStore = defineStore('brain', () => {
         }
       }
 
-      // If still not running after install/start attempts, fall back to cloud.
+      // If still not running after native install/start attempts,
+      // try Docker/Podman-based Ollama before falling back to cloud.
+      // Priority: Docker Desktop > Podman. Auto-install if neither present.
       if (!ollamaStatus.value.running) {
-        report('Could not get Ollama running — using free cloud AI...');
-        await autoConfigureForDesktop();
-        return {
-          mode: 'cloud',
-          model: 'Pollinations AI',
-          pulled: false,
-          ollamaInstalled,
-          ollamaStarted,
-        };
+        let dockerFallbackOk = false;
+        try {
+          const modelTag = topRecommendation.value?.model_tag
+            || ramAwareFallback(systemInfo.value?.total_ram_mb);
+          dockerFallbackOk = await tryContainerFallback({
+            report,
+            modelTag,
+            checkOllamaStatus,
+            fetchInstalledModels,
+            isOllamaRunning: () => ollamaStatus.value.running,
+          });
+        } catch (e) {
+          report(`Container-based Ollama setup failed: ${e}`);
+        }
+
+        if (!dockerFallbackOk) {
+          report('Could not get Ollama running — using free cloud AI...');
+          await autoConfigureForDesktop();
+          return {
+            mode: 'cloud',
+            model: 'Pollinations AI',
+            pulled: false,
+            ollamaInstalled,
+            ollamaStarted,
+          };
+        }
       }
     }
 
@@ -904,7 +980,6 @@ export const useBrainStore = defineStore('brain', () => {
       if (dismissed.includes(info.recommended_model)) return;
 
       // 4. Push an upgrade quest message into the chat.
-      const { useConversationStore } = await import('./conversation');
       const conversation = useConversationStore();
       conversation.addMessage({
         id: crypto.randomUUID(),
@@ -964,7 +1039,6 @@ export const useBrainStore = defineStore('brain', () => {
         return '';
       }
 
-      const { streamChatCompletion } = await import('../utils/free-api-client');
       return new Promise<string>((resolve) => {
         let text = '';
         streamChatCompletion(
@@ -1081,6 +1155,7 @@ export const useBrainStore = defineStore('brain', () => {
     fetchLmStudioModels,
     pullModel,
     setActiveBrain,
+    warmupLocalOllama,
     clearActiveBrain,
     factoryReset,
     downloadLmStudioModel,
@@ -1094,6 +1169,7 @@ export const useBrainStore = defineStore('brain', () => {
     authoriseBrowserProvider,
     clearBrowserAuthorisation,
     autoConfigureForDesktop,
+    maybeUpgradeToLocalOllama,
     autoConfigureLocalFirst,
     initialise,
     checkForModelUpdates,

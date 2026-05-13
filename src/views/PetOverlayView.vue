@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <div class="pet-overlay">
     <!-- Character container — positioned absolutely within the full-screen window.
          Dragging moves the CSS position.  Click toggles chat.  Right-click opens menu. -->
@@ -12,15 +12,15 @@
     >
       <CharacterViewport ref="viewportRef" />
 
-      <!-- Floating chat bubble (shows recent message) -->
+      <!-- Floating chat bubble (shows streaming text or last message) -->
       <Transition name="bubble">
         <div
-          v-if="showBubble && lastAssistantText && !petChatExpanded"
+          v-if="showBubble && bubbleText && !petChatExpanded"
           class="pet-bubble"
           @click.stop="toggleChat"
         >
           <p class="pet-bubble-text">
-            {{ truncatedMessage }}
+            {{ truncatedBubble }}
           </p>
         </div>
       </Transition>
@@ -37,7 +37,14 @@
           @mousedown.stop
         >
           <div class="pet-chat-header">
-            <span class="pet-chat-title">Chat</span>
+            <div class="pet-chat-title-row">
+              <span class="pet-chat-title">Chat</span>
+              <span
+                v-if="windowStore.isDevBuild"
+                class="pet-chat-dev-pill"
+                title="Development build â€” MCP on port 7422"
+              >DEV</span>
+            </div>
             <div class="pet-chat-actions">
               <button
                 class="pet-chat-action-btn"
@@ -327,6 +334,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, type CSSProperties } from 'vue';
 import { storeToRefs } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -337,7 +346,6 @@ import { useAudioStore } from '../stores/audio';
 import { useChatExpansion } from '../composables/useChatExpansion';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
-import { GENDER_VOICES } from '../config/default-models';
 import type { CharacterState } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
@@ -497,8 +505,8 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
 const audioStore = useAudioStore();
 const { muted: audioMuted } = storeToRefs(audioStore);
 const tts = useTtsPlayback({
-  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
-  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  getBrowserPitch: () => characterStore.currentBrowserPitch(),
+  getBrowserRate: () => characterStore.currentBrowserRate(),
   mutedRef: audioMuted,
 });
 
@@ -890,6 +898,20 @@ watch(petModalOpen, (open) => {
   }
 });
 
+// On Windows, DWM ignores clicks on fully-transparent pixels even when
+// set_ignore_cursor_events(false) is active.  Toggle the WebView2
+// background alpha between 0 (click-through on blank areas) and 1
+// (visually invisible but hittable) so interactive overlays receive clicks.
+// IMPORTANT: keep this restricted to true full-screen overlays only.
+// Including `petChatExpanded` here can paint the whole desktop black on some
+// Windows/WebView2 configurations.
+const anyInteractiveOverlay = computed(
+  () => petModalOpen.value,
+);
+watch(anyInteractiveOverlay, (open) => {
+  invoke('set_pet_modal_backdrop', { opaque: open }).catch(() => {});
+});
+
 // ── Chat ──────────────────────────────────────────────────────────────────────
 const recentMessages = computed(() => conversationStore.messages.slice(-20));
 
@@ -924,8 +946,16 @@ const lastAssistantText = computed(() => {
   return assistantMsgs.length > 0 ? assistantMsgs[assistantMsgs.length - 1].content : '';
 });
 
-const truncatedMessage = computed(() => {
-  const text = lastAssistantText.value;
+/** During streaming, show the live text; otherwise show the last completed message. */
+const bubbleText = computed(() => {
+  if (conversationStore.isStreaming && conversationStore.streamingText) {
+    return conversationStore.streamingText;
+  }
+  return lastAssistantText.value;
+});
+
+const truncatedBubble = computed(() => {
+  const text = bubbleText.value;
   return text.length > 120 ? text.substring(0, 117) + '…' : text;
 });
 
@@ -1007,7 +1037,7 @@ const emotionOnLeft = computed(() => {
   const monitors = windowStore.monitors;
   const dpr = window.devicePixelRatio || 1;
   const charRight = charX.value + charW.value + 60;
-  if (!monitors.length) {
+  if (!monitors?.length) {
     return charRight > (typeof window !== 'undefined' ? window.innerWidth : 1920);
   }
   // Find which monitor contains the character's center
@@ -1143,11 +1173,105 @@ function scrollToBottom() {
   }
 }
 
+// ── Pet-chat ingest support ───────────────────────────────────────────────────
+// Allows pasting a URL or using `/ingest <url>` / `/digest <text>` directly
+// in the pet chat without switching to the full window.
+
+function looksLikeUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function petMsg(role: 'user' | 'assistant', content: string) {
+  return { id: crypto.randomUUID(), role, content, timestamp: Date.now() } as const;
+}
+
+async function handlePetIngestCommand(text: string): Promise<boolean> {
+  // /ingest <url-or-path>
+  const ingestMatch = text.match(/^\/ingest\s+(.+)/i);
+  if (ingestMatch) {
+    const source = ingestMatch[1].trim();
+    conversationStore.addMessage(petMsg('user', text));
+    try {
+      const result = await invoke<{ task_id: string; source: string; source_type: string }>(
+        'ingest_document',
+        { source, tags: 'imported', importance: 4 },
+      );
+      conversationStore.addMessage(
+        petMsg('assistant', `📥 Ingesting ${result.source_type}: ${result.source}\nTask: ${result.task_id}`),
+      );
+    } catch (err) {
+      conversationStore.addMessage(petMsg('assistant', `❌ Ingest failed: ${err}`));
+    }
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  // /digest <text> — digest pasted text into the brain wiki
+  const digestMatch = text.match(/^\/digest\s+(.+)/is);
+  if (digestMatch) {
+    const content = digestMatch[1].trim();
+    conversationStore.addMessage(petMsg('user', text));
+    // If it looks like a URL, route to ingest_document instead
+    if (looksLikeUrl(content)) {
+      try {
+        const result = await invoke<{ task_id: string; source: string; source_type: string }>(
+          'ingest_document',
+          { source: content, tags: 'wiki:digest,imported', importance: 4 },
+        );
+        conversationStore.addMessage(
+          petMsg('assistant', `📥 Ingesting ${result.source_type}: ${result.source}\nTask: ${result.task_id}`),
+        );
+      } catch (err) {
+        conversationStore.addMessage(petMsg('assistant', `❌ Ingest failed: ${err}`));
+      }
+    } else {
+      try {
+        const result = await invoke<{ kind: string; entry_id?: number; existing_id?: number }>(
+          'brain_wiki_digest_text',
+          { content, sourceUrl: null, tags: 'wiki:digest,chat', importance: 4 },
+        );
+        const id = result.kind === 'skipped' ? result.existing_id : result.entry_id;
+        conversationStore.addMessage(
+          petMsg('assistant', result.kind === 'skipped'
+            ? `⏭ Already known (memory #${id}).`
+            : `✅ Digested into memory #${id}.`),
+        );
+      } catch (err) {
+        conversationStore.addMessage(petMsg('assistant', `❌ Digest failed: ${err}`));
+      }
+    }
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  // /help — show available slash commands
+  if (/^\/help\s*$/i.test(text)) {
+    conversationStore.addMessage(petMsg('user', text));
+    conversationStore.addMessage(
+      petMsg('assistant', [
+        '**Pet Chat Commands:**',
+        '`/ingest <url>` — Fetch and learn a URL or local file',
+        '`/digest <text>` — Digest pasted text into the brain',
+        '`/help` — Show this help',
+        '',
+        'You can also just paste a URL to chat — the brain uses RAG to answer from your memories.',
+      ].join('\n')),
+    );
+    nextTick(() => scrollToBottom());
+    return true;
+  }
+
+  return false;
+}
+
 async function handleSend() {
   const text = inputText.value.trim();
   if (!text || conversationStore.isThinking) return;
   inputText.value = '';
   autoResize();
+
+  // Handle /ingest and /digest slash commands in pet chat
+  if (await handlePetIngestCommand(text)) return;
 
   // Stop any ongoing TTS before sending a new message
   tts.stop();
@@ -1156,11 +1280,6 @@ async function handleSend() {
   await conversationStore.sendMessage(text);
 
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
-  const reactionState = lastMsg?.role === 'assistant'
-    ? sentimentToState(lastMsg.sentiment)
-    : 'idle';
-
-  setAvatarState(reactionState);
 
   if (lastMsg?.role === 'assistant') {
     // Trigger VRMA body animation from the LLM's motion tag (browser-side path)
@@ -1173,16 +1292,17 @@ async function handleSend() {
       tts.feedChunk(lastMsg.content);
       tts.flush();
     }
+
+    // Only set final emotion if TTS is NOT still speaking.
+    // While TTS is active, the isSpeaking watcher keeps the avatar in
+    // 'talking' mode and will transition to 'idle' when speech finishes.
+    if (!tts.isSpeaking.value) {
+      const reactionState = sentimentToState(lastMsg.sentiment);
+      setAvatarState(reactionState);
+    }
   }
 
   nextTick(() => scrollToBottom());
-
-  setTimeout(() => {
-    if (!tts.isSpeaking.value) {
-      setAvatarState('idle');
-      viewportRef.value?.stopMotion?.();
-    }
-  }, 6000);
 }
 
 const canSkipDialog = computed(
@@ -1244,21 +1364,43 @@ watch(
     if (!petChatExpanded.value) {
       showBubble.value = true;
       setTimeout(() => {
-        if (!petChatExpanded.value) showBubble.value = false;
+        if (!petChatExpanded.value && !conversationStore.isStreaming && !tts.isSpeaking.value) {
+          showBubble.value = false;
+        }
       }, 8000);
     }
   },
 );
 
-// Map streaming emotion to character state
+// Show bubble during streaming when chat panel is collapsed
+watch(
+  () => conversationStore.isStreaming,
+  (active) => {
+    if (active && !petChatExpanded.value) {
+      showBubble.value = true;
+    }
+  },
+);
+
+// Hide bubble after TTS finishes (with delay for readability)
+watch(tts.isSpeaking, (speaking) => {
+  if (!speaking && !conversationStore.isStreaming && !petChatExpanded.value) {
+    setTimeout(() => {
+      if (!conversationStore.isStreaming && !tts.isSpeaking.value && !petChatExpanded.value) {
+        showBubble.value = false;
+      }
+    }, 5000);
+  }
+});
+
+// Map streaming emotion to face blend shapes only (body stays 'talking').
+// The isSpeaking watcher handles the body → idle transition when TTS finishes.
 watch(
   () => streaming.currentEmotion,
   (emotion) => {
     if (emotion) {
-      characterStore.setState(sentimentToState(emotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(emotion === 'neutral' ? 'neutral' : emotion, streaming.currentEmotionIntensity);
-      setTimeout(() => setAvatarState('idle'), 6000);
     }
   },
 );
@@ -1277,7 +1419,10 @@ watch(
   (active) => {
     if (active) {
       setAvatarState('talking');
-    } else if (streaming.currentEmotion) {
+    } else if (!tts.isSpeaking.value && streaming.currentEmotion) {
+      // Only apply final emotion if TTS is already done.
+      // If TTS is still speaking, the isSpeaking watcher handles
+      // the transition to idle/emotion when speech finishes.
       characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
@@ -1285,7 +1430,7 @@ watch(
   },
 );
 
-// TTS speaking state → body='talk', done → body='idle'
+// TTS speaking state → body='talk', done → apply final emotion or idle
 watch(tts.isSpeaking, (speaking) => {
   // Don't override state when a VRMA mood animation is active
   if (viewportRef.value?.isAnimationActive) return;
@@ -1295,8 +1440,19 @@ watch(tts.isSpeaking, (speaking) => {
     asm.forceBody('talk');
     characterStore.setState('talking');
   } else {
-    asm.forceBody('idle');
-    characterStore.setState('idle');
+    // TTS finished — apply the final emotion from the stream, or go idle.
+    if (streaming.currentEmotion) {
+      const finalState = sentimentToState(streaming.currentEmotion);
+      characterStore.setState(finalState, streaming.currentEmotionIntensity);
+      asm.forceBody('idle');
+      asm.setEmotion(
+        streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion,
+        streaming.currentEmotionIntensity,
+      );
+    } else {
+      asm.forceBody('idle');
+      characterStore.setState('idle');
+    }
   }
 });
 
@@ -1328,6 +1484,24 @@ onMounted(async () => {
   // which physical screen the cursor is on and avoid crossing monitor edges.
   windowStore.loadMonitors();
 
+  // Enable cursor passthrough BEFORE brain loading so the window never blocks
+  // desktop clicks during Ollama/API init (which can take several seconds).
+  // The cursor poll dynamically flips passthrough OFF only when the cursor is
+  // over the character, chat panel, or bubble.
+  try {
+    unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
+      'pet-cursor-pos',
+      (event) => handleCursorPos(event.payload),
+    );
+    windowStore.startPetCursorPoll();
+    windowStore.setCursorPassthrough(true);
+    lastPassthrough = true;
+  } catch {
+    // No Tauri (browser / e2e) â€” passthrough off so the pet UI is interactable.
+    windowStore.setCursorPassthrough(false);
+    lastPassthrough = false;
+  }
+
   try {
     await brain.loadActiveBrain();
   } catch {
@@ -1337,17 +1511,22 @@ onMounted(async () => {
     }
   }
 
+  // If currently on a free cloud API but Ollama is running locally,
+  // auto-upgrade for dramatically lower latency (~400ms vs 5-25s).
+  await brain.maybeUpgradeToLocalOllama();
+
   try {
-    const { listen } = await import('@tauri-apps/api/event');
-    unlistenLlmChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+    unlistenLlmChunk = await listen<{ text: string; done: boolean; thinking?: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
 
-      // Feed text into TTS (same as ChatView)
+      // Feed text into TTS (same as ChatView). Thinking chunks are
+      // reasoning traces and must NOT be spoken — only answer chunks
+      // reach the voice pipeline.
       if (voice.config.tts_provider) {
         if (event.payload.done) {
           tts.flush();
           streamTtsActive = false;
-        } else if (event.payload.text) {
+        } else if (event.payload.text && !event.payload.thinking) {
           if (!streamTtsActive) {
             // New AI response started: stop previous speech and only speak latest.
             tts.stop();
@@ -1374,21 +1553,8 @@ onMounted(async () => {
       }
     });
 
-    // Start cursor-position polling from Rust.  On each event we decide
-    // whether the cursor is over an interactive component and toggle
-    // set_ignore_cursor_events accordingly.
-    unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
-      'pet-cursor-pos',
-      (event) => handleCursorPos(event.payload),
-    );
-    windowStore.startPetCursorPoll();
-    // Default: pass-through ON so clicks on empty space go to the desktop.
-    windowStore.setCursorPassthrough(true);
-    lastPassthrough = true;
   } catch {
-    // No Tauri — browser fallback: passthrough off so we can interact.
-    windowStore.setCursorPassthrough(false);
-    lastPassthrough = false;
+    // No Tauri — LLM streaming unavailable in browser/e2e context.
   }
 
   // Hook into OrbitControls once the viewport is ready so the emotion
@@ -1486,7 +1652,8 @@ onUnmounted(() => {
 
 .pet-character {
   position: absolute;
-  cursor: grab;
+  /* Chat-bubble cursor while hovering the model body. */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath fill='%23ffffff' stroke='%23111827' stroke-width='1.5' d='M4.5 5.5h15a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H10l-4.6 3.8a.7.7 0 0 1-1.1-.55V17.5h-.8a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2z'/%3E%3C/svg%3E") 4 4, pointer;
   user-select: none;
   -webkit-user-drag: none;
   overflow: visible;
@@ -1495,6 +1662,7 @@ onUnmounted(() => {
 }
 /* Allow text selection inside the chat panel */
 .pet-chat {
+  cursor: default;
   user-select: text;
 }
 .pet-character:active {
@@ -1573,6 +1741,26 @@ onUnmounted(() => {
   border-radius: 16px 16px 0 0;
   background: var(--ts-bg-panel);
 }
+.pet-chat-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pet-chat-dev-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 14px;
+  background: var(--ts-warning, #fbbf24);
+  color: var(--ts-bg-base, #1a1b2e);
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.85;
+}
 .pet-chat-actions {
   display: flex;
   align-items: center;
@@ -1623,6 +1811,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 8px;
   max-height: 280px;
+  cursor: text;
 }
 .pet-msg {
   padding: 8px 12px;
@@ -1631,6 +1820,7 @@ onUnmounted(() => {
   line-height: 1.4;
   max-width: 85%;
   word-wrap: break-word;
+  cursor: text;
 }
 .pet-msg.user {
   background: var(--ts-accent-glow);
@@ -1643,6 +1833,12 @@ onUnmounted(() => {
   border-radius: 12px 12px 12px 4px;
 }
 .pet-msg-text { color: var(--ts-text-bright, var(--ts-text-primary)); }
+
+.pet-msg-text,
+.pet-msg-time,
+.pet-date-sep {
+  cursor: text;
+}
 
 .pet-msg-time {
   display: block;
@@ -1684,7 +1880,7 @@ onUnmounted(() => {
   display: flex;
   align-items: flex-end;
   gap: 8px;
-  padding: 10px 12px;
+  padding: 0 12px 10px;
   border-top: 1px solid var(--ts-border);
 }
 .pet-chat-input textarea {

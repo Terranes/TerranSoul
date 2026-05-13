@@ -37,7 +37,7 @@
                 :key="model.id"
                 :value="model.id"
               >
-                {{ model.name }}
+                {{ modelDisplayName(model) }}
               </option>
             </optgroup>
             <optgroup
@@ -49,7 +49,7 @@
                 :key="model.id"
                 :value="model.id"
               >
-                {{ model.name }}
+                {{ modelDisplayName(model) }}
               </option>
             </optgroup>
           </select>
@@ -95,12 +95,14 @@
               <select
                 v-model="importGender"
                 class="import-form__select"
+                @change="onImportGenderChange"
               >
-                <option value="female">
-                  Female
-                </option>
-                <option value="male">
-                  Male
+                <option
+                  v-for="option in genderOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
                 </option>
               </select>
             </label>
@@ -114,11 +116,99 @@
                   None (use active persona)
                 </option>
                 <option
-                  v-for="p in personaOptions"
-                  :key="p"
-                  :value="p"
+                  v-for="personaName in personaOptions"
+                  :key="personaName"
+                  :value="personaName"
                 >
-                  {{ p }}
+                  {{ personaName }}
+                </option>
+              </select>
+            </label>
+            <label class="import-form__label">
+              Voice
+              <input
+                v-model="importVoiceName"
+                type="text"
+                class="import-form__input"
+                placeholder="e.g. en-US-AnaNeural"
+              >
+            </label>
+            <div class="voice-grid">
+              <label class="import-form__label">
+                Age
+                <select
+                  v-model="importAge"
+                  class="import-form__select"
+                >
+                  <option
+                    v-for="option in ageOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="import-form__label">
+                Pitch
+                <select
+                  v-model="importPitch"
+                  class="import-form__select"
+                >
+                  <option
+                    v-for="option in pitchOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <div class="voice-grid">
+              <label class="import-form__label">
+                Style
+                <select
+                  v-model="importStyle"
+                  class="import-form__select"
+                >
+                  <option
+                    v-for="option in styleOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+              <label class="import-form__label">
+                English accent
+                <select
+                  v-model="importEnglishAccent"
+                  class="import-form__select"
+                >
+                  <option
+                    v-for="option in englishAccentOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
+                </select>
+              </label>
+            </div>
+            <label class="import-form__label">
+              Chinese dialect
+              <select
+                v-model="importChineseDialect"
+                class="import-form__select"
+              >
+                <option
+                  v-for="option in chineseDialectOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
                 </option>
               </select>
             </label>
@@ -164,11 +254,23 @@
             <VrmThumbnail
               :cache-key="model.id"
               :model-path="model.path"
-              :alt="model.name"
+              :alt="modelDisplayName(model)"
             />
             <div class="model-info">
-              <span class="model-name">{{ model.name }}</span>
-              <span class="model-author">Bundled</span>
+              <span class="model-name">{{ modelDisplayName(model) }}</span>
+              <span class="model-author">Bundled · {{ modelProfileSummary(model) }}</span>
+              <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
+            </div>
+            <div class="model-actions">
+              <button
+                class="edit-btn"
+                :disabled="isLoading"
+                :aria-label="`Edit ${modelDisplayName(model)}`"
+                title="Edit model"
+                @click.stop="openEditDialog(model)"
+              >
+                ✎
+              </button>
             </div>
           </div>
 
@@ -182,21 +284,22 @@
             <VrmThumbnail
               :cache-key="model.id"
               :user-model-id="model.id"
-              :alt="model.name"
+              :alt="modelDisplayName(model)"
             />
             <div class="model-info">
-              <span class="model-name">{{ model.name }}</span>
-              <span class="model-author">{{ model.gender === 'male' ? '🧑' : '👩' }} {{ model.gender }} · {{ model.original_filename }}</span>
+              <span class="model-name">{{ modelDisplayName(model) }}</span>
+              <span class="model-author">{{ modelProfileSummary(model) }} · {{ model.original_filename }}</span>
               <span
-                v-if="model.persona"
+                v-if="characterStore.resolveModelProfile(model).persona"
                 class="model-persona"
-              >🎭 {{ model.persona }}</span>
+              >{{ characterStore.resolveModelProfile(model).persona }}</span>
+              <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
             </div>
             <div class="model-actions">
               <button
                 class="edit-btn"
                 :disabled="isLoading"
-                :aria-label="`Edit ${model.name}`"
+                :aria-label="`Edit ${modelDisplayName(model)}`"
                 title="Edit model"
                 @click.stop="openEditDialog(model)"
               >
@@ -236,12 +339,14 @@
                 <select
                   v-model="editGender"
                   class="import-form__select"
+                  @change="onEditGenderChange"
                 >
-                  <option value="female">
-                    Female
-                  </option>
-                  <option value="male">
-                    Male
+                  <option
+                    v-for="option in genderOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
                   </option>
                 </select>
               </label>
@@ -255,11 +360,99 @@
                     None (use active persona)
                   </option>
                   <option
-                    v-for="p in personaOptions"
-                    :key="p"
-                    :value="p"
+                    v-for="personaName in personaOptions"
+                    :key="personaName"
+                    :value="personaName"
                   >
-                    {{ p }}
+                    {{ personaName }}
+                  </option>
+                </select>
+              </label>
+              <label class="import-form__label">
+                Voice
+                <input
+                  v-model="editVoiceName"
+                  type="text"
+                  class="import-form__input"
+                  placeholder="e.g. en-US-AnaNeural"
+                >
+              </label>
+              <div class="voice-grid">
+                <label class="import-form__label">
+                  Age
+                  <select
+                    v-model="editAge"
+                    class="import-form__select"
+                  >
+                    <option
+                      v-for="option in ageOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="import-form__label">
+                  Pitch
+                  <select
+                    v-model="editPitch"
+                    class="import-form__select"
+                  >
+                    <option
+                      v-for="option in pitchOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <div class="voice-grid">
+                <label class="import-form__label">
+                  Style
+                  <select
+                    v-model="editStyle"
+                    class="import-form__select"
+                  >
+                    <option
+                      v-for="option in styleOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="import-form__label">
+                  English accent
+                  <select
+                    v-model="editEnglishAccent"
+                    class="import-form__select"
+                  >
+                    <option
+                      v-for="option in englishAccentOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+              </div>
+              <label class="import-form__label">
+                Chinese dialect
+                <select
+                  v-model="editChineseDialect"
+                  class="import-form__select"
+                >
+                  <option
+                    v-for="option in chineseDialectOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
                   </option>
                 </select>
               </label>
@@ -297,7 +490,21 @@
 import { computed, ref } from 'vue';
 import { useCharacterStore, type UserModel } from '../stores/character';
 import { usePersonaStore } from '../stores/persona';
-import type { ModelGender } from '../config/default-models';
+import { GENDER_VOICES, type DefaultModel, type ModelGender } from '../config/default-models';
+import {
+  PERSONA_CHINESE_DIALECT_OPTIONS,
+  PERSONA_ENGLISH_ACCENT_OPTIONS,
+  PERSONA_VOICE_AGE_OPTIONS,
+  PERSONA_VOICE_GENDER_OPTIONS,
+  PERSONA_VOICE_PITCH_OPTIONS,
+  PERSONA_VOICE_STYLE_OPTIONS,
+  defaultPersonaVoiceProfile,
+  type PersonaChineseDialect,
+  type PersonaEnglishAccent,
+  type PersonaVoiceAge,
+  type PersonaVoicePitch,
+  type PersonaVoiceStyle,
+} from '../stores/persona-types';
 import VrmThumbnail from './VrmThumbnail.vue';
 import { preGenerateUserThumbnail } from '../composables/useVrmThumbnail';
 
@@ -312,12 +519,33 @@ const showImportForm = ref(false);
 const importName = ref('');
 const importGender = ref<ModelGender>('female');
 const importPersona = ref('');
+const importVoiceName = ref(GENDER_VOICES.female.edgeVoice);
+const importAge = ref<PersonaVoiceAge>(defaultPersonaVoiceProfile().age);
+const importPitch = ref<PersonaVoicePitch>(defaultPersonaVoiceProfile().pitch);
+const importStyle = ref<PersonaVoiceStyle>(defaultPersonaVoiceProfile().style);
+const importEnglishAccent = ref<PersonaEnglishAccent>(defaultPersonaVoiceProfile().englishAccent);
+const importChineseDialect = ref<PersonaChineseDialect>(defaultPersonaVoiceProfile().chineseDialect);
 
 // ── Edit dialog state ─────────────────────────────────────────────────────
-const editingModel = ref<UserModel | null>(null);
+type EditableModel = DefaultModel | UserModel;
+
+const editingModel = ref<EditableModel | null>(null);
 const editName = ref('');
 const editGender = ref<ModelGender>('female');
 const editPersona = ref('');
+const editVoiceName = ref('');
+const editAge = ref<PersonaVoiceAge>('adult');
+const editPitch = ref<PersonaVoicePitch>('medium');
+const editStyle = ref<PersonaVoiceStyle>('natural');
+const editEnglishAccent = ref<PersonaEnglishAccent>('american');
+const editChineseDialect = ref<PersonaChineseDialect>('mandarin');
+
+const genderOptions = PERSONA_VOICE_GENDER_OPTIONS;
+const ageOptions = PERSONA_VOICE_AGE_OPTIONS;
+const pitchOptions = PERSONA_VOICE_PITCH_OPTIONS;
+const styleOptions = PERSONA_VOICE_STYLE_OPTIONS;
+const englishAccentOptions = PERSONA_ENGLISH_ACCENT_OPTIONS;
+const chineseDialectOptions = PERSONA_CHINESE_DIALECT_OPTIONS;
 
 /** Persona options: the current active persona name + "Custom" for typed input. */
 const personaOptions = computed<string[]>(() => {
@@ -326,17 +554,65 @@ const personaOptions = computed<string[]>(() => {
     names.add(personaStore.traits.name);
   }
   // Add any personas already assigned to user models
-  for (const m of characterStore.userModels) {
-    if (m.persona) names.add(m.persona);
+  for (const model of characterStore.userModels) {
+    const profile = characterStore.resolveModelProfile(model);
+    if (profile.persona) names.add(profile.persona);
   }
   return [...names].sort();
 });
 
-function openEditDialog(model: UserModel) {
+function modelDisplayName(model: EditableModel): string {
+  return characterStore.resolveModelProfile(model).name;
+}
+
+function modelProfileSummary(model: EditableModel): string {
+  const profile = characterStore.resolveModelProfile(model);
+  return `${labelFor(profile.gender, genderOptions)} · ${labelFor(profile.voiceProfile.age, ageOptions)} · ${labelFor(profile.voiceProfile.pitch, pitchOptions)} pitch`;
+}
+
+function modelVoiceSummary(model: EditableModel): string {
+  const profile = characterStore.resolveModelProfile(model);
+  const dialect = labelFor(profile.voiceProfile.chineseDialect, chineseDialectOptions);
+  return `${profile.voiceProfile.voiceName || 'default voice'} · ${labelFor(profile.voiceProfile.style, styleOptions)} · ${labelFor(profile.voiceProfile.englishAccent, englishAccentOptions)} EN · ${dialect}`;
+}
+
+function labelFor<T extends string>(value: T, options: readonly { value: T; label: string }[]): string {
+  return options.find(option => option.value === value)?.label ?? value;
+}
+
+function defaultVoiceNameForGender(gender: ModelGender): string {
+  return GENDER_VOICES[gender].edgeVoice;
+}
+
+function usesGenderDefaultVoice(voiceName: string): boolean {
+  const defaults = Object.values(GENDER_VOICES).map(voice => voice.edgeVoice);
+  return !voiceName.trim() || defaults.includes(voiceName.trim());
+}
+
+function onImportGenderChange(): void {
+  if (usesGenderDefaultVoice(importVoiceName.value)) {
+    importVoiceName.value = defaultVoiceNameForGender(importGender.value);
+  }
+}
+
+function onEditGenderChange(): void {
+  if (usesGenderDefaultVoice(editVoiceName.value)) {
+    editVoiceName.value = defaultVoiceNameForGender(editGender.value);
+  }
+}
+
+function openEditDialog(model: EditableModel) {
+  const profile = characterStore.resolveModelProfile(model);
   editingModel.value = model;
-  editName.value = model.name;
-  editGender.value = model.gender;
-  editPersona.value = model.persona || '';
+  editName.value = profile.name;
+  editGender.value = profile.gender;
+  editPersona.value = profile.persona || '';
+  editVoiceName.value = profile.voiceProfile.voiceName;
+  editAge.value = profile.voiceProfile.age;
+  editPitch.value = profile.voiceProfile.pitch;
+  editStyle.value = profile.voiceProfile.style;
+  editEnglishAccent.value = profile.voiceProfile.englishAccent;
+  editChineseDialect.value = profile.voiceProfile.chineseDialect;
 }
 
 async function handleSaveEdit() {
@@ -344,10 +620,19 @@ async function handleSaveEdit() {
   isLoading.value = true;
   characterStore.setLoadError(undefined);
   try {
-    await characterStore.updateUserModel(editingModel.value.id, {
+    await characterStore.updateModelProfile(editingModel.value.id, {
       name: editName.value || undefined,
       gender: editGender.value,
       persona: editPersona.value,
+      voiceProfile: {
+        gender: editGender.value,
+        age: editAge.value,
+        pitch: editPitch.value,
+        style: editStyle.value,
+        englishAccent: editEnglishAccent.value,
+        chineseDialect: editChineseDialect.value,
+        voiceName: editVoiceName.value,
+      },
     });
     editingModel.value = null;
   } catch (err) {
@@ -394,6 +679,20 @@ async function handleImport() {
       gender: importGender.value,
       persona: importPersona.value || undefined,
     });
+    await characterStore.updateModelProfile(entry.id, {
+      name: importName.value || entry.name,
+      gender: importGender.value,
+      persona: importPersona.value,
+      voiceProfile: {
+        gender: importGender.value,
+        age: importAge.value,
+        pitch: importPitch.value,
+        style: importStyle.value,
+        englishAccent: importEnglishAccent.value,
+        chineseDialect: importChineseDialect.value,
+        voiceName: importVoiceName.value,
+      },
+    });
     // Pre-generate thumbnail in background so it's cached for next open
     preGenerateUserThumbnail(entry.id).catch(() => { /* non-critical */ });
     await characterStore.selectModel(entry.id);
@@ -402,6 +701,12 @@ async function handleImport() {
     importName.value = '';
     importGender.value = 'female';
     importPersona.value = '';
+    importVoiceName.value = GENDER_VOICES.female.edgeVoice;
+    importAge.value = defaultPersonaVoiceProfile().age;
+    importPitch.value = defaultPersonaVoiceProfile().pitch;
+    importStyle.value = defaultPersonaVoiceProfile().style;
+    importEnglishAccent.value = defaultPersonaVoiceProfile().englishAccent;
+    importChineseDialect.value = defaultPersonaVoiceProfile().chineseDialect;
   } catch (err) {
     characterStore.setLoadError(`Import failed: ${err}`);
   } finally {
@@ -441,7 +746,7 @@ async function handleDelete(id: string) {
 }
 
 .model-panel {
-  width: 300px;
+  width: min(360px, calc(100vw - 16px));
   max-height: calc(100% - 16px);
   background: var(--ts-bg-panel);
   border: 1px solid var(--ts-border);
@@ -617,6 +922,7 @@ async function handleDelete(id: string) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -632,6 +938,9 @@ async function handleDelete(id: string) {
 .model-author {
   font-size: 0.7rem;
   color: var(--ts-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .delete-btn {
@@ -698,6 +1007,9 @@ async function handleDelete(id: string) {
 .model-persona {
   font-size: 0.68rem;
   color: var(--ts-accent-violet, var(--ts-text-dim));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .import-form {
@@ -763,6 +1075,12 @@ async function handleDelete(id: string) {
   margin-top: 4px;
 }
 
+.voice-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
 .import-form__btn {
   flex: 1;
   padding: 7px 12px;
@@ -808,7 +1126,9 @@ async function handleDelete(id: string) {
 }
 
 .edit-dialog {
-  width: min(300px, calc(100vw - 32px));
+  width: min(380px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
   padding: 16px;
   border-radius: 12px;
   background: var(--ts-bg-panel);

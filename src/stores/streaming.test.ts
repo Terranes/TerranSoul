@@ -177,4 +177,68 @@ describe('streaming store — IPC integration', () => {
     store.handleAnimation({ emotion: 'sad', intensity: -0.3 });
     expect(store.currentEmotionIntensity).toBe(0);
   });
+
+  // ── Extended thinking / reasoning effort tests ──
+
+  it('handleChunk accumulates thinking text separately', () => {
+    const store = useStreamingStore();
+    store.handleChunk({ text: 'Let me think...', done: false, thinking: true });
+    expect(store.thinkingText).toBe('Let me think...');
+    expect(store.streamText).toBe('');
+    expect(store.isThinkingPhase).toBe(true);
+    expect(store.isStreaming).toBe(true);
+  });
+
+  it('handleChunk transitions from thinking to answer phase', () => {
+    const store = useStreamingStore();
+    store.handleChunk({ text: 'reasoning...', done: false, thinking: true });
+    expect(store.isThinkingPhase).toBe(true);
+
+    store.handleChunk({ text: 'The answer is 42.', done: false, thinking: false });
+    expect(store.isThinkingPhase).toBe(false);
+    expect(store.streamText).toBe('The answer is 42.');
+    expect(store.thinkingText).toBe('reasoning...');
+  });
+
+  it('handleChunk done clears thinking phase', () => {
+    const store = useStreamingStore();
+    store.handleChunk({ text: 'thinking...', done: false, thinking: true });
+    expect(store.isThinkingPhase).toBe(true);
+
+    store.handleChunk({ text: '', done: true });
+    expect(store.isThinkingPhase).toBe(false);
+    expect(store.isStreaming).toBe(false);
+  });
+
+  it('reset clears thinking state', () => {
+    const store = useStreamingStore();
+    store.handleChunk({ text: 'deep thoughts', done: false, thinking: true });
+    store.handleChunk({ text: 'answer', done: false });
+
+    store.reset();
+
+    expect(store.thinkingText).toBe('');
+    expect(store.isThinkingPhase).toBe(false);
+    expect(store.streamText).toBe('');
+  });
+
+  it('sendStreaming resets thinking state', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useStreamingStore();
+    store.thinkingText = 'old thinking';
+    store.isThinkingPhase = true;
+
+    await store.sendStreaming('New message');
+
+    expect(store.thinkingText).toBe('');
+    expect(store.isThinkingPhase).toBe(false);
+  });
+
+  it('handleChunk without thinking field defaults to false', () => {
+    const store = useStreamingStore();
+    store.handleChunk({ text: 'normal text', done: false });
+    expect(store.streamText).toBe('normal text');
+    expect(store.thinkingText).toBe('');
+    expect(store.isThinkingPhase).toBe(false);
+  });
 });

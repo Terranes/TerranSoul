@@ -1,0 +1,479 @@
+.brain-graph-viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  overflow: hidden;
+  cursor: grab;
+  border-radius: 6px;
+  background: #05070d;
+  touch-action: none;
+  isolation: isolate;
+}
+
+.brain-graph-viewport::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 50%, rgba(124, 111, 255, 0.18), transparent 70%),
+    radial-gradient(ellipse 40% 30% at 30% 65%, rgba(56, 189, 248, 0.10), transparent 70%),
+    radial-gradient(ellipse 35% 28% at 72% 35%, rgba(236, 72, 153, 0.10), transparent 70%);
+  mix-blend-mode: screen;
+}
+
+.brain-graph-viewport:active { cursor: grabbing; }
+
+.brain-graph-viewport canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.bgv-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  color: var(--ts-text-muted);
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.bgv-breadcrumb {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.5rem;
+  background: color-mix(in srgb, var(--ts-bg-base, #0b1426) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
+  border-radius: 999px;
+  box-shadow: var(--ts-shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.45));
+  backdrop-filter: blur(16px);
+  font-size: 0.75rem;
+}
+
+/* Debug-only capture button — saves the current 3D canvas to a PNG so
+   the user/agent can attach it in chat without setting up CDP. Sits
+   below the breadcrumb in the same top-right column. */
+.bgv-capture-btn {
+  position: absolute;
+  top: 3.1rem;
+  right: 0.7rem;
+  z-index: 6;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
+  background: color-mix(in srgb, var(--ts-bg-base, #0b1426) 88%, transparent);
+  color: var(--ts-text-primary, #e0f0ff);
+  border-radius: 999px;
+  box-shadow: var(--ts-shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.45));
+  backdrop-filter: blur(16px);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.bgv-capture-btn:hover {
+  background: color-mix(in srgb, var(--ts-accent, #7c6fff) 30%, transparent);
+}
+
+.bgv-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 0;
+  background: transparent;
+  color: var(--ts-text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+.bgv-crumb:hover:not(:disabled):not(.active) {
+  background: color-mix(in srgb, var(--ts-text-muted, #475569) 18%, transparent);
+  color: var(--ts-text-primary, #e0f0ff);
+}
+
+.bgv-crumb.active {
+  color: var(--ts-text-primary, #e0f0ff);
+  background: color-mix(in srgb, var(--ts-accent, #7c6fff) 22%, transparent);
+}
+
+.bgv-crumb:disabled {
+  cursor: default;
+}
+
+.bgv-crumb-sep {
+  color: var(--ts-text-muted, #94a3b8);
+}
+
+.bgv-crumb-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.bgv-crumb small {
+  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.7rem;
+}
+
+.bgv-fit-btn {
+  margin-top: 0.4rem;
+}
+
+.bgv-control {
+  position: absolute;
+  top: 0.7rem;
+  left: 0.7rem;
+  z-index: 4;
+  width: min(250px, calc(100% - 1.4rem));
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 28%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ts-bg-base) 86%, transparent);
+  color: var(--ts-text-primary);
+  box-shadow: var(--ts-shadow-lg);
+  backdrop-filter: blur(16px);
+}
+
+.bgv-control-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.bgv-control-head div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.bgv-control-head strong {
+  font-size: 0.86rem;
+  line-height: 1.1;
+}
+
+.bgv-control-head span,
+.bgv-metrics {
+  font-size: 0.72rem;
+  color: var(--ts-text-muted);
+}
+
+.bgv-icon-button {
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 26%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ts-bg-surface) 80%, transparent);
+  color: var(--ts-text-secondary);
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.bgv-icon-button:hover {
+  color: var(--ts-text-primary);
+  border-color: color-mix(in srgb, var(--ts-accent) 55%, transparent);
+}
+
+.bgv-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 22%, transparent);
+  border-radius: 5px;
+}
+
+.bgv-mode-tab {
+  min-width: 0;
+  border: none;
+  border-right: 1px solid color-mix(in srgb, var(--ts-text-muted) 18%, transparent);
+  background: color-mix(in srgb, var(--ts-bg-surface) 72%, transparent);
+  color: var(--ts-text-muted);
+  padding: 0.34rem 0.3rem;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.bgv-mode-tab:last-child { border-right: none; }
+.bgv-mode-tab:hover { color: var(--ts-text-primary); }
+.bgv-mode-tab.active { background: color-mix(in srgb, var(--ts-accent) 28%, transparent); color: var(--ts-text-primary); }
+
+.bgv-metrics {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.bgv-metrics span {
+  padding: 0.12rem 0.4rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ts-text-muted) 12%, transparent);
+}
+
+.bgv-metrics strong { color: var(--ts-text-primary); }
+
+/* ── Search & persistent selection (parity with 2D MemoryGraph) ────────── */
+.bgv-search {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid color-mix(in srgb, var(--ts-text-muted) 18%, transparent);
+}
+
+.bgv-input,
+.bgv-select {
+  width: 100%;
+  padding: 0.32rem 0.45rem;
+  font-size: 0.74rem;
+  background: color-mix(in srgb, var(--ts-bg-surface) 70%, transparent);
+  color: var(--ts-text-primary);
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 22%, transparent);
+  border-radius: 4px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.bgv-input:focus,
+.bgv-select:focus {
+  border-color: color-mix(in srgb, var(--ts-accent) 60%, transparent);
+}
+
+.bgv-check-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  color: var(--ts-text-secondary);
+  cursor: pointer;
+}
+
+.bgv-check-row input[type='checkbox'] {
+  accent-color: var(--ts-accent, #7c6fff);
+}
+
+.bgv-readout {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.7rem;
+  color: var(--ts-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.bgv-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.bgv-btn {
+  width: 100%;
+  padding: 0.34rem 0.5rem;
+  font-size: 0.72rem;
+  text-align: left;
+  background: color-mix(in srgb, var(--ts-bg-surface) 70%, transparent);
+  color: var(--ts-text-primary);
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 22%, transparent);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.bgv-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ts-bg-surface) 95%, transparent);
+  border-color: color-mix(in srgb, var(--ts-accent) 50%, transparent);
+}
+
+.bgv-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.bgv-hint {
+  font-size: 0.66rem;
+  line-height: 1.35;
+  color: var(--ts-text-muted);
+  opacity: 0.85;
+}
+
+.bgv-lasso {
+  position: absolute;
+  z-index: 6;
+  border: 1px dashed var(--ts-accent, #7c6fff);
+  background: color-mix(in srgb, var(--ts-accent) 14%, transparent);
+  pointer-events: none;
+  border-radius: 2px;
+}
+
+.bgv-lasso-remove {
+  border-color: var(--ts-danger, #ef4444);
+  background: color-mix(in srgb, var(--ts-danger, #ef4444) 14%, transparent);
+}
+
+.bgv-inspector {
+  position: absolute;
+  right: 0.75rem;
+  top: 0.75rem;
+  z-index: 4;
+  width: min(320px, calc(100% - 1.5rem));
+  padding: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 24%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ts-bg-base) 84%, transparent);
+  color: var(--ts-text-primary);
+  backdrop-filter: blur(16px);
+  box-shadow: var(--ts-shadow-lg);
+}
+
+.bgv-inspector-top {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+}
+
+.bgv-inspector-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  box-shadow: 0 0 14px currentColor;
+}
+
+.bgv-inspector-top small {
+  margin-left: auto;
+  color: var(--ts-text-muted);
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bgv-inspector p {
+  margin: 0.45rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--ts-text-secondary);
+}
+
+.bgv-inspector-meta {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.55rem;
+}
+
+.bgv-inspector-meta span {
+  padding: 0.12rem 0.38rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ts-text-muted) 12%, transparent);
+  color: var(--ts-text-muted);
+  font-size: 0.68rem;
+}
+
+.bgv-tooltip {
+  position: absolute;
+  z-index: 5;
+  pointer-events: none;
+  max-width: 270px;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 26%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ts-bg-base) 90%, transparent);
+  color: var(--ts-text-primary);
+  box-shadow: var(--ts-shadow-lg);
+}
+
+.bgv-tooltip strong { margin-right: 0.35rem; }
+.bgv-tooltip span { color: var(--ts-text-muted); font-size: 0.7rem; }
+.bgv-tooltip p { margin: 0.2rem 0 0; font-size: 0.74rem; line-height: 1.3; }
+
+.bgv-legend {
+  position: absolute;
+  left: 0.7rem;
+  right: 0.7rem;
+  bottom: 0.7rem;
+  z-index: 4;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+  max-height: 68px;
+  overflow: hidden;
+  padding: 0.38rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted) 20%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ts-bg-base) 78%, transparent);
+  color: var(--ts-text-muted);
+  font-size: 0.68rem;
+  backdrop-filter: blur(14px);
+}
+
+.bgv-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  min-width: 0;
+  max-width: 150px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bgv-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.bgv-legend-item em {
+  font-style: normal;
+  color: var(--ts-text-dim);
+}
+
+@media (max-width: 700px) {
+  .brain-graph-viewport { min-height: 62vh; }
+  .bgv-control {
+    left: 0.45rem;
+    top: 0.45rem;
+    width: min(230px, calc(100% - 0.9rem));
+    padding: 0.5rem;
+  }
+  .bgv-inspector {
+    top: auto;
+    right: 0.45rem;
+    left: 0.45rem;
+    bottom: 3.1rem;
+    width: auto;
+    max-height: 130px;
+    overflow: hidden;
+  }
+  .bgv-legend {
+    left: 0.45rem;
+    right: 0.45rem;
+    bottom: 0.45rem;
+    max-height: 44px;
+  }
+  .bgv-tooltip { display: none; }
+}

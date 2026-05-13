@@ -192,8 +192,7 @@ pub async fn save_prompt_command(
     let dir = state.data_dir.join("prompts");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create prompts dir: {e}"))?;
     let path = dir.join(format!("{name}.md"));
-    std::fs::write(&path, &content)
-        .map_err(|e| format!("Failed to write prompt file: {e}"))?;
+    std::fs::write(&path, &content).map_err(|e| format!("Failed to write prompt file: {e}"))?;
     let (mode, body) = parse_frontmatter(&content);
     Ok(PromptFile {
         name,
@@ -208,15 +207,11 @@ pub async fn save_prompt_command(
 /// Only deletes from `<data_dir>/prompts/`. Workspace-local prompts
 /// (`.terransoul/prompts/`) are not deleted via this command.
 #[tauri::command]
-pub async fn delete_prompt_command(
-    state: State<'_, AppState>,
-    name: String,
-) -> Result<(), String> {
+pub async fn delete_prompt_command(state: State<'_, AppState>, name: String) -> Result<(), String> {
     validate_prompt_name(&name)?;
     let path = state.data_dir.join("prompts").join(format!("{name}.md"));
     if path.exists() {
-        std::fs::remove_file(&path)
-            .map_err(|e| format!("Failed to delete prompt file: {e}"))?;
+        std::fs::remove_file(&path).map_err(|e| format!("Failed to delete prompt file: {e}"))?;
     }
     Ok(())
 }
@@ -277,7 +272,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let dir = tmp.path();
 
-        fs::write(dir.join("hello-world.md"), "# Hello\nThis is a test prompt.").unwrap();
+        fs::write(
+            dir.join("hello-world.md"),
+            "# Hello\nThis is a test prompt.",
+        )
+        .unwrap();
         fs::write(dir.join("setup.md"), "Setup instructions here.").unwrap();
         fs::write(dir.join("ignore.txt"), "Not a prompt.").unwrap();
 

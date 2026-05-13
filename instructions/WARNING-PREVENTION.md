@@ -138,7 +138,7 @@ await expect(async () => {
 
 Before every commit that touches stores, components, or IPC:
 
-1. **Run `npm run dev`** — open browser console, check for warnings
+1. **Run `npm run dev`** — launches full Tauri app (kills existing processes first); check browser console for warnings
 2. **Run `npx vitest run`** — all unit tests must pass
 3. **Run `npx playwright test`** — all E2E tests must pass
 4. **Check browser console** for:

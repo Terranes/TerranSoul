@@ -22,6 +22,13 @@ pub struct RepoState {
 }
 
 fn run_git(cwd: &Path, args: &[&str]) -> Result<String, String> {
+    let cmdline = if args.is_empty() {
+        "git".to_string()
+    } else {
+        format!("git {}", args.join(" "))
+    };
+    super::sandbox::shell_preflight(cwd, &cmdline)?;
+
     let out = Command::new("git")
         .args(args)
         .current_dir(cwd)

@@ -82,7 +82,7 @@ export function filterActiveThemes(
   const allowed = new Set<string>();
   for (const plugin of plugins) {
     if (!isPluginActive(plugin)) continue;
-    for (const t of plugin.manifest.contributes.themes) {
+    for (const t of plugin.manifest.contributes.themes ?? []) {
       allowed.add(t.id);
     }
   }

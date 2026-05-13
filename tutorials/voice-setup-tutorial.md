@@ -37,7 +37,7 @@ hotword configuration, and the lip-sync animation pipeline.
 
 ## 1. Open Voice Settings
 
-![Settings → Voice tab showing ASR and TTS sections](screenshots/voice-setup/01-voice-settings.png)
+![Voice provider selection panel](screenshots/voice-setup/01-voice-provider-selection.png)
 
 Navigate to **Settings → Voice** tab (or activate the **"Gift of Speech"** quest in the Skill Tree).
 
@@ -48,8 +48,6 @@ You'll see two sections:
 ---
 
 ## 2. Choose an ASR Provider
-
-![ASR provider dropdown with Web Speech, Groq Whisper, and OpenAI options](screenshots/voice-setup/02-asr-provider.png)
 
 | Provider | Privacy | Speed | Quality | Key Required |
 |----------|---------|-------|---------|--------------|
@@ -83,8 +81,6 @@ You'll see two sections:
 
 ## 3. Choose a TTS Provider
 
-![TTS provider dropdown with Web Speech and OpenAI TTS options](screenshots/voice-setup/03-tts-provider.png)
-
 | Provider | Privacy | Voices | Quality | Key Required |
 |----------|---------|--------|---------|--------------|
 | **Web Speech (browser)** | Local | System voices | Good | No |
@@ -110,8 +106,6 @@ Already active by default. To customize:
 
 ## 4. Configure Hotwords (Power Words)
 
-![Hotwords section showing added words with boost values](screenshots/voice-setup/04-hotwords.png)
-
 Hotwords boost recognition accuracy for frequently-used names or terms.
 
 1. In Voice Settings, scroll to **Hotwords** section.
@@ -127,8 +121,6 @@ Hotwords boost recognition accuracy for frequently-used names or terms.
 ---
 
 ## 5. Lip Sync Pipeline
-
-![Character lip-syncing during TTS playback with viseme indicators](screenshots/voice-setup/05-lip-sync.png)
 
 When TTS speaks, the 3D character automatically lip-syncs:
 
@@ -146,8 +138,6 @@ When TTS speaks, the 3D character automatically lip-syncs:
 ---
 
 ## 6. Full Conversation Mode
-
-![Full conversation — microphone active, character speaking, continuous mode enabled](screenshots/voice-setup/06-full-conversation.png)
 
 When both ASR and TTS are configured, you unlock the **"Full Conversation"** combo in the Skill Tree:
 
@@ -169,8 +159,6 @@ If multiple people are speaking, TerranSoul can identify different speakers:
 ---
 
 ## 7. Voice Auto-Configure
-
-![Voice settings pre-configured after First Launch Wizard](screenshots/voice-setup/07-auto-configure.png)
 
 If you used the First Launch Wizard with "Auto-Accept All," voice was configured automatically:
 

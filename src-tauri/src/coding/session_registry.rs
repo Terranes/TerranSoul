@@ -110,11 +110,7 @@ pub fn create_session(data_dir: &Path) -> Result<(String, SessionEntry), String>
 
 /// Register a specific memorable name for a session.
 /// Returns `Err` if the name is already taken.
-pub fn register(
-    data_dir: &Path,
-    name: &str,
-    session_id: &str,
-) -> Result<SessionEntry, String> {
+pub fn register(data_dir: &Path, name: &str, session_id: &str) -> Result<SessionEntry, String> {
     let mut reg = load(data_dir)?;
     let key = session_names::normalize(name);
     if reg.sessions.contains_key(&key) {

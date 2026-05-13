@@ -174,8 +174,7 @@ mod tests {
     fn scan_deduplicates_by_memory_id() {
         let store = setup();
         // Both patterns for memory 2 could match, but we should only get one result
-        let matches =
-            scan_triggers(&store, "hardcode hex colors like #ff0000").unwrap();
+        let matches = scan_triggers(&store, "hardcode hex colors like #ff0000").unwrap();
         // The "hardcode hex" pattern matches; depending on overlap, should get 1 result for that memory
         assert_eq!(matches.len(), 1);
     }

@@ -11,6 +11,10 @@ export interface VrmLoadResult {
   isVrm0: boolean;
 }
 
+function shouldLogVrmLoadEvents(): boolean {
+  return import.meta.env.MODE !== 'test';
+}
+
 /**
  * Set the normalized bone rotations into a natural relaxed standing pose.
  * Call this before vrm.update() to reset bones from T-pose/A-pose.
@@ -116,6 +120,18 @@ export async function loadVRM(
   // Encode spaces/special chars for HTTP paths; leave blob:/data: URLs untouched
   const url = path.startsWith('blob:') || path.startsWith('data:') ? path : encodeURI(path);
 
+  // Suppress known harmless warnings from three-vrm during VRM 0.0 loading:
+  // - "Curves of LookAtDegreeMap defined in VRM 0.0 are not supported"
+  // - "THREE.InterleavedBufferAttribute.clone(): Cloning an interleaved buffer attribute will de-interleave buffer data."
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    if (typeof args[0] === 'string' && (
+      args[0].includes('LookAtDegreeMap') ||
+      args[0].includes('InterleavedBufferAttribute')
+    )) return;
+    origWarn.apply(console, args);
+  };
+
   const gltf = await loader.loadAsync(url, (event) => {
     if (onProgress && event.lengthComputable) {
       onProgress(event.loaded, event.total);
@@ -137,6 +153,9 @@ export async function loadVRM(
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   VRMUtils.combineSkeletons(gltf.scene);
   VRMUtils.combineMorphs(vrm);
+
+  // Restore original console.warn after load + post-processing
+  console.warn = origWarn;
 
   // Disable frustum culling to prevent clipping when parts are near screen edge;
   // also recompute bounding geometry for correct depth sorting.
@@ -182,12 +201,18 @@ export async function loadVRMSafe(
   onProgress?: ProgressCallback,
 ): Promise<VrmLoadResult | null> {
   try {
-    console.log('[TerranSoul] Loading VRM:', path);
+    if (shouldLogVrmLoadEvents()) {
+      console.log('[TerranSoul] Loading VRM:', path);
+    }
     const result = await loadVRM(scene, path, onProgress);
-    console.log('[TerranSoul] VRM loaded successfully:', path);
+    if (shouldLogVrmLoadEvents()) {
+      console.log('[TerranSoul] VRM loaded successfully:', path);
+    }
     return result;
   } catch (error) {
-    console.error('[TerranSoul] VRM load failed, using placeholder:', error);
+    if (shouldLogVrmLoadEvents()) {
+      console.error('[TerranSoul] VRM load failed, using placeholder:', error);
+    }
     return null;
   }
 }

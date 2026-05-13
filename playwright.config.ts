@@ -14,6 +14,9 @@ export default defineConfig({
   // Global per-test timeout. LLM-driven specs can issue several real
   // free-API calls (~30s each) plus VRM model load, so we give them headroom.
   timeout: 180_000,
+  // In CI, run only desktop-flow.spec.ts (sanity check).
+  // Other tests run locally or in dedicated E2E environments.
+  grep: process.env.CI ? /desktop-flow/ : undefined,
   use: {
     baseURL: 'http://localhost:1420',
     trace: 'on-first-retry',
@@ -25,7 +28,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: 'npm run dev',
+    // In CI we run Vite directly (no Tauri shell) — the e2e tests drive
+    // the app through Chromium, and `tauri dev` requires native GTK/WebKit
+    // build dependencies that the playwright-e2e job does not install.
+    // Locally `npm run dev` (full Tauri) is fine and gives faster reload.
+    command: process.env.CI ? 'npm run dev:vite' : 'npm run dev:desktop-e2e',
     env: {
       ...process.env,
       TERRANSOUL_E2E_LOCAL_LLM: '1',
@@ -35,6 +42,6 @@ export default defineConfig({
     },
     url: 'http://localhost:1420',
     reuseExistingServer: !process.env.CI,
-    timeout: 30_000,
+    timeout: 120_000,
   },
 });

@@ -36,7 +36,7 @@ three modes.
 
 ## 1. Browser Mode (Static Web Deployment)
 
-![TerranSoul running in a browser tab with limited feature badges](screenshots/browser-mobile/01-browser-mode.png)
+![Pet mode in browser](screenshots/browser-mobile/01-pet-mode.png)
 
 TerranSoul's Vue frontend can run standalone in a browser without Tauri:
 
@@ -136,8 +136,6 @@ In the Mobile Pairing view:
 
 ## 3. Remote Control (gRPC/gRPC-Web)
 
-![Phone remote control interface sending commands to desktop](screenshots/browser-mobile/03-remote-control.png)
-
 Once paired, the phone can control the desktop companion:
 
 ### Available Phone Tools
@@ -170,8 +168,6 @@ The phone can narrate context to the desktop's coding agent:
 
 ## 4. Provider Onboarding (First Use in Browser)
 
-![Browser first-launch showing provider selection panel](screenshots/browser-mobile/04-provider-onboarding.png)
-
 When opening TerranSoul in a browser for the first time (no Tauri backend):
 
 1. The First Launch Wizard appears (same as desktop).
@@ -184,8 +180,6 @@ When opening TerranSoul in a browser for the first time (no Tauri backend):
 ---
 
 ## 5. Settings Sync Between Devices
-
-![Settings tab showing sync status indicators between desktop and phone](screenshots/browser-mobile/05-settings-sync.png)
 
 Once devices are paired:
 

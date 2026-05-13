@@ -233,8 +233,11 @@ impl PostgresBackend {
         ]).await?;
 
         // V6: memory_edges table + indexes for KG
-        self.apply_migration(6, "PostgreSQL V6 — memory_edges + KG", &[
-            "CREATE TABLE IF NOT EXISTS memory_edges (
+        self.apply_migration(
+            6,
+            "PostgreSQL V6 — memory_edges + KG",
+            &[
+                "CREATE TABLE IF NOT EXISTS memory_edges (
                 id          BIGSERIAL PRIMARY KEY,
                 src_id      BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
                 dst_id      BIGINT NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
@@ -249,11 +252,13 @@ impl PostgresBackend {
                 hlc_counter BIGINT NOT NULL DEFAULT 0,
                 UNIQUE (src_id, dst_id, rel_type)
             )",
-            "CREATE INDEX IF NOT EXISTS idx_edges_src ON memory_edges (src_id)",
-            "CREATE INDEX IF NOT EXISTS idx_edges_dst ON memory_edges (dst_id)",
-            "CREATE INDEX IF NOT EXISTS idx_edges_rel ON memory_edges (rel_type)",
-            "CREATE INDEX IF NOT EXISTS idx_edges_valid_to ON memory_edges (valid_to)",
-        ]).await?;
+                "CREATE INDEX IF NOT EXISTS idx_edges_src ON memory_edges (src_id)",
+                "CREATE INDEX IF NOT EXISTS idx_edges_dst ON memory_edges (dst_id)",
+                "CREATE INDEX IF NOT EXISTS idx_edges_rel ON memory_edges (rel_type)",
+                "CREATE INDEX IF NOT EXISTS idx_edges_valid_to ON memory_edges (valid_to)",
+            ],
+        )
+        .await?;
 
         // V7: hlc_counter + cognitive_kind on memories (CRDT sync parity)
         self.apply_migration(7, "PostgreSQL V7 — CRDT columns", &[
@@ -288,13 +293,12 @@ impl PostgresBackend {
         description: &str,
         statements: &[&str],
     ) -> StorageResult<()> {
-        let applied: Option<i64> = sqlx::query_scalar(
-            "SELECT version FROM schema_version WHERE version = $1 LIMIT 1",
-        )
-        .bind(version)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|e| StorageError::Migration(e.to_string()))?;
+        let applied: Option<i64> =
+            sqlx::query_scalar("SELECT version FROM schema_version WHERE version = $1 LIMIT 1")
+                .bind(version)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|e| StorageError::Migration(e.to_string()))?;
 
         if applied.is_some() {
             return Ok(());
@@ -793,8 +797,15 @@ impl StorageBackend for PostgresBackend {
                     .filter_map(|e| {
                         let lc = e.content.to_lowercase();
                         let lt = e.tags.to_lowercase();
-                        let hits = words.iter().filter(|w| lc.contains(w.as_str()) || lt.contains(w.as_str())).count();
-                        if hits > 0 { Some((hits, e.id)) } else { None }
+                        let hits = words
+                            .iter()
+                            .filter(|w| lc.contains(w.as_str()) || lt.contains(w.as_str()))
+                            .count();
+                        if hits > 0 {
+                            Some((hits, e.id))
+                        } else {
+                            None
+                        }
                     })
                     .collect();
                 scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
@@ -865,8 +876,7 @@ impl StorageBackend for PostgresBackend {
                 continue;
             }
             for (rank_pos, &id) in ranking.iter().enumerate() {
-                *rrf_scores.entry(id).or_insert(0.0) +=
-                    1.0 / (RRF_K + rank_pos as f64 + 1.0);
+                *rrf_scores.entry(id).or_insert(0.0) += 1.0 / (RRF_K + rank_pos as f64 + 1.0);
             }
         }
 
@@ -1070,11 +1080,7 @@ impl PostgresBackend {
                  ORDER BY confidence DESC, id ASC"
             }
         };
-        let rows = self.block_on(
-            sqlx::query(sql)
-                .bind(memory_id)
-                .fetch_all(&self.pool),
-        )?;
+        let rows = self.block_on(sqlx::query(sql).bind(memory_id).fetch_all(&self.pool))?;
         Ok(rows.iter().map(Self::row_to_edge).collect())
     }
 
@@ -1130,9 +1136,7 @@ impl PostgresBackend {
         );
 
         let rows = self.block_on(async {
-            let mut q = sqlx::query(&sql)
-                .bind(start_id)
-                .bind(max_hops);
+            let mut q = sqlx::query(&sql).bind(start_id).bind(max_hops);
             if let Some(rels) = rel_filter {
                 for r in rels {
                     q = q.bind(r);
@@ -1141,9 +1145,10 @@ impl PostgresBackend {
             q.fetch_all(&self.pool).await
         })?;
 
-        Ok(rows.iter().map(|r| {
-            (r.get::<i64, _>("node_id"), r.get::<i32, _>("depth"))
-        }).collect())
+        Ok(rows
+            .iter()
+            .map(|r| (r.get::<i64, _>("node_id"), r.get::<i32, _>("depth")))
+            .collect())
     }
 
     /// Delete an edge by ID.
@@ -1159,8 +1164,7 @@ impl PostgresBackend {
     /// Count total edges.
     pub fn edge_count(&self) -> StorageResult<i64> {
         let c = self.block_on(
-            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM memory_edges")
-                .fetch_one(&self.pool),
+            sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM memory_edges").fetch_one(&self.pool),
         )?;
         Ok(c)
     }
@@ -1185,7 +1189,11 @@ impl PostgresBackend {
 
         let now = Self::now_ms();
         let token_count = (prefixed_content.len() / 4) as i32;
-        let importance = if m.importance == 0 { 3i32 } else { m.importance as i32 };
+        let importance = if m.importance == 0 {
+            3i32
+        } else {
+            m.importance as i32
+        };
 
         let row = self.block_on(
             sqlx::query(
@@ -1223,8 +1231,9 @@ mod tests {
     use super::*;
 
     fn test_pool_url() -> String {
-        std::env::var("TEST_POSTGRES_URL")
-            .unwrap_or_else(|_| "postgresql://postgres:postgres@localhost:5432/terransoul_test".into())
+        std::env::var("TEST_POSTGRES_URL").unwrap_or_else(|_| {
+            "postgresql://postgres:postgres@localhost:5432/terransoul_test".into()
+        })
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1295,7 +1304,9 @@ mod tests {
             })
             .unwrap();
 
-        let results = backend.hybrid_search_rrf("Rust programming", None, 5).unwrap();
+        let results = backend
+            .hybrid_search_rrf("Rust programming", None, 5)
+            .unwrap();
         assert!(!results.is_empty());
         assert!(results[0].content.contains("Rust"));
     }

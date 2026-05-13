@@ -4,6 +4,13 @@ import { invoke } from '@tauri-apps/api/core';
 import type { CharacterState, VrmMetadata } from '../types';
 import { DEFAULT_MODELS, DEFAULT_MODEL_ID, GENDER_VOICES, type DefaultModel, type ModelGender } from '../config/default-models';
 import { useSettingsStore } from './settings';
+import {
+  defaultPersonaVoiceProfile,
+  migratePersonaVoiceProfile,
+  type PersonaVoicePitch,
+  type PersonaVoiceProfile,
+  type PersonaVoiceStyle,
+} from './persona-types';
 
 /** A VRM model the user imported. Stored under `<app_data_dir>/user_models/`
  *  by the Rust backend so it survives a fresh build / app upgrade. */
@@ -14,6 +21,49 @@ export interface UserModel {
   gender: ModelGender;
   persona: string;
   imported_at: number;
+}
+
+export interface ModelProfile {
+  id: string;
+  name: string;
+  gender: ModelGender;
+  persona: string;
+  voiceProfile: PersonaVoiceProfile;
+  updatedAt: number;
+}
+
+const MODEL_PROFILE_STORAGE_KEY = 'terransoul.model.profiles.v1';
+const FALLBACK_DEFAULT_MODEL: DefaultModel = {
+  id: DEFAULT_MODEL_ID,
+  name: 'Soul',
+  path: '/models/default/Shinra.vrm',
+  gender: 'female',
+};
+
+const PITCH_TUNING: Record<PersonaVoicePitch, { edgeDelta: number; browserDelta: number }> = {
+  very_low: { edgeDelta: -45, browserDelta: -0.28 },
+  low: { edgeDelta: -22, browserDelta: -0.14 },
+  medium: { edgeDelta: 0, browserDelta: 0 },
+  high: { edgeDelta: 24, browserDelta: 0.16 },
+  very_high: { edgeDelta: 48, browserDelta: 0.32 },
+};
+
+const AGE_RATE_DELTA: Record<PersonaVoiceProfile['age'], number> = {
+  child: 12,
+  teen: 6,
+  young_adult: 3,
+  adult: 0,
+  middle_aged: -3,
+  elderly: -10,
+};
+
+const STYLE_RATE_DELTA: Record<PersonaVoiceStyle, number> = {
+  natural: 0,
+  whisper: -12,
+};
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }
 
 export const useCharacterStore = defineStore('character', () => {
@@ -27,6 +77,7 @@ export const useCharacterStore = defineStore('character', () => {
   const selectedModelId = ref<string>(DEFAULT_MODEL_ID);
   const defaultModels = ref<DefaultModel[]>(DEFAULT_MODELS);
   const userModels = ref<UserModel[]>([]);
+  const modelProfiles = ref<Record<string, ModelProfile>>(loadModelProfilesFromStorage());
 
   /** Currently active blob URL — revoked before a new one is created
    *  to avoid leaking object URLs across model switches. */
@@ -46,6 +97,95 @@ export const useCharacterStore = defineStore('character', () => {
   function findModel(id: string): DefaultModel | UserModel | undefined {
     return defaultModels.value.find(m => m.id === id)
       ?? userModels.value.find(m => m.id === id);
+  }
+
+  function baseProfileForModel(model: DefaultModel | UserModel): ModelProfile {
+    const gender = model.gender ?? 'female';
+    const voiceInfo = GENDER_VOICES[gender];
+    return {
+      id: model.id,
+      name: model.name,
+      gender,
+      persona: isUserModel(model) ? model.persona ?? '' : '',
+      voiceProfile: {
+        ...defaultPersonaVoiceProfile(),
+        gender,
+        voiceName: voiceInfo.edgeVoice,
+      },
+      updatedAt: 0,
+    };
+  }
+
+  function resolveModelProfile(modelOrId: DefaultModel | UserModel | string): ModelProfile {
+    const model = typeof modelOrId === 'string' ? findModel(modelOrId) : modelOrId;
+    if (!model) {
+      return baseProfileForModel(defaultModels.value.find(defaultModel => defaultModel.id === DEFAULT_MODEL_ID) ?? FALLBACK_DEFAULT_MODEL);
+    }
+    const base = baseProfileForModel(model);
+    const saved = modelProfiles.value[model.id];
+    if (!saved) return base;
+    const gender = saved.gender === 'male' || saved.gender === 'female' ? saved.gender : base.gender;
+    return {
+      ...base,
+      ...saved,
+      id: model.id,
+      name: saved.name?.trim() || base.name,
+      gender,
+      persona: typeof saved.persona === 'string' ? saved.persona : base.persona,
+      voiceProfile: migratePersonaVoiceProfile({
+        ...base.voiceProfile,
+        ...saved.voiceProfile,
+        gender,
+      }),
+      updatedAt: typeof saved.updatedAt === 'number' ? saved.updatedAt : 0,
+    };
+  }
+
+  function currentModelProfile(): ModelProfile {
+    return resolveModelProfile(selectedModelId.value);
+  }
+
+  function persistModelProfiles(): void {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(MODEL_PROFILE_STORAGE_KEY, JSON.stringify(modelProfiles.value));
+      }
+    } catch {
+      // Best-effort; the model still works for the current session.
+    }
+  }
+
+  function tuningForProfile(profile: ModelProfile): { edgePitch: number; edgeRate: number; browserPitch: number; browserRate: number } {
+    const genderVoice = GENDER_VOICES[profile.gender];
+    const pitchTuning = PITCH_TUNING[profile.voiceProfile.pitch] ?? PITCH_TUNING.medium;
+    const styleRate = STYLE_RATE_DELTA[profile.voiceProfile.style] ?? 0;
+    const ageRate = AGE_RATE_DELTA[profile.voiceProfile.age] ?? 0;
+    return {
+      edgePitch: clamp(Math.round(genderVoice.edgePitch + pitchTuning.edgeDelta), -80, 80),
+      edgeRate: clamp(Math.round(genderVoice.edgeRate + styleRate + ageRate), -50, 50),
+      browserPitch: clamp(Number((genderVoice.browserPitch + pitchTuning.browserDelta).toFixed(2)), 0.1, 2),
+      browserRate: clamp(Number((genderVoice.browserRate + (styleRate + ageRate) / 100).toFixed(2)), 0.1, 3),
+    };
+  }
+
+  async function applyTtsProfile(profile: ModelProfile): Promise<void> {
+    const tuning = tuningForProfile(profile);
+    const fallbackVoice = GENDER_VOICES[profile.gender].edgeVoice;
+    const voiceName = profile.voiceProfile.voiceName.trim() || fallbackVoice;
+    try {
+      await invoke('set_tts_voice', { voiceName });
+      await invoke('set_tts_prosody', { pitch: tuning.edgePitch, rate: tuning.edgeRate });
+    } catch {
+      // Tauri unavailable — browser fallback uses currentBrowserPitch/Rate.
+    }
+  }
+
+  function currentBrowserPitch(): number {
+    return tuningForProfile(currentModelProfile()).browserPitch;
+  }
+
+  function currentBrowserRate(): number {
+    return tuningForProfile(currentModelProfile()).browserRate;
   }
 
   function setState(newState: CharacterState, intensity: number = 1) {
@@ -106,8 +246,7 @@ export const useCharacterStore = defineStore('character', () => {
 
   /** Get the gender of the currently selected model (default or user). */
   function currentGender(): ModelGender {
-    const model = findModel(selectedModelId.value);
-    return model?.gender ?? 'female';
+    return currentModelProfile().gender;
   }
 
   async function selectModel(modelId: string) {
@@ -119,15 +258,7 @@ export const useCharacterStore = defineStore('character', () => {
     } else {
       await loadVrm(model.path);
     }
-    // Set TTS voice and prosody to match the character's gender
-    const gender: ModelGender = model.gender ?? 'female';
-    const voiceInfo = GENDER_VOICES[gender];
-    try {
-      await invoke('set_tts_voice', { voiceName: voiceInfo.edgeVoice });
-      await invoke('set_tts_prosody', { pitch: voiceInfo.edgePitch, rate: voiceInfo.edgeRate });
-    } catch {
-      // Tauri unavailable — voice will use browser fallback pitch instead
-    }
+    await applyTtsProfile(resolveModelProfile(model));
     // Persist the model selection across sessions
     try {
       const settingsStore = useSettingsStore();
@@ -182,11 +313,68 @@ export const useCharacterStore = defineStore('character', () => {
     return updated;
   }
 
+  async function updateModelProfile(
+    id: string,
+    opts: { name?: string; gender?: ModelGender; persona?: string; voiceProfile?: Partial<PersonaVoiceProfile> },
+  ): Promise<ModelProfile> {
+    const model = findModel(id);
+    if (!model) throw new Error(`model not found: ${id}`);
+    const current = resolveModelProfile(model);
+    const gender = opts.gender ?? current.gender;
+    const next: ModelProfile = {
+      ...current,
+      name: opts.name?.trim() || current.name,
+      gender,
+      persona: opts.persona ?? current.persona,
+      voiceProfile: migratePersonaVoiceProfile({
+        ...current.voiceProfile,
+        ...(opts.voiceProfile ?? {}),
+        gender,
+      }),
+      updatedAt: Date.now(),
+    };
+
+    modelProfiles.value = {
+      ...modelProfiles.value,
+      [id]: next,
+    };
+    persistModelProfiles();
+
+    if (isUserModel(model)) {
+      try {
+        const updated = await invoke<UserModel>('update_user_model', {
+          id,
+          name: next.name,
+          gender: next.gender,
+          persona: next.persona,
+        });
+        userModels.value = userModels.value.map((userModel) => (userModel.id === id ? updated : userModel));
+      } catch {
+        userModels.value = userModels.value.map((userModel) => (
+          userModel.id === id
+            ? { ...userModel, name: next.name, gender: next.gender, persona: next.persona }
+            : userModel
+        ));
+      }
+    }
+
+    if (selectedModelId.value === id) {
+      await applyTtsProfile(next);
+    }
+    return next;
+  }
+
   /** Delete a user-imported model (file + metadata). If it was the active
    *  model, fall back to the bundled default. */
   async function deleteUserModel(id: string): Promise<void> {
     await invoke('delete_user_model', { id });
     userModels.value = userModels.value.filter(m => m.id !== id);
+    if (modelProfiles.value[id]) {
+      const nextProfiles = { ...modelProfiles.value };
+      delete nextProfiles[id];
+      modelProfiles.value = nextProfiles;
+      persistModelProfiles();
+    }
     if (selectedModelId.value === id) {
       await selectModel(DEFAULT_MODEL_ID);
     }
@@ -207,9 +395,39 @@ export const useCharacterStore = defineStore('character', () => {
 
   return {
     state, emotionIntensity, vrmPath, vrmMetadata, loadError, isLoading, selectedModelId,
-    defaultModels, userModels, allModels,
+    defaultModels, userModels, allModels, modelProfiles,
     setState, setMetadata, setLoadError, setLoaded,
     loadVrm, selectModel, loadDefaultModel, resetCharacter, currentGender,
+    currentModelProfile, currentBrowserPitch, currentBrowserRate, resolveModelProfile, updateModelProfile,
     loadUserModels, importUserModel, updateUserModel, deleteUserModel,
   };
 });
+
+function loadModelProfilesFromStorage(): Record<string, ModelProfile> {
+  try {
+    if (typeof localStorage === 'undefined') return {};
+    const raw = localStorage.getItem(MODEL_PROFILE_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const out: Record<string, ModelProfile> = {};
+    for (const [id, value] of Object.entries(parsed)) {
+      if (!value || typeof value !== 'object') continue;
+      const profile = value as Record<string, unknown>;
+      const gender = profile.gender === 'male' || profile.gender === 'female' ? profile.gender : 'female';
+      out[id] = {
+        id,
+        name: typeof profile.name === 'string' ? profile.name : '',
+        gender,
+        persona: typeof profile.persona === 'string' ? profile.persona : '',
+        voiceProfile: migratePersonaVoiceProfile({
+          ...(typeof profile.voiceProfile === 'object' && profile.voiceProfile ? profile.voiceProfile : {}),
+          gender,
+        }),
+        updatedAt: typeof profile.updatedAt === 'number' ? profile.updatedAt : 0,
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}

@@ -32,7 +32,10 @@ pub enum DiffChange {
     Added,
     Removed,
     /// Symbol exists in both refs but signature_hash differs.
-    Modified { old_file: String, old_line: u32 },
+    Modified {
+        old_file: String,
+        old_line: u32,
+    },
 }
 
 /// Result of a branch diff operation.
@@ -229,9 +232,12 @@ pub fn group_drift(
     let mut stmt = code_conn.prepare(&query)?;
 
     // Bind parameters manually.
-    let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> =
-        repo_ids.iter().map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>).collect();
-    let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+    let params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = repo_ids
+        .iter()
+        .map(|id| Box::new(*id) as Box<dyn rusqlite::types::ToSql>)
+        .collect();
+    let param_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|p| p.as_ref()).collect();
 
     let contracts: Vec<(i64, String, String, String)> = stmt
         .query_map(param_refs.as_slice(), |row| {
@@ -509,7 +515,10 @@ mod tests {
         let result = branch_diff(&conn, 1, "main", "feat/sig").unwrap();
         assert_eq!(result.modified.len(), 1);
         assert_eq!(result.modified[0].name, "handler");
-        assert!(matches!(result.modified[0].change, DiffChange::Modified { old_line: 10, .. }));
+        assert!(matches!(
+            result.modified[0].change,
+            DiffChange::Modified { old_line: 10, .. }
+        ));
     }
 
     #[test]

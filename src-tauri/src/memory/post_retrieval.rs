@@ -54,7 +54,9 @@ pub enum RetrievalVerdict {
 ///
 /// `verdicts` maps `(memory_id, verdict)` for each candidate that was
 /// scored. `query` is the original search query (used for gap logging).
-pub fn spawn_post_retrieval<S: std::ops::Deref<Target = Mutex<MemoryStore>> + Send + Sync + 'static>(
+pub fn spawn_post_retrieval<
+    S: std::ops::Deref<Target = Mutex<MemoryStore>> + Send + Sync + 'static,
+>(
     store: S,
     verdicts: Vec<(i64, RetrievalVerdict)>,
     query: String,
@@ -131,7 +133,7 @@ pub fn run_maintenance(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::memory::store::{MemoryStore, NewMemory, MemoryType};
+    use crate::memory::store::{MemoryStore, MemoryType, NewMemory};
 
     fn setup() -> MemoryStore {
         let store = MemoryStore::in_memory();
@@ -216,7 +218,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(edge_count, 1, "should create one edge between co-relevant pair");
+        assert_eq!(
+            edge_count, 1,
+            "should create one edge between co-relevant pair"
+        );
     }
 
     #[test]

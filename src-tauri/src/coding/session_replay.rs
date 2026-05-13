@@ -16,7 +16,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::coding::session_import::{self, Harness, ImportedTurn, ImportResult};
+use crate::coding::session_import::{self, Harness, ImportResult, ImportedTurn};
 use std::path::Path;
 
 // ---------------------------------------------------------------------------
@@ -353,7 +353,8 @@ mod tests {
     #[test]
     fn plan_file_replay_missing_file() {
         let path = std::path::PathBuf::from("/tmp/nonexistent-session.json");
-        let (import, plan) = plan_file_replay(Harness::Codex, &path, &ReplaySessionConfig::default());
+        let (import, plan) =
+            plan_file_replay(Harness::Codex, &path, &ReplaySessionConfig::default());
         assert_eq!(import.turns_extracted, 0);
         assert_eq!(plan.total_turns, 0);
         assert!(plan.segments.is_empty());

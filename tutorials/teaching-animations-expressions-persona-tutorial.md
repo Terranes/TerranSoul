@@ -60,8 +60,6 @@ By the end of this tutorial you will have:
 
 ## 2. Requirements
 
-![Requirements checklist showing webcam, permissions, and active brain needed](screenshots/teaching-animations/02-requirements.png)
-
 - TerranSoul desktop installed and launched at least once (the app
   data directory is created on first launch).
 - A working webcam **for sections 1 and 2 only** — section 3 (persona
@@ -82,8 +80,6 @@ By the end of this tutorial you will have:
 ---
 
 ## 3. Teach a Facial Expression — “Smug”
-
-![Persona Teacher panel showing live face mirror and Capture button](screenshots/teaching-animations/03-facial-expression.png)
 
 ### 3.1 Open the Persona Teacher
 
@@ -127,8 +123,6 @@ If `Smug` is missing from either list, see [Troubleshooting](#troubleshooting).
 ---
 
 ## 4. Teach a Body Motion — “Bow”
-
-![Motion tab showing pose mirror with upper body tracking and Record button](screenshots/teaching-animations/04-body-motion.png)
 
 The motion flow uses MediaPipe's `PoseLandmarker` with the same camera
 permission you already granted.
@@ -182,8 +176,6 @@ A `LearnedMotion` JSON lands in
 
 ## 5. Teach a Persona Trait
 
-![Persona panel showing quirks field with new trait added](screenshots/teaching-animations/05-persona-trait.png)
-
 > `says 'indeed' a lot`
 
 Persona traits are pure text. No camera, no permissions.
@@ -228,8 +220,6 @@ Persona traits are pure text. No camera, no permissions.
 
 ## 6. Worked Example — Three Teachings, One Chat Turn
 
-![Chat showing all three teachings firing simultaneously with star rating strip](screenshots/teaching-animations/06-worked-example.png)
-
 This is the dry-run the author of this tutorial actually performed.
 
 1. Captured `Smug` (section 1) → file written, ▶ Test green.
@@ -251,8 +241,6 @@ This is the dry-run the author of this tutorial actually performed.
 ---
 
 ## 7. Removing or Replacing a Teaching
-
-![Persona settings showing delete buttons per expression/motion/trait](screenshots/teaching-animations/07-removing-teaching.png)
 
 | Action | Where | What stays |
 |---|---|---|

@@ -283,6 +283,39 @@ impl MemoryStore {
     }
 }
 
+/// Pure-logic gate for the chat-side auto-detect path (CHAT-PARITY-4).
+///
+/// Given a brain-produced [`ContradictionResult`] for the (`new_id`,
+/// `dup_id`) pair, opens a `memory_conflicts` row only when the brain
+/// confirmed an actual contradiction AND the two ids are different
+/// (a memory cannot contradict itself — `find_duplicate` can return the
+/// just-inserted row when its embedding round-trips through the ANN
+/// index). Returns the new conflict id on success, `None` when the
+/// gate filtered the call out.
+///
+/// This helper is hermetic: callers feed in a synthesised
+/// [`ContradictionResult`] in unit tests so the trigger logic can be
+/// validated without an Ollama hop. The async LLM call lives in
+/// `OllamaAgent::check_contradiction`; the chat-side wrapper in
+/// `commands::memory::extract_memories_from_session` chains the two.
+///
+/// See `docs/brain-advanced-design.md` § Phase-5 "Contradiction
+/// resolution" and `rules/milestones.md` (CHAT-PARITY-4).
+pub fn record_contradiction_if(
+    store: &MemoryStore,
+    new_id: i64,
+    dup_id: i64,
+    result: &ContradictionResult,
+) -> Option<i64> {
+    if !result.contradicts || new_id == dup_id {
+        return None;
+    }
+    store
+        .add_conflict(dup_id, new_id, &result.reason)
+        .ok()
+        .map(|c| c.id)
+}
+
 fn row_to_conflict(row: &rusqlite::Row<'_>) -> SqlResult<MemoryConflict> {
     Ok(MemoryConflict {
         id: row.get(0)?,
@@ -498,5 +531,86 @@ mod tests {
         store.close_memory(e.id, 1234567890).unwrap();
         let after = store.get_by_id(e.id).unwrap();
         assert_eq!(after.valid_to, Some(1234567890));
+    }
+
+    // ── CHAT-PARITY-4 hermetic gate tests ───────────────────────────────
+
+    #[test]
+    fn record_contradiction_if_opens_row_on_negation() {
+        // Positive case: the brain returned `contradicts: true` for a
+        // semantic negation of an existing memory. The chat-side ingest
+        // path must open a `memory_conflicts` row so the user can pick a
+        // winner instead of letting two contradictory facts coexist.
+        let store = test_store();
+        let existing = store
+            .add(super::super::NewMemory {
+                content: "User prefers Python.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let new_entry = store
+            .add(super::super::NewMemory {
+                content: "User does not like Python at all.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let verdict = ContradictionResult {
+            contradicts: true,
+            reason: "Statements disagree about the user's preference for Python.".into(),
+        };
+
+        let conflict_id = record_contradiction_if(&store, new_entry.id, existing.id, &verdict);
+        assert!(conflict_id.is_some(), "negation must open a conflict row");
+
+        let open = store.list_conflicts(Some(&ConflictStatus::Open)).unwrap();
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].entry_a_id, existing.id);
+        assert_eq!(open[0].entry_b_id, new_entry.id);
+        assert!(open[0].reason.contains("Python"));
+    }
+
+    #[test]
+    fn record_contradiction_if_does_not_open_row_on_paraphrase() {
+        // Negative case 1: the brain returned `contradicts: false` for a
+        // paraphrase. The gate must NOT open a conflict row, otherwise
+        // the user gets spammed with false positives every time chat
+        // restates an existing fact.
+        let store = test_store();
+        let existing = store
+            .add(super::super::NewMemory {
+                content: "User prefers Python.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+        let new_entry = store
+            .add(super::super::NewMemory {
+                content: "Python is the user's preferred language.".into(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        let verdict = ContradictionResult {
+            contradicts: false,
+            reason: String::new(),
+        };
+
+        let conflict_id = record_contradiction_if(&store, new_entry.id, existing.id, &verdict);
+        assert!(
+            conflict_id.is_none(),
+            "paraphrase must NOT open a conflict row"
+        );
+        assert_eq!(store.count_open_conflicts().unwrap(), 0);
+
+        // Negative case 2: even when `contradicts: true`, a self-pair
+        // (`new_id == dup_id`) must be filtered. `find_duplicate` can
+        // return the just-inserted row when its embedding round-trips
+        // through the ANN index, and a memory cannot contradict itself.
+        let self_pair = record_contradiction_if(&store, existing.id, existing.id, &ContradictionResult {
+            contradicts: true,
+            reason: "shouldn't reach the store".into(),
+        });
+        assert!(self_pair.is_none(), "self-pair must be filtered");
+        assert_eq!(store.count_open_conflicts().unwrap(), 0);
     }
 }

@@ -118,7 +118,9 @@ const modifiers = computed(() => computeModifiers(stats.value));
 const overallLevel = computed(() => {
   const values = Object.values(stats.value);
   const total = values.reduce((sum, v) => sum + v, 0);
-  return Math.max(1, Math.round(total / values.length));
+  // Slightly amplify the displayed level so mid-game builds read clearly
+  // (e.g. recommended setup around Lv.20 instead of low teens).
+  return Math.max(1, Math.round((total / values.length) * 1.25));
 });
 
 const pulsingStats = ref<StatId[]>([]);

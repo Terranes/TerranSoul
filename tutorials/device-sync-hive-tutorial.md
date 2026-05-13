@@ -38,7 +38,7 @@ distribution.
 
 ## 1. Device Pairing (Soul Link)
 
-![Settings → Devices panel showing QR code for pairing](screenshots/device-sync/01-pairing-qr.png)
+![Phone link pairing panel](screenshots/device-sync/01-phone-link-panel.png)
 
 ### Step 1: Enable LAN on the Host Device
 
@@ -72,8 +72,6 @@ distribution.
 
 ## 2. Memory Sync (CRDT Replication)
 
-![Two devices showing synced memory entries with connected status](screenshots/device-sync/02-memory-sync.png)
-
 Once paired, memories sync automatically:
 
 ### How It Works
@@ -105,8 +103,6 @@ Once paired, memories sync automatically:
 ---
 
 ## 3. Privacy Controls (Share Scope ACL)
-
-![Memory detail panel showing Share Scope dropdown — Private / Paired / Hive](screenshots/device-sync/03-privacy-controls.png)
 
 Every memory has a `share_scope` that controls where it can travel:
 
@@ -143,8 +139,6 @@ The privacy engine (`hive/privacy.rs`) enforces:
 ---
 
 ## 4. Hive Federation (Opt-in Relay)
-
-![Settings → Network showing Hive URL field and connection status](screenshots/device-sync/04-hive-connect.png)
 
 The Hive is a **fully optional** federation layer for sharing knowledge across users or teams.
 
@@ -189,8 +183,6 @@ All messages are **Ed25519 signed** by the originating device. The relay verifie
 
 ## 5. Distributed Jobs
 
-![Job queue showing submitted work and capability matching](screenshots/device-sync/05-distributed-jobs.png)
-
 Hive supports distributing AI work across participants:
 
 ### How It Works
@@ -218,8 +210,6 @@ If your device has the required capabilities, the job executes locally without t
 ---
 
 ## 6. Security Model
-
-![Architecture diagram showing Ed25519 signing flow between devices and relay](screenshots/device-sync/06-security-model.png)
 
 | Layer | Protection |
 |-------|-----------|

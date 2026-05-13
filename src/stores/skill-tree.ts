@@ -860,7 +860,6 @@ const SKILL_NODES: SkillNode[] = [
     rewards: ['Topic-specific RAG answers', 'Source-grounded knowledge', 'Persistent expert memory', 'Chain quest experience'],
     rewardIcons: ['🎯', '📖', '🧠', '⚔️'],
     questSteps: [
-      { label: 'Verify brain and memory systems are ready', action: 'info' },
       { label: 'Add URLs or files about the topic', action: 'configure', target: 'knowledge_sources' },
       { label: 'Wait for ingestion and embedding', action: 'info' },
       { label: 'Ask questions to test your new knowledge', action: 'navigate', target: 'chat' },
@@ -1865,7 +1864,6 @@ Respond with ONLY valid JSON (no markdown):
     }
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<{
         memories: Array<{
           id: number;

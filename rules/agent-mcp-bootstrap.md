@@ -9,13 +9,21 @@
 
 ## 1. What `npm run mcp` is
 
-A **headless MCP HTTP server** that exposes TerranSoul's brain
+A **local MCP tray runtime** that exposes TerranSoul's brain
 (memory store, RAG, knowledge graph, gitnexus surface) to AI coding
-agents over JSON-RPC on `http://127.0.0.1:7423/mcp`.
+agents over JSON-RPC on `http://127.0.0.1:7423/mcp` while keeping a
+visible system-tray icon and reopenable UI handle.
 
 Internally it is the Rust binary launched as
-`cargo run -- --mcp-http`, which puts the process into **MCP pet
-mode**:
+`target-mcp/release/terransoul.exe --mcp-tray`, which puts the
+process into **MCP pet mode with a visible system-tray icon**:
+
+> **Local-run rule:** every local session must use `npm run mcp`
+> (which routes through `scripts/copilot-start-mcp.mjs` and passes
+> `--mcp-tray`). `mcp-http` is no longer the local workflow. Agents
+> must attach to an existing release/tray/dev server when one is open;
+> only start the tray when no authenticated TerranSoul MCP server is
+> already available.
 
 - `serverInfo.name` = `terransoul-brain-mcp`
 - `serverInfo.buildMode` = `mcp` (not `dev`, not `release`)
@@ -47,30 +55,30 @@ the error as permission to bypass MCP. Use this triage order:
    start or restart with `node scripts/copilot-start-mcp.mjs`; if the
    managed binary is stale, rebuild and relaunch instead of reusing it.
 3. **Knowledge drift.** If the error is caused by missing/stale seed
-   knowledge, update `mcp-data/shared/memory-seed.sql` and add a numbered
-   migration under `mcp-data/shared/migrations/` for existing DBs.
+   knowledge, append a new `INSERT INTO memories ... WHERE NOT EXISTS`
+   block to `mcp-data/shared/memory-seed.sql` so the consolidated init
+   snapshot picks it up.
 
 Always report the original MCP error, the diagnosed root cause, the fix,
 and any remaining blocker. A grep/file-search fallback can be used for
 emergency context, but it does not close the MCP error.
 
-### Priority — release > dev > mcp
+### Priority — release > tray > dev
 
-Both the headless (`--mcp-http`) and pet-mode stdio
-(`--mcp-stdio` with `TERRANSOUL_MCP_DATA_DIR` set) runners probe
-`127.0.0.1:7421` and `127.0.0.1:7422` at startup. If either
-answers, the runner **refuses to start** — the user already has a
-real TerranSoul app serving MCP, and shadowing it with a stale
-repo-local brain would only confuse agents.
+All agent-facing entry points use the same priority order:
+release app on `127.0.0.1:7421`, the MCP tray on `127.0.0.1:7423`, then
+dev app on `127.0.0.1:7422`. The workspace VS Code MCP entry is
+a stdio proxy (`scripts/mcp-tray-proxy.mjs`) that reads the appropriate
+token file and forwards every JSON-RPC request to the first available
+server. Older `terransoul --mcp-stdio` configs also proxy to the same
+existing server when one is authenticated.
 
 Concretely:
 
-- App running on **7421** (release) → `npm run mcp` exits with a
-  message; agents must use the `terransoul-brain` MCP entry.
-- App running on **7422** (dev) → `npm run mcp` exits with a
-  message; agents must use the `terransoul-brain-dev` entry.
-- Neither port answers → `npm run mcp` starts on **7423** as
-  documented.
+- App running on **7421** (release) → agents use it instead of the tray.
+- Tray running on **7423** → agents use it if no release app is serving MCP.
+- App running on **7422** (dev) → agents use it if no release app or MCP tray is serving MCP.
+- No authenticated server → `npm run mcp` starts the tray on **7423**.
 
 ## 2. Purpose — what `npm run mcp` is *for*
 
@@ -112,11 +120,13 @@ that touch this surface MUST NOT:
    locks, sessions, worktrees) are ignored. Wiping ignored runtime
    state only costs the agent its locally-ingested dev knowledge;
    nothing user-owned is lost.
-6. **Trigger any user-facing onboarding.** The headless runner has
-   **no UI surface** — no Vue app, no skill tree, no charisma
-   panel, no persona drift prompts, no notifications, no system
-   tray. Quest unlocks, charisma teaching flows, brain-mode
-   pickers, voice setup, persona-pack imports, and every other
+6. **Trigger any user-facing onboarding.** The runner shows **only
+   a system-tray icon** (so the developer can confirm MCP is alive
+   and quit it) — no Vue main-window UI, no skill tree, no
+   charisma panel, no persona drift prompts, no toast
+   notifications. Quest unlocks, charisma teaching flows,
+   brain-mode pickers, voice setup, persona-pack imports, and
+   every other
    onboarding/wizard prompt the companion app would show simply
    **cannot fire** in this process. If a code path tries to surface
    one (via emit/notification/dialog), that is a bug — file it as
@@ -165,8 +175,8 @@ project memory layer:
 
 1. **At session start**, read this file and check/reuse a running
    TerranSoul MCP server before broad repo searches. Prefer release
-   (`7421`) or dev (`7422`) if the app is already serving MCP; otherwise
-   use the headless `npm run mcp` profile on `7423`.
+   (`7421`), then the MCP tray (`7423`), then dev (`7422`) when
+   authenticated; only start a new tray if none of those is reusable.
 2. **Before planning or implementing**, call at least one brain tool when
     available (`brain_health`, then `brain_search` /
     `brain_suggest_context` for the current chunk). If MCP is blocked by
@@ -200,24 +210,26 @@ project memory layer:
 
 Every AI coding agent in a **local** session follows the same startup procedure:
 
-1. **Check first.** `GET http://127.0.0.1:7423/mcp` — if anything
-   answers, the server is already up. Reuse it.
+1. **Check first.** Run `node scripts/mcp-tray-proxy.mjs --probe` or
+   call `brain_health`. If release/tray/dev is already serving MCP,
+   reuse it.
 2. **Copilot cloud agent (local only).** If running locally (not in
    GitHub Actions), `.github/workflows/copilot-setup-steps.yml` or
    `node scripts/copilot-start-mcp.mjs 300` may be used after installing
-   dependencies. That script reuses ports `7421`/`7422`/`7423` if healthy,
-   otherwise starts `npm run mcp` detached, waits for `/health`, and leaves
-   logs/PIDs in `/tmp`. **Do not run this step when `GITHUB_ACTIONS=true`.**
+   dependencies. That script reuses release/tray/dev when authenticated;
+   otherwise it starts the tray detached, waits for `/health`, and leaves
+   logs/PIDs under `mcp-data/`. **Do not run this step when `GITHUB_ACTIONS=true`.**
 3. **If not running in any other agent**, ask the user once before launching it
    (it spawns a Rust build the first time). After confirmation, run:
    ```pwsh
    npm run mcp
    ```
    in a background terminal and wait for the
-   `[mcp-http] listening on http://127.0.0.1:7423` line, e.g. via
-   `node scripts/wait-for-service.mjs http://127.0.0.1:7423/mcp 60`.
-4. **Read the token** from `mcp-data/mcp-token.txt` and pass it as
-   `Authorization: Bearer <token>` on every request.
+   `[mcp-app] MCP server listening on http://127.0.0.1:7423` line, e.g. via
+   `node scripts/wait-for-service.mjs http://127.0.0.1:7423/health 60`.
+4. **Read the token** from the selected runtime's token file and pass it as
+   `Authorization: Bearer <token>` on every direct HTTP request. The stdio
+   proxy reads token files itself.
 5. **Prefer brain tools over file searches** when the question is
    project-knowledge (e.g. "how does the RAG fallback work?",
    "what does Chunk 30.7 do?"): use `brain_search`, `brain_ingest`,
@@ -232,13 +244,14 @@ Every AI coding agent in a **local** session follows the same startup procedure:
    `mcp-token.txt`, `memory.db*`, indexes, logs, locks, sessions, or
    worktrees.
 
-### target-mcp freshness rule (mandatory)
+### target-mcp freshness rule (when starting a new tray)
 
 Freshness must be determined by **filesystem modification time** (`mtime`) only
 (use UTC/epoch comparison; do not use git commit times, content hashes, or
 version strings for this rule).
 
-Treat `target-mcp/release/terransoul(.exe)` as **stale** when any of the
+When no authenticated release/tray/dev MCP server is reusable, treat
+`target-mcp/release/terransoul(.exe)` as **stale** when any of the
 following is true:
 
 - the binary does not exist;
@@ -247,17 +260,20 @@ following is true:
   `src-tauri/src/**`, `src-tauri/Cargo*.toml`, `src-tauri/build.rs`,
   `src-tauri/tauri.conf.json`.
 
-In other words, if `max(mtime of source/config set) > mtime(binary)`, the
-existing `7423` process must be considered stale and must not be reused.
+In other words, if `max(mtime of source/config set) > mtime(binary)`, rebuild
+before starting a new tray. Do not terminate an already-open authenticated
+release/tray/dev server just because source files changed; report that the
+running app/tray is being reused and let the user restart it when they want the
+new binary loaded.
 
 Required behavior:
 
-1. Terminate the managed MCP `7423` process.
-2. Rebuild `target-mcp`.
-3. Relaunch MCP and wait for `/health`.
+1. Reuse authenticated release/tray/dev if available.
+2. If none is available, rebuild stale `target-mcp`.
+3. Launch MCP tray and wait for `/health`.
 
-If termination fails, exit with a blocker message instead of silently
-continuing on stale binaries.
+If a port is occupied but `/status` cannot authenticate with the known token,
+exit with a blocker message instead of killing the process.
 
 ## 6. Seed data — pre-populated brain on first run
 
@@ -355,11 +371,11 @@ speaks MCP works unchanged.
 
 | Agent | How it reaches `npm run mcp` |
 |---|---|
-| GitHub Copilot (VS Code) | Already wired in `.vscode/mcp.json` as `terransoul-brain-mcp`. Set `$env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content mcp-data/mcp-token.txt`, restart VS Code, then ask Copilot to use `brain_*` tools. |
-| Codex CLI | Add an HTTP MCP entry pointing at `http://127.0.0.1:7423/mcp` with the bearer token from `mcp-data/mcp-token.txt`. |
-| Claude Code | Same — register an HTTP MCP server at port 7423 with the bearer token. |
-| Clawcode | Same — register an HTTP MCP server at port 7423 with the bearer token. |
-| Cursor / Continue.dev / Aider | Same — point the agent's MCP config at `http://127.0.0.1:7423/mcp`. |
+| GitHub Copilot (VS Code) | Already wired in `.vscode/mcp.json` as `terransoul-brain-mcp` using **stdio proxy transport** — VS Code runs `node scripts/mcp-tray-proxy.mjs`, which attaches to release, tray, or dev in priority order. No bearer-token env var or VS Code restart is required. |
+| Codex CLI | Use an HTTP MCP entry pointing at the selected server (`7421`, `7423`, or `7422`) with that server's bearer token, or run a stdio command entry through `node scripts/mcp-tray-proxy.mjs`. |
+| Claude Code | Same — register HTTP with the selected server/token, or use the stdio proxy command. |
+| Clawcode | Same — register HTTP with the selected server/token, or use the stdio proxy command. |
+| Cursor / Continue.dev / Aider | Same — use the selected HTTP server/token when supported, otherwise the stdio proxy. |
 
 ## 9. Configuration knobs
 
@@ -379,7 +395,7 @@ gracefully (max 2 s drain).
 
 ## 11. Authoring rule (for agents touching this surface)
 
-If a code change touches `--mcp-http`, the headless runner, the
+If a code change touches MCP tray startup, the stdio proxy, the
 `mcp-data/` layout, or the `is_mcp_pet_mode()` flag, the change
 **must** also update this file in the same PR — the rule and the
 runner are co-versioned.

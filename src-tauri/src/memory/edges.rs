@@ -320,6 +320,41 @@ impl MemoryStore {
         Ok(())
     }
 
+    /// Update mutable fields of an existing edge in-place.
+    ///
+    /// All four arguments are optional — pass `None` to keep the existing value.
+    /// `rel_type` is normalised via [`normalise_rel_type`] and the new
+    /// `(src_id, dst_id, rel_type)` triple must still satisfy the unique
+    /// constraint (otherwise the call returns a SQL error). `confidence` is
+    /// clamped to `[0.0, 1.0]`.
+    ///
+    /// Returns the refreshed [`MemoryEdge`].
+    pub fn update_edge(
+        &self,
+        id: i64,
+        rel_type: Option<&str>,
+        confidence: Option<f64>,
+        source: Option<EdgeSource>,
+    ) -> SqlResult<MemoryEdge> {
+        // Load existing values so partial updates merge cleanly.
+        let current = self.get_edge_by_id(id)?;
+        let new_rel = rel_type
+            .map(normalise_rel_type)
+            .unwrap_or(current.rel_type.clone());
+        let new_conf = confidence
+            .map(|c| c.clamp(0.0, 1.0))
+            .unwrap_or(current.confidence);
+        let new_source = source.unwrap_or(current.source).as_str();
+
+        self.conn().execute(
+            "UPDATE memory_edges
+             SET rel_type = ?1, confidence = ?2, source = ?3
+             WHERE id = ?4",
+            params![new_rel, new_conf, new_source, id],
+        )?;
+        self.get_edge_by_id(id)
+    }
+
     /// Delete all edges incident to a memory (in or out).
     /// Normally unnecessary because of `ON DELETE CASCADE`, but exposed for
     /// explicit graph-pruning operations.
@@ -831,6 +866,50 @@ mod tests {
         let e2 = store.add_edge(new_edge()).unwrap();
         assert_eq!(e1.id, e2.id, "duplicate insert must return existing edge");
         assert_eq!(store.list_edges().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn update_edge_partial_patch() {
+        let store = MemoryStore::in_memory();
+        let a = make_memory(&store, "A");
+        let b = make_memory(&store, "B");
+        let edge = store
+            .add_edge(NewMemoryEdge {
+                src_id: a,
+                dst_id: b,
+                rel_type: "related_to".to_string(),
+                confidence: 0.5,
+                source: EdgeSource::Llm,
+                valid_from: None,
+                valid_to: None,
+                edge_source: None,
+            })
+            .unwrap();
+
+        // Update only confidence.
+        let u1 = store.update_edge(edge.id, None, Some(0.9), None).unwrap();
+        assert_eq!(u1.rel_type, "related_to");
+        assert!((u1.confidence - 0.9).abs() < 1e-6);
+        assert_eq!(u1.source, EdgeSource::Llm);
+
+        // Update only rel_type — normalised.
+        let u2 = store
+            .update_edge(edge.id, Some("Cites"), None, None)
+            .unwrap();
+        assert_eq!(u2.rel_type, "cites");
+        assert!((u2.confidence - 0.9).abs() < 1e-6);
+
+        // Update source.
+        let u3 = store
+            .update_edge(edge.id, None, None, Some(EdgeSource::User))
+            .unwrap();
+        assert_eq!(u3.source, EdgeSource::User);
+
+        // Out-of-range confidence is clamped.
+        let u4 = store.update_edge(edge.id, None, Some(5.0), None).unwrap();
+        assert!((u4.confidence - 1.0).abs() < 1e-6);
+        let u5 = store.update_edge(edge.id, None, Some(-2.0), None).unwrap();
+        assert!((u5.confidence - 0.0).abs() < 1e-6);
     }
 
     #[test]

@@ -107,7 +107,9 @@ function riskClass(risk: string): string {
       <!-- Left Panel: Clusters + Processes -->
       <aside class="cgw-left">
         <section class="cgw-section">
-          <h3 class="cgw-section-title">Clusters</h3>
+          <h3 class="cgw-section-title">
+            Clusters
+          </h3>
           <ul class="cgw-cluster-list">
             <li
               v-for="cluster in store.clusters"
@@ -124,7 +126,9 @@ function riskClass(risk: string): string {
         </section>
 
         <section class="cgw-section">
-          <h3 class="cgw-section-title">Processes</h3>
+          <h3 class="cgw-section-title">
+            Processes
+          </h3>
           <ul class="cgw-process-list">
             <li
               v-for="(proc, idx) in store.processes.slice(0, 15)"
@@ -157,7 +161,9 @@ function riskClass(risk: string): string {
             class="cgw-graph-placeholder"
           >
             <p>Select a cluster to visualize</p>
-            <p class="cgw-hint">Graph canvas — future Cytoscape/Three.js integration</p>
+            <p class="cgw-hint">
+              Graph canvas — future Cytoscape/Three.js integration
+            </p>
           </div>
         </div>
       </main>
@@ -165,7 +171,9 @@ function riskClass(risk: string): string {
       <!-- Right Panel: Impact + References -->
       <aside class="cgw-right">
         <section class="cgw-section">
-          <h3 class="cgw-section-title">Impact Analysis</h3>
+          <h3 class="cgw-section-title">
+            Impact Analysis
+          </h3>
           <div class="cgw-impact-controls">
             <input
               v-model="impactSymbol"
@@ -173,7 +181,7 @@ function riskClass(risk: string): string {
               placeholder="Symbol name..."
               data-testid="impact-symbol-input"
               @keyup.enter="runImpact"
-            />
+            >
             <button
               class="cgw-btn"
               data-testid="run-impact"
@@ -204,14 +212,16 @@ function riskClass(risk: string): string {
         </section>
 
         <section class="cgw-section">
-          <h3 class="cgw-section-title">Diff Impact</h3>
+          <h3 class="cgw-section-title">
+            Diff Impact
+          </h3>
           <div class="cgw-impact-controls">
             <input
               v-model="diffRef"
               class="cgw-input"
               placeholder="HEAD~1"
               data-testid="diff-ref-input"
-            />
+            >
             <button
               class="cgw-btn"
               data-testid="run-diff-impact"

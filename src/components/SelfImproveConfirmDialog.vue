@@ -137,6 +137,9 @@ watch(
   justify-content: center;
   z-index: 9500;
   padding: 16px;
+  /* Explicit pointer-events:auto so pet-mode's pointer-events:none on the
+     overlay cannot interfere with the teleported backdrop. */
+  pointer-events: auto;
 }
 
 .si-confirm-card {

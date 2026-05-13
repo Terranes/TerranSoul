@@ -30,6 +30,7 @@ import type {
   MemoryTier,
   Message,
   NewMemory,
+  ProgressiveMemorySearchResponse,
 } from '../types';
 import {
   addBrowserMemory,
@@ -195,6 +196,39 @@ export const useMemoryStore = defineStore('memory', () => {
     }
   }
 
+  async function progressiveSearch(
+    query: string,
+    limit = 10,
+    expandIds: number[] = [],
+  ): Promise<ProgressiveMemorySearchResponse> {
+    try {
+      return await invoke<ProgressiveMemorySearchResponse>('progressive_search_memories', {
+        query,
+        limit,
+        expandIds,
+      });
+    } catch {
+      const fallback = await browserHybridSearch(query, limit);
+      return {
+        compact: fallback.map((entry, idx) => ({
+          id: entry.id,
+          rank: idx + 1,
+          title: entry.content.slice(0, 80),
+          preview: entry.content.slice(0, 240),
+          tags: entry.tags,
+          importance: entry.importance,
+          memory_type: entry.memory_type,
+          tier: entry.tier,
+          created_at: entry.created_at,
+          updated_at: null,
+          session_id: entry.session_id,
+          parent_id: entry.parent_id,
+        })),
+        expanded: fallback.filter((entry) => expandIds.includes(entry.id)),
+      };
+    }
+  }
+
   /** Get memory statistics per tier. */
   async function getStats(): Promise<MemoryStats | null> {
     try {
@@ -323,6 +357,39 @@ export const useMemoryStore = defineStore('memory', () => {
     } catch (e) {
       error.value = String(e);
       return false;
+    }
+  }
+
+  /** Update an existing edge in-place (rel_type / confidence / source). */
+  async function updateEdge(
+    edgeId: number,
+    patch: { relType?: string; confidence?: number; source?: 'user' | 'llm' | 'auto' },
+  ): Promise<MemoryEdge | null> {
+    try {
+      const updated = await invoke<MemoryEdge>('update_memory_edge', {
+        edgeId,
+        relType: patch.relType,
+        confidence: patch.confidence,
+        source: patch.source,
+      });
+      const i = edges.value.findIndex((e) => e.id === edgeId);
+      if (i !== -1) edges.value[i] = updated;
+      return updated;
+    } catch (e) {
+      error.value = String(e);
+      return null;
+    }
+  }
+
+  /** Detach a memory from the graph by deleting all incident edges. */
+  async function detachNode(memoryId: number): Promise<number> {
+    try {
+      const removed = await invoke<number>('detach_memory_node', { memoryId });
+      edges.value = edges.value.filter((e) => e.src_id !== memoryId && e.dst_id !== memoryId);
+      return removed;
+    } catch (e) {
+      error.value = String(e);
+      return 0;
     }
   }
 
@@ -472,6 +539,7 @@ export const useMemoryStore = defineStore('memory', () => {
     search,
     semanticSearch,
     hybridSearch,
+    progressiveSearch,
     addMemory,
     updateMemory,
     deleteMemory,
@@ -488,6 +556,8 @@ export const useMemoryStore = defineStore('memory', () => {
     fetchEdges,
     addEdge,
     deleteEdge,
+    updateEdge,
+    detachNode,
     getEdgesForMemory,
     getEdgeStats,
     listRelationTypes,

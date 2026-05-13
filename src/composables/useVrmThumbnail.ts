@@ -177,6 +177,10 @@ const _inflightOwners = new Map<string, symbol>();
 /** Keys that already failed — avoids retrying on every component mount. */
 const _failed = new Set<string>();
 
+function shouldLogThumbnailErrors(): boolean {
+  return import.meta.env.MODE !== 'test';
+}
+
 /**
  * Read user-model bytes from the Rust backend, wrap in a temporary blob URL,
  * render a headshot, cache the result, and revoke the blob URL.
@@ -260,7 +264,9 @@ export function useVrmThumbnail(
       thumbnailUrl.value = dataUrl;
     } catch (err) {
       _failed.add(cacheKey);
-      console.error(`[TerranSoul] VRM thumbnail generation failed for ${cacheKey}:`, err);
+      if (shouldLogThumbnailErrors()) {
+        console.error(`[TerranSoul] VRM thumbnail generation failed for ${cacheKey}:`, err);
+      }
     } finally {
       _inflight.delete(cacheKey);
       isGenerating.value = false;
@@ -313,7 +319,9 @@ export async function preGenerateUserThumbnail(userModelId: string): Promise<voi
     await task;
   } catch (err) {
     _failed.add(userModelId);
-    console.error(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
+    if (shouldLogThumbnailErrors()) {
+      console.error(`[TerranSoul] Pre-generate thumbnail failed for ${userModelId}:`, err);
+    }
   } finally {
     if (_inflightOwners.get(userModelId) === owner) {
       _inflightOwners.delete(userModelId);

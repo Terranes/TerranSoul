@@ -10,8 +10,8 @@
 //! 3. On error or pause, the task exits gracefully; on next app launch
 //!    the engine auto-resumes if `enabled = true`.
 //!
-//! Resilience: the task lives behind an [`AtomicBool`] cancellation flag.
-//! The only way to stop the loop is to flip self-improve to disabled.
+//! Resilience: the task uses a cancellation flag plus a watch channel so
+//! shutdown can be observed promptly at loop boundaries.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -19,7 +19,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Runtime};
-use tokio::sync::Mutex as TokioMutex;
+use tokio::sync::{watch, Mutex as TokioMutex};
 use tokio::task::JoinHandle;
 
 use crate::brain::openai_client::OpenAiMessage;
@@ -106,16 +106,22 @@ impl ProgressEvent {
 
 /// In-memory engine handle stored on `AppState`. Holds the cancellation
 /// flag and join handle for the running loop, if any.
-#[derive(Default)]
 pub struct SelfImproveEngine {
     pub running: AtomicBool,
     pub cancel: Arc<AtomicBool>,
+    pub cancel_tx: watch::Sender<bool>,
     pub task: TokioMutex<Option<JoinHandle<()>>>,
 }
 
 impl SelfImproveEngine {
     pub fn new() -> Self {
-        Self::default()
+        let (cancel_tx, _) = watch::channel(false);
+        Self {
+            running: AtomicBool::new(false),
+            cancel: Arc::new(AtomicBool::new(false)),
+            cancel_tx,
+            task: TokioMutex::new(None),
+        }
     }
 
     pub fn is_running(&self) -> bool {
@@ -125,6 +131,7 @@ impl SelfImproveEngine {
     /// Request cancellation. The loop checks the flag between cycles.
     pub async fn request_stop(&self) {
         self.cancel.store(true, Ordering::Relaxed);
+        let _ = self.cancel_tx.send(true);
         let mut slot = self.task.lock().await;
         if let Some(handle) = slot.take() {
             // Best-effort: wait briefly for graceful shutdown.
@@ -132,6 +139,16 @@ impl SelfImproveEngine {
         }
         self.running.store(false, Ordering::Relaxed);
     }
+}
+
+impl Default for SelfImproveEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn cancel_requested(cancel: &Arc<AtomicBool>, cancel_rx: &watch::Receiver<bool>) -> bool {
+    cancel.load(Ordering::Relaxed) || *cancel_rx.borrow()
 }
 
 /// Read milestones.md from `repo_root/rules/milestones.md`.
@@ -568,6 +585,7 @@ async fn execute_chunk_dag<R: Runtime>(
     worktree_dir: Option<&str>,
     retry_context: Option<String>,
     cancel: &Arc<AtomicBool>,
+    cancel_rx: watch::Receiver<bool>,
 ) -> Result<ExecutionGateResult, String> {
     let original_repo_root = repo_root.to_path_buf();
     let execution_workspace =
@@ -600,6 +618,7 @@ async fn execute_chunk_dag<R: Runtime>(
     let gate_log = gate_log.clone();
     let workflow_cfg = workflow_cfg.clone();
     let cancel = cancel.clone();
+    let cancel_rx = cancel_rx;
 
     let result = dag_runner::execute_dag_async(&graph, &dag_config, |node_id| {
         let app = app_handle.clone();
@@ -611,11 +630,12 @@ async fn execute_chunk_dag<R: Runtime>(
         let gate_log = gate_log.clone();
         let workflow_cfg = workflow_cfg.clone();
         let cancel = cancel.clone();
+        let cancel_rx = cancel_rx.clone();
         let state = state.clone();
         let retry_context = retry_context.clone();
 
         async move {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel_requested(&cancel, &cancel_rx) {
                 return Err(format!("cancelled before {node_id}"));
             }
 
@@ -649,6 +669,9 @@ async fn execute_chunk_dag<R: Runtime>(
                         retry_context.as_deref(),
                     )
                     .await?;
+                    if cancel_requested(&cancel, &cancel_rx) {
+                        return Err(format!("cancelled after {node_id}"));
+                    }
                     state.lock().await.plan = Some(plan);
                     Ok("plan ready".to_string())
                 }
@@ -845,6 +868,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
     workflow_cfg: &crate::coding::CodingWorkflowConfig,
     worktree_dir: Option<&str>,
     cancel: &Arc<AtomicBool>,
+    cancel_rx: watch::Receiver<bool>,
 ) -> Result<ExecutionGateResult, String> {
     let first = execute_chunk_dag(
         app,
@@ -858,6 +882,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
         worktree_dir,
         None,
         cancel,
+        cancel_rx.clone(),
     )
     .await;
 
@@ -866,7 +891,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
         Err(error) => error,
     };
 
-    if !is_retryable_test_failure(&first_error) || cancel.load(Ordering::Relaxed) {
+    if !is_retryable_test_failure(&first_error) || cancel_requested(cancel, &cancel_rx) {
         return Err(first_error);
     }
 
@@ -892,6 +917,7 @@ async fn execute_chunk_dag_with_retry<R: Runtime>(
         worktree_dir,
         Some(first_error.clone()),
         cancel,
+        cancel_rx,
     )
     .await
     .map_err(|retry_error| format!("{first_error}\nRetry failed: {retry_error}"))
@@ -1441,7 +1467,9 @@ pub async fn start<R: Runtime>(
         return;
     }
     engine.cancel.store(false, Ordering::Relaxed);
+    let _ = engine.cancel_tx.send(false);
     let cancel = engine.cancel.clone();
+    let cancel_rx = engine.cancel_tx.subscribe();
     let engine_for_task = engine.clone();
     let metrics = MetricsLog::new(&repo_hint);
     let gate_log = GateLog::new(&repo_hint);
@@ -1510,7 +1538,7 @@ pub async fn start<R: Runtime>(
         let mut completion_pr_opened = false;
 
         for cycle in 0..MAX_CYCLES {
-            if cancel.load(Ordering::Relaxed) {
+            if cancel_requested(&cancel, &cancel_rx) {
                 emit(
                     &app,
                     ProgressEvent::info("stopped", "Self-improve disabled — exiting loop"),
@@ -1523,7 +1551,7 @@ pub async fn start<R: Runtime>(
                 Ok(md) => parse_chunks(&md),
                 Err(e) => {
                     emit(&app, ProgressEvent::error("milestones", e));
-                    sleep_cancellable(&cancel, IDLE_SLEEP_SECS).await;
+                    sleep_cancellable(&cancel, cancel_rx.clone(), IDLE_SLEEP_SECS).await;
                     continue;
                 }
             };
@@ -1547,7 +1575,7 @@ pub async fn start<R: Runtime>(
                         }
                         completion_pr_opened = true;
                     }
-                    sleep_cancellable(&cancel, IDLE_SLEEP_SECS).await;
+                    sleep_cancellable(&cancel, cancel_rx.clone(), IDLE_SLEEP_SECS).await;
                     continue;
                 }
             };
@@ -1560,6 +1588,24 @@ pub async fn start<R: Runtime>(
                 &app,
                 ProgressEvent::info("cycle", format!("Cycle {}: chunk {}", cycle + 1, next.id))
                     .with_chunk(&next.id),
+            );
+
+            // Seed rolling summarization usage from persisted transcript so
+            // resumed runs can continue token-threshold decisions.
+            let session_id = format!("si-{}", next.id);
+            let seeded_prompt_tokens =
+                crate::coding::session_chat_seed_last_prompt_tokens(&data_dir, &session_id);
+            emit(
+                &app,
+                ProgressEvent::info(
+                    "context",
+                    format!(
+                        "Seeded last prompt tokens for {}: {}",
+                        session_id, seeded_prompt_tokens
+                    ),
+                )
+                .with_chunk(&next.id)
+                .with_progress(6),
             );
 
             // Refresh repo state before each plan in case the user
@@ -1577,6 +1623,7 @@ pub async fn start<R: Runtime>(
                 &workflow_cfg,
                 worktree_dir.as_deref(),
                 &cancel,
+                cancel_rx.clone(),
             )
             .await
             {
@@ -1636,7 +1683,7 @@ pub async fn start<R: Runtime>(
 
             // Pause between cycles so we don't spam the LLM API. The
             // sleep is cancellable so disable acts immediately.
-            sleep_cancellable(&cancel, IDLE_SLEEP_SECS).await;
+            sleep_cancellable(&cancel, cancel_rx.clone(), IDLE_SLEEP_SECS).await;
         }
 
         emit(
@@ -1728,13 +1775,29 @@ async fn try_open_completion_pr<R: Runtime>(
 }
 
 /// Sleep for `secs` seconds, returning early if cancellation is requested.
-async fn sleep_cancellable(cancel: &Arc<AtomicBool>, secs: u64) {
+async fn sleep_cancellable(
+    cancel: &Arc<AtomicBool>,
+    mut cancel_rx: watch::Receiver<bool>,
+    secs: u64,
+) {
     let deadline = std::time::Instant::now() + Duration::from_secs(secs);
     while std::time::Instant::now() < deadline {
-        if cancel.load(Ordering::Relaxed) {
+        if cancel_requested(cancel, &cancel_rx) {
             return;
         }
-        tokio::time::sleep(Duration::from_millis(250)).await;
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let step = remaining.min(Duration::from_millis(250));
+        if step.is_zero() {
+            return;
+        }
+        tokio::select! {
+            _ = tokio::time::sleep(step) => {}
+            changed = cancel_rx.changed() => {
+                if changed.is_ok() && *cancel_rx.borrow() {
+                    return;
+                }
+            }
+        }
     }
 }
 

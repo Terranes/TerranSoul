@@ -97,10 +97,7 @@ fn scope_level(scope: ShareScope) -> u8 {
 /// Apply default scopes to a set of memory deltas based on their cognitive_kind.
 ///
 /// This is used when memories don't have an explicit scope set yet.
-pub fn apply_default_scopes(
-    deltas: &mut [MemoryDelta],
-    overrides: &HashMap<String, ShareScope>,
-) {
+pub fn apply_default_scopes(deltas: &mut [MemoryDelta], overrides: &HashMap<String, ShareScope>) {
     for delta in deltas.iter_mut() {
         // If the delta already has an explicit non-private scope from the user, respect it.
         // Otherwise, apply the cognitive-kind default or the user's per-kind override.
@@ -229,7 +226,10 @@ mod tests {
 
         let filtered = filter_bundle(&bundle, BundleTarget::Hive).unwrap();
         assert_eq!(filtered.memory_deltas.len(), 1);
-        assert!(filtered.edge_deltas.is_empty(), "Edge referencing private memory must be excluded");
+        assert!(
+            filtered.edge_deltas.is_empty(),
+            "Edge referencing private memory must be excluded"
+        );
     }
 
     #[test]
@@ -301,22 +301,37 @@ mod tests {
 
     #[test]
     fn default_scope_for_personal_is_private() {
-        assert_eq!(default_scope_for_kind(Some("personal")), ShareScope::Private);
-        assert_eq!(default_scope_for_kind(Some("episodic")), ShareScope::Private);
-        assert_eq!(default_scope_for_kind(Some("preference")), ShareScope::Private);
+        assert_eq!(
+            default_scope_for_kind(Some("personal")),
+            ShareScope::Private
+        );
+        assert_eq!(
+            default_scope_for_kind(Some("episodic")),
+            ShareScope::Private
+        );
+        assert_eq!(
+            default_scope_for_kind(Some("preference")),
+            ShareScope::Private
+        );
     }
 
     #[test]
     fn default_scope_for_factual_is_paired() {
         assert_eq!(default_scope_for_kind(Some("semantic")), ShareScope::Paired);
-        assert_eq!(default_scope_for_kind(Some("procedural")), ShareScope::Paired);
+        assert_eq!(
+            default_scope_for_kind(Some("procedural")),
+            ShareScope::Paired
+        );
         assert_eq!(default_scope_for_kind(Some("factual")), ShareScope::Paired);
     }
 
     #[test]
     fn default_scope_for_unknown_is_private() {
         assert_eq!(default_scope_for_kind(None), ShareScope::Private);
-        assert_eq!(default_scope_for_kind(Some("unknown_kind")), ShareScope::Private);
+        assert_eq!(
+            default_scope_for_kind(Some("unknown_kind")),
+            ShareScope::Private
+        );
     }
 
     #[test]

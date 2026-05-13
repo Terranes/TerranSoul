@@ -361,7 +361,7 @@ After this change, only the relevant rule slices ride along, freeing
   (`memory_reinforcements`), 3.6 (`memory_trigger_patterns`),
   3.7 (`memory_gaps`), 3.9 (`safety_decisions`) all need a single
   V20 migration. Numbered seed migration under
-  `mcp-data/shared/migrations/` so existing dev DBs upgrade.
+  `mcp-data/shared/memory-seed.sql` so existing dev DBs upgrade.
 - **Ambient mode rollout** must default to `enabled = false` on first
   release with `proactive_work = false` (garden only) until the
   decision-history feedback loop has at least 20 cycles of data.

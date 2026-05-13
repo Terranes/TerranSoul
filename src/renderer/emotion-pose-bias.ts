@@ -67,14 +67,8 @@ export const EMOTION_BIAS_TABLE: Record<
   Partial<Record<VRMHumanBoneName, [number, number, number]>>
 > = {
   neutral: {},
-  happy: {
-    // Chest lift + slight head up + open shoulders.
-    chest: [-0.05, 0, 0],
-    spine: [-0.03, 0, 0],
-    head: [-0.04, 0, 0],
-    leftShoulder: [0, 0, -0.06],
-    rightShoulder: [0, 0, 0.06],
-  },
+  // happy: facial-expression-only — no postural bias
+  happy: {},
   sad: {
     // Drop head + chest forward + shoulders pulled in.
     head: [0.07, 0, 0],

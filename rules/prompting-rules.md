@@ -132,6 +132,18 @@ The AI agent must:
 
 ---
 
+## Verify-Before-Claim Discipline (Multi-Agent)
+
+For any multi-agent coding workflow, role prompts and review behavior must enforce all three checks below:
+
+1. Members must read the result of every tool call and never claim success on a tool error.
+2. After any state-mutating call (file write or shell command), the next action must be a cheap follow-up read (`ls` or `read`) before reporting completion.
+3. Lead must sanity-check a member's done claim with a cheap read when feasible.
+
+These phrases are mirrored in `coding::multi_agent` and are protected by unit tests so they cannot be silently removed.
+
+---
+
 ## ENFORCEMENT RULE — Never Start Chunks from Backlog
 
 > **`rules/backlog.md` is a holding area only — never start work on chunks listed there.**

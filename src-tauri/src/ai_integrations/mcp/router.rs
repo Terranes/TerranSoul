@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use tokio::sync::{watch, Mutex};
 
 use crate::ai_integrations::gateway::*;
+use crate::brain::BrainMode;
 use crate::AppState;
 
 use super::activity::McpActivityReporter;
@@ -149,7 +150,11 @@ pub(crate) async fn dispatch_method_with_state(
         }
 
         "tools/list" => {
-            let result = json!({ "tools": tools::definitions(caps) });
+            let defs = match active_free_provider_id(app_state) {
+                Some(provider_id) => tools::definitions_for_free_provider(caps, &provider_id),
+                None => tools::definitions(caps),
+            };
+            let result = json!({ "tools": defs });
             JsonRpcResponse::ok(id, result)
         }
 
@@ -217,6 +222,15 @@ pub(crate) async fn dispatch_method_with_state(
         "ping" => JsonRpcResponse::ok(id, json!({})),
 
         _ => JsonRpcResponse::err(id, -32601, format!("method not found: {method}")),
+    }
+}
+
+fn active_free_provider_id(app_state: Option<&AppState>) -> Option<String> {
+    let app = app_state?;
+    let mode = app.brain_mode.lock().ok()?.clone()?;
+    match mode {
+        BrainMode::FreeApi { provider_id, .. } => Some(provider_id),
+        _ => None,
     }
 }
 

@@ -1,7 +1,7 @@
 #![deny(unused_must_use)]
 
-use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem};
@@ -48,9 +48,10 @@ use commands::{
         roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
     },
     auto_setup::{
-        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_vscode_mcp,
-        setup_claude_mcp, setup_claude_mcp_stdio, setup_codex_mcp, setup_codex_mcp_stdio,
-        setup_vscode_mcp, setup_vscode_mcp_stdio,
+        list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_hermes_mcp,
+        remove_vscode_mcp, setup_claude_mcp, setup_claude_mcp_stdio, setup_codex_mcp,
+        setup_codex_mcp_stdio, setup_hermes_mcp, setup_hermes_mcp_stdio, setup_vscode_mcp,
+        setup_vscode_mcp_stdio,
     },
     brain::{
         brain_eviction_log, check_lm_studio_status, check_ollama_status, classify_intent,
@@ -59,13 +60,13 @@ use commands::{
         get_embed_cache_status, get_embedding_registry_state, get_failover_policy,
         get_failover_summary, get_lm_studio_download_status, get_lm_studio_models,
         get_next_provider, get_ollama_models, get_provider_policy, get_system_info,
-        health_check_providers, list_embedding_models, list_free_providers,
-        load_lm_studio_model, plan_embedding_model_switch, pull_ollama_model,
-        recommend_brain_models, remove_agent_route,
+        health_check_providers, list_embedding_models, list_free_providers, load_lm_studio_model,
+        plan_embedding_model_switch, pull_ollama_model, recommend_brain_models, remove_agent_route,
         remove_provider_task_override, reset_embed_cache, resolve_provider_for_role,
         resolve_provider_for_task, select_provider_with_constraints, set_active_brain,
         set_agent_route, set_brain_mode, set_failover_policy, set_provider_policy,
         set_provider_task_override, switch_embedding_model, unload_lm_studio_model,
+        warmup_local_ollama,
     },
     character::load_vrm,
     charisma::{
@@ -76,37 +77,42 @@ use commands::{
     coding::{
         clear_self_improve_log, code_add_repo_to_group, code_architecture_tours, code_call_graph,
         code_compute_processes, code_create_group, code_cross_repo_query, code_delete_group,
-        code_diff_overlay, code_explain_graph, code_export_graph, code_extract_contracts,
-        code_extract_negatives, code_detect_harnesses, code_import_sessions,
-        code_replay_session, code_replay_all_sessions,
-        code_generate_skills, code_generate_wiki, code_group_status, code_index_repo,
-        code_list_clusters, code_list_group_contracts, code_list_groups, code_list_processes,
-        code_remove_repo_from_group, code_resolve_edges, coding_session_clear_handoff,
-        coding_session_list_handoffs, coding_session_load_handoff, coding_session_save_handoff,
-        detect_self_improve_repo, get_coding_llm_config, get_coding_workflow_config,
-        get_github_config, get_self_improve_gate_history, get_self_improve_gate_metrics,
-        get_self_improve_metrics, get_self_improve_runs, get_self_improve_settings,
-        get_self_improve_status, get_self_improve_workboard, learn_from_user_message,
-        list_coding_llm_recommendations, list_local_coding_models, list_self_improve_worktrees,
-        open_self_improve_pr, preview_coding_workflow_context, promote_to_milestone_chunk,
-        pull_main_for_self_improve, reset_coding_workflow_config, run_coding_task,
-        set_coding_llm_config, set_coding_workflow_config, set_github_config,
-        set_self_improve_autostart, set_self_improve_enabled, set_self_improve_worktree_dir,
-        start_self_improve, stop_self_improve, suggest_self_improve_branch,
-        test_coding_llm_connection,
+        code_detect_harnesses, code_diff_overlay, code_explain_graph, code_export_graph,
+        code_extract_contracts, code_extract_negatives, code_generate_skills, code_generate_wiki,
+        code_group_status, code_import_sessions, code_index_repo, code_list_clusters,
+        code_list_group_contracts, code_list_groups, code_list_processes,
+        code_remove_repo_from_group, code_replay_all_sessions, code_replay_session,
+        code_resolve_edges, coding_session_clear_handoff, coding_session_list_handoffs,
+        coding_session_load_handoff, coding_session_save_handoff, detect_self_improve_repo,
+        get_coding_llm_config, get_coding_workflow_config, get_github_config,
+        get_self_improve_gate_history, get_self_improve_gate_metrics, get_self_improve_metrics,
+        get_self_improve_runs, get_self_improve_settings, get_self_improve_status,
+        get_self_improve_workboard, learn_from_user_message, list_coding_llm_recommendations,
+        list_local_coding_models, list_self_improve_worktrees, open_self_improve_pr,
+        preview_coding_workflow_context, promote_to_milestone_chunk, pull_main_for_self_improve,
+        reset_coding_workflow_config, run_coding_task, set_coding_llm_config,
+        set_coding_workflow_config, set_github_config, set_self_improve_autostart,
+        set_self_improve_enabled, set_self_improve_worktree_dir, start_self_improve,
+        stop_self_improve, suggest_self_improve_branch, test_coding_llm_connection,
     },
     coding_sessions::{
         coding_session_append_message, coding_session_clear_chat, coding_session_fork,
-        coding_session_list, coding_session_load_chat, coding_session_purge,
-        coding_session_rename, coding_session_resume,
+        coding_session_list, coding_session_load_chat, coding_session_purge, coding_session_rename,
+        coding_session_resume,
     },
     consolidation::{get_idle_status, run_sleep_consolidation, touch_activity},
+    context_folder::{
+        add_context_folder, convert_context_to_knowledge, export_kg_subtree,
+        export_knowledge_to_folder, import_file_to_knowledge_graph, list_context_folder_memories,
+        list_context_folders, remove_context_folder, scan_context_folder, sync_context_folders,
+        toggle_context_folder,
+    },
     crag::crag_retrieve,
     docker::{
         auto_setup_local_llm, auto_setup_local_llm_with_runtime, check_docker_status,
         check_ollama_container, detect_container_runtimes, docker_pull_model,
-        ensure_ollama_container, get_runtime_preference, set_runtime_preference,
-        start_docker_desktop, stop_docker_desktop, wait_for_docker,
+        ensure_ollama_container, get_runtime_preference, install_docker_desktop, install_podman,
+        set_runtime_preference, start_docker_desktop, stop_docker_desktop, wait_for_docker,
     },
     github_auth::{github_poll_device_token, github_request_device_code},
     grpc::{grpc_server_start, grpc_server_status, grpc_server_stop},
@@ -134,23 +140,25 @@ use commands::{
     },
     memory::{
         add_memory, add_memory_edge, adjust_memory_importance, apply_memory_decay,
-        audit_memory_tags, auto_promote_memories, backfill_embedding_model_id,
-        backfill_embeddings, clear_all_data, compact_ann, set_ann_quantization,
-        close_memory_edge, count_memory_conflicts, daily_brief_query, delete_memory,
-        delete_memory_edge, dismiss_memory_conflict, enforce_memory_storage_limit,
+        audit_memory_tags, auto_promote_memories, backfill_embedding_model_id, backfill_embeddings,
+        clear_all_data, close_memory_edge, compact_ann, count_memory_conflicts, daily_brief_query,
+        delete_memory, delete_memory_edge, detach_memory_node, disk_ann_migration_status,
+        disk_ann_plan_preview, dismiss_memory_conflict, enforce_memory_storage_limit,
         evaluate_auto_learn, export_to_obsidian, extract_edges_via_brain,
         extract_memories_from_session, gc_memories, get_auto_learn_policy, get_edge_stats,
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
-        get_memory_provenance, get_memory_stats, get_memory_metrics, get_search_cache_stats,
-        get_relevant_memories, get_schema_info,
-        get_short_term_memory, graph_rag_detect_communities, graph_rag_search,
-        hybrid_search_memories, hybrid_search_memories_rrf, hyde_search_memories, judgment_add,
-        judgment_apply, judgment_list, list_memory_conflicts, list_memory_edges,
-        list_relation_types, matryoshka_search_memories, multi_hop_search_memories, obsidian_sync,
-        obsidian_sync_start, obsidian_sync_stop, promote_memory, reflect_on_session,
-        rerank_search_memories, resolve_memory_conflict, scan_edge_conflicts, search_memories,
-        semantic_search_memories, set_auto_learn_policy, summarize_session, temporal_query,
-        update_memory,
+        get_memory_metrics, get_memory_provenance, get_memory_stats, get_relevant_memories,
+        get_schema_info, get_search_cache_stats, get_short_term_memory, get_top_degree_nodes,
+        graph_rag_detect_communities, graph_rag_search, graph_totals, hybrid_search_memories,
+        hybrid_search_memories_rrf, hyde_search_memories, judgment_add, judgment_apply,
+        judgment_list, list_memory_conflicts, list_memory_edges, list_relation_types,
+        matryoshka_search_memories, memory_graph_page, multi_hop_search_memories, obsidian_sync,
+        obsidian_sync_start, obsidian_sync_stop, progressive_search_memories, promote_memory,
+        rebalance_ann_shards, rebuild_shard_router, reflect_on_session, refresh_graph_clusters,
+        rerank_search_memories, resolve_memory_conflict, router_health, run_disk_ann_migration,
+        scan_edge_conflicts, search_memories, semantic_search_memories, set_ann_quantization,
+        set_auto_learn_policy, shard_health, summarize_session, temporal_query, update_memory,
+        update_memory_edge,
     },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
@@ -182,9 +190,7 @@ use commands::{
         approve_remote_command, deny_remote_command, get_device_permissions, list_pending_commands,
         match_ai_integration_intent, set_device_permission,
     },
-    safety::{
-        safety_check_promotion, safety_list_decisions, safety_request_permission,
-    },
+    safety::{safety_check_promotion, safety_list_decisions, safety_request_permission},
     sandbox::{
         clear_agent_capabilities, grant_agent_capability, list_agent_capabilities,
         revoke_agent_capability, run_agent_in_sandbox,
@@ -218,9 +224,9 @@ use commands::{
     },
     window::{
         close_panel_window, exit_app, get_all_monitors, get_window_mode, is_dev_build, is_mcp_mode,
-        open_panel_window, set_cursor_passthrough, set_pet_mode_bounds, set_pet_window_size,
-        set_window_mode, start_pet_cursor_poll, start_window_drag, stop_pet_cursor_poll,
-        toggle_window_mode,
+        open_panel_window, set_cursor_passthrough, set_pet_modal_backdrop, set_pet_mode_bounds,
+        set_pet_window_size, set_window_mode, start_pet_cursor_poll, start_window_drag,
+        stop_pet_cursor_poll, toggle_window_mode,
     },
     workflow_plans::{
         workflow_agent_recommendations, workflow_calendar_events, workflow_plan_create_blank,
@@ -337,6 +343,13 @@ pub struct AppStateInner {
     pub ann_flush_handle: memory::ann_flush::AnnFlushHandle,
     /// LRU cache for bounded KG traversals (Chunk 41.13).
     pub kg_cache: memory::kg_cache::KgCache,
+    /// Unix timestamp (ms) of the most recent chat activity. Set by the
+    /// streaming chat path on every user turn. The embedding queue worker
+    /// reads this to pause embeds for a few minutes after each chat in
+    /// LocalOllama mode — embedding triggers a model swap that evicts the
+    /// chat model from VRAM, costing 10-20s on the next chat. `0` means
+    /// no chat has happened yet this session.
+    pub last_chat_at_ms: AtomicU64,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -354,6 +367,19 @@ impl std::ops::Deref for AppState {
 }
 
 impl AppState {
+    pub fn now_ms_u64() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64
+    }
+
+    pub fn mark_chat_activity_now(&self) -> u64 {
+        let now_ms = Self::now_ms_u64();
+        self.last_chat_at_ms.store(now_ms, Ordering::Relaxed);
+        now_ms
+    }
+
     /// Create a new `AppState` bound to `data_dir`, which is used to persist
     /// settings (active brain model) and the long-term memory database.
     /// In production this is the Tauri app-data directory; for tests use
@@ -376,6 +402,9 @@ impl AppState {
             ollama_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(120))
+                .no_proxy()
+                .http1_only()
+                .pool_max_idle_per_host(0)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: data_dir.to_path_buf(),
@@ -422,6 +451,7 @@ impl AppState {
             embed_worker_shutdown: tokio::sync::watch::channel(false).0,
             ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
+            last_chat_at_ms: AtomicU64::new(Self::now_ms_u64()),
         }))
     }
 
@@ -445,6 +475,9 @@ impl AppState {
             ollama_client: reqwest::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(10))
                 .timeout(std::time::Duration::from_secs(120))
+                .no_proxy()
+                .http1_only()
+                .pool_max_idle_per_host(0)
                 .build()
                 .unwrap_or_else(|_| reqwest::Client::new()),
             data_dir: std::path::PathBuf::from("."),
@@ -486,10 +519,10 @@ impl AppState {
             embed_worker_shutdown: tokio::sync::watch::channel(false).0,
             ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
+            last_chat_at_ms: AtomicU64::new(0),
         }))
     }
 }
-
 
 /// Resolve the on-disk data directory the same way the GUI does, but
 /// without requiring a Tauri `AppHandle`. Used by [`run_stdio`] so the
@@ -528,7 +561,26 @@ fn resolve_data_dir_for_cli() -> PathBuf {
 /// touching the user's companion data dir. When the override is set,
 /// pet mode is enabled so `serverInfo.name` advertises
 /// `terransoul-brain-mcp`.
+///
+/// Before creating local state, this entry point attaches to an existing
+/// authenticated release/tray/dev HTTP MCP server when one is available.
+/// That keeps Copilot, Claude, Cursor, Codex, and older stdio configs on
+/// the same running brain instead of starting one process per agent.
 pub fn run_stdio() -> std::io::Result<()> {
+    if let Some(target) = find_existing_mcp_http_target() {
+        eprintln!(
+            "[mcp-stdio] proxying to existing TerranSoul {} MCP server on http://127.0.0.1:{}/mcp",
+            target.label, target.port
+        );
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()?;
+        return runtime.block_on(ai_integrations::mcp::stdio::proxy_to_http(
+            target.url(),
+            target.token,
+        ));
+    }
+
     let (data_dir, repo_local) = if let Ok(p) = std::env::var("TERRANSOUL_MCP_DATA_DIR") {
         let trimmed = p.trim();
         if trimmed.is_empty() {
@@ -541,19 +593,6 @@ pub fn run_stdio() -> std::io::Result<()> {
     };
 
     if repo_local {
-        // Pet-mode stdio launches honor the same release > dev > mcp
-        // priority as `--mcp-tray`. If the app is already running, we
-        // emit a clear stderr message and exit cleanly so VS Code (or
-        // any stdio MCP host) surfaces the reason instead of opening a
-        // duplicate brain on a stale repo-local data dir.
-        if let Some(label) = detect_running_terransoul_mcp() {
-            eprintln!(
-                "[mcp-stdio] TerranSoul {label} build is already serving MCP — \
-                 refusing to start pet-mode stdio. Use the running app's MCP \
-                 entry instead."
-            );
-            return Ok(());
-        }
         let _ = std::fs::create_dir_all(&data_dir);
         ai_integrations::mcp::enable_mcp_pet_mode();
     }
@@ -575,6 +614,112 @@ pub fn run_stdio() -> std::io::Result<()> {
         .build()?;
 
     runtime.block_on(ai_integrations::mcp::stdio::run_with_state(state))
+}
+
+struct ExistingMcpHttpTarget {
+    label: &'static str,
+    port: u16,
+    token: String,
+}
+
+impl ExistingMcpHttpTarget {
+    fn url(&self) -> String {
+        format!("http://127.0.0.1:{}/mcp", self.port)
+    }
+}
+
+fn find_existing_mcp_http_target() -> Option<ExistingMcpHttpTarget> {
+    let release = ai_integrations::mcp::DEFAULT_PORT;
+    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
+    let tray = resolve_headless_mcp_port();
+    let app_root = app_data_root_for_cli();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let tray_data = resolve_headless_mcp_data_dir();
+
+    let candidates = [
+        (
+            "release",
+            release,
+            vec!["TERRANSOUL_MCP_TOKEN"],
+            vec![app_root.join("mcp-token.txt")],
+        ),
+        (
+            "mcp-tray",
+            tray,
+            vec!["TERRANSOUL_MCP_TOKEN_MCP"],
+            vec![
+                tray_data.join("mcp-token.txt"),
+                cwd.join(".vscode").join(".mcp-token"),
+            ],
+        ),
+        (
+            "dev",
+            dev,
+            vec!["TERRANSOUL_MCP_TOKEN_DEV"],
+            vec![app_root.join("dev").join("mcp-token.txt")],
+        ),
+    ];
+
+    for (label, port, env_names, token_paths) in candidates {
+        let Some(token) = read_mcp_token_for_cli(&env_names, &token_paths) else {
+            continue;
+        };
+        if probe_terransoul_status_on(port, &token) {
+            return Some(ExistingMcpHttpTarget { label, port, token });
+        }
+    }
+
+    None
+}
+
+fn app_data_root_for_cli() -> PathBuf {
+    const BUNDLE_ID: &str = "com.terranes.terransoul";
+    dirs::data_dir()
+        .map(|dir| dir.join(BUNDLE_ID))
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn read_mcp_token_for_cli(env_names: &[&str], token_paths: &[PathBuf]) -> Option<String> {
+    for env_name in env_names {
+        if let Ok(value) = std::env::var(env_name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    for token_path in token_paths {
+        if let Ok(value) = std::fs::read_to_string(token_path) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return Some(trimmed.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+fn probe_terransoul_status_on(port: u16, token: &str) -> bool {
+    let url = format!("http://127.0.0.1:{port}/status");
+    let client = match reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_millis(750))
+        .build()
+    {
+        Ok(client) => client,
+        Err(_) => return false,
+    };
+    let response = match client.get(url).bearer_auth(token).send() {
+        Ok(response) if response.status().is_success() => response,
+        _ => return false,
+    };
+    let Ok(body) = response.json::<serde_json::Value>() else {
+        return false;
+    };
+    body.get("name")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|name| name.starts_with("terransoul-brain"))
 }
 
 /// Run TerranSoul as a standalone maintenance scheduler daemon
@@ -801,7 +946,7 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
         return false;
     }
 
-    // Run versioned seed migrations
+    // Apply one-shot shared init seed
     let migration_shared_dir = shared_dir
         .as_deref()
         .map(std::path::Path::to_path_buf)
@@ -809,15 +954,15 @@ fn seed_mcp_data(data_dir: &std::path::Path) -> bool {
     match memory::seed_migrations::run_all(&conn, &migration_shared_dir) {
         Ok((applied, version)) => {
             if applied > 0 {
-                eprintln!("[mcp] seed migrations: applied {applied} new, now at v{version:03}");
+                eprintln!("[mcp] init seed applied (v{version:03})");
                 true
             } else {
-                eprintln!("[mcp] seed migrations: up to date at v{version:03}");
+                eprintln!("[mcp] init seed already applied (v{version:03})");
                 false
             }
         }
         Err(e) => {
-            eprintln!("[mcp] warning: seed migration failed: {e}");
+            eprintln!("[mcp] warning: init seed failed: {e}");
             // On first run, this is fatal-ish. On subsequent runs,
             // partial progress is still committed.
             first_run
@@ -903,103 +1048,11 @@ async fn backfill_mcp_seed_embeddings(state: &AppState) -> usize {
     count
 }
 
-/// Probe the canonical TerranSoul MCP HTTP ports (release 7421, dev
-/// 7422) to see if the user already has a brain server running.
-///
-/// Priority order is **release > dev > mcp**: if either of the
-/// app-owned ports answers, the headless runner refuses to start so a
-/// `npm run mcp` invocation never shadows a running app. Returns the
-/// label of the first port that answers, or `None` when neither is up.
-///
-/// **Service-name verification** — relying on an open port alone is
-/// unreliable (any process can squat on 7421/7422). We therefore
-/// follow up the TCP probe with an unauthenticated MCP `initialize`
-/// JSON-RPC call. The response is **always** delivered (the MCP
-/// dispatch layer answers `initialize` before checking the bearer
-/// token, by spec — see `router::dispatch_method`), so we can read
-/// `serverInfo.name` and confirm we are talking to TerranSoul before
-/// refusing to start. If the probe answers but the handshake doesn't
-/// look like TerranSoul, we treat the port as a foreign tenant and
-/// continue startup on `7423` instead of refusing.
-fn detect_running_terransoul_mcp() -> Option<&'static str> {
-    let release = ai_integrations::mcp::DEFAULT_PORT;
-    let dev = ai_integrations::mcp::DEFAULT_DEV_PORT;
-    if probe_terransoul_on(release) {
-        Some("release")
-    } else if probe_terransoul_on(dev) {
-        Some("dev")
-    } else {
-        None
-    }
-}
-
-/// Confirm a TerranSoul MCP server is bound to `127.0.0.1:<port>` by
-/// (1) opening a TCP connection and (2) issuing the unauthenticated
-/// MCP `initialize` handshake, then checking that
-/// `serverInfo.name` starts with `terransoul-brain`.
-fn probe_terransoul_on(port: u16) -> bool {
-    use std::io::{Read, Write};
-    use std::net::{SocketAddr, TcpStream};
-    use std::time::Duration;
-
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match TcpStream::connect_timeout(&addr, Duration::from_millis(250)) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(750)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
-
-    // Minimal JSON-RPC initialize. Auth is not required for
-    // initialize per the MCP spec, and our router answers it before
-    // running the bearer check (see router::dispatch_method).
-    let body = br#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}"#;
-    let req = format!(
-        "POST /mcp HTTP/1.1\r\n\
-         Host: 127.0.0.1:{port}\r\n\
-         Content-Type: application/json\r\n\
-         Content-Length: {len}\r\n\
-         Connection: close\r\n\
-         \r\n",
-        len = body.len()
-    );
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-    if stream.write_all(body).is_err() {
-        return false;
-    }
-
-    let mut buf = Vec::with_capacity(2048);
-    let mut chunk = [0u8; 1024];
-    let deadline = std::time::Instant::now() + Duration::from_millis(750);
-    loop {
-        if buf.len() > 16 * 1024 {
-            break; // hard cap; server name lives near the top
-        }
-        if std::time::Instant::now() >= deadline {
-            break;
-        }
-        match stream.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => buf.extend_from_slice(&chunk[..n]),
-            Err(_) => break,
-        }
-    }
-    let text = String::from_utf8_lossy(&buf);
-    // We don't need to parse the full HTTP response; the JSON
-    // payload is in the body and contains the marker we care about.
-    text.contains("\"name\"")
-        && (text.contains("\"terransoul-brain\"")
-            || text.contains("\"terransoul-brain-dev\"")
-            || text.contains("\"terransoul-brain-mcp\""))
-}
-
 /// Run the `--mcp-setup` CLI subcommand.
 ///
 /// Detects AI coding editor config directories (`.vscode/`, `~/.cursor/`,
 /// `~/.codex/`, `~/.claude/`, `~/.config/opencode/`) and writes the
-/// MCP server entry pointing at the headless MCP HTTP server.
+/// MCP server entry pointing at the MCP tray HTTP server.
 ///
 /// Generates a token if one doesn't exist yet, then writes configs.
 pub fn run_mcp_setup() -> std::io::Result<()> {
@@ -1098,10 +1151,69 @@ fn spawn_shared_maintenance(state: &AppState, label: &str) {
 /// already have NULL embeddings — this self-heals databases populated
 /// before this worker existed.
 fn spawn_embedding_queue_worker(state: &AppState, label: &str) {
+    let mode = state.brain_mode.lock().ok().and_then(|m| m.clone());
+    if matches!(mode, Some(brain::BrainMode::LocalOllama { .. }))
+        && state.last_chat_at_ms.load(Ordering::Relaxed) == 0
+    {
+        state.mark_chat_activity_now();
+    }
     let shutdown_rx = state.embed_worker_shutdown.subscribe();
     let metrics = state.embed_worker_metrics.clone();
     memory::embedding_queue::spawn_worker_with_metrics(state.clone(), shutdown_rx, metrics);
     eprintln!("[{label}] embedding-queue worker started; tick=10s, provider-adaptive batch");
+}
+
+/// Pre-warm the Ollama chat model so the first user reply lands in milliseconds
+/// instead of paying a 10-20 s cold-load on consumer GPUs. Sends a load-only
+/// `/api/chat` request (empty messages + `keep_alive: "30m"`) in the background
+/// when the active brain mode is LocalOllama. No-op for cloud providers.
+pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
+    let mode = state.brain_mode.lock().ok().and_then(|m| m.clone());
+    let Some(brain::BrainMode::LocalOllama { model: mode_model }) = mode else {
+        return;
+    };
+    let model = state
+        .active_brain
+        .lock()
+        .ok()
+        .and_then(|m| m.clone())
+        .unwrap_or(mode_model);
+    // Register this chat model so every embed call (app, MCP, gRPC, …)
+    // re-warms it after running. See ollama_agent::set_chat_model_for_warmup.
+    crate::brain::ollama_agent::set_chat_model_for_warmup(&model);
+    // Push the chat-activity quiet window so the embedding worker does not
+    // race the warm-up to load nomic-embed-text and evict the chat model.
+    state.mark_chat_activity_now();
+    let client = state.ollama_client.clone();
+    let label = label.to_string();
+    tauri::async_runtime::spawn(async move {
+        let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
+        // 1-token streamed chat forces Ollama to load the weights and warm
+        // the same streaming endpoint used by the first real user reply.
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": "Hi" }],
+            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "keep_alive": "30m",
+            "stream": true,
+            "think": false,
+        });
+        let started = std::time::Instant::now();
+        match client.post(&url).json(&body).send().await {
+            Ok(resp) => {
+                let status = resp.status();
+                let _ = resp.bytes().await;
+                eprintln!(
+                    "[{label}] ollama warm-up done in {} ms (status {})",
+                    started.elapsed().as_millis(),
+                    status
+                );
+            }
+            Err(e) => {
+                eprintln!("[{label}] ollama warm-up skipped: {e}");
+            }
+        }
+    });
 }
 
 /// Spawn the debounced ANN flush background task (Chunk 41.10).
@@ -1114,12 +1226,16 @@ fn spawn_ann_flush_task(state: &AppState) {
     let rt = tauri::async_runtime::handle();
     let _guard = rt.inner().enter();
     memory::ann_flush::spawn_flush_task(handle, move || {
-        let store = store_mutex.memory_store.lock().unwrap_or_else(|e| e.into_inner());
+        let store = store_mutex
+            .memory_store
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         store.ann_save_all()
     });
 }
 
 /// Check whether a process with the given PID is still running.
+#[allow(dead_code)]
 fn is_process_alive(pid: u32) -> bool {
     #[cfg(target_os = "windows")]
     {
@@ -1174,6 +1290,7 @@ fn is_process_alive(pid: u32) -> bool {
 /// First attempts a graceful `POST /shutdown` so the Tauri tray process
 /// can clean up its system tray icon. Falls back to force-kill if the
 /// graceful request fails or times out.
+#[allow(dead_code)]
 fn kill_headless_mcp_if_running() {
     let cwd = std::env::current_dir().unwrap_or_default();
     let mcp_data = cwd.join("mcp-data");
@@ -1270,7 +1387,73 @@ fn should_hide_mcp_close(is_mcp_tray: bool, window_label: &str) -> bool {
     is_mcp_tray && window_label == MAIN_WINDOW_LABEL
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpFrontendState {
+    Ready,
+    Building,
+    Failed,
+}
+
+fn mcp_frontend_status_path(data_dir: &Path) -> PathBuf {
+    std::env::var("TERRANSOUL_MCP_FRONTEND_STATUS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| data_dir.join("frontend-build-status.json"))
+}
+
+fn mcp_frontend_dist_index() -> PathBuf {
+    std::env::var("TERRANSOUL_MCP_FRONTEND_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("dist")
+                .join("index.html")
+        })
+}
+
+fn mcp_frontend_state_from_dir(data_dir: &Path) -> McpFrontendState {
+    let status_path = mcp_frontend_status_path(data_dir);
+    let Ok(raw) = std::fs::read_to_string(status_path) else {
+        return McpFrontendState::Ready;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return McpFrontendState::Ready;
+    };
+    match value.get("status").and_then(serde_json::Value::as_str) {
+        Some("building") => McpFrontendState::Building,
+        Some("failed") => McpFrontendState::Failed,
+        _ => McpFrontendState::Ready,
+    }
+}
+
+fn mcp_frontend_state(app: &tauri::AppHandle) -> McpFrontendState {
+    app.try_state::<AppState>()
+        .map(|state| mcp_frontend_state_from_dir(&state.data_dir))
+        .unwrap_or(McpFrontendState::Ready)
+}
+
+fn mcp_frontend_ready(app: &tauri::AppHandle) -> bool {
+    mcp_frontend_state(app) == McpFrontendState::Ready
+}
+
+fn mcp_ui_menu_state(data_dir: &Path) -> (&'static str, bool) {
+    match mcp_frontend_state_from_dir(data_dir) {
+        McpFrontendState::Ready => ("Show UI", true),
+        McpFrontendState::Building => ("Building UI...", false),
+        McpFrontendState::Failed => ("UI build failed", false),
+    }
+}
+
 fn main_window_url() -> Result<tauri::WebviewUrl, String> {
+    if env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE") {
+        let dist_index = mcp_frontend_dist_index();
+        if dist_index.exists() {
+            let url = url::Url::from_file_path(&dist_index)
+                .map_err(|_| format!("invalid MCP frontend path: {}", dist_index.display()))?;
+            return Ok(tauri::WebviewUrl::External(url));
+        }
+    }
+
     if cfg!(debug_assertions) {
         Ok(tauri::WebviewUrl::External(
             "http://localhost:1420"
@@ -1336,6 +1519,11 @@ fn show_mcp_ui(app: &tauri::AppHandle) {
 }
 
 fn toggle_mcp_ui(app: &tauri::AppHandle) {
+    if !mcp_frontend_ready(app) {
+        update_mcp_tray_labels(app, true);
+        return;
+    }
+
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
@@ -1423,7 +1611,11 @@ fn update_mcp_tray_labels(app: &tauri::AppHandle, running: bool) {
     else {
         return;
     };
-    let Ok(toggle_ui) = MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)
+    let (ui_text, ui_enabled) = app
+        .try_state::<AppState>()
+        .map(|state| mcp_ui_menu_state(&state.data_dir))
+        .unwrap_or(("Show UI", true));
+    let Ok(toggle_ui) = MenuItem::with_id(app, "mcp_toggle_ui", ui_text, ui_enabled, None::<&str>)
     else {
         return;
     };
@@ -1490,6 +1682,7 @@ pub fn run() {
             check_ollama_status,
             get_ollama_models,
             pull_ollama_model,
+            warmup_local_ollama,
             check_lm_studio_status,
             get_lm_studio_models,
             download_lm_studio_model,
@@ -1513,6 +1706,7 @@ pub fn run() {
             semantic_search_memories,
             hybrid_search_memories,
             hybrid_search_memories_rrf,
+            progressive_search_memories,
             hyde_search_memories,
             rerank_search_memories,
             matryoshka_search_memories,
@@ -1541,7 +1735,21 @@ pub fn run() {
             add_memory_edge,
             close_memory_edge,
             delete_memory_edge,
+            update_memory_edge,
+            detach_memory_node,
             list_memory_edges,
+            memory_graph_page,
+            disk_ann_plan_preview,
+            disk_ann_migration_status,
+            run_disk_ann_migration,
+            // Shard health, router health, graph observability (Chunk 50.1)
+            shard_health,
+            router_health,
+            rebuild_shard_router,
+            rebalance_ann_shards,
+            refresh_graph_clusters,
+            get_top_degree_nodes,
+            graph_totals,
             get_edges_for_memory,
             get_edge_stats,
             list_relation_types,
@@ -1597,6 +1805,7 @@ pub fn run() {
             get_window_mode,
             toggle_window_mode,
             set_cursor_passthrough,
+            set_pet_modal_backdrop,
             get_all_monitors,
             set_pet_mode_bounds,
             start_window_drag,
@@ -1708,10 +1917,26 @@ pub fn run() {
             docker_pull_model,
             auto_setup_local_llm,
             auto_setup_local_llm_with_runtime,
+            install_docker_desktop,
+            install_podman,
             ingest_document,
             cancel_ingest_task,
             resume_ingest_task,
             get_all_tasks,
+            // Context folders — user-defined knowledge directories (brute-force scan)
+            scan_context_folder,
+            add_context_folder,
+            remove_context_folder,
+            toggle_context_folder,
+            list_context_folders,
+            sync_context_folders,
+            // Context ↔ knowledge conversion
+            list_context_folder_memories,
+            export_knowledge_to_folder,
+            convert_context_to_knowledge,
+            // Knowledge graph ↔ context files
+            export_kg_subtree,
+            import_file_to_knowledge_graph,
             list_lan_addresses,
             get_copilot_session_status,
             start_pairing,
@@ -1752,6 +1977,10 @@ pub fn run() {
             setup_vscode_mcp_stdio,
             setup_claude_mcp_stdio,
             setup_codex_mcp_stdio,
+            // Hermes Agent (NousResearch) — YAML, marker-managed
+            setup_hermes_mcp,
+            setup_hermes_mcp_stdio,
+            remove_hermes_mcp,
             remove_vscode_mcp,
             remove_claude_mcp,
             remove_codex_mcp,
@@ -1912,11 +2141,11 @@ pub fn run() {
             let mcp_app_mode = env_flag_enabled("TERRANSOUL_MCP_APP_MODE");
             let mcp_tray_mode = env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE");
 
-            // Kill any running headless MCP service when starting in
-            // dev or release mode to avoid port/resource conflicts.
-            if !mcp_app_mode && !mcp_tray_mode {
-                kill_headless_mcp_if_running();
-            }
+            // The MCP tray service (port 7423) uses a separate data dir
+            // (mcp-data/) and target-dir (target-mcp/) so it can coexist
+            // with the dev/release app without resource conflicts. Do NOT
+            // kill it here — the user manages MCP lifecycle externally via
+            // `npm run mcp` / copilot-start-mcp.mjs.
 
             let data_dir = if mcp_app_mode {
                 ai_integrations::mcp::enable_mcp_pet_mode();
@@ -1961,6 +2190,7 @@ pub fn run() {
             }
 
             spawn_shared_maintenance(&state, if mcp_app_mode { "mcp-app" } else { "app" });
+            spawn_local_ollama_warmup(&state, if mcp_app_mode { "mcp-app" } else { "app" });
             spawn_embedding_queue_worker(&state, if mcp_app_mode { "mcp-app" } else { "app" });
             spawn_ann_flush_task(&state);
 
@@ -1991,10 +2221,6 @@ pub fn run() {
                     // Auto-configure brain if not yet set up
                     brain::mcp_auto_config::auto_configure_mcp_brain(&mcp_data_dir).await;
                     brain::mcp_auto_config::apply_config_to_state(&app_state_inner, &mcp_data_dir);
-
-                    if shared_seeded {
-                        backfill_mcp_seed_embeddings(&app_state_inner).await;
-                    }
 
                     let token = match ai_integrations::mcp::auth::load_or_create(&mcp_data_dir) {
                         Ok(t) => t,
@@ -2032,15 +2258,27 @@ pub fn run() {
 
                     // Resume session if --resume <name> was passed.
                     if let Ok(resume_name) = std::env::var("TERRANSOUL_MCP_RESUME") {
-                        match coding::session_registry::resolve(&app_state_inner.data_dir, &resume_name) {
+                        match coding::session_registry::resolve(
+                            &app_state_inner.data_dir,
+                            &resume_name,
+                        ) {
                             Ok(Some(entry)) => {
-                                eprintln!("[mcp-app] resuming session '{}' (id: {})", resume_name, entry.session_id);
+                                eprintln!(
+                                    "[mcp-app] resuming session '{}' (id: {})",
+                                    resume_name, entry.session_id
+                                );
                             }
                             Ok(None) => {
-                                eprintln!("[mcp-app] session '{}' not found in registry; starting fresh", resume_name);
+                                eprintln!(
+                                    "[mcp-app] session '{}' not found in registry; starting fresh",
+                                    resume_name
+                                );
                             }
                             Err(e) => {
-                                eprintln!("[mcp-app] failed to resolve session '{}': {e}", resume_name);
+                                eprintln!(
+                                    "[mcp-app] failed to resolve session '{}': {e}",
+                                    resume_name
+                                );
                             }
                         }
                     }
@@ -2067,6 +2305,14 @@ pub fn run() {
                             *app_state_inner.mcp_server.lock().await = Some(handle);
                         }
                         Err(e) => eprintln!("[mcp-app] failed to start MCP server: {e}"),
+                    }
+
+                    // Do not block MCP server startup on background seed embedding backfill.
+                    if shared_seeded {
+                        let app_state_for_backfill = app_state_inner.clone();
+                        tauri::async_runtime::spawn(async move {
+                            backfill_mcp_seed_embeddings(&app_state_for_backfill).await;
+                        });
                     }
                 });
             } else if shared_seeded {
@@ -2106,8 +2352,14 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
-                let toggle_ui =
-                    MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)?;
+                let (ui_text, ui_enabled) = mcp_ui_menu_state(&data_dir);
+                let toggle_ui = MenuItem::with_id(
+                    app,
+                    "mcp_toggle_ui",
+                    ui_text,
+                    ui_enabled,
+                    None::<&str>,
+                )?;
                 let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
                 let menu =
                     Menu::with_items(app, &[&status_label, &toggle_server, &toggle_ui, &quit])?;
@@ -2140,6 +2392,17 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..120 {
+                        update_mcp_tray_labels(&app_handle, true);
+                        if mcp_frontend_ready(&app_handle) {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                });
 
                 // In MCP mode, destroy the auto-created main window. It will
                 // be recreated on demand (via `ensure_main_window`) with a

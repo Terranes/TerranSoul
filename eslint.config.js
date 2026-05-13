@@ -42,6 +42,11 @@ export default [
       'tests/**',
       'playwright/**',
       'coverage/**',
+      'target/**',             // Rust build artifacts (cargo target dirs)
+      'target-copilot-bench/**',
+      'target-mcp/**',
+      'mcp-data/**',           // Generated MCP runtime data
+      '.cache/**',             // Build/benchmark caches
     ],
   },
 
@@ -165,6 +170,10 @@ export default [
   {
     files: [
       'src/components/CharacterViewport.vue',
+      'src/components/GraphNodeCrudPanel.vue',
+      'src/components/MemoryGraph.vue',
+      'src/components/MemoryGraph3D.vue',
+      'src/components/ModelPanel.vue',
       'src/components/SkillConstellation.vue',
       'src/components/KnowledgeQuestDialog.vue',
       'src/views/BrainView.vue',

@@ -36,7 +36,7 @@ use serde::{Deserialize, Serialize};
 use super::store::MemoryType;
 
 /// Cognitive memory kind — a third axis on top of [`MemoryType`] / [`MemoryTier`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum CognitiveKind {
     /// Time- and place-anchored personal experiences.
@@ -61,6 +61,18 @@ impl CognitiveKind {
             CognitiveKind::Procedural => "procedural",
             CognitiveKind::Judgment => "judgment",
             CognitiveKind::Negative => "negative",
+        }
+    }
+
+    /// Parse a CognitiveKind from a string. Returns None if unrecognized.
+    pub fn parse(s: &str) -> Option<Self> {
+        match s {
+            "episodic" => Some(CognitiveKind::Episodic),
+            "semantic" => Some(CognitiveKind::Semantic),
+            "procedural" | "procedure" => Some(CognitiveKind::Procedural),
+            "judgment" => Some(CognitiveKind::Judgment),
+            "negative" => Some(CognitiveKind::Negative),
+            _ => None,
         }
     }
 }
@@ -141,7 +153,7 @@ fn classify_from_tags(tags: &str) -> Option<CognitiveKind> {
         match head {
             "episodic" => return Some(CognitiveKind::Episodic),
             "semantic" => return Some(CognitiveKind::Semantic),
-            "procedural" => return Some(CognitiveKind::Procedural),
+            "procedural" | "procedure" => return Some(CognitiveKind::Procedural),
             "judgment" => return Some(CognitiveKind::Judgment),
             "negative" => return Some(CognitiveKind::Negative),
             _ => {}
@@ -223,6 +235,12 @@ mod tests {
     #[test]
     fn explicit_procedural_tag_wins() {
         let k = classify(&MemoryType::Context, "procedural:release", "bump tag push");
+        assert_eq!(k, CognitiveKind::Procedural);
+    }
+
+    #[test]
+    fn procedure_tag_alias_is_procedural() {
+        let k = classify(&MemoryType::Fact, "procedure,domain:coffee", "grind beans");
         assert_eq!(k, CognitiveKind::Procedural);
     }
 

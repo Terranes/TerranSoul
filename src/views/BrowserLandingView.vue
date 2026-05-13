@@ -64,9 +64,11 @@
             TerranSoul
           </h1>
           <p class="hero-copy">
-            A Vue 3 + Tauri companion that gives your AI a 3D body, a memory
-            system, voice, device sync, coding integrations, and a quest-led
-            setup path across local, free, and paid brains.
+            A local-first 3D AI companion built on a harness + context
+            engineering stack. Hybrid RAG (vector + knowledge graph +
+            temporal memory), a self-running MCP brain that other coding
+            agents share, voice, device sync, and a quest-led setup path
+            across local, free, and paid LLMs — fully offline-capable.
           </p>
           <div class="hero-actions">
             <button
@@ -93,7 +95,7 @@
             aria-label="Highlights"
           >
             <li><strong>Brain modes</strong><span>OpenRouter, Gemini, NVIDIA, Pollinations, paid APIs, local Ollama</span></li>
-            <li><strong>Memory RAG</strong><span>Hybrid retrieval, RRF, HyDE, reranking, decay, tiers</span></li>
+            <li><strong>Hybrid RAG</strong><span>Vector + knowledge graph + temporal memory, RRF, HyDE, reranking</span></li>
             <li><strong>Playable setup</strong><span>30+ skills, combos, and real state detection</span></li>
           </ul>
         </div>

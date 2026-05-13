@@ -60,8 +60,10 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 6px 0 8px;
-  border-bottom: 1px solid rgba(255, 215, 0, 0.15);
+  padding: 8px;
+  border: 1px solid var(--ts-border-subtle, var(--ts-border));
+  border-radius: var(--ts-radius-md);
+  background: color-mix(in srgb, var(--ts-bg-elevated) 82%, transparent);
 }
 
 /* ── Header row ── */
@@ -79,8 +81,7 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   flex: 1;
   font-size: 0.78rem;
   font-weight: 600;
-  color: #ffd700;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  color: var(--ts-text-primary);
   line-height: 1.3;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,12 +118,12 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   gap: 5px;
   padding: 6px 12px;
   border-radius: 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--ts-border);
   font-size: 0.78rem;
   font-weight: 600;
   cursor: pointer;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  color: var(--ts-text-primary);
+  background: var(--ts-bg-input);
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
   flex: 0 1 auto;
   justify-content: center;
@@ -131,41 +132,45 @@ const TILE_COLORS = ['orange', 'blue', 'green', 'purple'];
   line-height: 1.25;
   min-height: 32px;
 }
-.hotseat-tile:hover { transform: scale(1.03); }
+.hotseat-tile:hover {
+  transform: scale(1.03);
+  background: var(--ts-bg-hover);
+  border-color: var(--ts-border);
+}
 .hotseat-tile:active { transform: scale(0.97); }
 
 /* ── Color variants ── */
 .hotseat-tile-orange {
-  background: linear-gradient(135deg, rgba(255, 165, 0, 0.25) 0%, rgba(255, 120, 0, 0.15) 100%);
-  border-color: rgba(255, 165, 0, 0.45);
+  border-color: color-mix(in srgb, var(--ts-warning) 50%, var(--ts-border));
+  background: color-mix(in srgb, var(--ts-warning-bg, var(--ts-bg-hover)) 75%, transparent);
 }
 .hotseat-tile-orange:hover {
-  border-color: rgba(255, 165, 0, 0.8);
-  box-shadow: 0 0 12px rgba(255, 165, 0, 0.2);
+  border-color: var(--ts-warning);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ts-warning) 30%, transparent);
 }
 .hotseat-tile-blue {
-  background: linear-gradient(135deg, rgba(56, 189, 248, 0.25) 0%, rgba(37, 99, 235, 0.15) 100%);
-  border-color: rgba(56, 189, 248, 0.45);
+  border-color: color-mix(in srgb, var(--ts-accent-blue) 50%, var(--ts-border));
+  background: color-mix(in srgb, var(--ts-info-bg, var(--ts-bg-hover)) 75%, transparent);
 }
 .hotseat-tile-blue:hover {
-  border-color: rgba(56, 189, 248, 0.8);
-  box-shadow: 0 0 12px rgba(56, 189, 248, 0.2);
+  border-color: var(--ts-accent-blue);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ts-accent-blue) 30%, transparent);
 }
 .hotseat-tile-green {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.25) 0%, rgba(16, 150, 72, 0.15) 100%);
-  border-color: rgba(34, 197, 94, 0.45);
+  border-color: color-mix(in srgb, var(--ts-success) 50%, var(--ts-border));
+  background: color-mix(in srgb, var(--ts-success-bg, var(--ts-bg-hover)) 75%, transparent);
 }
 .hotseat-tile-green:hover {
-  border-color: rgba(34, 197, 94, 0.8);
-  box-shadow: 0 0 12px rgba(34, 197, 94, 0.2);
+  border-color: var(--ts-success);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ts-success) 30%, transparent);
 }
 .hotseat-tile-purple {
-  background: linear-gradient(135deg, rgba(168, 85, 247, 0.25) 0%, rgba(126, 34, 206, 0.15) 100%);
-  border-color: rgba(168, 85, 247, 0.45);
+  border-color: color-mix(in srgb, var(--ts-accent) 50%, var(--ts-border));
+  background: color-mix(in srgb, var(--ts-accent-glow, var(--ts-bg-hover)) 65%, transparent);
 }
 .hotseat-tile-purple:hover {
-  border-color: rgba(168, 85, 247, 0.8);
-  box-shadow: 0 0 12px rgba(168, 85, 247, 0.2);
+  border-color: var(--ts-accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--ts-accent) 30%, transparent);
 }
 
 .hotseat-tile-icon {

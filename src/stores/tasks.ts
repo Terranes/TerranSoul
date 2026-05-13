@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export interface TaskInfo {
   id: string;
@@ -11,6 +12,11 @@ export interface TaskInfo {
   processed_items: number;
   total_items: number;
   error: string | null;
+}
+
+export interface CrawlIngestOptions {
+  crawlDepth?: number;
+  crawlMaxPages?: number;
 }
 
 export const useTaskStore = defineStore('tasks', () => {
@@ -31,7 +37,6 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function init() {
     try {
-      const { listen } = await import('@tauri-apps/api/event');
       const unlisten = await listen<TaskInfo>('task-progress', (event) => {
         const t = event.payload;
         tasks.value = new Map(tasks.value).set(t.id, t);
@@ -54,10 +59,13 @@ export const useTaskStore = defineStore('tasks', () => {
     }
   }
 
-  async function ingestDocument(source: string, tags?: string, importance?: number) {
+  async function ingestDocument(source: string, tags?: string, importance?: number, options?: CrawlIngestOptions) {
     try {
+      const payload: Record<string, unknown> = { source, tags, importance };
+      if (options?.crawlDepth != null) payload.crawlDepth = options.crawlDepth;
+      if (options?.crawlMaxPages != null) payload.crawlMaxPages = options.crawlMaxPages;
       const result = await invoke<{ task_id: string; source: string; source_type: string }>(
-        'ingest_document', { source, tags, importance }
+        'ingest_document', payload,
       );
       return result;
     } catch (e) {

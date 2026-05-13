@@ -1,0 +1,4 @@
+# Coding-session rolling summarization defaults.
+# Per-session overrides take priority over this shared file.
+
+threshold = 100000

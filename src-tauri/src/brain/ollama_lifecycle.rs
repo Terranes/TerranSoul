@@ -145,6 +145,12 @@ pub async fn start_ollama(timeout_secs: u64) -> Result<bool, String> {
     let mut cmd = Command::new(&binary);
     cmd.arg("serve");
 
+    // Low-latency optimizations:
+    // - Flash attention reduces memory and speeds up context processing
+    // - Quantized KV cache (q8_0) cuts VRAM usage ~50% vs f16, keeps quality
+    cmd.env("OLLAMA_FLASH_ATTENTION", "1");
+    cmd.env("OLLAMA_KV_CACHE_TYPE", "q8_0");
+
     #[cfg(target_os = "windows")]
     {
         // CREATE_NO_WINDOW (0x08000000) — don't pop a console window.

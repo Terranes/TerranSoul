@@ -192,10 +192,13 @@ pub fn recommend(total_ram_mb: u64) -> Vec<ModelRecommendation> {
     }
 
     // Mark the top pick for this tier.
+    // Picks optimised for sub-1 s first-token latency on consumer GPUs.
+    // gemma4:31b is available but too slow for interactive chat; users who
+    // want it can select it manually from the catalogue.
     let top_tag = match tier {
-        RamTier::VeryHigh => "gemma4:31b",
-        RamTier::High => "gemma4:e4b",
-        RamTier::Medium => "gemma4:e2b",
+        RamTier::VeryHigh => "gemma4:e4b",
+        RamTier::High => "gemma3:4b",
+        RamTier::Medium => "gemma3:1b",
         RamTier::Low => "gemma3:1b",
         RamTier::VeryLow => "tinyllama",
     };
@@ -224,25 +227,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn recommend_very_high_ram_top_pick_is_gemma4_31b() {
+    fn recommend_very_high_ram_top_pick_is_gemma4_e4b() {
         let recs = recommend(65_536);
         assert!(!recs.is_empty());
-        assert_eq!(recs[0].model_tag, "gemma4:31b");
-        assert!(recs[0].is_top_pick);
-    }
-
-    #[test]
-    fn recommend_high_ram_top_pick_is_gemma4_e4b() {
-        let recs = recommend(24_000);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
         assert_eq!(top.model_tag, "gemma4:e4b");
     }
 
     #[test]
-    fn recommend_medium_ram_top_pick_is_gemma4_e2b() {
+    fn recommend_high_ram_top_pick_is_gemma3_4b() {
+        let recs = recommend(24_000);
+        let top = recs.iter().find(|m| m.is_top_pick).unwrap();
+        assert_eq!(top.model_tag, "gemma3:4b");
+    }
+
+    #[test]
+    fn recommend_medium_ram_top_pick_is_gemma3_1b() {
         let recs = recommend(12_000);
         let top = recs.iter().find(|m| m.is_top_pick).unwrap();
-        assert_eq!(top.model_tag, "gemma4:e2b");
+        assert_eq!(top.model_tag, "gemma3:1b");
     }
 
     #[test]

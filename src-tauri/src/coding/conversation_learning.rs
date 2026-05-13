@@ -45,12 +45,17 @@ pub struct LearnedChunk {
 
 /// Strict-JSON shape the detection LLM must return.
 #[derive(Debug, Clone, Deserialize)]
-struct DetectionReply {
-    is_improvement: bool,
+pub struct DetectionReply {
+    pub is_improvement: bool,
     #[serde(default)]
-    title: String,
+    pub title: String,
     #[serde(default)]
-    category: String,
+    pub category: String,
+    /// When "lesson", route to brain_ingest_lesson instead of milestones.md.
+    /// Recognised values: "feature", "bugfix", "improvement", "lesson", "none".
+    /// Defaults to "improvement" if not recognised.
+    #[serde(default)]
+    pub reply_type: String,
 }
 
 fn now_ms() -> u64 {

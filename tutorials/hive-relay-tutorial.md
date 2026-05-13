@@ -32,7 +32,7 @@ instances across the internet.
 
 ## 1. What Is the Hive Relay?
 
-![Hive Relay architecture — devices connected through central relay](screenshots/hive-relay/01-what-is-relay.png)
+![Hive Relay link panel](screenshots/hive-relay/01-link-panel.png)
 
 The Hive Relay is a standalone Rust server (`crates/hive-relay/`) that
 routes Ed25519-signed envelopes between TerranSoul devices. It handles:
@@ -47,8 +47,6 @@ stores `hive`-scoped data that devices explicitly publish.
 ---
 
 ## 2. Architecture Overview
-
-![Diagram showing gRPC connections between devices and PostgreSQL-backed relay](screenshots/hive-relay/02-architecture.png)
 
 ```
 ┌──────────────┐         gRPC (TLS)         ┌───────────────────┐
@@ -71,8 +69,6 @@ stores `hive`-scoped data that devices explicitly publish.
 ---
 
 ## 3. Quick Start (Docker)
-
-![Terminal showing docker compose up with relay and postgres starting](screenshots/hive-relay/03-docker-start.png)
 
 ### Prerequisites
 
@@ -109,8 +105,6 @@ grpcurl -plaintext localhost:50051 hive.HiveRelay/Health
 
 ## 4. Building from Source
 
-![Terminal showing cargo build output for hive-relay crate](screenshots/hive-relay/04-build-source.png)
-
 ### Prerequisites
 
 - Rust 1.80+ (`rustup update`)
@@ -143,8 +137,6 @@ cargo run --release
 
 ## 5. Configuration
 
-![Environment variables and .env file for relay configuration](screenshots/hive-relay/05-configuration.png)
-
 The relay is configured via CLI args or environment variables:
 
 | Env / Flag | Default | Description |
@@ -166,8 +158,6 @@ Place this in `crates/hive-relay/.env` — it's loaded automatically via `dotenv
 ---
 
 ## 6. Database Schema
-
-![PostgreSQL schema showing bundles, jobs, and hlc_wm tables](screenshots/hive-relay/06-database-schema.png)
 
 The relay auto-migrates on startup. Three core tables:
 
@@ -209,8 +199,6 @@ CREATE TABLE IF NOT EXISTS hlc_watermarks (
 
 ## 7. gRPC API Reference
 
-![gRPC service definitions showing Submit, Subscribe, and ClaimJob RPCs](screenshots/hive-relay/07-grpc-api.png)
-
 The relay exposes 5 RPCs defined in `proto/hive.proto`:
 
 ### `Submit(HiveEnvelope) → SubmitResponse`
@@ -245,8 +233,6 @@ Returns version, connected device count, and pending job count.
 
 ## 8. Security Model
 
-![Ed25519 signing flow diagram with envelope structure](screenshots/hive-relay/08-security.png)
-
 | Layer | Mechanism |
 |---|---|
 | **Authentication** | Ed25519 signature on every envelope (public key in `sender_pubkey`) |
@@ -269,8 +255,6 @@ The relay verifies before storing/broadcasting. Invalid signatures are rejected 
 ---
 
 ## 9. Production Deployment
-
-![Production deployment topology with TLS termination and monitoring](screenshots/hive-relay/09-production.png)
 
 ### Docker (recommended)
 
@@ -327,8 +311,6 @@ Clients then connect with `https://relay.example.com:50051`.
 
 ## 10. Distributed Jobs
 
-![Job queue showing capability matching between submitter and workers](screenshots/hive-relay/10-distributed-jobs.png)
-
 The job system lets devices offload AI work to capable peers.
 
 ### Job Flow
@@ -372,8 +354,6 @@ pending → claimed → completed
 
 ## 11. Development & Testing
 
-![Terminal showing cargo test output for hive-relay](screenshots/hive-relay/11-dev-testing.png)
-
 ### Run Tests
 
 ```bash
@@ -406,8 +386,6 @@ grpcurl -plaintext -d '{"device_id":"dev-test","since_hlc":"0"}' \
 ---
 
 ## 12. Extending the Relay
-
-![Code showing trait implementation for custom message handlers](screenshots/hive-relay/12-extending.png)
 
 ### Custom Message Types
 

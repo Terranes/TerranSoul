@@ -32,6 +32,7 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 
 /** Mode restriction for prompt commands. */
 export type PromptMode = 'all' | 'coding' | 'companion';
@@ -70,7 +71,6 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
     const newCommands: PromptCommand[] = [];
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
       const promptFiles = await invoke<Array<{ name: string; content: string; path: string; mode: PromptMode }>>(
         'list_prompt_commands',
       );
@@ -124,7 +124,6 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
 
   /** Save (create or update) a prompt command. */
   async function saveCommand(name: string, content: string): Promise<void> {
-    const { invoke } = await import('@tauri-apps/api/core');
     const file = await invoke<{ name: string; content: string; path: string; mode: PromptMode }>(
       'save_prompt_command',
       { name, content },
@@ -148,7 +147,6 @@ export const usePromptCommandsStore = defineStore('prompt-commands', () => {
 
   /** Delete a prompt command by name. */
   async function deleteCommand(name: string): Promise<void> {
-    const { invoke } = await import('@tauri-apps/api/core');
     await invoke('delete_prompt_command', { name });
     commands.value = commands.value.filter((c) => c.name !== name);
   }

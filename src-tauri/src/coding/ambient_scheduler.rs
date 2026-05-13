@@ -46,9 +46,7 @@ impl RateLimitInfo {
     /// Returns `None` if limit info is unavailable.
     pub fn usage_fraction(&self) -> Option<f64> {
         match (self.remaining, self.limit) {
-            (Some(rem), Some(lim)) if lim > 0 => {
-                Some(1.0 - (rem as f64 / lim as f64))
-            }
+            (Some(rem), Some(lim)) if lim > 0 => Some(1.0 - (rem as f64 / lim as f64)),
             _ => None,
         }
     }

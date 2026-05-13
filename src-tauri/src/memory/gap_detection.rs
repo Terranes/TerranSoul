@@ -64,9 +64,8 @@ pub fn detect_and_record_gap(
     }
 
     let now = super::store::now_ms();
-    let emb_bytes: Option<Vec<u8>> = query_embedding.map(|emb| {
-        emb.iter().flat_map(|f| f.to_le_bytes()).collect()
-    });
+    let emb_bytes: Option<Vec<u8>> =
+        query_embedding.map(|emb| emb.iter().flat_map(|f| f.to_le_bytes()).collect());
 
     store.conn.execute(
         "INSERT INTO memory_gaps (query_embedding, context_snippet, session_id, ts)
@@ -100,20 +99,17 @@ pub fn list_recent_gaps(store: &MemoryStore, limit: usize) -> SqlResult<Vec<Memo
 
 /// Delete a gap by ID (e.g. after it's been addressed).
 pub fn dismiss_gap(store: &MemoryStore, gap_id: i64) -> SqlResult<bool> {
-    let changed = store.conn.execute(
-        "DELETE FROM memory_gaps WHERE id = ?1",
-        params![gap_id],
-    )?;
+    let changed = store
+        .conn
+        .execute("DELETE FROM memory_gaps WHERE id = ?1", params![gap_id])?;
     Ok(changed > 0)
 }
 
 /// Count total gaps.
 pub fn gap_count(store: &MemoryStore) -> SqlResult<i64> {
-    store.conn.query_row(
-        "SELECT COUNT(*) FROM memory_gaps",
-        [],
-        |row| row.get(0),
-    )
+    store
+        .conn
+        .query_row("SELECT COUNT(*) FROM memory_gaps", [], |row| row.get(0))
 }
 
 #[cfg(test)]
@@ -138,7 +134,8 @@ mod tests {
         let store = MemoryStore::in_memory();
         let config = GapDetectionConfig::default();
         let emb = vec![1.0f32; 768]; // norm >> 0.7
-        let result = detect_and_record_gap(&store, 0.5, Some(&emb), "test query", None, &config).unwrap();
+        let result =
+            detect_and_record_gap(&store, 0.5, Some(&emb), "test query", None, &config).unwrap();
         assert!(!result);
         assert_eq!(gap_count(&store).unwrap(), 0);
     }
@@ -148,7 +145,8 @@ mod tests {
         let store = MemoryStore::in_memory();
         let config = GapDetectionConfig::default();
         let emb = vec![0.01f32; 10]; // norm ~ 0.032
-        let result = detect_and_record_gap(&store, 0.1, Some(&emb), "test query", None, &config).unwrap();
+        let result =
+            detect_and_record_gap(&store, 0.1, Some(&emb), "test query", None, &config).unwrap();
         assert!(!result);
     }
 
@@ -165,7 +163,15 @@ mod tests {
         let store = MemoryStore::in_memory();
         let config = GapDetectionConfig::default();
         let emb = vec![1.0f32; 768]; // norm >> 0.7
-        let result = detect_and_record_gap(&store, 0.1, Some(&emb), "quantum physics", Some("session-1"), &config).unwrap();
+        let result = detect_and_record_gap(
+            &store,
+            0.1,
+            Some(&emb),
+            "quantum physics",
+            Some("session-1"),
+            &config,
+        )
+        .unwrap();
         assert!(result);
         assert_eq!(gap_count(&store).unwrap(), 1);
 
@@ -181,7 +187,8 @@ mod tests {
         let config = GapDetectionConfig::default();
         let emb = vec![1.0f32; 768];
         for i in 0..5 {
-            detect_and_record_gap(&store, 0.1, Some(&emb), &format!("gap {i}"), None, &config).unwrap();
+            detect_and_record_gap(&store, 0.1, Some(&emb), &format!("gap {i}"), None, &config)
+                .unwrap();
         }
         let gaps = list_recent_gaps(&store, 3).unwrap();
         assert_eq!(gaps.len(), 3);

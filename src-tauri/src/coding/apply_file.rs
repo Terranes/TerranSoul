@@ -141,6 +141,9 @@ fn extract_path_attr(tag: &str) -> Option<&str> {
 /// Returns the resolved absolute path on success.
 pub fn validate_path(repo_root: &Path, rel_path: &str) -> Result<PathBuf, String> {
     let rel_path = rel_path.trim();
+    if super::sandbox::SecretsDenylist::default().is_rel_path_denied(rel_path) {
+        return Err(format!("sandbox denylist rejected path: `{rel_path}`"));
+    }
     // Reject absolute paths.
     if Path::new(rel_path).is_absolute() || rel_path.starts_with('/') || rel_path.starts_with('\\')
     {

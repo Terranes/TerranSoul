@@ -249,6 +249,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { useCharacterStore } from '../stores/character';
 import { useWindowStore } from '../stores/window';
 import { useSelfImproveStore } from '../stores/self-improve';
@@ -438,7 +439,6 @@ function onOpenTeachableCapabilitiesPanel() {
 async function onExit() {
   close();
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
     await invoke('exit_app');
   } catch {
     window.close();
@@ -507,11 +507,11 @@ onBeforeUnmount(() => {
   min-width: 220px;
   max-width: min(320px, calc(100vw - 16px));
   overflow-y: auto;
-  background: rgba(15, 23, 42, 0.96);
-  border: 1px solid rgba(139, 92, 246, 0.3);
+  background: var(--ts-bg-panel, rgba(15, 23, 42, 0.96));
+  border: 1px solid var(--ts-border-strong, rgba(139, 92, 246, 0.3));
   border-radius: 10px;
   padding: 6px;
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--ts-shadow-lg, 0 12px 32px rgba(0, 0, 0, 0.5));
   backdrop-filter: blur(14px);
   color: var(--ts-text-bright, var(--ts-text-primary));
   font-size: 0.85rem;
@@ -529,10 +529,10 @@ onBeforeUnmount(() => {
   position: relative;
 }
 .ctx-item:hover {
-  background: rgba(108, 99, 255, 0.22);
+  background: var(--ts-bg-hover, rgba(108, 99, 255, 0.22));
 }
 .ctx-item--danger:hover {
-  background: rgba(248, 113, 113, 0.22);
+  background: var(--ts-error-bg, rgba(248, 113, 113, 0.22));
 }
 .ctx-icon {
   width: 20px;
@@ -563,7 +563,7 @@ onBeforeUnmount(() => {
 }
 .ctx-separator {
   height: 1px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-border-subtle, rgba(255, 255, 255, 0.08));
   margin: 4px 2px;
 }
 

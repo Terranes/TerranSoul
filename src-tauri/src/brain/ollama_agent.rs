@@ -4,6 +4,9 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::sync::OnceLock;
+#[cfg(test)]
+use std::sync::RwLock as StdRwLock;
+use std::sync::RwLock;
 use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
@@ -12,6 +15,160 @@ use crate::agent::AgentProvider;
 use crate::memory::late_chunking::CharSpan;
 
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
+
+// ── Chat-model warm-keeper (see docs/brain-advanced-design.md § 16 Phase 4) ──
+//
+// On consumer GPUs the chat model (e.g. `gemma4:e4b` ~10.6 GB) and the embed
+// model (`nomic-embed-text` ~0.6 GB) cannot reliably co-reside. Any embed
+// call evicts the chat model, and the next user reply pays a 5-15 s reload
+// cost. We register the active chat model in a process-wide cell so that
+// **every** embed call (app, MCP, gRPC, CRAG, Self-RAG, …) can fire a
+// fire-and-forget re-warm immediately afterwards, ensuring the next chat
+// turn finds the chat model warm.
+fn chat_model_for_warmup() -> &'static RwLock<Option<String>> {
+    static CELL: OnceLock<RwLock<Option<String>>> = OnceLock::new();
+    CELL.get_or_init(|| RwLock::new(None))
+}
+
+// ── Debug-logging toggle ──────────────────────────────────────────────────────
+//
+// A process-wide atomic so every fire-and-forget spawn can read the flag
+// without needing to capture an Arc<AppState>. Defaults to `false`; the
+// `save_app_settings` Tauri command flips it whenever the user toggles the
+// "Debug logging" setting.
+
+fn debug_logging_flag() -> &'static std::sync::atomic::AtomicBool {
+    static CELL: OnceLock<std::sync::atomic::AtomicBool> = OnceLock::new();
+    CELL.get_or_init(|| std::sync::atomic::AtomicBool::new(false))
+}
+
+/// Enable or disable verbose debug logging from the Ollama brain layer.
+/// Called by `save_app_settings` whenever `debug_logging` changes.
+pub fn set_debug_logging(enabled: bool) {
+    debug_logging_flag().store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Returns `true` when debug logging is currently enabled.
+pub fn is_debug_logging() -> bool {
+    debug_logging_flag().load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Register the active chat model so embed calls can re-warm it after
+/// running. Called from app startup, MCP server startup, and on every
+/// brain-mode change.
+pub fn set_chat_model_for_warmup(model: &str) {
+    if let Ok(mut guard) = chat_model_for_warmup().write() {
+        *guard = Some(model.to_string());
+    }
+}
+
+/// Snapshot of the registered chat model, or `None` if unset.
+pub fn registered_chat_model_for_warmup() -> Option<String> {
+    chat_model_for_warmup().read().ok().and_then(|g| g.clone())
+}
+
+/// Spawn a fire-and-forget request that loads the registered chat model
+/// into VRAM with a long `keep_alive`. Returns immediately. Used after
+/// every embed call to undo the model swap.
+fn spawn_chat_model_rewarm(reason: &'static str) {
+    let Some(model) = registered_chat_model_for_warmup() else {
+        return;
+    };
+    tokio::spawn(async move {
+        let Ok(client) = Client::builder()
+            .timeout(Duration::from_secs(60))
+            .no_proxy()
+            .http1_only()
+            .pool_max_idle_per_host(0)
+            .build()
+        else {
+            return;
+        };
+        // 1-token streamed chat forces Ollama to load the weights and warm
+        // the same streaming endpoint used by the first real user reply.
+        let body = serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": "Hi" }],
+            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "stream": true,
+            "think": false,
+            "keep_alive": "30m",
+        });
+        let started = Instant::now();
+        match client
+            .post(ollama_api_url("/api/chat"))
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                let status = resp.status();
+                let _ = resp.bytes().await;
+                if is_debug_logging() {
+                    eprintln!(
+                        "[chat-rewarm:{reason}] {} status={} {}ms",
+                        model,
+                        status,
+                        started.elapsed().as_millis()
+                    );
+                }
+            }
+            Err(e) => {
+                if is_debug_logging() {
+                    eprintln!("[chat-rewarm:{reason}] {model} skipped: {e}");
+                }
+            }
+        }
+    });
+}
+
+fn ollama_api_url(path: &str) -> String {
+    format!("{}{}", ollama_base_url(), path)
+}
+
+fn ollama_base_url() -> String {
+    #[cfg(test)]
+    {
+        if let Some(base_url) = test_ollama_base_url()
+            .read()
+            .expect("test Ollama base URL lock poisoned")
+            .clone()
+        {
+            return base_url;
+        }
+    }
+
+    OLLAMA_BASE_URL.to_string()
+}
+
+#[cfg(test)]
+fn test_ollama_base_url() -> &'static StdRwLock<Option<String>> {
+    static TEST_BASE_URL: OnceLock<StdRwLock<Option<String>>> = OnceLock::new();
+    TEST_BASE_URL.get_or_init(|| StdRwLock::new(None))
+}
+
+#[cfg(test)]
+struct TestOllamaBaseUrlGuard {
+    previous: Option<String>,
+}
+
+#[cfg(test)]
+impl Drop for TestOllamaBaseUrlGuard {
+    fn drop(&mut self) {
+        *test_ollama_base_url()
+            .write()
+            .expect("test Ollama base URL lock poisoned") = self.previous.take();
+    }
+}
+
+#[cfg(test)]
+fn use_test_ollama_base_url(base_url: &str) -> TestOllamaBaseUrlGuard {
+    let mut guard = test_ollama_base_url()
+        .write()
+        .expect("test Ollama base URL lock poisoned");
+    let previous = guard.replace(base_url.to_string());
+    TestOllamaBaseUrlGuard { previous }
+}
 
 /// System prompt injected into every Ollama conversation.
 const SYSTEM_PROMPT: &str = r#"You are TerranSoul, a friendly AI companion with a 3D character avatar. You live inside the TerranSoul desktop app and serve as the user's intelligent assistant.
@@ -35,6 +192,33 @@ struct ChatRequest {
     model: String,
     messages: Vec<ChatMessage>,
     stream: bool,
+    /// Disable Gemma 4 / Qwen 3 built-in thinking so generated tokens go to
+    /// `content` instead of being consumed by internal reasoning.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    think: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    options: Option<ChatOptions>,
+    /// Keep the model loaded in VRAM for 30 minutes between requests.
+    /// Without this, Ollama uses the default 5-minute keep-alive and any
+    /// other model load (e.g. embedding) will evict the chat model,
+    /// adding 10-20s to the next reply on consumer GPUs.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keep_alive: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ChatOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_predict: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_ctx: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    /// Prompt-processing batch size. Larger = faster prompt eval at the
+    /// cost of slightly more VRAM. 512 is the Ollama default; we set it
+    /// explicitly so it stays consistent across all request sites.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    num_batch: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -115,31 +299,18 @@ impl OllamaAgent {
     }
 
     /// Infer a simple sentiment label from the response text.
-    fn infer_sentiment(text: &str) -> Sentiment {
-        Self::infer_sentiment_static(text)
+    /// Always returns Neutral — real emotion comes from `<anim>` stream tags.
+    fn infer_sentiment(_text: &str) -> Sentiment {
+        Sentiment::Neutral
     }
 
-    /// Static version of sentiment inference, usable without an OllamaAgent instance.
-    pub fn infer_sentiment_static(text: &str) -> Sentiment {
-        let lower = text.to_lowercase();
-        if lower.contains("sorry")
-            || lower.contains("unfortunate")
-            || lower.contains("can't help")
-            || lower.contains("cannot help")
-        {
-            Sentiment::Sad
-        } else if lower.contains("great")
-            || lower.contains("excellent")
-            || lower.contains("happy to")
-            || lower.contains("glad to")
-            || lower.contains("wonderful")
-            || lower.contains("sure!")
-            || lower.contains("of course!")
-        {
-            Sentiment::Happy
-        } else {
-            Sentiment::Neutral
-        }
+    /// Sentiment fallback for the non-streaming path.
+    ///
+    /// The LLM decides emotion via `<anim>` tags in the streaming pipeline;
+    /// this static fallback always returns `Neutral` so keyword heuristics
+    /// never override the LLM's judgment.
+    pub fn infer_sentiment_static(_text: &str) -> Sentiment {
+        Sentiment::Neutral
     }
 
     /// Build the full message list from system prompt + optional memory block + history + current message.
@@ -185,6 +356,14 @@ impl OllamaAgent {
             model: self.model.clone(),
             messages,
             stream: false,
+            think: Some(false),
+            options: Some(ChatOptions {
+                num_predict: Some(150),
+                num_ctx: Some(2048),
+                temperature: Some(0.7),
+                num_batch: Some(512),
+            }),
+            keep_alive: Some("30m".to_string()),
         };
 
         match self.client.post(self.chat_url()).json(&body).send().await {
@@ -534,9 +713,16 @@ impl OllamaAgent {
             return None;
         }
 
-        // 3. Bound every embed call so a hung daemon can't stall the chat
-        //    pipeline forever.
-        let client = match Client::builder().timeout(Duration::from_secs(15)).build() {
+        // 3. Tight timeout: nomic-embed-text responds in ~55 ms when warm.
+        //    If the embed model is cold (not loaded), Ollama would swap out
+        //    the chat model to load it, then the chat call must reload the
+        //    chat model — two model swaps costing 10-20 s total.  A 500 ms
+        //    cap lets warm embeds through while gracefully falling back to
+        //    keyword-only hybrid search when a model swap would be needed.
+        let client = match Client::builder()
+            .timeout(Duration::from_millis(500))
+            .build()
+        {
             Ok(c) => c,
             Err(_) => return None,
         };
@@ -544,10 +730,15 @@ impl OllamaAgent {
         let body = serde_json::json!({
             "model": embed_model,
             "input": text,
+            // Unload the embed model immediately after this single embed so
+            // the chat model can stay resident in VRAM. Without this, the
+            // embed model stays loaded for 5 min by default and the next
+            // chat reply pays a 10-20 s reload cost on consumer GPUs.
+            "keep_alive": 0,
         });
 
         let resp = match client
-            .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+            .post(ollama_api_url("/api/embed"))
             .json(&body)
             .send()
             .await
@@ -578,6 +769,9 @@ impl OllamaAgent {
         if vec.is_empty() {
             None
         } else {
+            // Re-warm the chat model so the next user turn doesn't pay
+            // the 5-15 s VRAM swap caused by this embed call.
+            spawn_chat_model_rewarm("embed_text");
             Some(vec)
         }
     }
@@ -605,15 +799,31 @@ impl OllamaAgent {
         let embed_model = resolve_embed_model(model_hint).await;
 
         if is_known_unsupported(&embed_model).await {
+            eprintln!(
+                "[brain/embed] resolved embed model '{embed_model}' is in the unsupported set; \
+                 returning {} None entries. Reset via `clear_embed_caches` (brain mode change \
+                 clears it) or restart the app after installing a working embedder \
+                 (`ollama pull nomic-embed-text`).",
+                texts.len()
+            );
             return vec![None; texts.len()];
         }
 
         let client = match Client::builder().timeout(Duration::from_secs(60)).build() {
             Ok(c) => c,
-            Err(_) => return vec![None; texts.len()],
+            Err(e) => {
+                eprintln!("[brain/embed] failed to build HTTP client: {e}");
+                return vec![None; texts.len()];
+            }
         };
 
         let mut results = Vec::with_capacity(texts.len());
+        // Diagnostic gate: log the FIRST failure cause per call so the user
+        // sees actionable detail (resolved model + status / network error
+        // / empty response) without being spammed once per failed text.
+        // Subsequent failures inside this same call are silent — the queue
+        // already prints the aggregate "0 embedded, N failed" line.
+        let mut first_failure_logged = false;
 
         for chunk in texts.chunks(batch_size) {
             // Filter out empty texts but track indices for reassembly.
@@ -632,16 +842,27 @@ impl OllamaAgent {
             let body = serde_json::json!({
                 "model": embed_model,
                 "input": batch_texts,
+                // Unload the embed model immediately after the batch so the
+                // chat model isn’t evicted from VRAM by lingering keep-alive.
+                "keep_alive": 0,
             });
 
             let resp = match client
-                .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+                .post(ollama_api_url("/api/embed"))
                 .json(&body)
                 .send()
                 .await
             {
                 Ok(r) => r,
-                Err(_) => {
+                Err(e) => {
+                    if !first_failure_logged {
+                        eprintln!(
+                            "[brain/embed] /api/embed network error (model='{embed_model}'): {e}. \
+                             Is Ollama running on `{}`?",
+                            ollama_api_url("")
+                        );
+                        first_failure_logged = true;
+                    }
                     results.extend(std::iter::repeat_n(None, chunk.len()));
                     continue;
                 }
@@ -649,6 +870,16 @@ impl OllamaAgent {
 
             if !resp.status().is_success() {
                 let status = resp.status().as_u16();
+                if !first_failure_logged {
+                    let body_preview = resp.text().await.unwrap_or_default();
+                    let body_short: String =
+                        body_preview.chars().take(200).collect();
+                    eprintln!(
+                        "[brain/embed] /api/embed returned HTTP {status} \
+                         (model='{embed_model}'): {body_short}"
+                    );
+                    first_failure_logged = true;
+                }
                 mark_unsupported(&embed_model, status).await;
                 results.extend(std::iter::repeat_n(None, chunk.len()));
                 continue;
@@ -656,7 +887,14 @@ impl OllamaAgent {
 
             let json: serde_json::Value = match resp.json().await {
                 Ok(v) => v,
-                Err(_) => {
+                Err(e) => {
+                    if !first_failure_logged {
+                        eprintln!(
+                            "[brain/embed] /api/embed JSON parse error \
+                             (model='{embed_model}'): {e}"
+                        );
+                        first_failure_logged = true;
+                    }
                     results.extend(std::iter::repeat_n(None, chunk.len()));
                     continue;
                 }
@@ -667,6 +905,16 @@ impl OllamaAgent {
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
+
+            if embeddings.is_empty() && !first_failure_logged {
+                let json_preview: String =
+                    json.to_string().chars().take(200).collect();
+                eprintln!(
+                    "[brain/embed] /api/embed returned 200 but `embeddings` array is \
+                     missing/empty (model='{embed_model}'). Response preview: {json_preview}"
+                );
+                first_failure_logged = true;
+            }
 
             // Re-assemble: put embeddings back at their original indices.
             let mut chunk_results = vec![None; chunk.len()];
@@ -682,6 +930,12 @@ impl OllamaAgent {
                 }
             }
             results.extend(chunk_results);
+        }
+
+        // Re-warm the chat model so the next user turn doesn't pay the
+        // 5-15 s VRAM swap caused by this batch embed call.
+        if results.iter().any(|r| r.is_some()) {
+            spawn_chat_model_rewarm("embed_text_batch");
         }
 
         results
@@ -713,11 +967,14 @@ impl OllamaAgent {
             "truncate": false,
             "options": {
                 "truncate": false
-            }
+            },
+            // Unload immediately after late-chunk embedding so the chat
+            // model keeps its VRAM residency.
+            "keep_alive": 0,
         });
 
         let resp = match client
-            .post(format!("{OLLAMA_BASE_URL}/api/embed"))
+            .post(ollama_api_url("/api/embed"))
             .json(&body)
             .send()
             .await
@@ -734,6 +991,9 @@ impl OllamaAgent {
 
         let json: serde_json::Value = resp.json().await.ok()?;
         let (token_embeddings, token_char_spans) = parse_token_embedding_response(&json, text)?;
+        // Re-warm the chat model so the next user turn doesn't pay the
+        // 5-15 s VRAM swap caused by this late-chunk embed call.
+        spawn_chat_model_rewarm("embed_tokens");
         Some(OllamaTokenEmbeddings {
             model: embed_model,
             token_embeddings,
@@ -743,35 +1003,46 @@ impl OllamaAgent {
 
     /// Check if a model name is available locally in Ollama.
     /// Result is cached for 60 s by [`resolve_embed_model`].
+    /// Tight 1 s timeout: this runs on the hot chat path on cache miss
+    /// (every 60 s in steady state), so we never want it to block longer
+    /// than the chat itself takes to start.
     async fn model_exists(name: &str) -> bool {
-        let client = match Client::builder().timeout(Duration::from_secs(5)).build() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        let resp = client
-            .get(format!("{OLLAMA_BASE_URL}/api/tags"))
-            .send()
-            .await;
-        match resp {
-            Ok(r) => {
-                if let Ok(json) = r.json::<serde_json::Value>().await {
-                    json.get("models")
-                        .and_then(|m| m.as_array())
-                        .map(|models| {
-                            models.iter().any(|m| {
-                                m.get("name")
-                                    .and_then(|n| n.as_str())
-                                    .map(|n| n.starts_with(name))
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-                } else {
-                    false
-                }
+        Self::installed_model_tag(name).await.is_some()
+    }
+
+    /// Return the **actual installed tag** of the first model in
+    /// `/api/tags` whose name starts with `name`, or `None` if none
+    /// match. Unlike [`model_exists`], this preserves the full
+    /// `name:tag` so callers can POST exactly what Ollama has indexed.
+    ///
+    /// Example: a user with `snowflake-arctic-embed2:latest` installed
+    /// passing the candidate prefix `"snowflake-arctic-embed"` will get
+    /// back `Some("snowflake-arctic-embed2:latest")` — POSTing that
+    /// avoids the spurious 404 that the bare prefix would trigger.
+    async fn installed_model_tag(name: &str) -> Option<String> {
+        let client = Client::builder().timeout(Duration::from_secs(1)).build().ok()?;
+        let resp = client.get(ollama_api_url("/api/tags")).send().await.ok()?;
+        let json: serde_json::Value = resp.json().await.ok()?;
+        let models = json.get("models")?.as_array()?;
+        // Prefer an exact match (`name` or `name:latest`) over any
+        // prefix match so a user with both `nomic-embed-text` and a
+        // future `nomic-embed-text-v2` gets the canonical one.
+        let mut exact: Option<String> = None;
+        let mut prefix: Option<String> = None;
+        for m in models {
+            let installed = match m.get("name").and_then(|n| n.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            if installed == name || installed == format!("{name}:latest") {
+                exact = Some(installed.to_string());
+                break;
             }
-            Err(_) => false,
+            if installed.starts_with(name) && prefix.is_none() {
+                prefix = Some(installed.to_string());
+            }
         }
+        exact.or(prefix)
     }
 
     /// Ask the brain which stored memories are most relevant to a query.
@@ -930,19 +1201,27 @@ async fn resolve_embed_model(model_hint: &str) -> String {
 /// Walk the embed-model resolution chain. Pure helper so tests can drive
 /// it without mocking the cache layer.
 async fn pick_embed_model(model_hint: &str) -> String {
-    // Preferred first.
-    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await
-        && OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await
-    {
-        return PREFERRED_EMBED_MODEL.to_string();
+    // Preferred first — resolve to the actual installed tag (e.g.
+    // `nomic-embed-text:latest`) so the POST `model` field matches
+    // exactly what Ollama has registered.
+    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await {
+        if let Some(installed) = OllamaAgent::installed_model_tag(PREFERRED_EMBED_MODEL).await {
+            if !is_known_unsupported(&installed).await {
+                return installed;
+            }
+        }
     }
-    // Then dedicated fallbacks.
+    // Then dedicated fallbacks. Prefix-matching here is essential
+    // because users may have e.g. `snowflake-arctic-embed2:latest` —
+    // we POST the matched tag, not the bare prefix.
     for candidate in EMBED_MODEL_FALLBACKS {
         if is_known_unsupported(candidate).await {
             continue;
         }
-        if OllamaAgent::model_exists(candidate).await {
-            return (*candidate).to_string();
+        if let Some(installed) = OllamaAgent::installed_model_tag(candidate).await {
+            if !is_known_unsupported(&installed).await {
+                return installed;
+            }
         }
     }
     // Last resort — the active chat model. Likely won't support embed,
@@ -1126,6 +1405,35 @@ async fn is_known_unsupported(model: &str) -> bool {
 }
 
 async fn mark_unsupported(model: &str, status: u16) {
+    // Only HTTP 501 from Ollama is a definitive "this model cannot
+    // produce embeddings" signal (e.g. trying to embed with a chat-only
+    // model like Gemma). Other non-success codes are usually *per-call*
+    // failures that must NOT poison the whole model:
+    //
+    // * 400 — input too long / malformed JSON for this specific call.
+    //         A 2048-token oversize chunk during periodic backfill
+    //         used to disable `nomic-embed-text` for the entire
+    //         session, cascading every embedder into the unsupported
+    //         set and stalling the embed-queue with rate-limit
+    //         pauses. We log it and let the next batch try again.
+    // * 404 — the tag we POSTed doesn't exist on the server (almost
+    //         always because the candidate prefix didn't match an
+    //         installed tag — see `installed_model_tag`). Logging is
+    //         enough; we don't want to remember a wrong tag forever.
+    // * 5xx other than 501 — transient Ollama issues, retry next call.
+    if status != 501 {
+        eprintln!(
+            "[brain] Ollama model '{model}' returned HTTP {status} from /api/embed for one \
+             request; not disabling vector embeddings (transient or per-input failure)."
+        );
+        // Force the model-choice cache to expire so the next call
+        // re-probes `/api/tags` — important for 404s caused by a
+        // stale cached tag name.
+        if status == 404 {
+            *embed_model_cache().lock().await = None;
+        }
+        return;
+    }
     let inserted = unsupported_models().lock().await.insert(model.to_string());
     if inserted {
         // Log once per model so the user can see why embeddings are off
@@ -1455,27 +1763,22 @@ mod tests {
     }
 
     #[test]
-    fn infer_sentiment_sorry_is_sad() {
+    fn infer_sentiment_always_neutral() {
+        // Keyword-based sentiment was removed — the LLM decides emotion
+        // via `<anim>` tags in the streaming pipeline. The static fallback
+        // always returns Neutral.
         assert_eq!(
             OllamaAgent::infer_sentiment("I'm sorry, I can't help with that."),
-            Sentiment::Sad
-        );
-    }
-
-    #[test]
-    fn infer_sentiment_happy_keywords() {
-        assert_eq!(
-            OllamaAgent::infer_sentiment("I'm happy to help you with that!"),
-            Sentiment::Happy
+            Sentiment::Neutral
         );
         assert_eq!(
-            OllamaAgent::infer_sentiment("Of course! Let me explain."),
-            Sentiment::Happy
+            OllamaAgent::infer_sentiment("This is a wonderful explanation!"),
+            Sentiment::Neutral
         );
-    }
-
-    #[test]
-    fn infer_sentiment_neutral_default() {
+        assert_eq!(
+            OllamaAgent::infer_sentiment("Hi there! I'm happy to help you with that."),
+            Sentiment::Neutral
+        );
         assert_eq!(
             OllamaAgent::infer_sentiment("The capital of France is Paris."),
             Sentiment::Neutral
@@ -1565,6 +1868,7 @@ mod tests {
     #[tokio::test]
     async fn unsupported_model_is_remembered_and_short_circuits() {
         let _guard = EMBED_TEST_LOCK.lock().await;
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
         clear_embed_caches().await;
         // Mark a fake model as unsupported.
         mark_unsupported("fake-model:1b", 501).await;
@@ -1587,7 +1891,7 @@ mod tests {
     async fn clear_embed_caches_forgets_unsupported_models() {
         let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
-        mark_unsupported("forget-me:7b", 400).await;
+        mark_unsupported("forget-me:7b", 501).await;
         assert!(is_known_unsupported("forget-me:7b").await);
 
         clear_embed_caches().await;
@@ -1598,11 +1902,50 @@ mod tests {
         assert!(!snap.unsupported.iter().any(|m| m == "forget-me:7b"));
     }
 
+    /// Regression: an HTTP 400 from `/api/embed` (input too long /
+    /// malformed) used to poison the entire embed model for the
+    /// process lifetime, cascading every fallback into the
+    /// unsupported set and stalling the embed-queue. After the fix,
+    /// only 501 ("model cannot embed") poisons; 400 logs and moves on.
+    #[tokio::test]
+    async fn http_400_does_not_poison_embed_model() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        mark_unsupported("nomic-embed-text", 400).await;
+        assert!(
+            !is_known_unsupported("nomic-embed-text").await,
+            "HTTP 400 must not disable the embed model — it's a per-input failure"
+        );
+    }
+
+    /// Regression: HTTP 404 (wrong tag posted, e.g. the old
+    /// snowflake-arctic-embed-vs-snowflake-arctic-embed2 bug) also
+    /// must not permanently poison the model. It does, however,
+    /// invalidate the cached model choice so the next call re-probes
+    /// `/api/tags`.
+    #[tokio::test]
+    async fn http_404_does_not_poison_but_clears_choice_cache() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Seed a stale model choice so we can verify it gets cleared.
+        *embed_model_cache().lock().await = Some(EmbedModelChoice {
+            model: "snowflake-arctic-embed".to_string(),
+            chosen_at: Instant::now(),
+        });
+        mark_unsupported("snowflake-arctic-embed", 404).await;
+        assert!(!is_known_unsupported("snowflake-arctic-embed").await);
+        assert!(
+            embed_model_cache().lock().await.is_none(),
+            "404 must clear the cached embed-model choice so the next call re-probes /api/tags"
+        );
+    }
+
     #[tokio::test]
     async fn embed_text_returns_none_when_daemon_unreachable() {
         let _guard = EMBED_TEST_LOCK.lock().await;
-        // No Ollama running on this port — must return None gracefully
-        // rather than panic or hang. The 15-s client timeout protects us.
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
+        // No Ollama running on this test URL — must return None gracefully
+        // rather than panic or hang. The tight client timeout protects us.
         clear_embed_caches().await;
         // Use a chat-model name so resolve_embed_model picks it as the
         // fallback (model_exists("nomic-embed-text") will fail too).
@@ -1613,12 +1956,12 @@ mod tests {
     #[tokio::test]
     async fn embed_text_batch_returns_none_per_item_when_unreachable() {
         let _guard = EMBED_TEST_LOCK.lock().await;
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
         clear_embed_caches().await;
         let texts = vec!["hello", "world", ""];
         let results = OllamaAgent::embed_text_batch(&texts, "definitely-not-installed:1b", 2).await;
         assert_eq!(results.len(), 3);
-        // All should be None since Ollama isn't running on default port
-        // for this model.
+        // All should be None since the isolated test URL is unreachable.
         for r in &results {
             assert!(r.is_none());
         }
@@ -1647,6 +1990,7 @@ mod tests {
     #[tokio::test]
     async fn fallback_chain_falls_through_to_hint_when_nothing_installed() {
         let _guard = EMBED_TEST_LOCK.lock().await;
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
         clear_embed_caches().await;
         // No Ollama daemon (or none of the embed models present) —
         // resolution should yield the model_hint as the last resort.
@@ -1657,6 +2001,7 @@ mod tests {
     #[tokio::test]
     async fn fallback_chain_skips_known_unsupported_preferred() {
         let _guard = EMBED_TEST_LOCK.lock().await;
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
         clear_embed_caches().await;
         // Mark the preferred model as unsupported. Resolution must NOT
         // pick it even if it's somehow reachable.
@@ -1695,6 +2040,7 @@ mod tests {
     #[tokio::test]
     async fn fallback_chain_skips_unsupported_fallbacks() {
         let _guard = EMBED_TEST_LOCK.lock().await;
+        let _url_guard = use_test_ollama_base_url("http://127.0.0.1:19999");
         clear_embed_caches().await;
         // Mark every fallback as unsupported. Resolution must walk past
         // them all and land on the chat-model hint.

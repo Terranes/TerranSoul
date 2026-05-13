@@ -52,7 +52,17 @@ fn default_persona_json() -> &'static str {
   "tone": ["warm", "concise"],
   "quirks": [],
   "avoid": ["unsolicited medical, legal, or financial advice"],
+    "exampleDialogue": [],
   "active": true,
+    "voiceProfile": {
+        "gender": "female",
+        "age": "adult",
+        "pitch": "medium",
+        "style": "natural",
+        "englishAccent": "american",
+        "chineseDialect": "mandarin",
+        "voiceName": "en-US-AnaNeural"
+    },
   "updatedAt": 0
 }"#
 }

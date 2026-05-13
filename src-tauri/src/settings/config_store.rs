@@ -101,6 +101,8 @@ mod tests {
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: crate::settings::DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -121,6 +123,12 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -173,6 +181,8 @@ mod tests {
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: crate::settings::DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -193,6 +203,12 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -230,6 +246,8 @@ mod tests {
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: crate::settings::DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -250,6 +268,12 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         save(dir.path(), &s).unwrap();
 

@@ -14,7 +14,7 @@
  */
 
 import { defineStore } from 'pinia';
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import {
   defaultPersona,
@@ -26,6 +26,7 @@ import {
   type MotionPolishConfig,
   type MotionPolishPreview,
 } from './persona-types';
+import { useCharacterStore } from './character';
 import { buildPersonaBlock, type LearnedMotionRef } from '../utils/persona-prompt';
 
 const TRAITS_STORAGE_KEY = 'terransoul.persona.traits.v1';
@@ -49,6 +50,7 @@ function freshSession(): CameraSessionState {
 }
 
 export const usePersonaStore = defineStore('persona', () => {
+  const characterStore = useCharacterStore();
   // ── Persistent state ────────────────────────────────────────────────
   const traits = ref<PersonaTraits>(defaultPersona());
   const traitsLoaded = ref(false);
@@ -84,7 +86,20 @@ export const usePersonaStore = defineStore('persona', () => {
    * prompt. Empty string when persona is inactive — same contract as the
    * `[LONG-TERM MEMORY]` block (see brain-advanced-design.md § 4).
    */
-  const personaBlock = computed(() => buildPersonaBlock(traits.value, learnedMotionRefs.value));
+  const effectiveTraits = computed<PersonaTraits>(() => {
+    const profile = characterStore.currentModelProfile();
+    return {
+      ...traits.value,
+      name: profile.name.trim() || traits.value.name,
+      role: profile.persona.trim() || traits.value.role,
+      voiceProfile: {
+        ...traits.value.voiceProfile,
+        ...profile.voiceProfile,
+      },
+    };
+  });
+
+  const personaBlock = computed(() => buildPersonaBlock(effectiveTraits.value, learnedMotionRefs.value));
 
   /**
    * True iff the user has customised the default persona — used by the
@@ -100,7 +115,8 @@ export const usePersonaStore = defineStore('persona', () => {
       t.bio.trim() !== def.bio ||
       t.tone.length !== def.tone.length ||
       t.tone.some((x, i) => x !== def.tone[i]) ||
-      t.quirks.length > 0
+      t.quirks.length > 0 ||
+      JSON.stringify(t.voiceProfile) !== JSON.stringify(def.voiceProfile)
     );
   });
 
@@ -136,11 +152,17 @@ export const usePersonaStore = defineStore('persona', () => {
       // Browser-only or backend not yet ready — fine, the browser path
       // assembles the block itself from `personaBlock.value`. Logged at
       // debug level so Tauri-side troubleshooting is still possible.
-      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+      if (import.meta.env.MODE !== 'test' && typeof console !== 'undefined' && typeof console.debug === 'function') {
         console.debug('[persona] set_persona_block unavailable:', err);
       }
     }
   }
+
+  watch(personaBlock, () => {
+    if (traitsLoaded.value) {
+      void syncBlockToBackend();
+    }
+  });
 
   /** Load persona state from disk on startup. Tauri first, then local
    *  storage as fallback / override-merge. */
@@ -180,9 +202,17 @@ export const usePersonaStore = defineStore('persona', () => {
    *  push the rendered block to the backend so the next chat turn picks
    *  it up. */
   async function saveTraits(next: Partial<PersonaTraits>): Promise<void> {
+    const voiceProfile = migratePersonaTraits({
+      ...traits.value,
+      voiceProfile: {
+        ...traits.value.voiceProfile,
+        ...(next.voiceProfile ?? {}),
+      },
+    }).voiceProfile;
     traits.value = {
       ...traits.value,
       ...next,
+      voiceProfile,
       version: PERSONA_SCHEMA_VERSION,
       updatedAt: Date.now(),
     };
@@ -482,7 +512,9 @@ export const usePersonaStore = defineStore('persona', () => {
       const json = await invoke<string>('export_persona_pack', { note: note ?? null });
       return typeof json === 'string' && json.length > 0 ? json : null;
     } catch (e) {
-      console.warn('[persona] export pack failed:', e);
+      if (import.meta.env.MODE !== 'test') {
+        console.warn('[persona] export pack failed:', e);
+      }
       return null;
     }
   }

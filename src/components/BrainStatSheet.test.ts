@@ -66,8 +66,8 @@ describe('BrainStatSheet', () => {
     await nextTick();
     const wisValue = parseInt(wrapper.find('[data-testid="stat-value-wisdom"]').text(), 10);
     const chaValue = parseInt(wrapper.find('[data-testid="stat-value-charisma"]').text(), 10);
-    expect(wisValue).toBeGreaterThan(40);
-    expect(chaValue).toBeGreaterThan(40);
+    expect(wisValue).toBeGreaterThan(5);
+    expect(chaValue).toBeGreaterThan(5);
   });
 
   it('boosts intelligence when a flagship paid model is selected', async () => {
@@ -75,9 +75,9 @@ describe('BrainStatSheet', () => {
     const wrapper = mount(BrainStatSheet);
     await nextTick();
     const intValue = parseInt(wrapper.find('[data-testid="stat-value-intelligence"]').text(), 10);
-    // Tier S boost is +70 → with baseline 1 ⇒ 71. Allow some leeway in case
+    // Tier S boost is now calibrated lower so recommended setups stay near Lv.20.
     // weights are tuned later.
-    expect(intValue).toBeGreaterThanOrEqual(60);
+    expect(intValue).toBeGreaterThanOrEqual(25);
   });
 
   it('a flagship boost is much higher than a basic free brain', async () => {
@@ -93,7 +93,7 @@ describe('BrainStatSheet', () => {
     await nextTick();
     const opusInt = parseInt(opus.find('[data-testid="stat-value-intelligence"]').text(), 10);
 
-    expect(opusInt - freeInt).toBeGreaterThanOrEqual(40);
+    expect(opusInt - freeInt).toBeGreaterThanOrEqual(15);
   });
 
   it('renders the Active Modifiers panel (Chunk 134)', () => {

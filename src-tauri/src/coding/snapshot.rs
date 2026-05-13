@@ -107,9 +107,8 @@ pub fn export_snapshot(
 
     // Collect files (base only).
     let mut files: Vec<SnapshotFile> = {
-        let mut stmt = conn.prepare(
-            "SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1 ORDER BY file",
-        )?;
+        let mut stmt = conn
+            .prepare("SELECT file, hash FROM code_file_hashes WHERE repo_id = ?1 ORDER BY file")?;
         let rows = stmt.query_map(params![repo_id], |row| {
             Ok(SnapshotFile {
                 path: row.get(0)?,
@@ -176,10 +175,7 @@ pub fn export_snapshot(
 }
 
 /// Write a snapshot to `.codegraph/` directory within the repo.
-pub fn write_snapshot(
-    repo_path: &Path,
-    snapshot: &CodeGraphSnapshot,
-) -> Result<(), IndexError> {
+pub fn write_snapshot(repo_path: &Path, snapshot: &CodeGraphSnapshot) -> Result<(), IndexError> {
     let codegraph_dir = repo_path.join(".codegraph");
     std::fs::create_dir_all(&codegraph_dir)?;
 
@@ -367,7 +363,8 @@ mod tests {
             "INSERT INTO code_edges (repo_id, from_file, from_line, kind, target_name, overlay_id)
              VALUES (?1, 'src/main.rs', 5, 'calls', 'helper', NULL)",
             params![repo_id],
-        ).unwrap();
+        )
+        .unwrap();
     }
 
     #[test]
@@ -427,7 +424,8 @@ mod tests {
         assert!(dir.path().join(".codegraph/snapshot.meta.json").exists());
 
         // Read meta.
-        let meta_str = std::fs::read_to_string(dir.path().join(".codegraph/snapshot.meta.json")).unwrap();
+        let meta_str =
+            std::fs::read_to_string(dir.path().join(".codegraph/snapshot.meta.json")).unwrap();
         let meta: SnapshotMeta = serde_json::from_str(&meta_str).unwrap();
         assert_eq!(meta.file_count, 2);
         assert_eq!(meta.symbol_count, 3);
@@ -459,7 +457,11 @@ mod tests {
 
         // Count before.
         let sym_count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM code_symbols WHERE repo_id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM code_symbols WHERE repo_id = 1",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(sym_count, 3);
 

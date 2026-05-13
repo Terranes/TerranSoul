@@ -105,7 +105,7 @@
 
     <!-- Loading splash shown during app initialization -->
     <Transition name="splash-fade">
-      <SplashScreen v-if="appLoading" />
+      <SplashScreen v-if="appLoading && !(isPetMode && !windowStore.isMcpMode)" />
     </Transition>
 
     <!-- First-launch wizard (shown once, before the main app) -->
@@ -125,184 +125,147 @@
         v-if="isPetMode && !windowStore.isMcpMode"
         class="pet-mode-wrapper"
       >
-        <!-- Build-mode badge — inline in the pet mode layout, top-left. -->
-        <FloatingBadge
-          v-if="windowStore.isDevBuild"
-          class="pet-dev-badge"
-          tone="warning"
-          readonly
-          title="Development build — MCP on port 7422"
-        >
-          DEV
-        </FloatingBadge>
         <PetOverlayView />
       </div>
 
-      <!-- Normal mode (or MCP mode): Brain onboarding or tabbed UI -->
+      <!-- Normal mode (or MCP mode): tabbed UI -->
       <template v-else>
-        <!-- Brain onboarding: shown until a brain is configured -->
-        <BrainSetupView
-          v-if="!hasBrain && !skipSetup"
-          @done="onBrainDone"
+        <!-- Desktop side navigation -->
+        <nav class="app-nav desktop-nav">
+          <button
+            type="button"
+            class="nav-logo nav-logo-btn"
+            :class="{ active: activeTab === 'chat' }"
+            aria-label="Go to Chat"
+            title="Chat"
+            @click="activeTab = 'chat'"
+          >
+            <img
+              :src="appIconUrl"
+              alt="TerranSoul"
+              class="nav-logo-img"
+            >
+          </button>
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['nav-btn', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
+          >
+            <span
+              class="nav-icon"
+            >
+              <AppTabIcon :name="tab.id" />
+            </span>
+            <span class="nav-label">{{ tab.label }}</span>
+          </button>
+
+          <div class="nav-spacer" />
+
+          <!-- "No brain" warning pill -->
+          <button
+            v-if="!hasBrain"
+            class="nav-btn nav-brain-warn"
+            @click="activeTab = 'brain'"
+          >
+            <span class="nav-icon">⚠</span>
+            <span class="nav-label">Brain</span>
+          </button>
+
+          <!-- Build-mode badge — inline in the sidebar, below spacer.
+                 MCP mode (npm run mcp) takes priority over DEV. -->
+          <FloatingBadge
+            v-if="windowStore.isMcpMode"
+            class="nav-mcp-badge"
+            tone="info"
+            readonly
+            title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
+          >
+            MCP
+          </FloatingBadge>
+          <FloatingBadge
+            v-else-if="windowStore.isDevBuild"
+            class="nav-dev-badge"
+            tone="warning"
+            readonly
+            title="Development build — MCP on port 7422"
+          >
+            DEV
+          </FloatingBadge>
+        </nav>
+
+        <!-- Mobile bottom tab bar (replaces hamburger menu) -->
+        <nav class="mobile-bottom-nav">
+          <!-- Build-mode indicator — first item in the tab row.
+                 MCP mode takes priority over DEV. -->
+          <span
+            v-if="windowStore.isMcpMode"
+            class="mobile-mcp-indicator"
+            title="MCP mode"
+          >MCP</span>
+          <span
+            v-else-if="windowStore.isDevBuild"
+            class="mobile-dev-indicator"
+            title="Development build"
+          >DEV</span>
+          <button
+            v-for="tab in tabs"
+            :key="tab.id"
+            :class="['mobile-tab', { active: activeTab === tab.id }]"
+            @click="activeTab = tab.id"
+          >
+            <span
+              class="mobile-tab-icon"
+            >
+              <AppTabIcon :name="tab.id" />
+            </span>
+            <span class="mobile-tab-label">{{ tab.label }}</span>
+          </button>
+        </nav>
+
+        <!-- Main area -->
+        <main
+          class="app-main"
+          :class="{ 'app-main--chat-viewport': activeTab === 'chat' && !isChatboxMode }"
+        >
+          <ChatView
+            v-show="activeTab === 'chat'"
+            :chatbox-mode="isChatboxMode"
+            @navigate="handleSkillNavigate"
+            @set-display-mode="setDisplayMode"
+            @toggle-pet-mode="togglePetMode"
+          />
+          <SkillTreeView
+            v-if="activeTab === 'skills'"
+            @navigate="handleSkillNavigate"
+          />
+          <BrainView
+            v-if="activeTab === 'brain'"
+            @navigate="handleSkillNavigate"
+          />
+          <MemoryView v-if="activeTab === 'memory'" />
+          <MarketplaceView v-if="activeTab === 'marketplace'" />
+          <MobilePairingView v-if="activeTab === 'mobile'" />
+          <VoiceSetupView
+            v-if="activeTab === 'voice'"
+            @done="activeTab = 'chat'"
+          />
+        </main>
+
+        <!-- Floating quest progress bubble — chat tab only so it doesn't
+             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
+        <QuestBubble
+          v-if="activeTab === 'chat'"
+          @trigger="handleQuestBubble"
+          @navigate="handleSkillNavigate"
+          @update:constellation-open="questConstellationOpen = $event"
         />
 
-        <template v-else>
-          <!-- Desktop side navigation -->
-          <nav class="app-nav desktop-nav">
-            <div class="nav-logo">
-              <img
-                :src="appIconUrl"
-                alt="TerranSoul"
-                class="nav-logo-img"
-              >
-            </div>
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              :class="['nav-btn', { active: activeTab === tab.id }]"
-              @click="activeTab = tab.id"
-            >
-              <span
-                class="nav-icon"
-              >
-                <AppTabIcon :name="tab.id" />
-              </span>
-              <span class="nav-label">{{ tab.label }}</span>
-            </button>
+        <!-- Combo unlock notifications (Chunk 131) -->
+        <ComboToast />
 
-            <div class="nav-spacer" />
-
-            <!-- "No brain" warning pill -->
-            <button
-              v-if="!hasBrain"
-              class="nav-btn nav-brain-warn"
-              @click="skipSetup = false"
-            >
-              <span class="nav-icon">⚠</span>
-              <span class="nav-label">Brain</span>
-            </button>
-
-            <!-- Build-mode badge — inline in the sidebar, below spacer.
-                 MCP mode (npm run mcp) takes priority over DEV. -->
-            <FloatingBadge
-              v-if="windowStore.isMcpMode"
-              class="nav-mcp-badge"
-              tone="info"
-              readonly
-              title="MCP mode — brain available on port 7423 (data: <repo>/mcp-data/)"
-            >
-              MCP
-            </FloatingBadge>
-            <FloatingBadge
-              v-else-if="windowStore.isDevBuild"
-              class="nav-dev-badge"
-              tone="warning"
-              readonly
-              title="Development build — MCP on port 7422"
-            >
-              DEV
-            </FloatingBadge>
-          </nav>
-
-          <!-- Mobile bottom tab bar (replaces hamburger menu) -->
-          <nav class="mobile-bottom-nav">
-            <!-- Build-mode indicator — first item in the tab row.
-                 MCP mode takes priority over DEV. -->
-            <span
-              v-if="windowStore.isMcpMode"
-              class="mobile-mcp-indicator"
-              title="MCP mode"
-            >MCP</span>
-            <span
-              v-else-if="windowStore.isDevBuild"
-              class="mobile-dev-indicator"
-              title="Development build"
-            >DEV</span>
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              :class="['mobile-tab', { active: activeTab === tab.id }]"
-              @click="activeTab = tab.id"
-            >
-              <span
-                class="mobile-tab-icon"
-              >
-                <AppTabIcon :name="tab.id" />
-              </span>
-              <span class="mobile-tab-label">{{ tab.label }}</span>
-            </button>
-          </nav>
-
-          <!-- Main area -->
-          <main class="app-main">
-            <!-- Mode toggle toolbar — sits in the layout flow above ChatView.
-               Hidden on non-chat tabs and when quest constellation is open. -->
-            <div
-              v-if="activeTab === 'chat' && !questConstellationOpen"
-              class="mode-toggle-toolbar"
-            >
-              <div class="mode-segmented">
-                <button
-                  :class="['mode-seg-btn', { active: !isChatboxMode }]"
-                  title="3D character mode"
-                  @click="setDisplayMode('desktop')"
-                >
-                  🖥 <span class="mode-seg-label">3D</span>
-                </button>
-                <button
-                  :class="['mode-seg-btn', { active: isChatboxMode }]"
-                  title="Chat-only mode (no 3D character)"
-                  @click="setDisplayMode('chatbox')"
-                >
-                  💬 <span class="mode-seg-label">Chat</span>
-                </button>
-                <button
-                  class="mode-seg-btn"
-                  title="Switch to pet mode"
-                  @click="togglePetMode"
-                >
-                  🐾 <span class="mode-seg-label">Pet</span>
-                </button>
-              </div>
-            </div>
-
-            <ChatView
-              v-show="activeTab === 'chat'"
-              :chatbox-mode="isChatboxMode"
-              @navigate="handleSkillNavigate"
-            />
-            <SkillTreeView
-              v-if="activeTab === 'skills'"
-              @navigate="handleSkillNavigate"
-            />
-            <BrainView
-              v-if="activeTab === 'brain'"
-              @navigate="handleSkillNavigate"
-            />
-            <MemoryView v-if="activeTab === 'memory'" />
-            <MarketplaceView v-if="activeTab === 'marketplace'" />
-            <MobilePairingView v-if="activeTab === 'mobile'" />
-            <VoiceSetupView
-              v-if="activeTab === 'voice'"
-              @done="activeTab = 'chat'"
-            />
-          </main>
-
-          <!-- Floating quest progress bubble — chat tab only so it doesn't
-             overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
-          <QuestBubble
-            v-if="activeTab === 'chat'"
-            @trigger="handleQuestBubble"
-            @navigate="handleSkillNavigate"
-            @update:constellation-open="questConstellationOpen = $event"
-          />
-
-          <!-- Combo unlock notifications (Chunk 131) -->
-          <ComboToast />
-
-          <!-- Quest reward ceremony overlay (Chunk 132) -->
-          <QuestRewardCeremony />
-        </template>
+        <!-- Quest reward ceremony overlay (Chunk 132) -->
+        <QuestRewardCeremony />
       </template>
     </div>
 
@@ -312,6 +275,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
@@ -326,7 +290,7 @@ import MemoryView from './views/MemoryView.vue';
 import MarketplaceView from './views/MarketplaceView.vue';
 import MobilePairingView from './views/MobilePairingView.vue';
 import BrainView from './views/BrainView.vue';
-import BrainSetupView from './views/BrainSetupView.vue';
+// BrainSetupView removed — FirstLaunchWizard handles initial brain config
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
@@ -350,7 +314,6 @@ const mobileNotifications = useMobileNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
 const appLoading = ref(true);
-const skipSetup = ref(false);
 const tauriAvailable = ref(false);
 const browserMode = ref(false);
 const browserAppWindowOpen = ref(false);
@@ -381,18 +344,8 @@ const tabs = [
   { id: 'voice' as const, label: 'Voice' },
 ];
 
-async function onBrainDone() {
-  skipSetup.value = true;
-}
-
 function onFirstLaunchDone() {
   showFirstLaunchWizard.value = false;
-  // The wizard already configured brain + voice + quests.
-  // If the manual path was chosen and brain is still not set,
-  // show the BrainSetupView.
-  if (!brain.hasBrain) {
-    skipSetup.value = false;
-  }
 }
 
 async function togglePetMode() {
@@ -428,15 +381,11 @@ function handleSkillNavigate(target: string) {
     voice: 'voice',
     brain: 'brain',
     mobile: 'mobile',
-    'brain-setup': 'brain', // brain setup wizard re-opens from the Brain hub
+    'brain-setup': 'brain',
   };
   const tab = tabMap[target];
   if (tab) {
     activeTab.value = tab;
-  }
-  // 'brain-setup' target: re-open the brain wizard
-  if (target === 'brain-setup') {
-    skipSetup.value = false;
   }
 }
 
@@ -527,7 +476,6 @@ onMounted(async () => {
     }
     // Simulate MCP mode flag in browser/E2E when VITE_MCP_MODE is set
     await windowStore.loadMcpModeFlag();
-    skipSetup.value = true;
     // Also auto-configure voice so it works out of the box
     await voice.autoConfigureVoice();
     await skillTree.initialise();
@@ -540,6 +488,36 @@ onMounted(async () => {
     await brain.loadBrainMode();
   } catch {
     // Ignore — will fall through to auto-configure
+  }
+
+  // If the user is on Local Ollama, verify the saved model is actually
+  // installed. A stale config (e.g. gemma4:31b after a catalogue fix that
+  // now picks gemma3:4b) causes warmup to fail and the first message to
+  // hit a cold-start. When the model is missing, re-pick the best fit.
+  if (brain.brainMode?.mode === 'local_ollama') {
+    try {
+      await brain.checkOllamaStatus();
+      if (brain.ollamaStatus.running) {
+        await brain.fetchInstalledModels();
+        const savedModel = brain.brainMode.model;
+        const isInstalled = brain.installedModels.some(
+          (m: { name: string }) => m.name === savedModel,
+        );
+        if (!isInstalled && brain.installedModels.length > 0) {
+          // Saved model is gone — upgrade to best available
+          await brain.maybeUpgradeToLocalOllama();
+        }
+      }
+    } catch {
+      // Best-effort — warmup below still fires with whatever model is saved
+    }
+  }
+
+  // If the user is on Local Ollama, pre-warm the chat model into VRAM
+  // immediately on launch so the first user reply is fast (<1s) instead
+  // of paying a 10–20s cold-load on consumer GPUs. Fire-and-forget.
+  if (brain.brainMode?.mode === 'local_ollama') {
+    void brain.warmupLocalOllama(brain.brainMode.model);
   }
 
   // Load voice config from backend
@@ -561,20 +539,18 @@ onMounted(async () => {
   // Load settings to check first-launch flag
   await settingsStore.loadSettings();
 
-  // If brain is already set (either legacy or new mode), skip the onboarding.
-  if (brain.hasBrain) {
-    skipSetup.value = true;
-  } else if (settingsStore.settings.first_launch_complete) {
-    // Settings say we completed first launch before but brain is gone —
-    // re-configure silently (the user already chose their path).
-    await brain.autoConfigureForDesktop();
-    skipSetup.value = true;
-  } else {
-    // True first launch: show the wizard and let the user choose.
-    // Dismiss the splash immediately — the wizard has its own UI.
-    showFirstLaunchWizard.value = true;
-    skipSetup.value = true; // hide BrainSetupView while wizard is open
-    appLoading.value = false;
+  // If brain is already set, proceed normally.
+  if (!brain.hasBrain) {
+    if (settingsStore.settings.first_launch_complete) {
+      // Settings say we completed first launch before but brain is gone —
+      // re-configure silently (the user already chose their path).
+      await brain.autoConfigureForDesktop();
+    } else {
+      // True first launch: show the wizard and let the user choose.
+      // Dismiss the splash immediately — the wizard has its own UI.
+      showFirstLaunchWizard.value = true;
+      appLoading.value = false;
+    }
   }
 
   // If voice is not configured, auto-enable Web Speech API + Edge TTS
@@ -591,7 +567,6 @@ onMounted(async () => {
   // Listen for the tray-driven 'window-mode-changed' event so the frontend
   // state stays in sync when the user toggles via the system-tray menu.
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     await listen<string>('window-mode-changed', (e) => {
       const m = e.payload as 'window' | 'pet';
       if (m === 'window' || m === 'pet') {

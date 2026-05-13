@@ -82,7 +82,7 @@ If Ollama is running locally, its models automatically appear in the **Local LLM
 
 ## 2. Plugin System (Developer Guide)
 
-![Plugin manifest structure showing contributes fields and activation events](screenshots/packages-plugins/02-plugin-system.png)
+![Marketplace plugin details](screenshots/packages-plugins/02-plugin-details.png)
 
 ### Plugin Architecture
 
@@ -204,8 +204,6 @@ This fires whenever a memory with the "meeting" tag is created.
 
 ## 3. WASM Plugin Sandbox
 
-![WASM sandbox architecture showing isolated execution environment](screenshots/packages-plugins/03-wasm-sandbox.png)
-
 For untrusted or third-party plugins, TerranSoul supports optional WASM sandboxing:
 
 - **Enable:** Build with `--features wasm-sandbox`
@@ -224,8 +222,6 @@ For untrusted or third-party plugins, TerranSoul supports optional WASM sandboxi
 ---
 
 ## 4. Registry Server (Advanced)
-
-![Registry server configuration showing package publishing flow](screenshots/packages-plugins/04-registry-server.png)
 
 TerranSoul includes a built-in package registry server for teams:
 

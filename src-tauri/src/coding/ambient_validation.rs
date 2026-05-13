@@ -96,7 +96,7 @@ mod tests {
                 promote_tier_cooldown_ms: 12 * 3_600_000,
                 edge_extract_cooldown_ms: u64::MAX, // skip (needs LLM)
                 obsidian_export_cooldown_ms: u64::MAX, // skip
-                ann_compact_cooldown_ms: u64::MAX, // skip (no ANN in sim)
+                ann_compact_cooldown_ms: u64::MAX,  // skip (no ANN in sim)
             },
             ..Default::default()
         };
@@ -105,7 +105,9 @@ mod tests {
         let mut metrics = SimulationMetrics {
             memories_at_start: store
                 .conn
-                .query_row("SELECT COUNT(*) FROM memories", [], |r| r.get::<_, usize>(0))
+                .query_row("SELECT COUNT(*) FROM memories", [], |r| {
+                    r.get::<_, usize>(0)
+                })
                 .unwrap(),
             min_decay_score_observed: 1.0,
             max_decay_score_observed: 1.0,
@@ -161,7 +163,9 @@ mod tests {
         // Collect final metrics.
         metrics.memories_at_end = store
             .conn
-            .query_row("SELECT COUNT(*) FROM memories", [], |r| r.get::<_, usize>(0))
+            .query_row("SELECT COUNT(*) FROM memories", [], |r| {
+                r.get::<_, usize>(0)
+            })
             .unwrap();
 
         // Collect decay score range.
@@ -200,10 +204,7 @@ mod tests {
         );
 
         // 5. Store didn't lose ALL entries (GC is conservative).
-        assert!(
-            metrics.memories_at_end > 0,
-            "GC must not delete everything"
-        );
+        assert!(metrics.memories_at_end > 0, "GC must not delete everything");
         assert!(
             metrics.memories_at_end >= metrics.memories_at_start / 4,
             "GC removed too aggressively: started with {}, ended with {}",
@@ -245,9 +246,15 @@ mod tests {
         let jobs = garden(&scheduler_state, &config);
         for job in &jobs {
             match job {
-                MaintenanceJob::Decay => { store.apply_decay().unwrap(); }
-                MaintenanceJob::GarbageCollect => { store.gc_decayed(0.05).unwrap(); }
-                MaintenanceJob::PromoteTier => { store.auto_promote_to_long(5, 7).unwrap(); }
+                MaintenanceJob::Decay => {
+                    store.apply_decay().unwrap();
+                }
+                MaintenanceJob::GarbageCollect => {
+                    store.gc_decayed(0.05).unwrap();
+                }
+                MaintenanceJob::PromoteTier => {
+                    store.auto_promote_to_long(5, 7).unwrap();
+                }
                 _ => {}
             }
         }
@@ -342,9 +349,15 @@ mod tests {
             let jobs = jobs_due(&scheduler_state, &config.maintenance, sim_time_ms);
             for job in &jobs {
                 match job {
-                    MaintenanceJob::Decay => { store.apply_decay().unwrap(); }
-                    MaintenanceJob::GarbageCollect => { store.gc_decayed(0.05).unwrap(); }
-                    MaintenanceJob::PromoteTier => { store.auto_promote_to_long(5, 7).unwrap(); }
+                    MaintenanceJob::Decay => {
+                        store.apply_decay().unwrap();
+                    }
+                    MaintenanceJob::GarbageCollect => {
+                        store.gc_decayed(0.05).unwrap();
+                    }
+                    MaintenanceJob::PromoteTier => {
+                        store.auto_promote_to_long(5, 7).unwrap();
+                    }
                     _ => {}
                 }
                 scheduler_state.record_finished(*job, sim_time_ms);
@@ -420,7 +433,14 @@ mod tests {
         let jobs_24h = jobs_due(&state, &config, now + 24 * 3_600_000);
         let maintenance_jobs: Vec<_> = jobs_24h
             .iter()
-            .filter(|j| matches!(j, MaintenanceJob::Decay | MaintenanceJob::GarbageCollect | MaintenanceJob::PromoteTier))
+            .filter(|j| {
+                matches!(
+                    j,
+                    MaintenanceJob::Decay
+                        | MaintenanceJob::GarbageCollect
+                        | MaintenanceJob::PromoteTier
+                )
+            })
             .collect();
         assert!(
             maintenance_jobs.is_empty(),

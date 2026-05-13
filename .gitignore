@@ -4,11 +4,15 @@ qa-screenshots/
 .DS_Store
 *.local
 src-tauri/target/
+target/
+target-*/
+!target-copilot-bench/
 target-mcp/
 src-tauri/gen/
 src-tauri/code_index.sqlite
 test-results/
 playwright-report/
+real-e2e-report/
 /.claude/worktrees
 
 # Headless MCP "pet mode" data dir — created by `npm run mcp`.
@@ -34,6 +38,7 @@ mcp-data/tmp/
 mcp-data/sessions/
 mcp-data/worktrees/
 .vscode/.mcp-token
+.vscode/.mcp-restart-needed
 
 # Agent / dev session scratch — never commit (see rules/prompting-rules.md
 # "Clean Up Temporary Files After Each Session").
@@ -41,8 +46,16 @@ test-output.txt
 *.log
 *.tmp
 .scratch/
+/.cache/
 /tmp-agent/
-/target-copilot-bench
+/target-copilot-bench/*
+!/target-copilot-bench/bench-results/
 /crates/hive-relay/target
 /mcp-data/wiki
 scripts/*.py
+/target-test
+.vscode/.mcp-github-token
+/target-ci
+test_output.txt
+test_output_combined.txt
+/recording

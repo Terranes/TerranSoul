@@ -176,14 +176,6 @@
               <option value="both">Both</option>
             </select>
           </label>
-          <label class="mv-graph-toggle">
-            <input
-              v-model="graph3d"
-              type="checkbox"
-              data-testid="mv-graph-3d-toggle"
-            >
-            <span>3-D</span>
-          </label>
           <button
             class="btn-secondary"
             :disabled="isActing || store.memories.length < 2"
@@ -200,72 +192,34 @@
             · {{ store.edgeStats.connected_memories }} connected
           </span>
         </div>
-        <BrainGraphViewport
-          v-if="graph3d"
-          :memories="store.memories"
-          :edges="store.edges"
-          @select="onNodeSelect"
-        />
         <MemoryGraph
-          v-else
           :memories="store.memories"
           :edges="store.edges"
           :edge-mode="edgeMode"
           @select="onNodeSelect"
+          @keep-only-selection="handleKeepOnly"
+        />
+        <div
+          v-if="store.isLoading"
+          class="mv-graph-loading"
+        >
+          Loading {{ store.memories.length }} memories…
+        </div>
+      </div>
+      <div
+        v-if="selectedEntry"
+        class="mv-graph-crud-shell"
+      >
+        <GraphNodeCrudPanel
+          class="mv-graph-crud"
+          :entry="selectedEntry"
+          :edges="selectedEdges"
+          :all-memories="store.memories"
+          @close="selectedEntry = null"
+          @navigate="onNodeSelect"
+          @changed="onGraphChanged"
         />
       </div>
-      <aside
-        v-if="selectedEntry"
-        class="mv-node-detail"
-      >
-        <h3>{{ selectedEntry.content }}</h3>
-        <p><strong>Type:</strong> {{ selectedEntry.memory_type }}</p>
-        <p><strong>Tier:</strong> <span :class="'mv-tier-badge tier-' + selectedEntry.tier">{{ selectedEntry.tier }}</span></p>
-        <p><strong>Tags:</strong> {{ selectedEntry.tags || '—' }}</p>
-        <p><strong>Importance:</strong> {{ '★'.repeat(selectedEntry.importance) }}</p>
-        <p><strong>Decay:</strong> {{ (selectedEntry.decay_score * 100).toFixed(0) }}%</p>
-        <p><strong>Accessed:</strong> {{ selectedEntry.access_count }}×</p>
-        <div
-          v-if="selectedEdges.length"
-          class="mv-node-edges"
-        >
-          <strong>Edges ({{ selectedEdges.length }}):</strong>
-          <ul>
-            <li
-              v-for="e in selectedEdges"
-              :key="e.id"
-              class="mv-node-edge"
-            >
-              <span class="mv-rel-pill">{{ e.rel_type }}</span>
-              <span class="mv-edge-direction">
-                {{ e.src_id === selectedEntry.id ? '→' : '←' }}
-                #{{ e.src_id === selectedEntry.id ? e.dst_id : e.src_id }}
-              </span>
-              <button
-                class="mv-edge-del"
-                title="Delete edge"
-                @click="handleDeleteEdge(e.id)"
-              >
-                ×
-              </button>
-            </li>
-          </ul>
-        </div>
-        <div class="mv-node-btns">
-          <button
-            class="btn-secondary"
-            @click="startEdit(selectedEntry)"
-          >
-            ✏ Edit
-          </button>
-          <button
-            class="btn-danger"
-            @click="confirmDelete(selectedEntry.id)"
-          >
-            🗑 Delete
-          </button>
-        </div>
-      </aside>
     </div>
 
     <!-- ── List tab ── -->
@@ -555,7 +509,9 @@
                     <span class="mv-audit-version-date">{{ formatDate(ver.created_at) }}</span>
                     <span class="mv-audit-version-type">{{ ver.memory_type }}</span>
                   </div>
-                  <p class="mv-audit-version-content">{{ ver.content }}</p>
+                  <p class="mv-audit-version-content">
+                    {{ ver.content }}
+                  </p>
                   <p
                     v-if="ver.tags"
                     class="mv-audit-version-tags"
@@ -569,7 +525,9 @@
                     <span class="mv-audit-version-date">{{ formatDate(auditSelected.created_at) }}</span>
                     <span class="mv-audit-version-type">{{ auditSelected.memory_type }}</span>
                   </div>
-                  <p class="mv-audit-version-content">{{ auditSelected.content }}</p>
+                  <p class="mv-audit-version-content">
+                    {{ auditSelected.content }}
+                  </p>
                   <p
                     v-if="auditSelected.tags"
                     class="mv-audit-version-tags"
@@ -736,11 +694,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watchEffect } from 'vue';
 import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';
-import BrainGraphViewport from '../components/BrainGraphViewport.vue';
+import GraphNodeCrudPanel from '../components/GraphNodeCrudPanel.vue';
 import type { MemoryEntry, MemoryType, MemoryTier, MemoryProvenance } from '../types';
 
 const store = useMemoryStore();
@@ -897,7 +855,6 @@ async function loadShortTerm() {
 // Graph node selection
 const selectedEntry = ref<MemoryEntry | null>(null);
 const edgeMode = ref<'typed' | 'tag' | 'both'>('typed');
-const graph3d = ref(false);
 
 const selectedEdges = computed(() => {
   if (!selectedEntry.value) return [];
@@ -907,6 +864,17 @@ const selectedEdges = computed(() => {
 
 function onNodeSelect(id: number) {
   selectedEntry.value = store.memories.find((m) => m.id === id) ?? null;
+}
+
+/** Called by GraphNodeCrudPanel after any node/edge mutation. */
+async function onGraphChanged() {
+  await store.fetchAll();
+  await store.fetchEdges();
+  await store.getEdgeStats();
+  if (selectedEntry.value) {
+    selectedEntry.value =
+      store.memories.find((m) => m.id === selectedEntry.value!.id) ?? null;
+  }
 }
 
 async function handleExtractEdges() {
@@ -924,11 +892,6 @@ async function handleExtractEdges() {
   await store.getEdgeStats();
   isActing.value = false;
   setTimeout(() => (feedback.value = ''), 4000);
-}
-
-async function handleDeleteEdge(edgeId: number) {
-  await store.deleteEdge(edgeId);
-  await store.getEdgeStats();
 }
 
 // Add / Edit modal
@@ -969,6 +932,35 @@ async function saveMemory() {
 async function confirmDelete(id: number) {
   if (confirm('Delete this memory?')) {
     await store.deleteMemory(id);
+    selectedEntry.value = null;
+  }
+}
+
+/**
+ * Destructive "Keep only" action from `SelectedNodesPanel`. Deletes every
+ * memory that is NOT in the supplied selection. Guarded by a native
+ * `confirm()` because there is no undo.
+ */
+async function handleKeepOnly(keepIds: number[]) {
+  const keepSet = new Set(keepIds);
+  const toDelete = store.memories.filter((m) => !keepSet.has(m.id));
+  if (toDelete.length === 0) {
+    alert('All memories are in your selection — nothing to delete.');
+    return;
+  }
+  const msg =
+    `Delete ${toDelete.length} memor${toDelete.length === 1 ? 'y' : 'ies'} ` +
+    `NOT in your selection of ${keepIds.length}? This cannot be undone.`;
+  if (!confirm(msg)) return;
+  for (const m of toDelete) {
+    try {
+      await store.deleteMemory(m.id);
+    } catch (err) {
+      console.error('[MemoryView] keep-only delete failed for', m.id, err);
+    }
+  }
+  // Clear inspector if the previously selected entry was just deleted.
+  if (selectedEntry.value && !keepSet.has(selectedEntry.value.id)) {
     selectedEntry.value = null;
   }
 }
@@ -1074,8 +1066,15 @@ onMounted(async () => {
   await settingsStore.loadSettings();
   maxMemoryGb.value = settingsStore.settings.max_memory_gb ?? 10;
   maxMemoryMb.value = settingsStore.settings.max_memory_mb ?? 10;
-  await store.fetchAll();
-  await Promise.all([loadShortTerm(), store.getStats(), store.fetchEdges(), store.getEdgeStats()]);
+  // Fire all fetches in parallel so the graph renders as soon as memories
+  // arrive, without waiting for edges/stats to finish first.
+  await Promise.all([
+    store.fetchAll(),
+    store.fetchEdges(),
+    loadShortTerm(),
+    store.getStats(),
+    store.getEdgeStats(),
+  ]);
 });
 </script>
 

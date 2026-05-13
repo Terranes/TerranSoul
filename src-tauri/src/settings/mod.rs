@@ -223,6 +223,39 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub auto_extract_edges: bool,
 
+    /// When `true`, chat retrieval expands the RRF top-K via 1-2 hop BFS
+    /// over `memory_edges` (`memory::cascade::cascade_expand`) before the
+    /// optional cross-encoder rerank. Neighbours arrive with decayed
+    /// scores (`seed × edge_prior × 0.7^depth`), so the prompt prefers
+    /// real seed hits but can promote a graph-adjacent fact when it
+    /// outranks weaker RRF tail entries.
+    ///
+    /// Default `false` because cascade adds an in-process BFS hop per
+    /// retrieval and only helps multi-hop questions; production users
+    /// can opt in once their `memory_edges` table is populated. The MCP
+    /// gateway (used by external AI coding assistants) already runs
+    /// cascade unconditionally — see `ai_integrations/gateway.rs`.
+    ///
+    /// Tracked under BENCH-KG-1 in `rules/milestones.md`; see
+    /// `docs/brain-advanced-design.md` § 6 "Knowledge Graph Vision".
+    #[serde(default)]
+    pub enable_kg_boost: bool,
+
+    /// Opt-in: when chat-extracted facts hit `extract_memories_from_session`,
+    /// embed each newly inserted fact, look for an existing high-cosine
+    /// near-duplicate (≥ 0.85) and ask the active brain whether the new
+    /// fact actually *contradicts* the existing one. If yes, open a
+    /// `memory_conflicts` row so the user can pick a winner instead of
+    /// letting two contradictory facts silently coexist. Default `false`
+    /// because each near-duplicate ingest then costs one LLM round-trip
+    /// (`OllamaAgent::check_contradiction`); the explicit `add_memory`
+    /// Tauri command has had auto-detect since Chunk 17.2 unconditionally
+    /// — this flag only controls the chat-extracted path.
+    /// Tracked under CHAT-PARITY-4 in `rules/milestones.md`; see
+    /// `docs/brain-advanced-design.md` § Phase-5 "Contradiction resolution".
+    #[serde(default)]
+    pub auto_detect_conflicts: bool,
+
     /// Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
     /// (Chunk 27.3). Default `false` — the camera mirror routes through
     /// the 6-preset baseline (`mapBlendshapesToVRM`) so every VRM works.
@@ -349,6 +382,44 @@ pub struct AppSettings {
     /// Takes effect on next app restart.
     #[serde(default = "default_code_index_mmap_mb")]
     pub code_index_mmap_mb: u32,
+
+    /// User-defined context folders for knowledge ingestion. Each folder
+    /// is scanned recursively for supported file types (.md, .txt, .json,
+    /// .csv, .xml, .html, .rst, .adoc, .pdf, .log) and ingested into the
+    /// brain's long-term memory with `source_url = "ctx-folder:<path>"`.
+    ///
+    /// **Not recommended for large trees** — scanning is brute-force
+    /// (like Copilot / Claude workspace indexing) and can be slow for
+    /// folders with thousands of files. A warning is shown in the UI.
+    #[serde(default)]
+    pub context_folders: Vec<ContextFolder>,
+
+    /// Default web-crawl toggle and crawl bounds used by Scholar's Quest
+    /// when adding URLs to the document-ingest pipeline. The ingest command
+    /// still clamps these limits server-side before crawling.
+    #[serde(default)]
+    pub scholar_crawl_enabled: bool,
+
+    /// Maximum same-domain link depth for Scholar's Quest crawls. Default 2.
+    #[serde(default = "default_scholar_crawl_max_depth")]
+    pub scholar_crawl_max_depth: u32,
+
+    /// Maximum pages fetched by a Scholar's Quest crawl. Default 20.
+    #[serde(default = "default_scholar_crawl_max_pages")]
+    pub scholar_crawl_max_pages: u32,
+
+    /// Controls extended-thinking (chain-of-thought) depth for the LLM.
+    /// Only affects models that support Ollama's `think` parameter.
+    /// Default `Off` — fastest first-token latency.
+    #[serde(default)]
+    pub reasoning_effort: ReasoningEffort,
+
+    /// When `true`, verbose debug messages are printed to stderr (e.g.
+    /// `[chat-rewarm:embed_text] gemma4:e4b status=200 OK 174ms`).
+    /// Default `false` — silent in production. Toggle from the Brain
+    /// settings panel when diagnosing performance or provider issues.
+    #[serde(default)]
+    pub debug_logging: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -357,6 +428,72 @@ pub enum ObsidianLayout {
     #[default]
     Flat,
     Para,
+}
+
+/// Controls whether and how deeply the LLM is allowed to "think"
+/// (extended reasoning / chain-of-thought) before producing visible
+/// output.  Models that support Ollama's `think` parameter (Gemma 3,
+/// Qwen 3, DeepSeek-R1, etc.) emit a `<think>…</think>` block when
+/// `think: true`.  The effort level maps to `num_predict` budget caps
+/// and `think` flag values on the Ollama `/api/chat` request.
+///
+/// - **Off** — `think: false`, fastest first-token (default).
+/// - **Low** — `think: true`, small budget (`num_predict: 256`).
+/// - **Medium** — `think: true`, moderate budget (`num_predict: 512`).
+/// - **High** — `think: true`, generous budget (`num_predict: 1024`).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReasoningEffort {
+    /// No extended thinking — fastest TTFT.
+    #[default]
+    Off,
+    /// Brief chain-of-thought.
+    Low,
+    /// Moderate reasoning pass.
+    Medium,
+    /// Deep extended reasoning.
+    High,
+}
+
+impl ReasoningEffort {
+    /// Whether to send `think: true` in the Ollama request.
+    pub fn think_enabled(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+
+    /// Maximum output tokens (`num_predict`) for the combined
+    /// thinking + answer budget.
+    pub fn max_tokens(self, base: u32) -> u32 {
+        match self {
+            Self::Off => base,
+            Self::Low => base + 256,
+            Self::Medium => base + 512,
+            Self::High => base + 1024,
+        }
+    }
+}
+
+/// A user-defined folder that is scanned for documents and ingested
+/// into TerranSoul's brain memory. Similar to how Copilot / Claude
+/// index a workspace folder, but with explicit opt-in and a warning
+/// about brute-force cost.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextFolder {
+    /// Absolute path to the folder on disk.
+    pub path: String,
+    /// User-assigned label (defaults to the folder basename).
+    #[serde(default)]
+    pub label: String,
+    /// Whether this folder is currently active for sync. Disabled folders
+    /// are kept in settings but skipped during `sync_context_folders`.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    /// Unix-ms timestamp of the last successful sync.
+    #[serde(default)]
+    pub last_synced_at: u64,
+    /// Number of files ingested in the last sync.
+    #[serde(default)]
+    pub last_file_count: usize,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -415,6 +552,14 @@ pub const DEFAULT_CODE_INDEX_MMAP_MB: u32 = 32;
 pub const MIN_CODE_INDEX_MMAP_MB: u32 = 0;
 pub const MAX_CODE_INDEX_MMAP_MB: u32 = 1024;
 
+/// Scholar's Quest web-crawl defaults and guardrails.
+pub const DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 2;
+pub const MIN_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 1;
+pub const MAX_SCHOLAR_CRAWL_MAX_DEPTH: u32 = 5;
+pub const DEFAULT_SCHOLAR_CRAWL_MAX_PAGES: u32 = 20;
+pub const MIN_SCHOLAR_CRAWL_MAX_PAGES: u32 = 1;
+pub const MAX_SCHOLAR_CRAWL_MAX_PAGES: u32 = 100;
+
 fn default_maintenance_interval_hours() -> u32 {
     DEFAULT_MAINTENANCE_INTERVAL_HOURS
 }
@@ -433,6 +578,14 @@ fn default_code_index_cache_mb() -> u32 {
 
 fn default_code_index_mmap_mb() -> u32 {
     DEFAULT_CODE_INDEX_MMAP_MB
+}
+
+fn default_scholar_crawl_max_depth() -> u32 {
+    DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH
+}
+
+fn default_scholar_crawl_max_pages() -> u32 {
+    DEFAULT_SCHOLAR_CRAWL_MAX_PAGES
 }
 
 fn default_max_memory_gb() -> f64 {
@@ -513,6 +666,8 @@ impl Default for AppSettings {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -533,6 +688,12 @@ impl Default for AppSettings {
             sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: ReasoningEffort::Off,
+            debug_logging: false,
         }
     }
 }
@@ -695,6 +856,8 @@ mod tests {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -715,6 +878,12 @@ mod tests {
             sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: ReasoningEffort::Off,
+            debug_logging: false,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();
@@ -794,6 +963,29 @@ mod tests {
     fn default_late_chunking_is_off() {
         let s = AppSettings::default();
         assert!(!s.late_chunking);
+    }
+
+    #[test]
+    fn default_scholar_crawl_settings_match_dialog_defaults() {
+        let s = AppSettings::default();
+        assert!(!s.scholar_crawl_enabled);
+        assert_eq!(s.scholar_crawl_max_depth, DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH);
+        assert_eq!(s.scholar_crawl_max_pages, DEFAULT_SCHOLAR_CRAWL_MAX_PAGES);
+    }
+
+    #[test]
+    fn serde_fills_scholar_crawl_defaults_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert!(!parsed.scholar_crawl_enabled);
+        assert_eq!(
+            parsed.scholar_crawl_max_depth,
+            DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH
+        );
+        assert_eq!(
+            parsed.scholar_crawl_max_pages,
+            DEFAULT_SCHOLAR_CRAWL_MAX_PAGES
+        );
     }
 
     #[test]
@@ -951,5 +1143,42 @@ mod tests {
         let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8,"bgm_enabled":false,"bgm_volume":0.15,"bgm_track_id":"prelude"}"#;
         let parsed: AppSettings = serde_json::from_str(json).unwrap();
         assert!(parsed.model_camera_positions.is_empty());
+    }
+
+    #[test]
+    fn reasoning_effort_think_enabled() {
+        assert!(!ReasoningEffort::Off.think_enabled());
+        assert!(ReasoningEffort::Low.think_enabled());
+        assert!(ReasoningEffort::Medium.think_enabled());
+        assert!(ReasoningEffort::High.think_enabled());
+    }
+
+    #[test]
+    fn reasoning_effort_max_tokens() {
+        let base = 1000;
+        assert_eq!(ReasoningEffort::Off.max_tokens(base), 1000);
+        assert_eq!(ReasoningEffort::Low.max_tokens(base), 1256);
+        assert_eq!(ReasoningEffort::Medium.max_tokens(base), 1512);
+        assert_eq!(ReasoningEffort::High.max_tokens(base), 2024);
+    }
+
+    #[test]
+    fn reasoning_effort_serde_roundtrip() {
+        let json = r#""low""#;
+        let parsed: ReasoningEffort = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed, ReasoningEffort::Low);
+        assert_eq!(serde_json::to_string(&parsed).unwrap(), r#""low""#);
+    }
+
+    #[test]
+    fn reasoning_effort_default_is_off() {
+        assert_eq!(ReasoningEffort::default(), ReasoningEffort::Off);
+    }
+
+    #[test]
+    fn serde_fills_reasoning_effort_default_when_missing() {
+        let json = r#"{"version":2,"selected_model_id":"shinra","camera_azimuth":0,"camera_distance":2.8}"#;
+        let parsed: AppSettings = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.reasoning_effort, ReasoningEffort::Off);
     }
 }

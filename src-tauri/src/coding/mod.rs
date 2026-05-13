@@ -20,6 +20,10 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 
+pub mod agent_session_lessons;
+pub mod ambient;
+pub mod ambient_scheduler;
+mod ambient_validation;
 pub mod apply_file;
 pub mod autostart;
 pub mod branch_overlay;
@@ -47,6 +51,7 @@ pub mod hooks;
 pub mod metrics;
 pub mod milestones;
 pub mod multi_agent;
+pub mod offload;
 pub mod parser_registry;
 pub mod processes;
 pub mod promotion_plan;
@@ -57,17 +62,17 @@ pub mod repo_groups;
 pub mod resolver;
 pub mod reviewer;
 pub mod rolling_log;
+pub mod runtime_hooks;
 pub mod safety;
-pub mod ambient;
-pub mod ambient_scheduler;
-mod ambient_validation;
+pub mod sandbox;
 pub mod session_chat;
 pub mod session_import;
 pub mod session_names;
-pub mod session_replay;
 pub mod session_registry;
+pub mod session_replay;
 pub mod skills;
 pub mod snapshot;
+pub mod summarization_hook;
 pub mod symbol_index;
 pub mod task_queue;
 pub mod test_runner;
@@ -94,10 +99,20 @@ pub use multi_agent::{
 };
 pub use prompting::{CodingPrompt, DocSnippet, OutputShape, PROMPT_SCHEMA_VERSION};
 pub use repo::RepoState;
+pub use runtime_hooks::{
+    run_after_model_hooks, run_before_model_hooks, run_on_chunk_hooks, run_tool_call_hooks,
+    AgentHook, AgentMessage, AgentState, ModelRequest, OffloadHook, RunContext, ToolCall,
+    ToolCallResult,
+};
 pub use session_chat::{
     append_message as session_chat_append, chat_summary as session_chat_summary,
-    clear_chat as session_chat_clear, fork_chat as session_chat_fork,
-    load_chat as session_chat_load, ChatMessage, ChatSummary,
+    clear_chat as session_chat_clear, fork_chat as session_chat_fork, heal_orphaned_tool_calls,
+    load_chat as session_chat_load,
+    seed_last_prompt_tokens as session_chat_seed_last_prompt_tokens, ChatMessage, ChatSummary,
+};
+pub use summarization_hook::{
+    load_shared_summarization_settings, resolve_summarization_threshold, SummarizationHook,
+    SummarizationSettings, DEFAULT_SUMMARIZATION_THRESHOLD,
 };
 pub use workflow::{run_coding_task, CodingTask, CodingTaskResult, TaskDocument, TaskOutputKind};
 
@@ -450,20 +465,20 @@ mod tests {
 
     #[test]
     fn local_model_adapts_to_ram_tier() {
-        // VeryHigh → gemma4:31b
+        // VeryHigh → gemma4:e4b for sub-1 s interactive latency.
         let recs = coding_llm_recommendations(65_536);
-        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
-        assert_eq!(local.default_model, "gemma4:31b");
-
-        // High → gemma4:e4b
-        let recs = coding_llm_recommendations(24_000);
         let local = recs.iter().find(|r| r.is_top_pick).unwrap();
         assert_eq!(local.default_model, "gemma4:e4b");
 
-        // Medium → gemma4:e2b
+        // High → gemma3:4b.
+        let recs = coding_llm_recommendations(24_000);
+        let local = recs.iter().find(|r| r.is_top_pick).unwrap();
+        assert_eq!(local.default_model, "gemma3:4b");
+
+        // Medium → gemma3:1b.
         let recs = coding_llm_recommendations(12_000);
         let local = recs.iter().find(|r| r.is_top_pick).unwrap();
-        assert_eq!(local.default_model, "gemma4:e2b");
+        assert_eq!(local.default_model, "gemma3:1b");
 
         // Low → gemma3:1b
         let recs = coding_llm_recommendations(6_000);

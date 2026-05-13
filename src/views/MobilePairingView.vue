@@ -136,12 +136,16 @@ async function confirm() {
 <style scoped>
 .mobile-pairing-view {
   width: min(100%, 720px);
+  height: 100%;
   min-height: 100%;
   margin: 0 auto;
   padding: calc(var(--ts-space-xl) + var(--ts-safe-area-top)) var(--ts-space-lg) calc(var(--ts-mobile-nav-total-height) + var(--ts-space-xl));
   display: flex;
   flex-direction: column;
   gap: var(--ts-space-lg);
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .mobile-header {

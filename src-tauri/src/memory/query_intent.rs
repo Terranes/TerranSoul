@@ -298,6 +298,44 @@ fn score_semantic(lower_padded: &str) -> f32 {
     score
 }
 
+/// Whether HyDE (Hypothetical Document Embeddings) is likely to help
+/// retrieval for a query of this intent class.
+///
+/// BENCH-CHAT-PARITY-2 / BENCH-LCM-10 — HyDE is a *per-query-class*
+/// expansion: writing a hypothetical answer first sharpens cosine
+/// similarity for queries whose target documents live in a different
+/// surface form (multi-hop reasoning, temporal episodes, abstract
+/// concepts), but **hurts** factoid / open-domain lookups where the
+/// hypothetical drifts away from the literal answer span.
+///
+/// Mapping from the existing [`QueryIntent`] taxonomy:
+/// - `Episodic` → temporal class (HyDE writes a plausible episode) → **on**
+/// - `Semantic` → abstract / multi-hop reasoning class → **on**
+/// - `Procedural` → single-shot how-to with deterministic span → **off**
+/// - `Factual` → factoid lookup (drift hurts) → **off**
+/// - `Unknown` → no signal, skip HyDE to keep TTFT down → **off**
+///
+/// Pure function — no I/O, microseconds.
+pub fn hyde_recommended(intent: QueryIntent) -> bool {
+    matches!(intent, QueryIntent::Episodic | QueryIntent::Semantic)
+}
+
+/// Convenience gate: classify `query` and return whether HyDE should
+/// fire **given** the brain is available. Returns `false` when
+/// `brain_available` is `false`, regardless of class — HyDE needs an LLM
+/// hop.
+///
+/// Cloud-streaming chat (`commands::streaming::stream_cloud`) calls this
+/// before deciding to invoke `OllamaAgent::hyde_complete`. The
+/// VRAM-safe local-Ollama streaming path and Self-RAG loop do not call
+/// this — they use the sync retrieval helper directly.
+pub fn should_run_hyde(query: &str, brain_available: bool) -> bool {
+    if !brain_available {
+        return false;
+    }
+    hyde_recommended(classify_query(query).intent)
+}
+
 /// Default boost shape per intent. Tunable per docs §3.5.6.
 fn boosts_for_intent(intent: QueryIntent) -> KindBoosts {
     match intent {
@@ -476,5 +514,55 @@ mod tests {
         // strong episodic prefix + time anchor.
         let r = classify_query("What did I say yesterday about the deadline?");
         assert_eq!(r.intent, QueryIntent::Episodic);
+    }
+
+    // ------------------------------------------------------------------
+    // BENCH-CHAT-PARITY-2 — HyDE per-query-class gating
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn hyde_recommended_for_semantic_and_episodic_only() {
+        assert!(hyde_recommended(QueryIntent::Semantic));
+        assert!(hyde_recommended(QueryIntent::Episodic));
+        assert!(!hyde_recommended(QueryIntent::Procedural));
+        assert!(!hyde_recommended(QueryIntent::Factual));
+        assert!(!hyde_recommended(QueryIntent::Unknown));
+    }
+
+    #[test]
+    fn should_run_hyde_requires_brain_available() {
+        // Semantic class would normally fire HyDE, but without a brain
+        // we cannot run the LLM hop → gate is off.
+        assert!(!should_run_hyde("Explain how RRF fusion works", false));
+        assert!(should_run_hyde("Explain how RRF fusion works", true));
+    }
+
+    #[test]
+    fn should_run_hyde_off_for_factoid_lookups() {
+        // BENCH-LCM-10: HyDE hurts open / factoid queries — gate must be off.
+        assert!(!should_run_hyde("What is HNSW?", true));
+        assert!(!should_run_hyde("Who is the author of MotionGPT?", true));
+        assert!(!should_run_hyde("How do I install Ollama?", true));
+    }
+
+    #[test]
+    fn should_run_hyde_on_for_temporal_and_abstract() {
+        // BENCH-LCM-10: HyDE helps temporal/abstract/multi-hop classes.
+        assert!(should_run_hyde(
+            "What did Alice tell me yesterday about lunch?",
+            true
+        ));
+        assert!(should_run_hyde("Why does HyDE improve retrieval?", true));
+        assert!(should_run_hyde(
+            "Compare RRF fusion against pure cosine retrieval",
+            true
+        ));
+    }
+
+    #[test]
+    fn should_run_hyde_off_for_unclassified_queries() {
+        // No signal at all → Unknown → skip HyDE to protect TTFT.
+        assert!(!should_run_hyde("foo bar baz", true));
+        assert!(!should_run_hyde("", true));
     }
 }

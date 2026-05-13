@@ -16,7 +16,7 @@ that consults *both* of the following sources:
    `brain_get_entry`, `brain_kg_neighbors`) — the durable memory of
    what we already know, decided, tried, rejected, and learned.
 2. **TerranSoul source code + rules + docs** (`rules/**`, `docs/**`,
-   `src/**`, `src-tauri/src/**`, `mcp-data/shared/migrations/**`) —
+   `src/**`, `src-tauri/src/**`, `mcp-data/shared/memory-seed.sql`) —
    the current state of the system, not assumptions about it.
 
 External research (DeepWiki, GitHub, papers, videos) is **input** to the
@@ -37,7 +37,7 @@ For every decision the agent must produce, in writing, the following:
    only with caller acknowledgement — do not assume "no result" means
    "no prior decision".
 2. **Source-of-truth check** — read the actual files in `src/`,
-   `src-tauri/src/`, `rules/`, `docs/`, and `mcp-data/shared/migrations/`
+   `src-tauri/src/`, `rules/`, `docs/`, and `mcp-data/shared/memory-seed.sql`
    that touch the affected subsystem. *Reading the README is not
    sufficient.* `grep_search` / `file_search` must be issued against
    the relevant module trees, not a single guess path.
@@ -48,9 +48,10 @@ For every decision the agent must produce, in writing, the following:
    with a one-paragraph reason grounded in steps 1–3. "It looks cool"
    is not a reason. "Their X is structurally inferior to our Y" is.
 5. **Self-improve write-back** — sync the verdict, the analysis, and
-   any durable lessons into `mcp-data/shared/migrations/<NNN>_<topic>.sql`
-   so future sessions retrieve the conclusion via `brain_search` and do
-   not re-scan the upstream repo or re-read the same files.
+   any durable lessons into `mcp-data/shared/memory-seed.sql` (append a
+   new `INSERT INTO memories ... WHERE NOT EXISTS` block) so future
+   sessions retrieve the conclusion via `brain_search` and do not
+   re-scan the upstream repo or re-read the same files.
 
 ## No partial scans
 
@@ -71,21 +72,20 @@ proceed with reduced certainty.
 
 ## Self-improving the brain (write-back contract)
 
-Every deep analysis must end with a SQL migration appended under
-`mcp-data/shared/migrations/`. Each migration:
+Every deep analysis must end with a new INSERT block appended to
+`mcp-data/shared/memory-seed.sql`. Each block:
 
-- Has a numbered filename (`002_*.sql`, `003_*.sql`, …) — append-only,
-  never edit a shipped migration.
-- Uses `INSERT OR IGNORE INTO memories (...)` so re-running is safe.
+- Appends new `INSERT INTO memories (...) SELECT ... WHERE NOT EXISTS`
+  rows so re-running the consolidated init seed is idempotent.
 - Records `RESEARCH:`, `LESSON:`, `VERDICT:`, or `RULE:` rows with
   high importance (≥7), `cognitive_kind = 'procedural'` for rules,
   `'episodic'` for one-time research.
-- Adds `memory_edges` connecting the new rows to existing rules and
-  modules they relate to (`supports`, `related_to`, `contradicts`,
-  `superseded_by`, `part_of`).
-- Is registered in `compiled_migrations()` inside
-  `src-tauri/src/memory/seed_migrations.rs` so release builds pick it
-  up without the on-disk migrations folder.
+- Adds `INSERT OR IGNORE INTO memory_edges` connecting the new rows
+  to existing rules and modules they relate to (`supports`,
+  `related_to`, `contradicts`, `superseded_by`, `part_of`).
+- Is picked up automatically by release builds via
+  `src-tauri/src/memory/seed_migrations.rs`, which loads the consolidated
+  seed snapshot on first run (no separate migration registration needed).
 
 This is the "self-improve" loop: the cost of a deep analysis is paid
 once; future agents retrieve the verdict from `brain_search` for free.
@@ -114,4 +114,4 @@ write-back so each session compounds the brain instead of restarting it.
 - Reverse-engineering protocol: [`rules/research-reverse-engineering.md`](research-reverse-engineering.md)
 - Reality / no-pretend rule: [`rules/reality-filter.md`](reality-filter.md)
 - Coding standards: [`rules/coding-standards.md`](coding-standards.md)
-- Seed migration system: [`src-tauri/src/memory/seed_migrations.rs`](../src-tauri/src/memory/seed_migrations.rs)
+- Seed snapshot loader: [`src-tauri/src/memory/seed_migrations.rs`](../src-tauri/src/memory/seed_migrations.rs)

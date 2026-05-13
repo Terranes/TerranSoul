@@ -59,12 +59,13 @@
 
 ## Memory / brain
 
-- Schema version is `13` (`src-tauri/src/memory/schema.rs`). `memories`
+- Schema version is `20` (`src-tauri/src/memory/schema.rs`). `memories`
   table columns: `content, tags, importance, memory_type, created_at,
-  last_accessed, access_count, embedding, source_url, source_hash,
-  expires_at, tier, decay_score, session_id, parent_id, token_count,
-  valid_to, obsidian_path, last_exported, category, cognitive_kind, updated_at,
-  origin_device`.
+  last_accessed, access_count, embedding, embedding_model_id,
+  embedding_dim, source_url, source_hash, expires_at, tier, decay_score,
+  session_id, parent_id, token_count, valid_to, obsidian_path,
+  last_exported, category, cognitive_kind, updated_at, origin_device,
+  hlc_counter, protected, share_scope, confidence`.
 - The MCP seed (`mcp-data/shared/memory-seed.sql`) is applied **only on
   first run** when `memory.db` does not yet exist. Existing runtime DBs
   must be re-ingested via `brain_ingest_*` tools when shared seed content
@@ -81,12 +82,47 @@
   7421), `terransoul-brain-dev` (dev, 7422), and `terransoul-brain-mcp`
   (MCP tray/coding-agent runtime, 7423). Coding agents should use the MCP
   profile unless a running release/dev app is already serving MCP.
+- `brain_failover_status` is diagnostics-only and requires provider-rotator
+  AppState wiring. In headless/stdio MCP runs without that state attachment,
+  it may return `failover status requires app state`; this does not block
+  core memory/RAG tools.
 - Bearer token is regenerated when missing; it is written to both
   `mcp-data/mcp-token.txt` and `.vscode/.mcp-token`. Set
   `TERRANSOUL_MCP_TOKEN_MCP` from the file for the MCP profile.
 - Verify MCP with `GET /health` (no auth required) before calling `brain_health`.
 
+## Seed knowledge audit (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **LESSON: Seed knowledge audit (2026-05-10) corrected stale canonical facts: schema is V20 (not V13/V15/V19 in older notes) and brain_failover_status in headless MCP may return "failover status requires app state" when provider-rotator AppState is absent; this is diagnostics-only and does not block core memory/RAG tools.**
+
+## Intent routing no-heuristics rule (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **RULE: Document/setup intent routing must remain classifier + RAG driven.** On malformed/unknown classifier JSON, return `Unknown` and continue normal chat/install flow. Do not force `learn_with_docs`, `teach_ingest`, or `gated_setup` via regex/contains/includes/keyword arrays.
+
+## Local E2E latency budget (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **RULE: Local E2E response latency budget (2026-05-10): Playwright tests outside GitHub Actions must fail any assistant/LLM response latency above 2 seconds with an investigation-focused failure message.** Keep diagnostic wait timeouts long enough to collect evidence, but do not resolve latency regressions by increasing Playwright timeouts or relaxing assertions; investigate model warmup, VRAM contention, RAG retrieval, embedding backfill, provider selection, streaming first chunk, and UI state propagation.
+
 ## Self-improve
+
+## Tutorial screenshot and mobile keyboard lessons (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **LESSON: Tutorial screenshot refresh must be captured and verified step-by-step, not by blind batch scripts.** For each referenced tutorial image, open the exact target view, dismiss overlays, confirm mode state, capture, and visually verify before moving on. If a screenshot reveals a UI defect, fix the UI/state first and recapture immediately.
+- **LESSON: Mobile black-strip and missing-input bug root cause was false keyboard detection in src/composables/useKeyboardDetector.ts.** Plain viewport resizes must not trigger keyboard offset unless an editable element is focused and `visualViewport` is actually reduced versus the layout viewport.
+
+## Agent-session lesson ingestion gap (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **GAP: TerranSoul self-improve has no ingestion path for lessons learned by an EXTERNAL coding agent (Copilot/Claude Code/Codex) operating in the main checkout.** Until `brain_ingest_lesson` is fully wired, durable agent-session lessons need a new INSERT row appended to `mcp-data/shared/memory-seed.sql`, a matching `lessons-learned.md` entry, and retrievability verification before completion.
 
 - Self-improve runs in temporary git worktrees so the main checkout is
   never disturbed. Always read `rules/milestones.md` for the next chunk
@@ -144,6 +180,29 @@
   Markdown-only rule or architecture knowledge is incomplete because future
   agents must retrieve it through SQLite/FTS/RRF/KG, not by loading `.md`
   files as memory.
+- **Self-improve does NOT yet capture lessons from external coding-agent
+  sessions** (Copilot/Claude Code/Codex working in the main checkout).
+  `coding/conversation_learning.rs` only routes user-authored chat messages to
+  `rules/milestones.md`; `coding/engine.rs` runs in an isolated worktree
+  against the configured Coding LLM. Until `brain_ingest_lesson` MCP tool
+  ships and `agent_session_lessons.rs` lands, the agent **must append a new
+  INSERT row to `mcp-data/shared/memory-seed.sql` plus update this
+  document** when it discovers a procedural rule. Verify with `brain_search`
+  before declaring done.
+- **Custom CSS token references must match a definition in EVERY theme
+  block** of `src/style.css`. The 2026-05-10 chat-bar dropdown contrast bug
+  was caused by `var(--ts-text, #e2e8f0)` and `var(--ts-bg-base, #0f172a)` in
+  `.reasoning-effort-select` — `--ts-text` was never defined per theme so the
+  dark fallback bled through on light themes. Use `--ts-text-primary` and
+  `--ts-bg-surface` plus `color-scheme: inherit` so the native popup adopts
+  the active theme automatically.
+- **Chat input is a multi-line auto-grow textarea, never `<input
+  type="text">`.** Long messages clip horizontally and become unreadable on
+  small screens. The pattern is documented in `src/components/ChatInput.vue`:
+  `rows="1"`, `resize:none`, `max-height: calc(1.4em * MAX_ROWS + padding)`,
+  `overflow-y:auto`, and `autoResize()` on `@input` that resets height to
+  `auto` then sets `min(scrollHeight, maxHeight)`. Submit on Enter without
+  Shift; Shift+Enter inserts a newline.
 
 ## CI / GitHub
 
@@ -211,3 +270,89 @@
   README only (see `mcp-data/shared/claudia-research.md`). Use neutral
   TerranSoul names; never ship literal `/meditate`, "morning brief",
   or any branded label.
+
+
+## OpenAgentd audit (2026-05-10) — coding workflow patterns
+
+Full audit in `docs/openagentd-audit.md`; durable rows synced into
+`mcp-data/shared/memory-seed.sql`. Apache-2.0
+attribution recorded in `CREDITS.md`. Phase 47 in `rules/milestones.md`
+groups the implementable chunks.
+
+- **LESSON: Long tool results must spill to disk, not into the conversation. OpenAgentd ToolResultOffloadHook writes any result above ~40 KB / ~10 K tokens to {workspace}/{agent_name}/.tool_results/{tool_call_id}.txt and replaces the in-context value with a head/tail preview plus the file path.** TerranSoul should write large results to `<worktree>/.terransoul/tool_results/<id>.txt`, replace the in-message value with a head/tail preview plus a path the agent can `read`. Never break
+  execution on offload write failure — log a warning and pass the original
+  through.
+- **Shell output > ~128 KB must spill** to `.shell_output/<id>.txt` and
+  reply with last 200 lines + reference. Spawn child processes in a new
+  process group and kill the **group** on cancel/timeout, otherwise children
+  like `node` under `npm run dev` survive the parent.
+- **Cancellation must reach in-flight tool calls**, not only DAG
+  boundaries. `coding::engine`'s `Arc<AtomicBool>` is checked between nodes
+  only; add a `tokio::sync::watch::Sender<bool>` per run and wrap each tool
+  task in `tokio::select!{ tool, _ = watch.changed() }`.
+- **Heal orphaned tool calls before the next user turn.** When the app dies
+  between persisting an `assistant{tool_calls}` row and the matching tool
+  reply rows, the next OpenAI Responses turn 400s with "No tool output
+  found for function call". Insert a synthetic
+  `tool: "Tool execution was interrupted before a result could be recorded."`
+  for every orphaned id, anchored to `last_assistant.created_at + 1µs * (i+1)`
+  so input order stays `assistant → tool → … → user`. Also drop tool calls
+  with truncated `arguments` JSON on deserialize.
+- **Agent loop hooks must be chain-of-responsibility, not branches.** Add a
+  runtime `AgentHook` trait in `coding/runtime_hooks.rs` with
+  `before_model`, `after_model`, `wrap_tool_call`, `on_chunk`. `wrap_tool_call`
+  is the chain — tool offload, OTel, audit, summary injection are composable
+  units. Wrap every hook call in a `_safe_invoke_hooks` equivalent
+  (`tracing::warn!` with hook name on error) so a buggy hook never crashes
+  a turn.
+- **A request snapshot is frozen — hooks that mutate state must rebuild it.**
+  If a hook adds to `state.messages` (RAG block, inbox message, summary), it
+  must return a new request object; otherwise the LLM sees the pre-hook
+  snapshot. Make this a doctest on the `AgentHook` trait so it cannot be
+  forgotten.
+- **Rolling-window summarization needs cross-resume token seeding.**
+  `last_prompt_tokens` resets to 0 on every `agent.run()` call. Seed it from
+  persisted usage in `coding::session_chat` at load time, otherwise turn
+  N+1 of a multi-request session never compresses.
+- **Three-tier wiki (`USER.md` always-injected + BM25-searchable topics +
+  per-day append-only notes) plus a scheduled "dream" agent** is the right
+  long-term shape for turning ephemeral chat notes into durable knowledge.
+  Deferred until the runtime hook framework lands so the dream agent stays
+  composable.
+- **Sandbox needs a secrets denylist** (`**/.env`, `**/secrets/**`,
+  `**/*.pem`, `**/id_rsa*`) **plus a tokenised shell pre-flight** that
+  resolves path-like tokens against the workspace and rejects denied roots.
+  Best-effort only — `$VAR`, `$(...)`, backticks, base64 are not evaluated;
+  OS-level user permissions remain the last line of defence.
+- **Tool schemas must be sanitised per provider.** Inline `$ref` and drop
+  `$defs` for Gemini/Vertex AI; recursively strip `discriminator`, `const`,
+  `exclusiveMinimum/Maximum`, `additionalProperties`, `$schema`, `$id`,
+  `contentEncoding`, `contentMediaType` for Gemini specifically. Otherwise
+  free-mode MCP tool calls silently 400 with `INVALID_ARGUMENT`.
+- **Tool-call streaming is three-phase** (`tool_call` → `tool_start` →
+  `tool_end`) and the same `tool_call_id` must flow through all three.
+  Verify `StreamTagParser` preserves the contract for parallel calls; some
+  providers mis-index parallel calls and need a `ToolIdResolver`-style
+  stream-scoped id→index map.
+- **Live config drift detection avoids restart-on-edit.** Stamp the mtimes
+  of every loaded skill/persona file and re-parse + swap in place at
+  end-of-turn. Parse failures keep the previous version + re-stamp to avoid
+  looping.
+- **Multi-agent default: lead-as-translator + verify-before-claim.** Members
+  describe needs in plain language; the lead translates to registry names.
+  Members must read the result of every tool call before claiming success
+  and follow a write with a cheap `ls` / `read` before reporting completion.
+  The lead must sanity-check member "done" claims with a cheap read when
+  feasible. Codify in `coding::multi_agent` prompts and
+  `rules/prompting-rules.md`.
+
+## Live chat RAG parity (2026-05-10)
+
+Durable lesson synced into `mcp-data/shared/memory-seed.sql`.
+
+- **RAG pipeline: contentful live chat uses fast-path skip for short/empty turns, thresholded hybrid 6-signal eligibility, then RRF + query-intent ordering for top-5 prompt injection.** Keep the relevance threshold as the
+  eligibility gate; do not compare RRF scores directly to that user setting.
+  Live desktop chat and paired-mobile chat should share the same helper so
+  prompt memories stay behaviorally aligned. Local Ollama streaming should
+  preserve the VRAM guard by passing no query embedding on the hot path, while
+  free/paid modes may include cloud embeddings.

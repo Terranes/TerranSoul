@@ -318,6 +318,16 @@ fn spawn_worker_inner(
         let mut interval = tokio::time::interval(WORKER_TICK_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut consecutive_rate_limits: u32 = 0;
+        // Throttle for the "no embedding-capable brain configured" skip
+        // log so an unconfigured app doesn't spam one line per 10 s tick.
+        // Reset to `false` as soon as a brain becomes available, so a
+        // subsequent unconfigure cycle still logs once.
+        let mut no_brain_logged: bool = false;
+        // Periodic backfill counter: re-scan for unembedded entries every
+        // BACKFILL_EVERY ticks (~60 s) to catch memories that arrived via
+        // CRDT sync or other paths that bypass the embedding queue.
+        const BACKFILL_EVERY: u32 = 6;
+        let mut ticks_since_backfill: u32 = 0;
 
         loop {
             tokio::select! {
@@ -326,6 +336,20 @@ fn spawn_worker_inner(
                     break;
                 }
                 _ = interval.tick() => {}
+            }
+
+            // Periodic backfill: catch entries from CRDT sync or other
+            // non-queue insertion paths (multi-device safety net).
+            ticks_since_backfill += 1;
+            if ticks_since_backfill >= BACKFILL_EVERY {
+                ticks_since_backfill = 0;
+                if let Ok(s) = state.memory_store.lock() {
+                    if let Ok(n) = backfill_queue(s.conn()) {
+                        if n > 0 {
+                            eprintln!("[embed-queue] periodic backfill: {n} new entries queued");
+                        }
+                    }
+                }
             }
 
             // If paused due to rate limiting, skip this tick.
@@ -339,6 +363,61 @@ fn spawn_worker_inner(
                 .lock()
                 .ok()
                 .and_then(|m| m.as_ref().map(provider_category));
+
+            // Brain-config gate (2026-05-14): when neither `brain_mode` nor
+            // `active_brain` is set, `embed_batch_for_mode` silently returns
+            // `vec![None; texts.len()]` — bypassing every per-failure
+            // diagnostic in `OllamaAgent::embed_text_batch` and
+            // `embed_batch_openai`. Without this gate the worker would
+            // grind through any backfilled queue every 10 s, printing the
+            // aggregate `[embed-queue] batch: 0 embedded, N failed …` line
+            // forever with no actionable detail (symptom seen after
+            // `mcp-seed-embedded skipped: no embedding-capable brain
+            // configured` queued 251 entries from the seed). Mirror the
+            // same bail-out `mcp-seed-embedded` uses in `lib.rs`: skip the
+            // tick entirely until a brain is configured. Log once per
+            // brain-config-change so the user sees what's happening
+            // without spam.
+            let active_brain_set = state
+                .active_brain
+                .lock()
+                .ok()
+                .map(|m| m.is_some())
+                .unwrap_or(false);
+            if provider_name.is_none() && !active_brain_set {
+                if !no_brain_logged {
+                    eprintln!(
+                        "[embed-queue] no embedding-capable brain configured — skipping ticks \
+                         until `brain_mode` or `active_brain` is set (queue retains entries; \
+                         worker will resume automatically once a brain is selected)"
+                    );
+                    no_brain_logged = true;
+                }
+                continue;
+            }
+            // Reset the throttle so a future deconfigure → reconfigure
+            // cycle still emits one fresh log line.
+            no_brain_logged = false;
+
+            // VRAM-protection gate: in LocalOllama mode the embedding model
+            // (e.g. nomic-embed-text) and the chat model (e.g. gemma4:e4b)
+            // typically cannot co-reside on consumer GPUs. Each embed tick
+            // would force-load the embed model and evict the chat model,
+            // adding 10-20s to the next user reply. Skip embed ticks while
+            // the user is actively chatting (last 5 minutes of activity).
+            if provider_name.as_deref() == Some("ollama") {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let last = state
+                    .last_chat_at_ms
+                    .load(std::sync::atomic::Ordering::Relaxed);
+                if last > 0 && now_ms.saturating_sub(last) < 5 * 60 * 1000 {
+                    continue;
+                }
+            }
+
             let batch_size = batch_size_for_provider(provider_name.as_deref());
 
             // Fetch the due batch.
@@ -372,24 +451,29 @@ fn spawn_worker_inner(
             // Build text slice for batch embed.
             let texts: Vec<&str> = batch.iter().map(|(_, content)| content.as_str()).collect();
 
-            let results = embed_batch_for_mode(
-                &texts,
-                mode.as_ref(),
-                model.as_deref(),
-                Some(batch_size),
-            )
-            .await;
+            let results =
+                embed_batch_for_mode(&texts, mode.as_ref(), model.as_deref(), Some(batch_size))
+                    .await;
 
             // Process results.
             let mut success_count = 0u32;
             let mut fail_count = 0u32;
-            let mut batch_rate_limited = false;
 
-            // If all results are None, treat it as a potential rate limit.
-            let all_failed = results.iter().all(|r| r.is_none());
-            if all_failed && !results.is_empty() {
-                batch_rate_limited = true;
-            }
+            // If all results are None, that *might* mean the cloud provider
+            // is rate-limiting us (HTTP 429). But for local providers
+            // (Ollama, LM Studio) there is no real rate limit — an all-None
+            // batch almost always means: no embedding model is configured,
+            // the picked model isn't an embedder (e.g. user selected a chat
+            // model like `gemma3:4b` as `active_brain`), or the local server
+            // is unreachable. Falsely classifying that as "rate-limited"
+            // triggers a 30→60→120→240→480s exponential backoff that masks
+            // the real issue and silently stalls embedding (issue 2026-05-13:
+            // "Why do we have rate limited for local LLM?"). Per-entry
+            // failures still fall through to `record_failure` which has its
+            // own exponential backoff via `compute_backoff`.
+            let all_failed = !results.is_empty() && results.iter().all(|r| r.is_none());
+            let provider_can_rate_limit = provider_can_rate_limit(provider_name.as_deref());
+            let batch_rate_limited = all_failed && provider_can_rate_limit;
 
             {
                 let Ok(s) = state.memory_store.lock() else {
@@ -430,7 +514,8 @@ fn spawn_worker_inner(
             if batch_rate_limited {
                 consecutive_rate_limits += 1;
                 let pause_secs = (INITIAL_PAUSE_SECS
-                    * 1u64.checked_shl(consecutive_rate_limits.saturating_sub(1))
+                    * 1u64
+                        .checked_shl(consecutive_rate_limits.saturating_sub(1))
                         .unwrap_or(u64::MAX))
                 .min(MAX_PAUSE_SECS);
                 metrics_clone.set_pause(pause_secs);
@@ -440,9 +525,17 @@ fn spawn_worker_inner(
             }
 
             if success_count > 0 || fail_count > 0 {
+                let suffix = if batch_rate_limited {
+                    " (rate-limited)"
+                } else if all_failed && !provider_can_rate_limit {
+                    // All-None on a local provider: real cause is config or
+                    // connectivity, not throttling. Tell the user where to look.
+                    " (local provider returned no embeddings — check that an embedding-capable model is configured and the local server is reachable)"
+                } else {
+                    ""
+                };
                 eprintln!(
-                    "[embed-queue] batch: {success_count} embedded, {fail_count} failed{}",
-                    if batch_rate_limited { " (rate-limited)" } else { "" }
+                    "[embed-queue] batch: {success_count} embedded, {fail_count} failed{suffix}"
                 );
             }
         }
@@ -469,6 +562,15 @@ fn provider_category(mode: &crate::brain::BrainMode) -> String {
         crate::brain::BrainMode::PaidApi { .. } => "paid".to_string(),
         crate::brain::BrainMode::FreeApi { .. } => "free".to_string(),
     }
+}
+
+/// Returns true if the provider category can plausibly return HTTP 429
+/// rate-limit responses. Only cloud providers (paid/free) rate-limit;
+/// local providers (Ollama, LM Studio) do not, so an all-None batch from
+/// them must be treated as a configuration/connectivity error rather than
+/// throttling — see the worker loop for context.
+fn provider_can_rate_limit(category: Option<&str>) -> bool {
+    matches!(category, Some("paid") | Some("free"))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -537,6 +639,22 @@ mod tests {
         enqueue(&conn, 1).unwrap(); // Should not fail or duplicate
         let status = queue_status(&conn).unwrap();
         assert_eq!(status.pending, 1);
+    }
+
+    #[test]
+    fn provider_can_rate_limit_only_for_cloud() {
+        // Cloud providers (paid/free) can return HTTP 429.
+        assert!(provider_can_rate_limit(Some("paid")));
+        assert!(provider_can_rate_limit(Some("free")));
+        // Local providers do not rate-limit; an all-None batch from them
+        // means a config or connectivity error, not throttling.
+        assert!(!provider_can_rate_limit(Some("ollama")));
+        assert!(!provider_can_rate_limit(Some("local")));
+        // Unknown / unset provider must not trigger the rate-limit pause
+        // cascade either — otherwise the worker silently stalls when no
+        // brain is configured (the original 2026-05-13 bug report).
+        assert!(!provider_can_rate_limit(None));
+        assert!(!provider_can_rate_limit(Some("something-else")));
     }
 
     #[test]
@@ -697,7 +815,9 @@ mod tests {
         assert!(is_rate_limit_error("too many requests, retry later"));
         assert!(is_rate_limit_error("model busy, try again"));
         assert!(is_rate_limit_error("resource exhausted"));
-        assert!(is_rate_limit_error("quota exceeded for this billing period"));
+        assert!(is_rate_limit_error(
+            "quota exceeded for this billing period"
+        ));
         // Negatives
         assert!(!is_rate_limit_error("connection refused"));
         assert!(!is_rate_limit_error("model not found"));
@@ -735,7 +855,10 @@ mod tests {
             )
             .unwrap();
         let now_ms = now_epoch_ms() as i64;
-        assert!(next_retry > now_ms, "next_retry_at should be in the future after soft pause");
+        assert!(
+            next_retry > now_ms,
+            "next_retry_at should be in the future after soft pause"
+        );
     }
 
     #[test]
@@ -798,5 +921,41 @@ mod tests {
             api_key: None,
         };
         assert_eq!(provider_category(&free), "free");
+    }
+
+    /// VRAM-protection gate: the embedding worker should refuse to run
+    /// when the user has chatted recently in LocalOllama mode, because an
+    /// embed tick force-loads the embed model and evicts the chat model
+    /// from VRAM (10-20 s reload cost on consumer GPUs).
+    #[test]
+    fn chat_activity_gate_blocks_recent_ollama_chat() {
+        // Reproduce the gating logic from spawn_worker_inner so changes
+        // to that gate can't silently regress this safety.
+        fn should_skip_for_chat(provider: Option<&str>, last_ms: u64, now_ms: u64) -> bool {
+            if provider != Some("ollama") {
+                return false;
+            }
+            last_ms > 0 && now_ms.saturating_sub(last_ms) < 5 * 60 * 1000
+        }
+
+        // Ollama mode, chat 1 s ago => skip
+        assert!(should_skip_for_chat(Some("ollama"), 1_000, 2_000));
+        // Ollama mode, chat 4:59 ago => skip
+        assert!(should_skip_for_chat(
+            Some("ollama"),
+            1_000,
+            1_000 + 299 * 1000
+        ));
+        // Ollama mode, chat 5:01 ago => allow
+        assert!(!should_skip_for_chat(
+            Some("ollama"),
+            1_000,
+            1_000 + 301 * 1000
+        ));
+        // Ollama mode, no chat yet => allow
+        assert!(!should_skip_for_chat(Some("ollama"), 0, 1_000_000));
+        // Cloud providers never gate on chat activity
+        assert!(!should_skip_for_chat(Some("paid"), 1_000, 2_000));
+        assert!(!should_skip_for_chat(Some("free"), 1_000, 2_000));
     }
 }

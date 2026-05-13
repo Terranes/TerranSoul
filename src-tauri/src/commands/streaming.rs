@@ -5,6 +5,307 @@ use crate::persona::pose_frame::{parse_pose_payload, LlmPoseFrame};
 use crate::AppState;
 use serde::{Deserialize, Serialize};
 use tauri::{Emitter, State};
+use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
+
+/// Decoupled event payload routed through the [`spawn_event_pump`] channel.
+///
+/// The LLM streaming loop calls `tx.send(StreamEvent::…)` (microsecond cost),
+/// while a background Tokio task owns the [`tauri::AppHandle`] and emits each
+/// event in arrival order. Without this decoupling, every token chunk had to
+/// wait for `app.emit()` to JSON-serialise the payload and dispatch it into
+/// every subscribed webview (chat + pet overlay + subtitle), which back-
+/// pressured `stream.next().await` and slowed perceived token throughput on
+/// LocalOllama.
+#[derive(Debug)]
+enum StreamEvent {
+    Chunk(LlmChunk),
+    Animation(AnimationCommand),
+    Pose(LlmPoseFrame),
+}
+
+/// Spawn a background task that drains `rx` and emits Tauri events in order.
+///
+/// Returns:
+/// - the `UnboundedSender<StreamEvent>` used by the streaming loop, and
+/// - a [`tokio::task::JoinHandle`] the caller awaits **after dropping the
+///   sender** to guarantee every queued event has been emitted before the
+///   function returns (so `done:true` is never lost).
+///
+/// ## Three-stream coalescing
+///
+/// LocalOllama on a 3080 Ti emits 60+ tokens/sec, and `app.emit()` JSON-
+/// serialises + dispatches to every subscribed webview (chat, pet overlay,
+/// subtitles). Sending one event per token wastes IPC bandwidth — the
+/// webview cannot render faster than vsync (~60 Hz) anyway.
+///
+/// The pump therefore *coalesces consecutive text chunks*: after waking on
+/// `recv().await`, it drains every `Chunk` already queued via `try_recv()`
+/// and concatenates their text into a single `llm-chunk` emit. The
+/// `Animation` and `Pose` streams are **never coalesced** — each event
+/// carries a discrete command/frame that must reach the renderer with its
+/// original timing. When a non-Chunk event is encountered mid-drain, the
+/// accumulated text is emitted first to preserve global arrival order,
+/// then the non-Chunk event is emitted. The terminal `done:true` chunk is
+/// also flushed eagerly so the frontend can finalize the message.
+fn spawn_event_pump<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+) -> (UnboundedSender<StreamEvent>, tokio::task::JoinHandle<()>) {
+    let (tx, mut rx) = unbounded_channel::<StreamEvent>();
+    let handle = tokio::spawn(async move {
+        // Reusable scratch buffer for coalescing successive text chunks.
+        let mut text_buf = String::with_capacity(256);
+        let mut done_flag = false;
+        // Track whether the accumulated buffer is thinking content so we
+        // flush before mixing thinking and non-thinking chunks.
+        let mut is_thinking_buf = false;
+
+        // Helper closure-style flush: emit the accumulated text (if any)
+        // as a single chunk event. `done` is honoured separately so the
+        // terminal frame still arrives.
+        let flush_text =
+            |buf: &mut String, done: &mut bool, thinking: &mut bool, app: &tauri::AppHandle<R>| {
+                if !buf.is_empty() || *done {
+                    let _ = app.emit(
+                        "llm-chunk",
+                        LlmChunk {
+                            text: std::mem::take(buf),
+                            done: *done,
+                            thinking: *thinking,
+                        },
+                    );
+                    *done = false;
+                    *thinking = false;
+                }
+            };
+
+        while let Some(evt) = rx.recv().await {
+            // Process the freshly-received event and any siblings already
+            // in the channel queue, in arrival order.
+            let mut current = Some(evt);
+            loop {
+                let evt = match current.take() {
+                    Some(e) => e,
+                    None => match rx.try_recv() {
+                        Ok(e) => e,
+                        Err(_) => break, // queue empty → wait for next recv
+                    },
+                };
+                match evt {
+                    StreamEvent::Chunk(c) => {
+                        if c.done {
+                            done_flag = true;
+                        }
+                        // If thinking flag changes, flush the buffer first
+                        // to avoid merging thinking and answer text.
+                        if !text_buf.is_empty() && c.thinking != is_thinking_buf {
+                            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+                        }
+                        is_thinking_buf = c.thinking;
+                        if !c.text.is_empty() {
+                            text_buf.push_str(&c.text);
+                        }
+                        // Flush immediately on `done:true` so the
+                        // frontend never waits for the next event to
+                        // discover the stream ended.
+                        if done_flag {
+                            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+                        }
+                    }
+                    StreamEvent::Animation(a) => {
+                        // Preserve global order: emit any pending text
+                        // before the animation command.
+                        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+                        let _ = app.emit("llm-animation", a);
+                    }
+                    StreamEvent::Pose(p) => {
+                        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+                        let _ = app.emit("llm-pose", p);
+                    }
+                }
+            }
+            // Queue drained — flush any leftover text before sleeping
+            // again on `recv().await`. This is the natural batching
+            // boundary: one emit per producer wake-up.
+            flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+        }
+        // Sender dropped — final flush.
+        flush_text(&mut text_buf, &mut done_flag, &mut is_thinking_buf, &app);
+    });
+    (tx, handle)
+}
+
+/// Decide whether to skip the RAG pipeline (embed + hybrid search) for a
+/// trivial query. Skipping saves 400-1500 ms on cold-embed paths because
+/// loading the embed model would otherwise evict the chat model from VRAM.
+///
+/// Skip when ANY of the following is true:
+///   - Memory store is empty (nothing to retrieve)
+///   - Query is a short greeting / acknowledgment with no content words
+///     (≤ 3 tokens AND every token is shorter than 5 chars), so no
+///     keyword would match anyway
+///
+/// Returns `true` when RAG should be SKIPPED.
+pub(crate) fn should_skip_rag(query: &str, memory_count: i64) -> bool {
+    if memory_count == 0 {
+        return true;
+    }
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+    let tokens: Vec<&str> = trimmed.split_whitespace().collect();
+    // Trivial greeting heuristic: very short input where no token is long
+    // enough to be a meaningful keyword. The hybrid scorer drops words
+    // shorter than 3 chars; words ≤ 5 are usually stop-words for greetings
+    // like "Hi", "Hello", "Thanks", "OK", "Yes", "No".
+    if tokens.len() <= 3 && tokens.iter().all(|t| t.chars().count() <= 5) {
+        return true;
+    }
+    false
+}
+
+/// Retrieve memories for a live chat turn using the design-doc retrieval
+/// stack: thresholded hybrid eligibility first, then RRF + query-intent
+/// ranking for the final prompt order.
+///
+/// The threshold pass preserves the user-facing `relevance_threshold`
+/// setting and keeps weak context out of the prompt. The RRF pass closes
+/// the desktop/mobile chat parity gap with `hybrid_search_rrf_with_intent`
+/// without introducing extra LLM calls, so first-token latency stays in the
+/// same class as the previous weighted-sum path.
+///
+/// This sync helper is the **VRAM-safe** retrieval path: local-Ollama
+/// streaming and the Self-RAG loop call it directly so they don't evict
+/// the chat model with a reranker pass. Cloud streaming uses the async
+/// wrapper [`retrieve_chat_rag_memories_reranked`], which layers the
+/// LCM-8 cross-encoder rerank stage on top to match
+/// `commands::chat::retrieve_prompt_memories` (BENCH-CHAT-PARITY-1).
+pub(crate) fn retrieve_chat_rag_memories(
+    store: &crate::memory::MemoryStore,
+    query: &str,
+    query_embedding: Option<&[f32]>,
+    limit: usize,
+    threshold: f64,
+) -> Vec<crate::memory::MemoryEntry> {
+    use std::collections::HashSet;
+
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let eligible = store
+        .hybrid_search_with_threshold(query, query_embedding, limit, threshold)
+        .unwrap_or_default();
+    if eligible.is_empty() {
+        return Vec::new();
+    }
+
+    let eligible_ids: HashSet<i64> = eligible.iter().map(|entry| entry.id).collect();
+    let mut ranked = store
+        .hybrid_search_rrf_with_intent(query, query_embedding, limit)
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|entry| eligible_ids.contains(&entry.id))
+        .collect::<Vec<_>>();
+
+    if ranked.len() < limit {
+        let mut seen: HashSet<i64> = ranked.iter().map(|entry| entry.id).collect();
+        for entry in eligible {
+            if seen.insert(entry.id) {
+                ranked.push(entry);
+            }
+            if ranked.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    ranked.truncate(limit);
+    ranked
+}
+
+/// Async wrapper that runs [`retrieve_chat_rag_memories`] for the RRF +
+/// threshold stage and then layers the LLM-as-judge cross-encoder rerank
+/// stage from `docs/brain-advanced-design.md` on top when a local Ollama
+/// brain is available.
+///
+/// This closes the streaming-chat ↔ non-streaming-chat parity gap
+/// identified in milestone BENCH-CHAT-PARITY-1: the non-streaming chat
+/// path (`commands::chat::retrieve_prompt_memories`) already runs the
+/// full LCM-8 pipeline (RRF → rerank), but the cloud streaming path
+/// historically stopped at RRF.
+///
+/// BENCH-CHAT-PARITY-2 adds the missing HyDE stage. HyDE expansion
+/// happens *upstream* in `stream_openai_api` (cloud streaming) where
+/// `brain_mode` is in scope so the hypothetical is embedded through the
+/// same cloud / Ollama embedding path that produced the raw `query_emb`.
+/// `query_embedding` arrives here already containing the hypothetical's
+/// embedding when the gate fires. Per-class gating
+/// ([`crate::memory::query_intent::should_run_hyde`]) keeps factoid /
+/// open-domain queries unaffected (BENCH-LCM-10).
+///
+/// Rerank stays opt-in via `active_brain`: callers in the local-Ollama
+/// streaming hot-path (and Self-RAG loop) still use the sync helper
+/// directly to avoid evicting the chat model from VRAM, per the comment
+/// at [`stream_ollama`].
+pub(crate) async fn retrieve_chat_rag_memories_reranked(
+    state: &AppState,
+    query: &str,
+    query_embedding: Option<&[f32]>,
+    active_brain: Option<&str>,
+    limit: usize,
+    threshold: f64,
+) -> Vec<crate::memory::MemoryEntry> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let should_rerank = active_brain.is_some();
+    // Recall a wider pool when reranking so the cross-encoder has room to
+    // reorder — mirrors `commands::chat::retrieve_prompt_memories`.
+    let recall_limit = if should_rerank {
+        limit.clamp(20, 50)
+    } else {
+        limit
+    };
+
+    let candidates: Vec<crate::memory::MemoryEntry> = match state.memory_store.lock() {
+        Ok(store) => {
+            retrieve_chat_rag_memories(&store, query, query_embedding, recall_limit, threshold)
+        }
+        Err(_) => return Vec::new(),
+    };
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let Some(model) = active_brain else {
+        return candidates.into_iter().take(limit).collect();
+    };
+
+    let rerank_threshold = state
+        .app_settings
+        .lock()
+        .map(|s| {
+            s.relevance_threshold
+                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+        })
+        .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+
+    let agent = crate::brain::OllamaAgent::new(model);
+    let mut scores = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        scores.push(agent.rerank_score(query, &candidate.content).await);
+    }
+
+    crate::memory::reranker::rerank_candidates_with_threshold(
+        candidates,
+        &scores,
+        limit,
+        rerank_threshold,
+    )
+}
 
 /// A single streamed chunk emitted via Tauri events.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -13,6 +314,12 @@ pub struct LlmChunk {
     pub text: String,
     /// Whether this is the final chunk (stream ended).
     pub done: bool,
+    /// When `true`, this chunk contains extended-thinking / chain-of-thought
+    /// reasoning from a thinking model (Gemma 3, Qwen 3, DeepSeek-R1, etc.).
+    /// The frontend should render it in a collapsible "Thinking…" section
+    /// rather than the main chat bubble.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub thinking: bool,
 }
 
 /// A structured animation command deserialized from `<anim>` JSON blocks.
@@ -39,6 +346,10 @@ struct OllamaStreamChunk {
 #[derive(Debug, Deserialize)]
 struct OllamaStreamMessage {
     content: String,
+    /// Extended-thinking reasoning text (only present when `think: true`
+    /// was sent in the request and the model supports it).
+    #[serde(default)]
+    thinking: Option<String>,
 }
 
 // ── Streaming tag parser ──────────────────────────────────────────────────────
@@ -48,6 +359,8 @@ struct OllamaStreamMessage {
 pub struct StreamFeed {
     /// Clean text with all meta-tag blocks stripped.
     pub text: String,
+    /// Extracted `<think>...</think>` reasoning text.
+    pub thinking_text: String,
     /// Parsed `<anim>{…}</anim>` blocks.
     pub anim_commands: Vec<AnimationCommand>,
     /// Parsed `<pose>{…}</pose>` blocks (validated + clamped).
@@ -59,6 +372,8 @@ pub struct StreamFeed {
 enum BlockKind {
     Anim,
     Pose,
+    Think,
+    ExecuteTool,
 }
 
 impl BlockKind {
@@ -66,17 +381,26 @@ impl BlockKind {
         match self {
             BlockKind::Anim => "<anim>",
             BlockKind::Pose => "<pose>",
+            BlockKind::Think => "<think>",
+            BlockKind::ExecuteTool => "<execute_tool>",
         }
     }
     fn close_tag(self) -> &'static str {
         match self {
             BlockKind::Anim => "</anim>",
             BlockKind::Pose => "</pose>",
+            BlockKind::Think => "</think>",
+            BlockKind::ExecuteTool => "</execute_tool>",
         }
     }
 }
 
-const ALL_BLOCKS: &[BlockKind] = &[BlockKind::Anim, BlockKind::Pose];
+const ALL_BLOCKS: &[BlockKind] = &[
+    BlockKind::Anim,
+    BlockKind::Pose,
+    BlockKind::Think,
+    BlockKind::ExecuteTool,
+];
 
 /// State-machine parser that extracts `<anim>{…}</anim>` and
 /// `<pose>{…}</pose>` blocks from a stream of text chunks. Returns
@@ -134,6 +458,18 @@ impl StreamTagParser {
                                 out.pose_frames.push(parsed.frame);
                             }
                         }
+                        BlockKind::Think => {
+                            let cleaned = strip_execute_tool_blocks(payload.trim());
+                            if !cleaned.is_empty() {
+                                if !out.thinking_text.is_empty() {
+                                    out.thinking_text.push('\n');
+                                }
+                                out.thinking_text.push_str(cleaned.as_str());
+                            }
+                        }
+                        BlockKind::ExecuteTool => {
+                            // Intentionally dropped from user-visible output.
+                        }
                     }
                     self.in_block = None;
                     self.buffer = self.buffer[end + close.len()..].to_string();
@@ -184,13 +520,49 @@ impl StreamTagParser {
         // If we were mid-block, the content is malformed — emit as text
         // (re-prepend the original opener so the user sees what happened).
         if !block_remaining.is_empty() || in_block.is_some() {
-            let opener = in_block.map(|k| k.open_tag()).unwrap_or("");
-            out.text = format!("{opener}{block_remaining}{remaining}");
+            match in_block {
+                Some(BlockKind::Think) => {
+                    let cleaned =
+                        strip_execute_tool_blocks(format!("{block_remaining}{remaining}").trim());
+                    if !cleaned.is_empty() {
+                        out.thinking_text = cleaned;
+                    }
+                }
+                Some(BlockKind::ExecuteTool) => {
+                    // Intentionally dropped from user-visible output.
+                }
+                _ => {
+                    let opener = in_block.map(|k| k.open_tag()).unwrap_or("");
+                    out.text = format!("{opener}{block_remaining}{remaining}");
+                }
+            }
         } else {
             out.text = remaining;
         }
         out
     }
+}
+
+fn strip_execute_tool_blocks(input: &str) -> String {
+    let mut result = String::new();
+    let mut remaining = input;
+    while let Some(start) = remaining.find(BlockKind::ExecuteTool.open_tag()) {
+        result.push_str(&remaining[..start]);
+        remaining = &remaining[start + BlockKind::ExecuteTool.open_tag().len()..];
+        if let Some(end) = remaining.find(BlockKind::ExecuteTool.close_tag()) {
+            remaining = &remaining[end + BlockKind::ExecuteTool.close_tag().len()..];
+            if remaining.starts_with('\n') {
+                remaining = &remaining[1..];
+            } else if remaining.starts_with("\r\n") {
+                remaining = &remaining[2..];
+            }
+        } else {
+            // Unclosed execute_tool block: treat the rest as internal tool text.
+            return result.trim().to_string();
+        }
+    }
+    result.push_str(remaining);
+    result.trim().to_string()
 }
 
 /// Find the earliest opening tag in `buffer` and return its byte offset
@@ -220,8 +592,7 @@ fn partial_prefix_len(buffer: &str, tag: &str) -> usize {
     0
 }
 
-/// Strip `<anim>...</anim>` and `<pose>...</pose>` blocks from a
-/// completed response (for storage).
+/// Strip stream-only meta/tool blocks from a completed response (for storage).
 pub(crate) fn strip_anim_blocks(input: &str) -> String {
     let mut result = String::new();
     let mut remaining = input;
@@ -278,6 +649,9 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
         return Err("Message cannot be empty".to_string());
     }
 
+    // Mark chat activity so background LocalOllama embeddings stay paused.
+    state.mark_chat_activity_now();
+
     // Add user message to conversation
     let user_msg = crate::commands::chat::Message {
         id: uuid::Uuid::new_v4().to_string(),
@@ -309,12 +683,19 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
             .clone()
     };
 
-    // Build conversation history (last 20 messages)
+    // Build conversation history. LocalOllama/LM Studio use a shorter
+    // window (10 messages) so prompt evaluation stays fast — every extra
+    // history turn adds prompt-eval latency on consumer GPUs.
+    let is_local = matches!(
+        brain_mode,
+        Some(BrainMode::LocalOllama { .. }) | Some(BrainMode::LocalLmStudio { .. })
+    );
+    let history_limit = if is_local { 10 } else { 20 };
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
         conv.iter()
             .rev()
-            .take(20)
+            .take(history_limit)
             .rev()
             .map(|m| (m.role.clone(), m.content.clone()))
             .collect()
@@ -428,6 +809,7 @@ pub async fn run_chat_stream<R: tauri::Runtime>(
                 LlmChunk {
                     text: String::new(),
                     done: true,
+                    thinking: false,
                 },
             );
             let decision = crate::brain::FailoverDecision {
@@ -535,24 +917,80 @@ async fn stream_openai_api<R: tauri::Runtime>(
     // get real vector RAG instead of keyword-only retrieval.
     // Memories below the user-tunable relevance threshold are skipped
     // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
+    //
+    // RAG gate (perf): skip embed + search for trivial queries to save a
+    // cloud round-trip on greetings and acknowledgments.
+    let memory_count = state.memory_store.lock().map(|s| s.count()).unwrap_or(0);
+    let skip_rag = should_skip_rag(user_query, memory_count);
+    if skip_rag {
+        system_prompt = "You are TerranSoul, a friendly AI companion. Reply in one short sentence. Do not use hidden reasoning, tools, or animation tags.".to_string();
+    }
+
     let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
     let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
-    let query_emb =
-        crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref())
-            .await;
+    let mut query_emb = if skip_rag {
+        None
+    } else {
+        crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref()).await
+    };
+
+    // BENCH-CHAT-PARITY-2: per-query-class HyDE gating for cloud streaming.
+    //
+    // BENCH-LCM-10 demonstrated that HyDE is a per-class tool — it helps
+    // multi-hop / temporal / abstract queries (cold queries where the
+    // target document's surface form differs from the question) but
+    // hurts factoid / open-domain lookups. We classify the user turn
+    // with the pure-logic `query_intent` heuristic (no extra LLM hop)
+    // and only run `OllamaAgent::hyde_complete` + re-embed when the
+    // class is in `{Semantic, Episodic}` and a brain is available.
+    //
+    // This stays VRAM-safe: only cloud streaming reaches this branch.
+    // The local-Ollama hot-path (`stream_ollama`) and the Self-RAG loop
+    // use the sync `retrieve_chat_rag_memories` helper directly, which
+    // does not run HyDE.
+    if !skip_rag
+        && crate::memory::query_intent::should_run_hyde(user_query, active_brain.is_some())
+    {
+        if let Some(model) = active_brain.as_deref() {
+            let agent = crate::brain::OllamaAgent::new(model);
+            if let Some(hypothetical) = agent.hyde_complete(user_query).await {
+                let trimmed = hypothetical.trim();
+                if !trimmed.is_empty() {
+                    if let Some(hyde_emb) = crate::brain::embed_for_mode(
+                        trimmed,
+                        brain_mode.as_ref(),
+                        active_brain.as_deref(),
+                    )
+                    .await
+                    {
+                        query_emb = Some(hyde_emb);
+                    }
+                }
+            }
+        }
+    }
 
     let threshold = state
         .app_settings
         .lock()
         .map(|s| s.relevance_threshold)
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
-    let relevant: Vec<crate::memory::MemoryEntry> = {
-        match state.memory_store.lock() {
-            Ok(store) => store
-                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
-                .unwrap_or_default(),
-            Err(_) => vec![],
-        }
+    let relevant: Vec<crate::memory::MemoryEntry> = if skip_rag {
+        vec![]
+    } else {
+        // BENCH-CHAT-PARITY-1: cloud streaming runs the full LCM-8 pipeline
+        // (RRF + LLM-as-judge rerank) to match `commands::chat::retrieve_prompt_memories`.
+        // Reranking happens only when a local Ollama brain is registered;
+        // pure-cloud users without Ollama transparently fall back to RRF-only.
+        retrieve_chat_rag_memories_reranked(
+            state,
+            user_query,
+            query_emb.as_deref(),
+            active_brain.as_deref(),
+            5,
+            threshold,
+        )
+        .await
     };
 
     if !relevant.is_empty() {
@@ -597,27 +1035,29 @@ async fn stream_openai_api<R: tauri::Runtime>(
     }
 
     // Stream with callback — parser separates text from <anim> blocks.
-    let app = app_handle.clone();
+    // The callback pushes events into a non-blocking channel so each token
+    // returns control to `stream.next().await` immediately; a background
+    // pump task owns the AppHandle and emits in arrival order.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
     let parser = std::sync::Arc::new(std::sync::Mutex::new(StreamTagParser::new()));
     let parser_cb = std::sync::Arc::clone(&parser);
+    let tx_cb = tx.clone();
     let result = client
         .chat_stream(messages, move |chunk_text| {
             let mut p = parser_cb.lock().unwrap();
             let feed = p.feed(chunk_text);
             if !feed.text.is_empty() {
-                let _ = app.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: feed.text,
-                        done: false,
-                    },
-                );
+                let _ = tx_cb.send(StreamEvent::Chunk(LlmChunk {
+                    text: feed.text,
+                    done: false,
+                    thinking: false,
+                }));
             }
             for cmd in feed.anim_commands {
-                let _ = app.emit("llm-animation", cmd);
+                let _ = tx_cb.send(StreamEvent::Animation(cmd));
             }
             for frame in feed.pose_frames {
-                let _ = app.emit("llm-pose", frame);
+                let _ = tx_cb.send(StreamEvent::Pose(frame));
             }
         })
         .await;
@@ -629,28 +1069,28 @@ async fn stream_openai_api<R: tauri::Runtime>(
                 let mut p = parser.lock().unwrap();
                 let feed = p.flush();
                 if !feed.text.is_empty() {
-                    let _ = app_handle.emit(
-                        "llm-chunk",
-                        LlmChunk {
-                            text: feed.text,
-                            done: false,
-                        },
-                    );
+                    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                        text: feed.text,
+                        done: false,
+                        thinking: false,
+                    }));
                 }
                 for cmd in feed.anim_commands {
-                    let _ = app_handle.emit("llm-animation", cmd);
+                    let _ = tx.send(StreamEvent::Animation(cmd));
                 }
                 for frame in feed.pose_frames {
-                    let _ = app_handle.emit("llm-pose", frame);
+                    let _ = tx.send(StreamEvent::Pose(frame));
                 }
             }
-            let _ = app_handle.emit(
-                "llm-chunk",
-                LlmChunk {
-                    text: String::new(),
-                    done: true,
-                },
-            );
+            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                text: String::new(),
+                done: true,
+                thinking: false,
+            }));
+            // Drop sender + await the pump so all events are flushed in
+            // arrival order before we return to the frontend.
+            drop(tx);
+            let _ = pump.await;
             // Record successful request in rotator
             {
                 let mut rotator = state.provider_rotator.lock().map_err(|e| e.to_string())?;
@@ -665,6 +1105,10 @@ async fn stream_openai_api<R: tauri::Runtime>(
             Ok(())
         }
         Err(e) => {
+            // Drain pump before bubbling the error so any buffered chunks
+            // emitted before the failure still reach the frontend.
+            drop(tx);
+            let _ = pump.await;
             // Don't emit done:true here — the caller (retry loop) decides
             // whether to emit it after all attempts are exhausted.
             // Record rate limit if applicable
@@ -696,23 +1140,29 @@ async fn stream_ollama<R: tauri::Runtime>(
         .map(|(_, content)| content.as_str())
         .unwrap_or(_message);
 
-    // Hybrid search: vector similarity + keywords + recency + importance + decay.
-    // When embeddings exist, vector component dominates (weight 0.40).
-    // Falls back gracefully to keyword-only when no embeddings available.
-    // Memories below the user-tunable relevance threshold are skipped
-    // (Chunk 16.1 — see docs/brain-advanced-design.md § 16 Phase 4).
-    let query_emb = crate::brain::OllamaAgent::embed_text(user_query, model).await;
+    // Hybrid search: keyword + recency + importance + decay scoring.
+    // IMPORTANT: For LocalOllama we NEVER call embed_text() in the
+    // streaming hot-path. Loading the embedding model (nomic-embed-text)
+    // would evict the chat model from VRAM, causing 5-15s cold-start
+    // on the next chat generation. Instead we rely on keyword-only
+    // hybrid search which is near-instant (<5ms) and avoids any model
+    // contention. This guarantees <1s TTFT for ALL messages.
+    let memory_count = state.memory_store.lock().map(|s| s.count()).unwrap_or(0);
+    // Skip RAG entirely for content-light turns (e.g. "Hi", "ok", "?")
+    // — they don't benefit from memory retrieval and any work here adds
+    // latency to the first chunk.
+    let skip_rag = should_skip_rag(user_query, memory_count);
 
     let threshold = state
         .app_settings
         .lock()
         .map(|s| s.relevance_threshold)
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
-    let relevant: Vec<crate::memory::MemoryEntry> = {
+    let relevant: Vec<crate::memory::MemoryEntry> = if skip_rag {
+        vec![]
+    } else {
         match state.memory_store.lock() {
-            Ok(store) => store
-                .hybrid_search_with_threshold(user_query, query_emb.as_deref(), 5, threshold)
-                .unwrap_or_default(),
+            Ok(store) => retrieve_chat_rag_memories(&store, user_query, None, 5, threshold),
             Err(_) => vec![],
         }
     };
@@ -748,18 +1198,49 @@ async fn stream_ollama<R: tauri::Runtime>(
         content: system_prompt,
     };
     let mut messages = vec![system_msg];
+    // Cap individual history messages to avoid a single long response
+    // consuming the entire context window. ~200 chars ≈ 50 tokens.
+    const MAX_HISTORY_MSG_CHARS: usize = 800;
     for (role, content) in history {
+        let trimmed = if content.len() > MAX_HISTORY_MSG_CHARS {
+            format!("{}…", &content[..MAX_HISTORY_MSG_CHARS])
+        } else {
+            content.clone()
+        };
         messages.push(ChatMessage {
             role: role.clone(),
-            content: content.clone(),
+            content: trimmed,
         });
     }
 
     let url = format!("{OLLAMA_BASE_URL}/api/chat");
+    // CRITICAL: Use a fixed num_ctx (2048) for ALL Ollama chat requests.
+    // Changing num_ctx between requests forces Ollama to reallocate the
+    // KV cache and reload the model weights — adding 2-3s per request.
+    // 2048 is enough for 10-message history + system prompt + persona.
+    let base_tokens: u32 = if skip_rag { 32 } else { 512 };
+
+    // Read the user's reasoning-effort setting to control extended thinking.
+    let reasoning_effort = state
+        .app_settings
+        .lock()
+        .map(|s| s.reasoning_effort)
+        .unwrap_or_default();
+    let think_enabled = reasoning_effort.think_enabled();
+    let max_tokens = reasoning_effort.max_tokens(base_tokens);
+
     let body = serde_json::json!({
         "model": model,
         "messages": messages,
         "stream": true,
+        "think": think_enabled,
+        "keep_alive": "30m",
+        "options": {
+            "temperature": 0.7,
+            "num_ctx": 2048,
+            "num_predict": max_tokens,
+            "num_batch": 512,
+        },
     });
 
     let client = &state.ollama_client;
@@ -779,6 +1260,12 @@ async fn stream_ollama<R: tauri::Runtime>(
     let mut stream = resp.bytes_stream();
     use futures_util::StreamExt;
 
+    // Decouple emit work from the LLM token loop: a background pump owns
+    // the AppHandle and emits events in arrival order, so each token
+    // returns control to `stream.next().await` immediately even when
+    // multiple webviews are subscribed.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
+
     while let Some(chunk_result) = stream.next().await {
         let bytes = chunk_result.map_err(|e| format!("stream error: {e}"))?;
         let text = String::from_utf8_lossy(&bytes);
@@ -790,54 +1277,79 @@ async fn stream_ollama<R: tauri::Runtime>(
             }
             if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
                 if let Some(msg) = &parsed.message {
+                    // Extended-thinking content (reasoning phase) — emitted
+                    // as `thinking: true` chunks so the frontend can render
+                    // them in a collapsible "Thinking…" section.
+                    if let Some(think_text) = &msg.thinking {
+                        if !think_text.is_empty() {
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: think_text.clone(),
+                                done: false,
+                                thinking: true,
+                            }));
+                        }
+                    }
                     if !msg.content.is_empty() {
                         full_response.push_str(&msg.content);
                         let feed = parser.feed(&msg.content);
+                        if !feed.thinking_text.is_empty() {
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.thinking_text,
+                                done: false,
+                                thinking: true,
+                            }));
+                        }
                         if !feed.text.is_empty() {
-                            let _ = app_handle.emit(
-                                "llm-chunk",
-                                LlmChunk {
-                                    text: feed.text,
-                                    done: false,
-                                },
-                            );
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.text,
+                                done: false,
+                                thinking: false,
+                            }));
                         }
                         for cmd in feed.anim_commands {
-                            let _ = app_handle.emit("llm-animation", cmd);
+                            let _ = tx.send(StreamEvent::Animation(cmd));
                         }
                         for frame in feed.pose_frames {
-                            let _ = app_handle.emit("llm-pose", frame);
+                            let _ = tx.send(StreamEvent::Pose(frame));
                         }
                     }
                 }
                 if parsed.done {
                     let feed = parser.flush();
+                    if !feed.thinking_text.is_empty() {
+                        let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                            text: feed.thinking_text,
+                            done: false,
+                            thinking: true,
+                        }));
+                    }
                     if !feed.text.is_empty() {
-                        let _ = app_handle.emit(
-                            "llm-chunk",
-                            LlmChunk {
-                                text: feed.text,
-                                done: false,
-                            },
-                        );
+                        let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                            text: feed.text,
+                            done: false,
+                            thinking: false,
+                        }));
                     }
                     for cmd in feed.anim_commands {
-                        let _ = app_handle.emit("llm-animation", cmd);
+                        let _ = tx.send(StreamEvent::Animation(cmd));
                     }
                     for frame in feed.pose_frames {
-                        let _ = app_handle.emit("llm-pose", frame);
+                        let _ = tx.send(StreamEvent::Pose(frame));
                     }
-                    let _ = app_handle.emit(
-                        "llm-chunk",
-                        LlmChunk {
-                            text: String::new(),
-                            done: true,
-                        },
-                    );
+                    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                        text: String::new(),
+                        done: true,
+                        thinking: false,
+                    }));
                 }
             }
         }
     }
+
+    // Drop sender + await the pump so every queued event is delivered
+    // (including the final done:true) before we return.
+    drop(tx);
+    let _ = pump.await;
 
     store_assistant_message(state, &strip_anim_blocks(&full_response), model)?;
     Ok(())
@@ -918,12 +1430,12 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
         }
     };
 
-    // Build conversation history (last 20 messages)
+    // Build conversation history (10 messages — self-RAG is local-only)
     let history: Vec<(String, String)> = {
         let conv = state.conversation.lock().map_err(|e| e.to_string())?;
         conv.iter()
             .rev()
-            .take(20)
+            .take(10)
             .rev()
             .map(|m| (m.role.clone(), m.content.clone()))
             .collect()
@@ -937,15 +1449,20 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
 
     let mut controller = SelfRagController::new();
 
+    // Decouple emit work from the LLM token loop across all Self-RAG
+    // iterations: a background pump owns the AppHandle and emits in
+    // arrival order so each token returns control immediately.
+    let (tx, pump) = spawn_event_pump(app_handle.clone());
+
     let final_answer: String = loop {
         // ── Step 1: Embed + retrieve ──────────────────────────────────
         let query_emb = crate::brain::OllamaAgent::embed_text(&message, &model).await;
 
         let relevant: Vec<crate::memory::MemoryEntry> = {
             match state.memory_store.lock() {
-                Ok(store) => store
-                    .hybrid_search_with_threshold(&message, query_emb.as_deref(), 5, threshold)
-                    .unwrap_or_default(),
+                Ok(store) => {
+                    retrieve_chat_rag_memories(&store, &message, query_emb.as_deref(), 5, threshold)
+                }
                 Err(_) => vec![],
             }
         };
@@ -987,10 +1504,25 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
         }
 
         let url = format!("{OLLAMA_BASE_URL}/api/chat");
+        let self_rag_reasoning = state
+            .app_settings
+            .lock()
+            .map(|s| s.reasoning_effort)
+            .unwrap_or_default();
+        let self_rag_think = self_rag_reasoning.think_enabled();
+        let self_rag_tokens = self_rag_reasoning.max_tokens(150);
         let body = serde_json::json!({
             "model": model,
             "messages": messages,
             "stream": true,
+            "think": self_rag_think,
+            "keep_alive": "30m",
+            "options": {
+                "num_predict": self_rag_tokens,
+                "num_ctx": 2048,
+                "num_batch": 512,
+                "temperature": 0.7,
+            },
         });
 
         let client = &state.ollama_client;
@@ -1020,42 +1552,61 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                 }
                 if let Ok(parsed) = serde_json::from_str::<OllamaStreamChunk>(line) {
                     if let Some(msg) = &parsed.message {
+                        if let Some(think_text) = &msg.thinking {
+                            if !think_text.is_empty() {
+                                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                    text: think_text.clone(),
+                                    done: false,
+                                    thinking: true,
+                                }));
+                            }
+                        }
                         if !msg.content.is_empty() {
                             full_response.push_str(&msg.content);
                             let feed = parser.feed(&msg.content);
+                            if !feed.thinking_text.is_empty() {
+                                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                    text: feed.thinking_text,
+                                    done: false,
+                                    thinking: true,
+                                }));
+                            }
                             if !feed.text.is_empty() {
-                                let _ = app_handle.emit(
-                                    "llm-chunk",
-                                    LlmChunk {
-                                        text: feed.text,
-                                        done: false,
-                                    },
-                                );
+                                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                    text: feed.text,
+                                    done: false,
+                                    thinking: false,
+                                }));
                             }
                             for cmd in feed.anim_commands {
-                                let _ = app_handle.emit("llm-animation", cmd);
+                                let _ = tx.send(StreamEvent::Animation(cmd));
                             }
                             for frame in feed.pose_frames {
-                                let _ = app_handle.emit("llm-pose", frame);
+                                let _ = tx.send(StreamEvent::Pose(frame));
                             }
                         }
                     }
                     if parsed.done {
                         let feed = parser.flush();
+                        if !feed.thinking_text.is_empty() {
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.thinking_text,
+                                done: false,
+                                thinking: true,
+                            }));
+                        }
                         if !feed.text.is_empty() {
-                            let _ = app_handle.emit(
-                                "llm-chunk",
-                                LlmChunk {
-                                    text: feed.text,
-                                    done: false,
-                                },
-                            );
+                            let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                                text: feed.text,
+                                done: false,
+                                thinking: false,
+                            }));
                         }
                         for cmd in feed.anim_commands {
-                            let _ = app_handle.emit("llm-animation", cmd);
+                            let _ = tx.send(StreamEvent::Animation(cmd));
                         }
                         for frame in feed.pose_frames {
-                            let _ = app_handle.emit("llm-pose", frame);
+                            let _ = tx.send(StreamEvent::Pose(frame));
                         }
                     }
                 }
@@ -1078,38 +1629,36 @@ pub async fn run_self_rag_stream<R: tauri::Runtime>(
                         "I don't have enough information in my memory to give you a reliable answer to that question.".to_string()
                     }
                 };
-                let _ = app_handle.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: refusal.clone(),
-                        done: false,
-                    },
-                );
+                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                    text: refusal.clone(),
+                    done: false,
+                    thinking: false,
+                }));
                 break refusal;
             }
             Decision::Retrieve => {
                 // Emit a brief indicator that we're re-retrieving
-                let _ = app_handle.emit(
-                    "llm-chunk",
-                    LlmChunk {
-                        text: "\n\n---\n*Refining answer with additional context...*\n\n"
-                            .to_string(),
-                        done: false,
-                    },
-                );
+                let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+                    text: "\n\n---\n*Refining answer with additional context...*\n\n".to_string(),
+                    done: false,
+                    thinking: false,
+                }));
                 // Loop continues — next iteration re-embeds and re-retrieves
             }
         }
     };
 
     // ── Final: emit done signal and store message ─────────────────────
-    let _ = app_handle.emit(
-        "llm-chunk",
-        LlmChunk {
-            text: String::new(),
-            done: true,
-        },
-    );
+    let _ = tx.send(StreamEvent::Chunk(LlmChunk {
+        text: String::new(),
+        done: true,
+        thinking: false,
+    }));
+
+    // Drop the sender + drain the pump so every queued event reaches the
+    // frontend before we return.
+    drop(tx);
+    let _ = pump.await;
 
     store_assistant_message(state, &strip_anim_blocks(&final_answer), &model)?;
 
@@ -1128,6 +1677,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         LlmChunk {
             text: stub_text.clone(),
             done: false,
+            thinking: false,
         },
     );
     let _ = app_handle.emit(
@@ -1135,6 +1685,7 @@ fn emit_stub_response<R: tauri::Runtime>(
         LlmChunk {
             text: String::new(),
             done: true,
+            thinking: false,
         },
     );
 
@@ -1189,10 +1740,384 @@ mod tests {
     use super::*;
 
     #[test]
+    fn skip_rag_when_memory_empty() {
+        assert!(should_skip_rag("Anything goes here", 0));
+    }
+
+    #[test]
+    fn skip_rag_for_short_greetings() {
+        assert!(should_skip_rag("Hi", 1000));
+        assert!(should_skip_rag("Hello", 1000));
+        assert!(should_skip_rag("Hey", 1000));
+        assert!(should_skip_rag("Yes", 1000));
+        assert!(should_skip_rag("No", 1000));
+        assert!(should_skip_rag("OK", 1000));
+        assert!(should_skip_rag("ok", 1000));
+        assert!(should_skip_rag("?", 1000));
+    }
+
+    #[test]
+    fn skip_rag_for_empty_or_whitespace() {
+        assert!(should_skip_rag("", 1000));
+        assert!(should_skip_rag("   ", 1000));
+    }
+
+    #[test]
+    fn run_rag_for_real_questions() {
+        // Has at least one ≥5-char content word — RAG runs
+        assert!(!should_skip_rag("explain Vietnamese contract law", 1000));
+        assert!(!should_skip_rag("what is HyDE retrieval", 1000));
+        assert!(!should_skip_rag("Hello there friend", 1000));
+        assert!(!should_skip_rag("Hi there explain things", 1000));
+    }
+
+    #[test]
+    fn chat_rag_retrieval_keeps_threshold_gate() {
+        let store = crate::memory::MemoryStore::in_memory();
+        store
+            .add(crate::memory::NewMemory {
+                content: "The user prefers Python programming examples.".to_string(),
+                tags: "preference,domain:programming".to_string(),
+                importance: 4,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results =
+            retrieve_chat_rag_memories(&store, "totally unrelated dinner topic", None, 5, 0.95);
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn chat_rag_retrieval_returns_rrf_intent_ranked_survivors() {
+        let store = crate::memory::MemoryStore::in_memory();
+        store
+            .add(crate::memory::NewMemory {
+                content: "To brew coffee, grind beans, heat water, bloom, then pour slowly."
+                    .to_string(),
+                tags: "procedure,domain:coffee".to_string(),
+                importance: 3,
+                ..Default::default()
+            })
+            .unwrap();
+        store
+            .add(crate::memory::NewMemory {
+                content: "The user enjoys quiet cafes with window seats.".to_string(),
+                tags: "preference,domain:coffee".to_string(),
+                importance: 3,
+                ..Default::default()
+            })
+            .unwrap();
+
+        let results =
+            retrieve_chat_rag_memories(&store, "How do I brew coffee step by step?", None, 2, 0.0);
+        assert_eq!(results.len(), 2);
+        assert!(
+            results[0].content.contains("brew coffee"),
+            "procedural query should keep the procedural memory first"
+        );
+    }
+
+    /// BENCH-CHAT-PARITY-1: the async wrapper must transparently pass
+    /// through to the sync RRF helper when no local Ollama brain is
+    /// configured. This proves cloud-only users still get the full RRF
+    /// stage even though the cross-encoder rerank is skipped.
+    #[tokio::test]
+    async fn chat_rag_reranked_falls_back_to_rrf_without_brain() {
+        let state = crate::AppState::for_test();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "To brew coffee, grind beans, heat water, bloom, then pour slowly."
+                        .to_string(),
+                    tags: "procedure,domain:coffee".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "The user enjoys quiet cafes with window seats.".to_string(),
+                    tags: "preference,domain:coffee".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let results = retrieve_chat_rag_memories_reranked(
+            &state,
+            "How do I brew coffee step by step?",
+            None,
+            None, // no active brain → rerank stage skipped
+            2,
+            0.0,
+        )
+        .await;
+
+        assert_eq!(results.len(), 2, "RRF stage must still return candidates");
+        assert!(
+            results[0].content.contains("brew coffee"),
+            "procedural query should rank the procedural memory first via RRF"
+        );
+    }
+
+    /// Verify [`spawn_event_pump`] preserves the text content and order in
+    /// which events are pushed by the streaming loop. The pump now
+    /// *coalesces* consecutive text chunks (multiple tokens may collapse
+    /// into a single `llm-chunk` emit), so we assert on the concatenated
+    /// text rather than the emit count. The `done:true` sentinel must
+    /// still arrive exactly once, as the final event.
+    #[tokio::test]
+    async fn event_pump_preserves_order_and_drains_on_close() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let received: std::sync::Arc<std::sync::Mutex<Vec<LlmChunk>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let done = std::sync::Arc::new(tokio::sync::Notify::new());
+
+        let received_cb = std::sync::Arc::clone(&received);
+        let done_cb = std::sync::Arc::clone(&done);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                let is_done = c.done;
+                received_cb.lock().unwrap().push(c);
+                if is_done {
+                    done_cb.notify_one();
+                }
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+
+        // Push 50 text events fast — the pump may coalesce them.
+        let mut expected_text = String::new();
+        for i in 0..50 {
+            let t = format!("t{i}");
+            expected_text.push_str(&t);
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: t,
+                done: false,
+                thinking: false,
+            }))
+            .expect("send chunk");
+        }
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: String::new(),
+            done: true,
+            thinking: false,
+        }))
+        .expect("send done");
+
+        drop(tx);
+        pump.await.expect("pump drain");
+
+        // Wait for the listener thread to observe the done sentinel.
+        tokio::select! {
+            _ = done.notified() => {}
+            _ = tokio::time::sleep(std::time::Duration::from_secs(2)) => {
+                panic!("done:true never observed by listener");
+            }
+        }
+
+        let observed = received.lock().unwrap().clone();
+        assert!(!observed.is_empty(), "expected at least one chunk emit");
+        // Coalescing should reduce 51 input events to far fewer emits.
+        assert!(
+            observed.len() <= 51,
+            "coalescing should not inflate event count, got {}",
+            observed.len()
+        );
+        // Concatenated text must match input order exactly.
+        let joined: String = observed.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(
+            joined, expected_text,
+            "coalesced text must preserve content + order"
+        );
+        // done:true must be present exactly once, as the final emit.
+        let done_positions: Vec<usize> = observed
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.done)
+            .map(|(i, _)| i)
+            .collect();
+        assert_eq!(done_positions, vec![observed.len() - 1]);
+    }
+
+    /// Coalescing must collapse a tight burst of token chunks into far
+    /// fewer Tauri emits while preserving every byte of text. This is
+    /// the perf guard for the three-stream LocalOllama path.
+    #[tokio::test]
+    async fn event_pump_coalesces_consecutive_chunks() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let received: std::sync::Arc<std::sync::Mutex<Vec<LlmChunk>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let received_cb = std::sync::Arc::clone(&received);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(c) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                received_cb.lock().unwrap().push(c);
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+        // Send a burst that should be in the channel before the pump
+        // task wakes — try_recv will drain them into one emit.
+        let mut expected = String::new();
+        for i in 0..200 {
+            let t = format!("[{i}]");
+            expected.push_str(&t);
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: t,
+                done: false,
+                thinking: false,
+            }))
+            .expect("send");
+        }
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: String::new(),
+            done: true,
+            thinking: false,
+        }))
+        .expect("send done");
+        drop(tx);
+        pump.await.expect("pump drain");
+
+        // Give the listener thread a moment to drain.
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let observed = received.lock().unwrap().clone();
+        let joined: String = observed.iter().map(|c| c.text.as_str()).collect();
+        assert_eq!(joined, expected, "no text byte may be lost");
+        // 200 input chunks ⇒ should collapse to dramatically fewer emits.
+        // We allow up to 20 (a generous bound; in practice it is 1-3).
+        assert!(
+            observed.len() <= 20,
+            "expected coalescing to collapse 201 input events into ≤20 emits, got {}",
+            observed.len()
+        );
+    }
+
+    /// Animation events must NOT be coalesced — each command needs to
+    /// reach the renderer with its original timing. Verify that two
+    /// animation events between text bursts both arrive intact.
+    #[tokio::test]
+    async fn event_pump_does_not_coalesce_animations() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::Listener;
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+
+        let anims: std::sync::Arc<std::sync::Mutex<Vec<AnimationCommand>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let anims_cb = std::sync::Arc::clone(&anims);
+        handle.listen("llm-animation", move |event| {
+            if let Ok(c) = serde_json::from_str::<AnimationCommand>(event.payload()) {
+                anims_cb.lock().unwrap().push(c);
+            }
+        });
+
+        let (tx, pump) = spawn_event_pump(handle.clone());
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "before".to_string(),
+            done: false,
+            thinking: false,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Animation(AnimationCommand {
+            emotion: Some("happy".to_string()),
+            motion: None,
+            intensity: None,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "middle".to_string(),
+            done: false,
+            thinking: false,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Animation(AnimationCommand {
+            emotion: Some("surprised".to_string()),
+            motion: None,
+            intensity: None,
+        }))
+        .unwrap();
+        tx.send(StreamEvent::Chunk(LlmChunk {
+            text: "after".to_string(),
+            done: true,
+            thinking: false,
+        }))
+        .unwrap();
+        drop(tx);
+        pump.await.expect("pump drain");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+        let observed = anims.lock().unwrap().clone();
+        assert_eq!(observed.len(), 2, "both animation commands must arrive");
+        assert_eq!(observed[0].emotion.as_deref(), Some("happy"));
+        assert_eq!(observed[1].emotion.as_deref(), Some("surprised"));
+    }
+
+    /// Sending into the pump must be effectively instant relative to the
+    /// frontend's emit cost. A backpressured pump would defeat the whole
+    /// purpose of the decoupling — this test guards against a regression
+    /// where someone replaces the unbounded channel with a bounded one
+    /// without also moving emit work off the streaming task.
+    #[tokio::test]
+    async fn event_pump_send_is_non_blocking() {
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+        let (tx, pump) = spawn_event_pump(handle);
+
+        let start = std::time::Instant::now();
+        for i in 0..10_000 {
+            tx.send(StreamEvent::Chunk(LlmChunk {
+                text: format!("t{i}"),
+                done: false,
+                thinking: false,
+            }))
+            .expect("send");
+        }
+        let send_elapsed = start.elapsed();
+
+        // 10k unbounded sends should complete well under 100 ms even on
+        // slow CI; this guards against accidental sync work being added
+        // to the producer side of the channel.
+        assert!(
+            send_elapsed < std::time::Duration::from_millis(100),
+            "10k pump sends took {send_elapsed:?} — producer side is no longer non-blocking"
+        );
+
+        drop(tx);
+        let _ = pump.await;
+    }
+
+    #[test]
     fn llm_chunk_serializes() {
         let chunk = LlmChunk {
             text: "Hello".to_string(),
             done: false,
+            thinking: false,
         };
         let json = serde_json::to_string(&chunk).unwrap();
         assert!(json.contains("Hello"));
@@ -1204,6 +2129,7 @@ mod tests {
         let chunk = LlmChunk {
             text: String::new(),
             done: true,
+            thinking: false,
         };
         let json = serde_json::to_string(&chunk).unwrap();
         assert!(json.contains("true"));
@@ -1450,6 +2376,32 @@ mod tests {
     }
 
     #[test]
+    fn stream_tag_parser_extracts_think_block() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed("<think>Plan first, answer second.</think>Hello!");
+        assert_eq!(f.thinking_text, "Plan first, answer second.");
+        assert_eq!(f.text, "Hello!");
+    }
+
+    #[test]
+    fn stream_tag_parser_drops_execute_tool_blocks() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed("Before <execute_tool>tool_name:upload_documents</execute_tool> After");
+        assert_eq!(f.text, "Before  After");
+        assert!(f.thinking_text.is_empty());
+    }
+
+    #[test]
+    fn stream_tag_parser_strips_execute_tool_inside_think() {
+        let mut parser = StreamTagParser::new();
+        let f = parser.feed(
+            "<think>Need upload\n<execute_tool>tool_name:upload_documents</execute_tool>Continue</think>Answer",
+        );
+        assert_eq!(f.thinking_text, "Need upload\nContinue");
+        assert_eq!(f.text, "Answer");
+    }
+
+    #[test]
     fn stream_tag_parser_pose_partial_open_held_back() {
         let mut parser = StreamTagParser::new();
         let f1 = parser.feed("Hello <pos");
@@ -1480,12 +2432,110 @@ mod tests {
     }
 
     #[test]
+    fn strip_anim_blocks_removes_think_and_execute_tool() {
+        let input = "<think>reasoning</think>Answer <execute_tool>tool_name:x</execute_tool>done";
+        assert_eq!(strip_anim_blocks(input), "Answer done");
+    }
+
+    #[test]
     fn partial_prefix_len_matches() {
         assert_eq!(partial_prefix_len("hello<", "<anim>"), 1);
         assert_eq!(partial_prefix_len("hello<an", "<anim>"), 3);
         assert_eq!(partial_prefix_len("hello<anim", "<anim>"), 5);
         assert_eq!(partial_prefix_len("hello", "<anim>"), 0);
         assert_eq!(partial_prefix_len("", "<anim>"), 0);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires local Ollama with TERRANSOUL_TEST_OLLAMA_MODEL or gemma4:e4b"]
+    async fn local_ollama_hi_real_backend_first_chunk_under_2s() {
+        use crate::brain::brain_config::BrainMode;
+        use crate::brain::ollama_agent::OLLAMA_BASE_URL;
+        use crate::AppState;
+        use futures_util::StreamExt;
+        use std::sync::{Arc, Mutex as StdMutex};
+        use std::time::{Duration, Instant};
+        use tauri::test::{mock_builder, mock_context, noop_assets};
+        use tauri::{Listener, Manager};
+
+        let model = std::env::var("TERRANSOUL_TEST_OLLAMA_MODEL")
+            .unwrap_or_else(|_| "gemma4:e4b".to_string());
+
+        let app = mock_builder()
+            .build(mock_context(noop_assets()))
+            .expect("mock_builder build");
+        let handle = app.handle().clone();
+        let state = AppState::for_test();
+        {
+            *state.brain_mode.lock().unwrap() = Some(BrainMode::LocalOllama {
+                model: model.clone(),
+            });
+            *state.active_brain.lock().unwrap() = Some(model.clone());
+        }
+        handle.manage(state);
+
+        let warm_body = serde_json::json!({
+            "model": model,
+            "messages": [{ "role": "user", "content": "Hi" }],
+            "stream": true,
+            "think": false,
+            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "keep_alive": "30m",
+        });
+        let state_ref: tauri::State<'_, AppState> = handle.state();
+        let warm_resp = state_ref
+            .ollama_client
+            .post(format!("{OLLAMA_BASE_URL}/api/chat"))
+            .json(&warm_body)
+            .send()
+            .await
+            .map_err(|err| err.to_string())
+            .expect("streaming Ollama warm-up request");
+        assert!(
+            warm_resp.status().is_success(),
+            "streaming Ollama warm-up status {}",
+            warm_resp.status()
+        );
+        let mut warm_stream = warm_resp.bytes_stream();
+        while let Some(chunk) = warm_stream.next().await {
+            let _ = chunk.expect("streaming Ollama warm-up chunk");
+        }
+
+        let first_text_ms: Arc<StdMutex<Option<u128>>> = Arc::new(StdMutex::new(None));
+        let done_signal = Arc::new(tokio::sync::Notify::new());
+        let started = Instant::now();
+        let first_cb = Arc::clone(&first_text_ms);
+        let done_cb = Arc::clone(&done_signal);
+        handle.listen("llm-chunk", move |event| {
+            if let Ok(chunk) = serde_json::from_str::<LlmChunk>(event.payload()) {
+                if !chunk.done && !chunk.text.is_empty() {
+                    let mut first = first_cb.lock().unwrap();
+                    if first.is_none() {
+                        *first = Some(started.elapsed().as_millis());
+                    }
+                }
+                if chunk.done {
+                    done_cb.notify_one();
+                }
+            }
+        });
+
+        run_chat_stream("Hi".to_string(), &handle, state_ref.inner())
+            .await
+            .expect("run_chat_stream");
+
+        tokio::select! {
+            _ = done_signal.notified() => {}
+            _ = tokio::time::sleep(Duration::from_secs(10)) => panic!("timed out waiting for llm-chunk done"),
+        }
+
+        let first = *first_text_ms.lock().unwrap();
+        let first = first.expect("expected at least one non-empty llm-chunk");
+        eprintln!("[real-backend-hi] first_chunk={first}ms model={model}");
+        assert!(
+            first <= 2_000,
+            "first real backend llm-chunk took {first}ms, above the local E2E budget of 2000ms; investigate and fix the latency path (model warmup, VRAM contention, RAG retrieval, embedding backfill, provider selection, or streaming first chunk) instead of increasing test timeouts"
+        );
     }
 
     // ── Headless end-to-end stream verification (Linux only) ──────────────────

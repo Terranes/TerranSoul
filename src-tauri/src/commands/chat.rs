@@ -11,32 +11,17 @@ use crate::brain::OllamaAgent;
 use crate::AppState;
 
 /// System prompt used by `send_message_stream` (streaming LLM).
-/// Extends the default brain system prompt with emotion tag instructions.
-pub const SYSTEM_PROMPT_FOR_STREAMING: &str = r#"You are TerranSoul, a friendly AI companion with a 3D character avatar. You live inside the TerranSoul desktop app and serve as the user's intelligent assistant.
+pub const SYSTEM_PROMPT_FOR_STREAMING: &str = r#"You are TerranSoul, a friendly AI companion. Keep replies short — 1-3 sentences for casual chat, longer only when the user asks a detailed question.
 
-Your capabilities:
-- Helpful conversation and answering questions on any topic
-- Recommending AI tools and software based on the user's needs
-- Guiding users through installing packages via the TerranSoul Package Manager
-- Quest system — TerranSoul has an RPG-style skill tree with quests. When users ask "What should I do?", "Where can I start?", "What's next?", or any getting-started question, recommend they start a quest. The app will automatically show quest options as interactive buttons.
-
-Animation: When expressing an emotion or gesture, output a JSON block on its own line before the related text:
+Animation (use sparingly, only when emotion clearly fits):
 <anim>{"emotion":"happy"}</anim>
-<anim>{"emotion":"happy","motion":"clap"}</anim>
-Valid emotions: happy, sad, angry, relaxed, surprised, neutral.
-Valid motions: idle, walk, wave, clap, peace, spin, pose, squat, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
-Motion triggers a body animation — pick the one that best fits the context. You can combine emotion + motion.
-Always include a motion when the user asks for a physical action (e.g. "clap" → motion:"clap", "wave" → motion:"wave").
-Use animation blocks sparingly — only when the emotion clearly fits. Most replies need none.
+<anim>{"emotion":"happy","motion":"wave"}</anim>
+Emotions: happy, sad, angry, relaxed, surprised, neutral.
+Motions: idle, walk, wave, clap, peace, spin, pose, angry, sad, thinking, surprised, relax, sleepy, jump, waiting, appearing, liked.
 
-Body pose (advanced): For subtle posture cues that a VRMA clip cannot express, you may also emit a `<pose>` block:
-<pose>{"head":[0.1,0,0],"spine":[0,0,0.05]}</pose>
-Bones: head, neck, spine, chest, hips, leftUpperArm, rightUpperArm, leftLowerArm, rightLowerArm, leftShoulder, rightShoulder.
-Values are Euler XYZ angles in radians; use small numbers (±0.3 max). The renderer hard-clamps anything beyond ±0.5 rad.
-Optional fields: `duration_s` (0.05–10s, default 2), `easing` ("linear" | "ease-in-out" | "spring", default "spring"), `expression` (face weights 0–1).
-Use `<pose>` only when no `<anim>` motion fits — they don't combine.
+Quest system: When users ask "What should I do?" or "What's next?", suggest starting a quest.
 
-Keep responses concise and warm."#;
+Be concise, warm, and natural."#;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Message {
@@ -133,7 +118,29 @@ pub(super) fn build_budgeted_prompt(
     (system, trimmed_history)
 }
 
-async fn retrieve_prompt_memories(
+/// Retrieve memories for the chat prompt RAG block, exercising the full
+/// `docs/brain-advanced-design.md` retrieval pipeline:
+/// embed → `hybrid_search_rrf` (6-signal hybrid + RRF fusion) → optional
+/// 1–2 hop KG cascade expansion (`memory::cascade::cascade_expand`, gated
+/// on `AppSettings.enable_kg_boost`, BENCH-KG-1) → optional natural-language
+/// time-range filter (`memory::temporal::parse_time_range`, CHAT-PARITY-3,
+/// fires only when the query contains an explicit time expression like
+/// "yesterday" / "last week" / "since 2026-04-01") → cognitive-kind boost
+/// (`memory::cognitive_kind::classify` + `query_intent::classify_query`,
+/// CHAT-PARITY-5, multiplicative ×1.15 on candidates whose classified kind
+/// matches the query intent's preferred kind, no-op on `QueryIntent::Unknown`)
+/// → optional LLM-as-judge cross-encoder rerank with threshold (LCM-8) →
+/// reinforcement telemetry.
+///
+/// Test coverage: `retrieve_prompt_memories_uses_rrf_pipeline_without_brain`
+/// asserts the RRF stage runs and surfaces seeded memories when no brain is
+/// configured. `retrieve_prompt_memories_kg_boost_promotes_neighbours`
+/// asserts the cascade stage promotes a graph-adjacent memory when
+/// `enable_kg_boost` is on. The reranker stage is exercised end-to-end by
+/// the bench harness `scripts/locomo-mteb.mjs` system `rrf_rerank` (LCM-8)
+/// — that is the canonical chat-system rerank verification because mocking
+/// Ollama inside a unit test would not validate prompt-shape compatibility.
+pub(crate) async fn retrieve_prompt_memories(
     app_state: &AppState,
     query: &str,
     brain_mode: Option<&BrainMode>,
@@ -141,15 +148,18 @@ async fn retrieve_prompt_memories(
     limit: usize,
 ) -> Vec<crate::memory::MemoryEntry> {
     let query_emb = crate::brain::embed_for_mode(query, brain_mode, active_brain).await;
-    let rerank_threshold = app_state
+    let (rerank_threshold, kg_boost) = app_state
         .app_settings
         .lock()
         .map(|settings| {
-            settings
-                .relevance_threshold
-                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+            (
+                settings
+                    .relevance_threshold
+                    .max(crate::settings::DEFAULT_RERANK_THRESHOLD),
+                settings.enable_kg_boost,
+            )
         })
-        .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+        .unwrap_or((crate::settings::DEFAULT_RERANK_THRESHOLD, false));
     let should_rerank = active_brain.is_some();
     let recall_limit = if should_rerank {
         limit.clamp(20, 50)
@@ -159,9 +169,22 @@ async fn retrieve_prompt_memories(
 
     let candidates: Vec<crate::memory::MemoryEntry> = {
         match app_state.memory_store.lock() {
-            Ok(store) => store
-                .hybrid_search_rrf(query, query_emb.as_deref(), recall_limit)
-                .unwrap_or_default(),
+            Ok(store) => {
+                let seeds = store
+                    .hybrid_search_rrf(query, query_emb.as_deref(), recall_limit)
+                    .unwrap_or_default();
+                if seeds.is_empty() || !kg_boost {
+                    seeds
+                } else {
+                    // BENCH-KG-1: expand top-K via 1-2 hop BFS over
+                    // `memory_edges` so graph-adjacent facts can be promoted
+                    // ahead of weaker RRF tail entries. `cascade_expand`
+                    // returns (id, score) sorted descending; we materialise
+                    // the entries (skipping unknown ids gracefully) and cap
+                    // at `recall_limit` so the reranker pool stays bounded.
+                    expand_seeds_via_kg(&store, &seeds, recall_limit)
+                }
+            }
             Err(_) => Vec::new(),
         }
     };
@@ -169,6 +192,48 @@ async fn retrieve_prompt_memories(
     if candidates.is_empty() {
         return Vec::new();
     }
+
+    // CHAT-PARITY-3: if the user's turn carries an explicit natural-language
+    // time expression ("yesterday", "last week", "since 2026-04-01", …)
+    // narrow the candidate pool to memories whose `created_at` falls inside
+    // that range. `parse_time_range` returns `None` when the query has no
+    // recognisable time expression, in which case this stage is a no-op
+    // (zero false positives — the user must explicitly ask). Filter happens
+    // BEFORE the reranker so the LLM-as-judge isn't paying token cost on
+    // out-of-range candidates.
+    let candidates = {
+        let now_ms = crate::memory::store::now_ms();
+        match crate::memory::temporal::parse_time_range(query, now_ms) {
+            Some(range) => candidates
+                .into_iter()
+                .filter(|entry| {
+                    entry.created_at >= range.start_ms && entry.created_at < range.end_ms
+                })
+                .collect::<Vec<_>>(),
+            None => candidates,
+        }
+    };
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // CHAT-PARITY-5 (2026-05-13): cognitive-kind boost. Pure-logic ranking
+    // signal — no LLM hop. Classify the query's intent (procedural /
+    // episodic / factual / semantic / unknown) via the existing heuristic
+    // `query_intent::classify_query`, derive the matching `CognitiveKind`,
+    // and reorder the candidate pool by `(rank_score × boost)` where
+    // `boost = 1.15` iff `cognitive_kind::classify(entry)` matches the
+    // intent's preferred kind. Ordering only affects what survives the
+    // `take(limit)` truncation below and what the reranker sees first;
+    // since the boost is multiplicative on a position-derived score,
+    // matching entries can move up at most ~1 rank — safe for cases where
+    // intent classification is wrong (defaults to `Unknown` → no-op).
+    //
+    // The kind is computed on demand from `(memory_type, tags, content)`
+    // because `MemoryEntry` deliberately does NOT carry a `cognitive_kind`
+    // column (per `cognitive_kind.rs` "Why no schema migration?" rationale).
+    let candidates = boost_by_cognitive_kind(candidates, query);
 
     let Some(model) = active_brain else {
         return candidates.into_iter().take(limit).collect();
@@ -198,6 +263,182 @@ async fn retrieve_prompt_memories(
     reranked
 }
 
+/// BENCH-KG-1 helper: expand RRF seeds through 1-2 hop BFS over
+/// `memory_edges`, then materialise the (id, cascade_score) result back
+/// into a `Vec<MemoryEntry>` capped at `limit`. Seeds keep their original
+/// RRF order at the top; KG-promoted neighbours follow, sorted by cascade
+/// score descending. Unknown ids (edge target deleted between RRF and
+/// materialisation) are skipped gracefully.
+fn expand_seeds_via_kg(
+    store: &crate::memory::MemoryStore,
+    seeds: &[crate::memory::MemoryEntry],
+    limit: usize,
+) -> Vec<crate::memory::MemoryEntry> {
+    use std::collections::HashSet;
+
+    // Seed scores: linearly decreasing from 1.0 so cascade decay is
+    // computed relative to RRF rank (top seed = 1.0, bottom seed = ~0.0).
+    let total = seeds.len() as f64;
+    let seed_scores: Vec<(i64, f64)> = seeds
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let score = if total > 0.0 {
+                1.0 - (i as f64 / total)
+            } else {
+                0.0
+            };
+            (e.id, score)
+        })
+        .collect();
+
+    let expanded = match crate::memory::cascade::cascade_expand(&store.conn, &seed_scores, None) {
+        Ok(v) => v,
+        Err(_) => return seeds.to_vec(),
+    };
+    if expanded.len() == seeds.len() {
+        // No neighbours found — return seeds unchanged.
+        return seeds.to_vec();
+    }
+
+    let seed_ids: HashSet<i64> = seeds.iter().map(|e| e.id).collect();
+    let mut out: Vec<crate::memory::MemoryEntry> = Vec::with_capacity(limit);
+    // 1. Keep all RRF seeds in their original order at the top.
+    for entry in seeds {
+        if out.len() >= limit {
+            break;
+        }
+        out.push(entry.clone());
+    }
+    // 2. Append KG-promoted neighbours by cascade score.
+    for (id, _score) in expanded.iter() {
+        if out.len() >= limit {
+            break;
+        }
+        if seed_ids.contains(id) {
+            continue;
+        }
+        if let Ok(entry) = store.get_by_id(*id) {
+            out.push(entry);
+        }
+    }
+    out
+}
+
+/// CHAT-PARITY-5 (2026-05-13): does the candidate's `CognitiveKind`
+/// match the query's `QueryIntent`-preferred kind?
+///
+/// Mapping (per the milestone spec, chosen to mirror the
+/// `cognitive_kind::classify` + `query_intent::classify_query`
+/// vocabularies):
+///
+/// * `Procedural` intent → `Procedural` kind
+/// * `Episodic` intent   → `Episodic` kind
+/// * `Factual` intent    → `Semantic` kind (factual lookups want stable knowledge)
+/// * `Semantic` intent   → `Semantic` OR `Judgment` kind (judgments are stored opinions)
+/// * `Unknown` intent    → no preference (caller treats as no-op)
+///
+/// `Negative` (anti-pattern memories) is intentionally NEVER preferred —
+/// it's a "do-not" annotation, not a primary retrieval target.
+///
+/// Pure logic, no LLM hop. Returns `false` for `Unknown` intent so
+/// callers can short-circuit the boost.
+pub(crate) fn intent_prefers_kind(
+    intent: crate::memory::query_intent::QueryIntent,
+    kind: crate::memory::cognitive_kind::CognitiveKind,
+) -> bool {
+    use crate::memory::cognitive_kind::CognitiveKind;
+    use crate::memory::query_intent::QueryIntent;
+    matches!(
+        (intent, kind),
+        (QueryIntent::Procedural, CognitiveKind::Procedural)
+            | (QueryIntent::Episodic, CognitiveKind::Episodic)
+            | (QueryIntent::Factual, CognitiveKind::Semantic)
+            | (QueryIntent::Semantic, CognitiveKind::Semantic)
+            | (QueryIntent::Semantic, CognitiveKind::Judgment)
+    )
+}
+
+/// CHAT-PARITY-5 (2026-05-13): re-rank `candidates` by a multiplicative
+/// ×1.15 boost on entries whose classified `CognitiveKind` matches the
+/// query intent's preferred kind. Stable: ties (same effective score)
+/// preserve the inbound order from RRF + cascade + temporal filter.
+///
+/// No-op cases (return inbound order unchanged):
+/// * < 2 candidates (nothing to reorder)
+/// * `QueryIntent::Unknown` (heuristic could not classify the query —
+///   trust the upstream signal mix)
+/// * No candidate matches the preferred kind (no relative reordering possible)
+fn boost_by_cognitive_kind(
+    candidates: Vec<crate::memory::MemoryEntry>,
+    query: &str,
+) -> Vec<crate::memory::MemoryEntry> {
+    if candidates.len() < 2 {
+        return candidates;
+    }
+    let intent = crate::memory::query_intent::classify_query(query).intent;
+    if matches!(intent, crate::memory::query_intent::QueryIntent::Unknown) {
+        return candidates;
+    }
+
+    const BOOST: f64 = 1.15;
+    let n = candidates.len();
+    let mut scored: Vec<(f64, usize, crate::memory::MemoryEntry)> = candidates
+        .into_iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            // Position-derived base score (top inbound = highest base).
+            // Using `n - i` instead of `1.0 / (i + 1)` keeps the boost
+            // arithmetic simple and the displacement bounded to ~1 rank.
+            let base = (n - i) as f64;
+            let kind = crate::memory::cognitive_kind::classify(
+                &entry.memory_type,
+                &entry.tags,
+                &entry.content,
+            );
+            let multiplier = if intent_prefers_kind(intent, kind) {
+                BOOST
+            } else {
+                1.0
+            };
+            (base * multiplier, i, entry)
+        })
+        .collect();
+
+    // Stable sort: primary by score desc, secondary by original index asc
+    // so ties preserve the inbound order from earlier pipeline stages.
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+    });
+    scored.into_iter().map(|(_, _, entry)| entry).collect()
+}
+
+fn retrieve_local_ollama_keyword_memories(
+    app_state: &AppState,
+    query: &str,
+) -> Result<Vec<String>, String> {
+    let threshold = app_state
+        .app_settings
+        .lock()
+        .map(|settings| settings.relevance_threshold)
+        .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
+
+    let store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
+    let memory_count = store.count();
+    if crate::commands::streaming::should_skip_rag(query, memory_count) {
+        return Ok(Vec::new());
+    }
+
+    Ok(store
+        .hybrid_search_with_threshold(query, None, 5, threshold)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|entry| entry.content)
+        .collect())
+}
+
 /// Retrieve relevant judgment rules for the current message and format
 /// them as a prompt injection block.
 fn retrieve_judgment_block(app_state: &AppState, query: &str) -> String {
@@ -216,6 +457,8 @@ pub async fn process_message(
     if message.trim().is_empty() {
         return Err("Message cannot be empty".to_string());
     }
+
+    app_state.mark_chat_activity_now();
 
     let user_msg = Message {
         id: Uuid::new_v4().to_string(),
@@ -404,20 +647,7 @@ pub async fn process_message(
             (model.clone(), text, Sentiment::Neutral)
         }
         Some(BrainMode::LocalOllama { model }) => {
-            let memory_entries: Vec<crate::memory::MemoryEntry> = {
-                let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-                mem_store.get_all().unwrap_or_default()
-            };
-            let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
-                &model,
-                message,
-                &memory_entries,
-                5,
-            )
-            .await
-            .into_iter()
-            .map(|e| e.content)
-            .collect();
+            let memories = retrieve_local_ollama_keyword_memories(app_state, message)?;
             let agent = OllamaAgent::new(&model);
             let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
             (agent.name().to_string(), text, sent)
@@ -425,20 +655,7 @@ pub async fn process_message(
         None => {
             // Legacy path: check active_brain for Ollama, otherwise stub.
             if let Some(ref model) = model_opt {
-                let memory_entries: Vec<crate::memory::MemoryEntry> = {
-                    let mem_store = app_state.memory_store.lock().map_err(|e| e.to_string())?;
-                    mem_store.get_all().unwrap_or_default()
-                };
-                let memories: Vec<String> = crate::memory::brain_memory::semantic_search_entries(
-                    model,
-                    message,
-                    &memory_entries,
-                    5,
-                )
-                .await
-                .into_iter()
-                .map(|e| e.content)
-                .collect();
+                let memories = retrieve_local_ollama_keyword_memories(app_state, message)?;
                 let agent = OllamaAgent::new(model);
                 let (text, sent) = agent.respond_contextual(message, &history, &memories).await;
                 (agent.name().to_string(), text, sent)
@@ -659,5 +876,497 @@ mod tests {
         // User message has no sentiment, assistant does
         assert!(parsed[0].sentiment.is_none());
         assert!(parsed[1].sentiment.is_some());
+    }
+
+    /// Asserts the chat-prompt RAG path actually exercises the
+    /// `docs/brain-advanced-design.md` retrieval pipeline (RRF stage).
+    /// Without an active brain the function must return RRF top-k from
+    /// `hybrid_search_rrf` rather than falling back to lexical-only
+    /// `hybrid_search` or returning empty. This guards the chat surface
+    /// from silently regressing past LCM-8.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_uses_rrf_pipeline_without_brain() {
+        let state = make_state();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "User asked for help debugging async Tokio futures last week."
+                        .to_string(),
+                    tags: "context,domain:rust".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+        assert!(
+            !results.is_empty(),
+            "RRF stage must surface seeded memories on a clear lexical+semantic match"
+        );
+        assert!(
+            results.iter().any(|m| m.content.contains("Python")),
+            "Top-k should include the Python preference memory; got {:?}",
+            results.iter().map(|m| &m.content).collect::<Vec<_>>()
+        );
+    }
+
+    /// BENCH-KG-1: when `enable_kg_boost` is on, the cascade stage must
+    /// promote a memory that is graph-adjacent to an RRF hit but does
+    /// NOT itself match the query lexically. This is the design-doc
+    /// promise of `memory_edges` traversal — a query about "Python" can
+    /// surface a related "favourite editor" memory if the user explicitly
+    /// linked them with a `related_to` edge, even though the editor
+    /// memory has no Python tokens.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kg_boost_promotes_neighbours() {
+        let state = make_state();
+        // Flip the KG-boost flag on this test's settings — production
+        // default is `false` so a chat turn with no edges configured
+        // pays no cascade cost.
+        state.app_settings.lock().unwrap().enable_kg_boost = true;
+
+        let (seed_id, neighbour_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let seed = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            // Neighbour deliberately contains NO query tokens — it must
+            // only be reachable via the graph edge.
+            let neighbour = store
+                .add(crate::memory::NewMemory {
+                    content: "Favourite editor is Helix with the catppuccin theme."
+                        .to_string(),
+                    tags: "preference,domain:tooling".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .add_edge(crate::memory::NewMemoryEdge {
+                    src_id: seed,
+                    dst_id: neighbour,
+                    rel_type: "related_to".to_string(),
+                    confidence: 0.9,
+                    source: crate::memory::EdgeSource::User,
+                    valid_from: None,
+                    valid_to: None,
+                    edge_source: None,
+                })
+                .unwrap();
+            (seed, neighbour)
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&seed_id),
+            "Seed (Python memory) must be retrieved by RRF; got {ids:?}"
+        );
+        assert!(
+            ids.contains(&neighbour_id),
+            "KG cascade must surface the related-edge neighbour even though it has no query tokens; got {ids:?}"
+        );
+    }
+
+    /// BENCH-KG-1 negative: when `enable_kg_boost` is off (production
+    /// default), an edge-only neighbour must NOT appear in the prompt.
+    /// Guards against accidentally enabling cascade for all users.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kg_boost_disabled_by_default() {
+        let state = make_state();
+        assert!(
+            !state.app_settings.lock().unwrap().enable_kg_boost,
+            "production default for enable_kg_boost must be false"
+        );
+
+        let (seed_id, neighbour_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let seed = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            let neighbour = store
+                .add(crate::memory::NewMemory {
+                    content: "Favourite editor is Helix with the catppuccin theme."
+                        .to_string(),
+                    tags: "preference,domain:tooling".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .add_edge(crate::memory::NewMemoryEdge {
+                    src_id: seed,
+                    dst_id: neighbour,
+                    rel_type: "related_to".to_string(),
+                    confidence: 0.9,
+                    source: crate::memory::EdgeSource::User,
+                    valid_from: None,
+                    valid_to: None,
+                    edge_source: None,
+                })
+                .unwrap();
+            (seed, neighbour)
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&seed_id),
+            "Seed must still be retrieved by RRF when KG boost is off"
+        );
+        assert!(
+            !ids.contains(&neighbour_id),
+            "Edge-only neighbour must NOT appear when enable_kg_boost is off; got {ids:?}"
+        );
+    }
+
+    /// CHAT-PARITY-3: when the user's turn carries an explicit time
+    /// expression (e.g. "yesterday"), `retrieve_prompt_memories` must
+    /// drop candidates whose `created_at` falls outside the parsed
+    /// range. Without this gate, time-scoped questions silently pull
+    /// stale memories into the prompt — design-doc §17.3 promises
+    /// `memory::temporal::parse_time_range` filtering at retrieval time.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_filters_by_explicit_time_range() {
+        use rusqlite::params;
+        let state = make_state();
+
+        let now = crate::memory::store::now_ms();
+        let one_day_ms: i64 = 24 * 60 * 60 * 1000;
+        let recent_ts = now - 6 * 60 * 60 * 1000; // ~6h ago (yesterday-window UTC)
+        let stale_ts = now - 30 * one_day_ms; // 30 days ago — outside "yesterday"
+
+        let (recent_id, stale_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let recent = store
+                .add(crate::memory::NewMemory {
+                    content: "Discussed Python async patterns and Tokio futures.".to_string(),
+                    tags: "context,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            let stale = store
+                .add(crate::memory::NewMemory {
+                    content: "Old note about Python list comprehensions and decorators."
+                        .to_string(),
+                    tags: "context,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            // Backdate so the temporal filter has something to discriminate on.
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![recent_ts, recent],
+                )
+                .unwrap();
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![stale_ts, stale],
+                )
+                .unwrap();
+            (recent, stale)
+        };
+
+        // The word "today" forces parse_time_range -> Some(midnight..now).
+        let results =
+            super::retrieve_prompt_memories(&state, "What about Python today?", None, None, 5)
+                .await;
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&recent_id),
+            "Memory created today must survive the temporal filter; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&stale_id),
+            "30-day-old memory must be filtered out by 'today'; got {ids:?}"
+        );
+    }
+
+    /// CHAT-PARITY-3 negative: when the query has NO time expression,
+    /// the temporal filter must be a no-op — backdated memories must
+    /// still surface so general (non-time-scoped) chat keeps working.
+    /// Guards against accidentally always-on filtering breaking the
+    /// default RAG path.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_no_time_filter_when_query_lacks_time_expression() {
+        use rusqlite::params;
+        let state = make_state();
+
+        let now = crate::memory::store::now_ms();
+        let stale_ts = now - 365 * 24 * 60 * 60 * 1000; // 1 year ago
+
+        let stale_id = {
+            let store = state.memory_store.lock().unwrap();
+            let stale = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![stale_ts, stale],
+                )
+                .unwrap();
+            stale
+        };
+
+        // No time keyword in the query — temporal stage must be a no-op.
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&stale_id),
+            "Stale memory must still surface when query has no time expression; got {ids:?}"
+        );
+    }
+
+    // ----- CHAT-PARITY-5: cognitive-kind boost -----
+
+    #[test]
+    fn intent_prefers_kind_matrix() {
+        use crate::memory::cognitive_kind::CognitiveKind;
+        use crate::memory::query_intent::QueryIntent;
+
+        // Procedural intent → only Procedural kind preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Procedural
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Semantic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Episodic
+        ));
+
+        // Episodic intent → only Episodic kind preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Episodic,
+            CognitiveKind::Episodic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Episodic,
+            CognitiveKind::Semantic
+        ));
+
+        // Factual intent → Semantic preferred (factual lookups want stable knowledge).
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Factual,
+            CognitiveKind::Semantic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Factual,
+            CognitiveKind::Episodic
+        ));
+
+        // Semantic intent → Semantic OR Judgment preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Semantic
+        ));
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Judgment
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Procedural
+        ));
+
+        // Negative kind is NEVER preferred (anti-patterns are annotations, not targets).
+        for intent in [
+            QueryIntent::Procedural,
+            QueryIntent::Episodic,
+            QueryIntent::Factual,
+            QueryIntent::Semantic,
+            QueryIntent::Unknown,
+        ] {
+            assert!(
+                !super::intent_prefers_kind(intent, CognitiveKind::Negative),
+                "Negative kind should never be preferred (intent={intent:?})"
+            );
+        }
+
+        // Unknown intent → no kind preferred.
+        for kind in [
+            CognitiveKind::Procedural,
+            CognitiveKind::Episodic,
+            CognitiveKind::Semantic,
+            CognitiveKind::Judgment,
+            CognitiveKind::Negative,
+        ] {
+            assert!(
+                !super::intent_prefers_kind(QueryIntent::Unknown, kind),
+                "Unknown intent should never prefer any kind (kind={kind:?})"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kind_boost_promotes_procedural_for_how_to_query() {
+        // Seed pool with semantic facts ranked AHEAD of a procedural how-to.
+        // A "how do I deploy" query should classify as Procedural intent and
+        // bubble the procedural memory ahead of the unrelated semantic ones.
+        let state = make_state();
+
+        let proc_id = {
+            let store = state.memory_store.lock().unwrap();
+            // Seed two semantic memories first (so RRF likely ranks them ahead
+            // on tag/keyword overlap with "deploy").
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Deployment is the act of releasing software to production."
+                        .to_string(),
+                    tags: "semantic:deploy,definition".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Production deployments require a release manager.".to_string(),
+                    tags: "semantic:deploy,policy".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            // Procedural how-to entry — explicit `procedural:*` tag prefix
+            // makes `cognitive_kind::classify` return `Procedural`.
+            let proc_entry = store
+                .add(crate::memory::NewMemory {
+                    content:
+                        "How to deploy: first, run tests; next, tag the release; finally, push."
+                            .to_string(),
+                    tags: "procedural:deploy,how-to".to_string(),
+                    importance: 4,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            proc_entry.id
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "How do I deploy to production?", None, None, 3)
+                .await;
+
+        assert!(!results.is_empty(), "expected at least one result");
+        // The procedural memory must survive the top-3 truncation thanks to
+        // the ×1.15 kind boost on a "how do I" query (Procedural intent).
+        let ids: Vec<i64> = results.iter().map(|e| e.id).collect();
+        assert!(
+            ids.contains(&proc_id),
+            "Procedural how-to memory should be promoted into top-3 by kind boost \
+             on a 'how do I' query (Procedural intent); got ids={ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kind_boost_no_op_on_unknown_intent() {
+        // A query that classify_query treats as `Unknown` (no procedural /
+        // episodic / factual / semantic signal) must NOT reorder candidates
+        // — preserving the inbound RRF + cascade order.
+        let state = make_state();
+
+        let first_id = {
+            let store = state.memory_store.lock().unwrap();
+            let first = store
+                .add(crate::memory::NewMemory {
+                    content: "Alpha banana cherry delta echo foxtrot golf hotel.".to_string(),
+                    tags: "semantic:nato".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            // Procedural-tagged memory that, IF the boost fired, would jump
+            // ahead. With Unknown intent it must stay in inbound order.
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Procedure: tango uniform victor whiskey xray.".to_string(),
+                    tags: "procedural:nato,steps".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            first.id
+        };
+
+        // Sanity-check the classifier on the chosen query — must be Unknown
+        // for this test's premise to hold.
+        let intent = crate::memory::query_intent::classify_query("foxtrot golf hotel").intent;
+        assert_eq!(
+            intent,
+            crate::memory::query_intent::QueryIntent::Unknown,
+            "test premise: query must classify as Unknown so boost is a no-op"
+        );
+
+        let results =
+            super::retrieve_prompt_memories(&state, "foxtrot golf hotel", None, None, 5).await;
+
+        assert!(!results.is_empty(), "expected at least one result");
+        // First result must be the alpha-bravo entry (it has the keyword
+        // overlap), proving the procedural-tagged entry was NOT promoted.
+        assert_eq!(
+            results[0].id, first_id,
+            "Unknown intent should leave RRF order intact; got ids={:?}",
+            results.iter().map(|e| e.id).collect::<Vec<_>>()
+        );
     }
 }

@@ -11,9 +11,9 @@
        back to in-place rendering so the orb still exists in the DOM
        (preserving test selectors like `.ff-orb`). -->
   <Teleport
+    v-if="portalReady"
     to="#corner-cluster-portal"
     defer
-    :disabled="!portalReady"
   >
     <button
       class="ff-orb"
@@ -74,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useBrainStore } from '../stores/brain';
 import { useConversationStore } from '../stores/conversation';
@@ -105,13 +105,12 @@ const constellationOpen = ref(false);
 watch(constellationOpen, (val) => emit('update:constellationOpen', val));
 /**
  * Becomes true once the `#corner-cluster-portal` target (rendered by
- * `CharacterViewport`) is present in the DOM.  We flip this in
- * `onMounted` after a `nextTick` so the `<Teleport>` only activates once
- * the target is guaranteed to exist.  When the target is missing
- * (unit tests, or non-chat tabs), `:disabled="!portalReady"` falls back
- * to in-place rendering so test selectors keep working.
+ * `CharacterViewport`) is present in the DOM. The target only exists while
+ * the settings panel is open, so we observe the document for changes and
+ * surface the quest trigger only inside that panel.
  */
 const portalReady = ref(false);
+let portalObserver: MutationObserver | null = null;
 // Reward panel state
 const showRewardPanel = ref(false);
 const rewardPanelQuest = ref<SkillNode | null>(null);
@@ -138,13 +137,25 @@ const availableQuests = computed(() => {
 // `<Teleport to="#corner-cluster-portal" defer>` in the template, so
 // there are no hand-tuned `top` / `right` magic numbers anywhere.
 
+function refreshPortalReady() {
+  portalReady.value = !!document.getElementById('corner-cluster-portal');
+}
+
 onMounted(async () => {
   sortQuestsWithAI();
-  // Wait one tick so the corner cluster portal target is mounted before
-  // we activate the Teleport.  Keeps the orb from briefly flashing in
-  // its in-place fallback location during initial render.
+  // Wait one tick so the initial DOM is mounted before we probe for the
+  // settings portal, then observe further open/close changes.
   await nextTick();
-  portalReady.value = !!document.getElementById('corner-cluster-portal');
+  refreshPortalReady();
+  portalObserver = new MutationObserver(() => refreshPortalReady());
+  portalObserver.observe(document.body, { childList: true, subtree: true });
+});
+
+onMounted(() => refreshPortalReady());
+
+onUnmounted(() => {
+  portalObserver?.disconnect();
+  portalObserver = null;
 });
 
 watch(
@@ -281,8 +292,8 @@ function closeRewardPanel() {
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  border: 2px solid var(--ts-quest-gold-glow);
-  background: var(--ts-quest-bg, radial-gradient(ellipse at 40% 35%, rgba(30, 28, 50, 0.95), rgba(10, 8, 25, 0.98)));
+  border: 2px solid color-mix(in srgb, var(--ts-quest-gold-glow) 55%, var(--ts-border));
+  background: var(--ts-quest-bg, color-mix(in srgb, var(--ts-bg-elevated) 92%, transparent));
   backdrop-filter: blur(12px);
   cursor: pointer;
   display: flex;
@@ -290,7 +301,7 @@ function closeRewardPanel() {
   justify-content: center;
   position: relative;
   box-shadow:
-    0 0 16px var(--ts-quest-gold-dim),
+    0 0 16px color-mix(in srgb, var(--ts-quest-gold-dim) 75%, transparent),
     inset 0 0 20px var(--ts-accent-glow);
   transition: transform 0.2s ease, box-shadow 0.25s ease;
   flex-direction: column;

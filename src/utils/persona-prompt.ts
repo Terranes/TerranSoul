@@ -13,7 +13,18 @@
  * command that pushes the rendered string to the backend).
  */
 
-import type { PersonaTraits } from '../stores/persona-types';
+import {
+  PERSONA_CHINESE_DIALECT_OPTIONS,
+  PERSONA_ENGLISH_ACCENT_OPTIONS,
+  PERSONA_VOICE_AGE_OPTIONS,
+  PERSONA_VOICE_GENDER_OPTIONS,
+  PERSONA_VOICE_PITCH_OPTIONS,
+  PERSONA_VOICE_STYLE_OPTIONS,
+  migratePersonaVoiceProfile,
+  type PersonaOption,
+  type PersonaTraits,
+  type PersonaVoiceProfile,
+} from '../stores/persona-types';
 
 /** Maximum characters rendered into the bio field (keeps prompt cost bounded). */
 const BIO_MAX_CHARS = 500;
@@ -74,6 +85,11 @@ export function buildPersonaBlock(
     lines.push(`Never: ${avoid.join('; ')}.`);
   }
 
+  const voiceDesign = buildVoiceDesignInstruction(traits.voiceProfile);
+  if (voiceDesign) {
+    lines.push(voiceDesign);
+  }
+
   // Example dialogue — shows the LLM how this persona speaks.
   const examples = dedupTrim(traits.exampleDialogue).slice(0, EXAMPLE_DIALOGUE_MAX);
   if (examples.length > 0) {
@@ -105,6 +121,29 @@ function personaIdentityLine(name: string, role: string): string {
   if (name && role) return `You are ${name}, ${role}.`;
   if (name) return `You are ${name}.`;
   return `You are a ${role}.`;
+}
+
+export function buildVoiceDesignInstruction(profile: PersonaVoiceProfile | null | undefined): string {
+  const p = migratePersonaVoiceProfile(profile);
+  const parts = [
+    `${labelFor(p.gender, PERSONA_VOICE_GENDER_OPTIONS).toLowerCase()} ${labelFor(p.age, PERSONA_VOICE_AGE_OPTIONS).toLowerCase()} voice`,
+    `${labelFor(p.pitch, PERSONA_VOICE_PITCH_OPTIONS).toLowerCase()} pitch`,
+    `${labelFor(p.style, PERSONA_VOICE_STYLE_OPTIONS).toLowerCase()} style`,
+    `${labelFor(p.englishAccent, PERSONA_ENGLISH_ACCENT_OPTIONS)} English accent`,
+  ];
+  const chineseDialect = labelFor(p.chineseDialect, PERSONA_CHINESE_DIALECT_OPTIONS);
+  if (p.chineseDialect !== 'none') {
+    parts.push(`${chineseDialect} Chinese dialect`);
+  }
+  const voiceName = sanitiseLine(p.voiceName);
+  if (voiceName) {
+    parts.push(`preferred TTS voice ${voiceName}`);
+  }
+  return `Voice design: ${parts.join(', ')}.`;
+}
+
+function labelFor<T extends string>(value: T, options: readonly PersonaOption<T>[]): string {
+  return options.find(option => option.value === value)?.label ?? value;
 }
 
 /** Strip control chars + collapse whitespace for a single-line field. */

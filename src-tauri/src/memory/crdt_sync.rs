@@ -273,13 +273,12 @@ impl MemoryStore {
                         .unwrap_or(local_device_id);
 
                     // Detect concurrency: same counter, different devices.
-                    let is_concurrent = delta.hlc_counter == local_hlc
-                        && delta.origin_device != local_device;
+                    let is_concurrent =
+                        delta.hlc_counter == local_hlc && delta.origin_device != local_device;
 
                     // Total order: (hlc_counter, origin_device) lexicographic.
                     let remote_wins = delta.hlc_counter > local_hlc
-                        || (delta.hlc_counter == local_hlc
-                            && *delta.origin_device > *local_device);
+                        || (delta.hlc_counter == local_hlc && *delta.origin_device > *local_device);
 
                     if remote_wins {
                         // Archive the local state before overwriting.
@@ -804,5 +803,61 @@ mod tests {
         assert_eq!(result.updated, 1);
         let all = store.get_all().unwrap();
         assert_eq!(all[0].content, "Remote version");
+    }
+
+    /// Multi-device: newly synced entries (embedding = NULL) are picked up
+    /// by `backfill_queue` so the embedding worker will embed them.
+    #[test]
+    fn synced_entries_enqueued_for_embedding() {
+        let store = make_store();
+        // Ensure the pending_embeddings table exists.
+        store
+            .conn()
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS pending_embeddings (
+                     memory_id INTEGER PRIMARY KEY,
+                     attempts INTEGER NOT NULL DEFAULT 0,
+                     next_retry_at INTEGER NOT NULL DEFAULT 0
+                 )",
+            )
+            .unwrap();
+
+        // Insert a remote entry via sync.
+        let deltas = vec![SyncDelta {
+            key: SyncKey {
+                content_hash: Some("remote-embed-hash".into()),
+                source_url: None,
+                content_prefix: None,
+                created_at: 100,
+            },
+            operation: SyncOp::Upsert,
+            content: "Remote memory that needs embedding".into(),
+            tags: "test".into(),
+            importance: 5,
+            memory_type: "fact".into(),
+            created_at: 100,
+            updated_at: 2000,
+            origin_device: "device-phone".into(),
+            source_url: None,
+            source_hash: Some("remote-embed-hash".into()),
+            hlc_counter: 1,
+        }];
+
+        let result = store.apply_sync_deltas(&deltas, "device-desktop").unwrap();
+        assert_eq!(result.inserted, 1);
+
+        // Verify the entry has no embedding.
+        let all = store.get_all().unwrap();
+        assert!(all
+            .iter()
+            .any(|e| e.embedding.is_none() && e.content.contains("Remote memory")));
+
+        // Backfill should find the unembedded entry.
+        let queued = crate::memory::embedding_queue::backfill_queue(store.conn()).unwrap();
+        assert!(queued >= 1, "expected ≥1 entry backfilled, got {queued}");
+
+        // A second backfill should not re-queue.
+        let queued2 = crate::memory::embedding_queue::backfill_queue(store.conn()).unwrap();
+        assert_eq!(queued2, 0, "should not re-queue already-pending entries");
     }
 }

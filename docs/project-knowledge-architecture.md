@@ -341,7 +341,7 @@ without losing project knowledge.
 1. **Snapshot format vs schema evolution.** When the schema changes,
    old snapshots must still import. A `schema_version` field plus a
    small migration ladder solves this; we already do this for
-   `mcp-data/shared/migrations/`.
+   `mcp-data/shared/memory-seed.sql`.
 2. **Hook installation on Windows.** `.git/hooks/post-checkout` runs
    under Git Bash on Windows. The generated script uses POSIX
    `curl`, which Git for Windows ships. No hard dependency on WSL.

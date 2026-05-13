@@ -49,6 +49,7 @@ own auto-loaded instruction file format:
 | Claude Code | `CLAUDE.md` (repo root) |
 | Codex CLI / OpenAI agents | `AGENTS.md` (repo root) |
 | Cursor | `.cursorrules` (repo root) |
+| Hermes Agent (NousResearch) | `AGENTS.md` (repo root) — auto-loaded by Hermes per its docs |
 
 **Canonical source:** `.github/copilot-instructions.md` is the single source
 of truth for project-wide instructions. It contains the full architecture,
@@ -152,14 +153,14 @@ pointers that:
   dependency, refactoring a subsystem, accepting or rejecting a research
   finding) must complete the deep-analysis protocol in
   [`rules/deep-analysis-rule.md`](deep-analysis-rule.md): MCP-prior-art
-  check, source-of-truth read, gap analysis, verdict, and a numbered SQL
-  migration written back under `mcp-data/shared/migrations/`.
+  check, source-of-truth read, gap analysis, verdict, and a durable
+  write-back appended to `mcp-data/shared/memory-seed.sql`.
 - No partial scans. Reading only a top-level README, searching only one MCP
   keyword, or reading only one source file is a violation. If a required
   step cannot complete, stop and report the blocker.
-- The cost of a deep analysis is paid once: the verdict goes into a
-  migration so future agents retrieve it via `brain_search` instead of
-  re-scanning the same upstream repo or the same TerranSoul subsystem.
+- The cost of a deep analysis is paid once: the verdict goes into the
+  shared memory seed so future agents retrieve it via `brain_search` instead
+  of re-scanning the same upstream repo or the same TerranSoul subsystem.
 
 ### MCP Markdown Memory Boundary
 
@@ -452,6 +453,25 @@ blocker — they break the moment a font or padding changes.
 - Architecture Decision Records (ADRs) in `docs/adr/` for significant decisions
 - Update `rules/milestones.md` after each chunk is completed
 
+### Correctness Confirmation -> Self-Improve Write-Back (Mandatory)
+
+- When an agent confirms a solution is correct (for example: tests pass,
+  bug reproduction is gone, CI gate is green, or the user explicitly accepts
+  the fix), the agent **must trigger self-improve write-back** in the same
+  chunk before marking work done.
+- "Self-improve write-back" means:
+  1. Capture the durable lesson/rule that prevented or fixed the issue.
+  2. Persist it to MCP shared knowledge by updating
+     `mcp-data/shared/memory-seed.sql` in the same PR/commit.
+  3. If MCP is healthy, verify retrievability with `brain_search` or
+     `brain_suggest_context`; if MCP is blocked, record the exact blocker in
+     progress/final output.
+- Do not defer confirmed lessons to a later chunk. If correctness is proven
+  now, knowledge sync happens now.
+- Chunk completion is not finished until both are true:
+  1. Code/docs changes are validated.
+  2. Durable self-improve knowledge is written back.
+
 ---
 
 ## Tutorial Screenshots (Mandatory)
@@ -553,6 +573,25 @@ Before writing any non-trivial functionality from scratch, **search for a well-m
 - The library adds >5 MB to bundle size for a trivial feature.
 - The library is unmaintained (no commits in 2+ years, unpatched CVEs).
 - Licensing conflict with the project.
+
+---
+
+## CI Log Access Rule
+
+GitHub Actions logs require sign-in to view. When a CI run fails and the
+agent cannot read the logs (sign-in wall, 404, or empty step output):
+
+1. **Do not guess** the failure from step names, annotations, or badge
+   colours alone.
+2. **Immediately ask the user** to sign in, open the failed step, and
+   paste the error output (or a screenshot) into the chat.
+3. While waiting, **reproduce locally** using the same commands the CI
+   workflow runs (`npm run lint`, `npm run build`, `npm run test`,
+   `cargo clippy --all-targets -- -D warnings`, `cargo test --lib`).
+4. If local reproduction finds the same errors, fix them without waiting
+   for the user. If local reproduction is clean but CI failed, the
+   user-provided logs are essential — do not close the issue until the
+   CI-specific failure is understood.
 
 ---
 

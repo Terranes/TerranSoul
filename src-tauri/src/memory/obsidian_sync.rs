@@ -273,6 +273,7 @@ fn import_new_file(path: &Path, store: &MemoryStore) -> Result<i64, String> {
         source_url: parsed.source_url,
         source_hash: parsed.source_hash,
         expires_at: None,
+        created_at: None,
     };
     let entry = store.add(new_mem).map_err(|e| format!("add: {e}"))?;
     Ok(entry.id)

@@ -179,10 +179,7 @@ pub fn list_session_files(dir: &Path) -> Vec<PathBuf> {
 ///
 /// Unknown fields are ignored. If `content` is missing, the turn is
 /// skipped. The `role` field defaults to `"unknown"` if absent.
-pub fn parse_transcript(
-    harness: Harness,
-    path: &Path,
-) -> ImportResult {
+pub fn parse_transcript(harness: Harness, path: &Path) -> ImportResult {
     let session_id = path
         .file_stem()
         .and_then(|s| s.to_str())

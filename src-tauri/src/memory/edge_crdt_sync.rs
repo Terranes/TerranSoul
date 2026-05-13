@@ -151,8 +151,7 @@ impl MemoryStore {
 
                     // HLC-based LWW: (hlc_counter, origin_device) total order.
                     let remote_wins = delta.hlc_counter > local_hlc
-                        || (delta.hlc_counter == local_hlc
-                            && *delta.origin_device > *local_dev);
+                        || (delta.hlc_counter == local_hlc && *delta.origin_device > *local_dev);
 
                     if remote_wins {
                         conn.execute(
@@ -366,18 +365,24 @@ mod tests {
         ).unwrap();
 
         // Device B tombstones at HLC=5.
-        store_b.conn().execute(
-            "UPDATE memory_edges SET valid_to = 2000, hlc_counter = 5, origin_device = 'dev-b'
+        store_b
+            .conn()
+            .execute(
+                "UPDATE memory_edges SET valid_to = 2000, hlc_counter = 5, origin_device = 'dev-b'
              WHERE src_id = ?1 AND dst_id = ?2 AND rel_type = 'cites'",
-            params![a2, b2],
-        ).unwrap();
+                params![a2, b2],
+            )
+            .unwrap();
 
         // Device A re-adds at HLC=10 (should win over tombstone).
-        store_a.conn().execute(
-            "UPDATE memory_edges SET valid_to = NULL, hlc_counter = 10, origin_device = 'dev-a'
+        store_a
+            .conn()
+            .execute(
+                "UPDATE memory_edges SET valid_to = NULL, hlc_counter = 10, origin_device = 'dev-a'
              WHERE src_id = ?1 AND dst_id = ?2 AND rel_type = 'cites'",
-            params![a1, b1],
-        ).unwrap();
+                params![a1, b1],
+            )
+            .unwrap();
 
         // Sync B→A: tombstone should be ignored (A's HLC=10 > B's HLC=5).
         let deltas_b = store_b.compute_edge_sync_deltas(0, "dev-b").unwrap();
@@ -433,11 +438,10 @@ mod tests {
         let purged = store.compact_tombstoned_edges().unwrap();
         assert_eq!(purged, 1); // Only the 60-day-old edge.
 
-        let remaining: i64 = store.conn().query_row(
-            "SELECT COUNT(*) FROM memory_edges",
-            [],
-            |r| r.get(0),
-        ).unwrap();
+        let remaining: i64 = store
+            .conn()
+            .query_row("SELECT COUNT(*) FROM memory_edges", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(remaining, 1); // The recent one survives.
     }
 

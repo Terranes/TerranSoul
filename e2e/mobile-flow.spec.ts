@@ -21,24 +21,30 @@ import { test, expect } from '@playwright/test';
 import {
   collectConsoleErrors,
   assertNoCrashErrors,
-  waitForAppReady,
+  connectToDesktopApp,
+  navigateToTab,
+  openDrawer,
+  closeDrawer,
   waitForAssistantResponse,
+  sendMessage,
   TIMEOUTS,
 } from './helpers';
 
 const MOBILE_VIEWPORT = { width: 375, height: 667 };
 const PANEL_TIMEOUT = 3_000;
+const REAL_LOCAL_RESPONSE_TIMEOUT_MS = 90_000;
 
 test.describe('Mobile', () => {
   test.use({ viewport: MOBILE_VIEWPORT });
 
-  test('mobile: full end-to-end flow', async ({ page }) => {
+  test('mobile: full end-to-end flow', async () => {
     // `test('name', { timeout }, fn)` is silently ignored on Playwright 1.59
     // (the second arg is TestDetails, not options) — set timeout from inside.
     test.setTimeout(180_000);
+    const { page } = await connectToDesktopApp();
+    await page.setViewportSize(MOBILE_VIEWPORT);
+    await navigateToTab(page, 'Chat');
     const errors = collectConsoleErrors(page);
-    await page.goto('/');
-    await waitForAppReady(page);
 
     // ── 1. App loads on mobile ──────────────────────────────────────────
     await expect(page.locator('.chat-view')).toBeVisible();
@@ -109,31 +115,45 @@ test.describe('Mobile', () => {
     const sendBtn = inputWrapper.locator('.send-btn');
     await expect(input).toBeVisible();
     await expect(sendBtn).toBeVisible();
+    await expect(input).toHaveAttribute('rows', '1');
+
+    const inputWrapperBox = await inputWrapper.boundingBox();
+    const bottomNavBox = await bottomNav.boundingBox();
+    expect(inputWrapperBox).not.toBeNull();
+    expect(bottomNavBox).not.toBeNull();
+    expect(bottomNavBox!.y - (inputWrapperBox!.y + inputWrapperBox!.height)).toBeGreaterThanOrEqual(2);
 
     // Input is border-less inside the wrapper
     const inputBorder = await input.evaluate((el) => getComputedStyle(el).borderStyle);
     expect(inputBorder).toBe('none');
 
     // ── 5. Send message on mobile → real LLM response ───────────────────
-    await input.fill('Hi there!');
-    await sendBtn.click();
-
-    // Open chat drawer to see messages
-    const drawerToggle = page.locator('.chat-drawer-toggle');
-    await expect(drawerToggle).toBeVisible();
-    await drawerToggle.click();
-    await expect(page.locator('.chat-history')).toBeVisible({ timeout: PANEL_TIMEOUT });
-
-    const userMsg = page.locator('.message-row.user').first();
-    await expect(userMsg).toBeVisible({ timeout: TIMEOUTS.message });
-    await expect(userMsg).toContainText('Hi there!');
+    await page.evaluate(async () => {
+      const app = (document.querySelector('#app') as any)?.__vue_app__;
+      const brainStore = app?.config.globalProperties.$pinia?._s?.get('brain');
+      if (brainStore?.brainMode?.mode === 'local_ollama') {
+        await brainStore.warmupLocalOllama(brainStore.brainMode.model);
+      }
+    });
+    await sendMessage(page, 'Reply only: ok');
     await expect(input).toHaveValue(''); // cleared after send
 
-    // Wait for real LLM response
-    const response = await waitForAssistantResponse(page);
+    // Wait for real LLM response before opening the heavy history drawer.
+    const response = await waitForAssistantResponse(page, {
+      enforceLatencyBudget: false,
+      timeoutMs: REAL_LOCAL_RESPONSE_TIMEOUT_MS,
+    });
     expect(response.length).toBeGreaterThan(0);
 
-    const assistantMsg = page.locator('.message-row.assistant').first();
+    // Open chat drawer to see messages
+    await openDrawer(page);
+    await expect(page.locator('.chat-history')).toBeVisible({ timeout: PANEL_TIMEOUT });
+
+    const userMsg = page.locator('.message-row.user').last();
+    await expect(userMsg).toBeVisible({ timeout: TIMEOUTS.message });
+    await expect(userMsg).toContainText('Reply only: ok');
+
+    const assistantMsg = page.locator('.message-row.assistant').last();
     await expect(assistantMsg).toBeVisible({ timeout: TIMEOUTS.response });
 
     // ── 6. Chat drawer max-height capped (50vh) ────────────────────────
@@ -148,7 +168,7 @@ test.describe('Mobile', () => {
     expect(vpBox!.y).toBeCloseTo(0, 0);
 
     // Close drawer
-    await drawerToggle.click();
+  await closeDrawer(page);
     await expect(page.locator('.chat-history')).not.toBeVisible({ timeout: PANEL_TIMEOUT });
 
     // ── 7. Keyboard handling — CSS properties ───────────────────────────
@@ -174,6 +194,7 @@ test.describe('Mobile', () => {
     expect(bodyPosition).toBe('fixed');
 
     // ── 8. Keyboard simulation — canvas stable, panel slides up ─────────
+    await input.focus();
     const initialCanvasBox = await canvas.boundingBox();
     expect(initialCanvasBox).not.toBeNull();
     const initialCanvasTop = initialCanvasBox!.y;
@@ -214,6 +235,18 @@ test.describe('Mobile', () => {
     }));
     expect(scrollPos.x).toBe(0);
     expect(scrollPos.y).toBe(0);
+
+    await page.evaluate(() => {
+      const vv = window.visualViewport;
+      if (vv) {
+        Object.defineProperty(vv, 'height', {
+          value: window.innerHeight,
+          configurable: true,
+          writable: true,
+        });
+        vv.dispatchEvent(new Event('resize'));
+      }
+    });
 
     // ── 9. Memory tab on mobile ─────────────────────────────────────────
     await memoryTab.click();

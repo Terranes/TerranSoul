@@ -20,12 +20,12 @@ export interface PluginManifest {
   capabilities: string[]
   activation_events: unknown[]
   contributes: {
-    commands: { id: string; title: string; icon?: string; keybinding?: string; category?: string }[]
-    views: { id: string; label: string; location: string; icon?: string }[]
-    settings: { key: string; label: string; description: string; default_value: unknown; value_type: PluginSettingValueType }[]
-    themes: { id: string; label: string; tokens: Record<string, string> }[]
-    slash_commands: { name: string; description: string; command_id: string }[]
-    memory_hooks: { id: string; stage: string; description: string }[]
+    commands?: { id: string; title: string; icon?: string; keybinding?: string; category?: string }[]
+    views?: { id: string; label: string; location: string; icon?: string }[]
+    settings?: { key: string; label: string; description: string; default_value: unknown; value_type: PluginSettingValueType }[]
+    themes?: { id: string; label: string; tokens: Record<string, string> }[]
+    slash_commands?: { name: string; description: string; command_id: string }[]
+    memory_hooks?: { id: string; stage: string; description: string }[]
   }
   system_requirements?: unknown
   api_version: number

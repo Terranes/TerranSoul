@@ -38,10 +38,24 @@ const FALLBACK: Palette = Object.freeze({
  * hsl() / rgb() functional notation, which covers every value in our
  * design-token vocabulary.
  */
+function isSupportedCssColor(value: string): boolean {
+  if (typeof CSS !== 'undefined' && typeof CSS.supports === 'function') {
+    return CSS.supports('color', value);
+  }
+  if (typeof document !== 'undefined') {
+    const probe = document.createElement('span').style;
+    probe.color = '';
+    probe.color = value;
+    return probe.color !== '';
+  }
+  return true;
+}
+
 function parseCssColor(raw: string | undefined): Color | null {
   if (!raw) return null;
   const trimmed = raw.trim();
   if (!trimmed) return null;
+  if (!isSupportedCssColor(trimmed)) return null;
   try {
     return new Color(trimmed);
   } catch {

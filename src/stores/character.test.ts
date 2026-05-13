@@ -16,6 +16,7 @@ describe('character store — IPC integration', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    window.localStorage.removeItem('terransoul.model.profiles.v1');
   });
 
   it('loadVrm success: calls invoke with correct args and sets vrmPath', async () => {
@@ -167,6 +168,36 @@ describe('character store — IPC integration', () => {
     expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: -10, rate: 0 });
   });
 
+  it('updateModelProfile changes bundled model voice and applies active TTS tuning', async () => {
+    mockInvoke.mockResolvedValue(undefined);
+    const store = useCharacterStore();
+    await store.selectModel('shinra');
+    mockInvoke.mockClear();
+
+    await store.updateModelProfile('shinra', {
+      name: 'Soft Soul',
+      gender: 'female',
+      persona: 'gentle guide',
+      voiceProfile: {
+        gender: 'female',
+        age: 'young_adult',
+        pitch: 'very_high',
+        style: 'whisper',
+        englishAccent: 'british',
+        chineseDialect: 'sichuanese',
+        voiceName: 'en-GB-SoniaNeural',
+      },
+    });
+
+    const profile = store.currentModelProfile();
+    expect(profile.name).toBe('Soft Soul');
+    expect(profile.persona).toBe('gentle guide');
+    expect(profile.voiceProfile.style).toBe('whisper');
+    expect(store.currentBrowserPitch()).toBeGreaterThan(1.5);
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_voice', { voiceName: 'en-GB-SoniaNeural' });
+    expect(mockInvoke).toHaveBeenCalledWith('set_tts_prosody', { pitch: 80, rate: 6 });
+  });
+
   it('setLoadError stores and clears error message', () => {
     const store = useCharacterStore();
     expect(store.loadError).toBeUndefined();
@@ -204,6 +235,7 @@ describe('character store — user-imported models', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     mockInvoke.mockReset();
+    window.localStorage.removeItem('terransoul.model.profiles.v1');
     // Provide minimal Blob URL stubs for jsdom — vitest's environment
     // exposes URL.createObjectURL but blob:url -> data fetching isn't needed
     // here since we only assert the path is set to a blob: URL.
@@ -301,6 +333,33 @@ describe('character store — user-imported models', () => {
     await store.loadUserModels();
     await store.selectModel('u-6');
     expect(store.currentGender()).toBe('male');
+  });
+
+  it('updateModelProfile mirrors user model name gender persona through IPC', async () => {
+    const entry = { id: 'u-7', name: 'Ari', original_filename: 'ari.vrm', gender: 'female', persona: '', imported_at: 1 };
+    const updated = { ...entry, name: 'Arin', gender: 'male', persona: 'field researcher' };
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'list_user_models') return Promise.resolve([entry]);
+      if (cmd === 'update_user_model') return Promise.resolve(updated);
+      return Promise.resolve(undefined);
+    });
+    const store = useCharacterStore();
+    await store.loadUserModels();
+    await store.updateModelProfile('u-7', {
+      name: 'Arin',
+      gender: 'male',
+      persona: 'field researcher',
+      voiceProfile: { voiceName: 'en-US-AndrewNeural', pitch: 'low' },
+    });
+
+    expect(mockInvoke).toHaveBeenCalledWith('update_user_model', {
+      id: 'u-7',
+      name: 'Arin',
+      gender: 'male',
+      persona: 'field researcher',
+    });
+    expect(store.userModels[0].name).toBe('Arin');
+    expect(store.resolveModelProfile('u-7').voiceProfile.pitch).toBe('low');
   });
 });
 

@@ -1,4 +1,4 @@
-.brain-setup { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2rem; min-height: 100%; background: var(--ts-bg-base); }
+.brain-setup { display: flex; flex-direction: column; align-items: center; gap: 1.5rem; padding: 2rem; height: 100%; min-height: 100%; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; background: var(--ts-bg-base); }
 .bs-steps { display: flex; gap: 0.5rem; align-items: center; }
 .bs-step { display: flex; align-items: center; gap: 0.4rem; font-size: 0.8rem; color: var(--ts-text-muted); }
 .bs-step.active .bs-step-dot { background: var(--ts-accent-blue-hover); color: var(--ts-text-on-accent); }

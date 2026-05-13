@@ -22,8 +22,9 @@ Copilot, the headless runner for CI/automation, and the code tools.
 5. [Using Brain Search in Practice](#5-using-brain-search-in-practice)
 6. [Code Intelligence Setup](#6-code-intelligence-setup)
 7. [Workflow for Coding Sessions](#7-workflow-for-coding-sessions)
-8. [Stdio Transport (Direct Pipe)](#8-stdio-transport-direct-pipe)
-9. [Troubleshooting](#9-troubleshooting)
+8. [Containerized MCP for CI/Research](#8-containerized-mcp-for-ciresearch)
+9. [Stdio Transport (Direct Pipe)](#9-stdio-transport-direct-pipe)
+10. [Troubleshooting](#10-troubleshooting)
 
 ---
 
@@ -39,7 +40,7 @@ Copilot, the headless runner for CI/automation, and the code tools.
 
 ## 1. Understanding MCP Ports
 
-![Diagram showing three MCP ports — 7421 release, 7422 dev, 7423 headless](screenshots/mcp-coding-agents/01-mcp-ports.png)
+![Brain panel showing MCP configuration](screenshots/mcp-coding-agents/01-brain-panel.png)
 
 TerranSoul runs MCP on three ports depending on context:
 
@@ -54,8 +55,6 @@ For coding work, use the **headless runner on port 7423** — it doesn't touch y
 ---
 
 ## 2. Quick Start (Headless MCP)
-
-![Terminal showing npm run mcp starting on port 7423 with health check](screenshots/mcp-coding-agents/02-headless-start.png)
 
 ### Step 1: Start the MCP Server
 
@@ -99,8 +98,6 @@ export TERRANSOUL_MCP_TOKEN_MCP=$(cat .vscode/.mcp-token)
 
 ## 3. VS Code Copilot Integration
 
-![VS Code MCP panel showing terransoul-brain-mcp connected](screenshots/mcp-coding-agents/03-vscode-copilot.png)
-
 ### Auto-Start (Recommended)
 
 TerranSoul's workspace includes a VS Code task that auto-starts MCP when you open the folder:
@@ -108,7 +105,7 @@ TerranSoul's workspace includes a VS Code task that auto-starts MCP when you ope
 - Task: **"TerranSoul MCP: Auto-Start"**
 - Configured in `.vscode/tasks.json` with `runOptions.runOn: "folderOpen"`
 - Runs `node scripts/copilot-start-mcp.mjs` which:
-  1. Checks if ports 7421/7422/7423 already have a healthy MCP
+  1. Checks for an authenticated release (`7421`), MCP tray (`7423`), then dev (`7422`) server
   2. Reuses existing if found
   3. Starts `npm run mcp` detached if none is healthy
 
@@ -131,8 +128,6 @@ Copilot picks these up automatically. The environment variable for each:
 ---
 
 ## 4. Available Brain Tools
-
-![MCP tool list showing brain_search, brain_health, code_query etc.](screenshots/mcp-coding-agents/04-brain-tools.png)
 
 Once connected, coding agents can call these tools:
 
@@ -171,8 +166,6 @@ Once connected, coding agents can call these tools:
 
 ## 5. Using Brain Search in Practice
 
-![Copilot chat calling brain_search and getting relevant memories](screenshots/mcp-coding-agents/05-brain-search.png)
-
 ### Basic Search
 
 ```
@@ -200,8 +193,6 @@ Returns memories most relevant to the task you're about to work on.
 ---
 
 ## 6. Code Intelligence Setup
-
-![Code indexing progress showing symbols and edges being indexed](screenshots/mcp-coding-agents/06-code-intelligence.png)
 
 ### Index a Repository
 
@@ -234,8 +225,6 @@ Shows what would be affected by changing this function: callers, tests, dependen
 
 ## 7. Workflow for Coding Sessions
 
-![Session workflow diagram: health check → brain_search → implement → sync](screenshots/mcp-coding-agents/07-workflow.png)
-
 The recommended workflow for AI coding agents:
 
 1. **Session start:** Call `brain_health` to verify MCP is up.
@@ -252,9 +241,35 @@ MCP returns focused, relevant context instead of raw file content:
 
 ---
 
-## 8. Stdio Transport (Direct Pipe)
+## 8. Containerized MCP for CI/Research
 
-![Terminal showing stdio MCP connection via node scripts](screenshots/mcp-coding-agents/08-stdio-transport.png)
+Use the containerized MCP profile only when you need an isolated service for
+CI, automation, or research. The normal desktop app remains a native Tauri app;
+Docker is not required for everyday use.
+
+```bash
+npm run mcp:container          # build + start on 127.0.0.1:7423
+npm run mcp:container:config   # validate docker compose configuration
+npm run mcp:container:logs     # follow logs
+npm run mcp:container:stop     # stop and remove the service container
+```
+
+The container uses `Dockerfile.mcp`, `docker-compose.mcp.yml`, and the
+display-free `terransoul --mcp-http` entry point. Runtime state lives in the
+`terransoul-mcp-data` Docker volume, while seed knowledge comes from the
+checked-in `mcp-data/shared/` snapshot baked into the image. The server binds
+to `0.0.0.0` inside the container so Docker can publish it, but Compose maps the
+host side to `127.0.0.1:7423` only.
+
+Verify health after startup:
+
+```bash
+curl http://127.0.0.1:7423/health
+```
+
+---
+
+## 9. Stdio Transport (Direct Pipe)
 
 For editors that prefer stdio over HTTP:
 
@@ -266,11 +281,13 @@ The binary reads JSON-RPC from stdin and writes responses to stdout. Same capabi
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | `npm run mcp` fails to build | Run `npm install` first. Check Node.js ≥ 18. |
+| `npm run mcp:container:config` fails | Check that Docker Compose is installed and that `docker compose` is available. |
+| MCP container is unhealthy | Run `npm run mcp:container:logs`; the service healthcheck calls `/health` on port 7423. |
 | Port 7423 already in use | Another MCP instance is running. The start script will reuse it if healthy. |
 | Token rejected | Re-read from `mcp-data/mcp-token.txt` (regenerated on each start). |
 | `brain_search` returns empty | Seed data may not be loaded. Check `mcp-data/shared/memory-seed.sql` exists. |

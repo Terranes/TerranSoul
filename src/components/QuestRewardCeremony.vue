@@ -3,134 +3,53 @@
     <Transition name="qrc">
       <div
         v-if="activeCeremony"
-        class="quest-reward-ceremony"
+        class="quest-reward-toast"
         data-testid="quest-reward-ceremony"
-        role="dialog"
+        role="status"
         aria-label="Quest Complete"
-        @click.self="dismiss"
       >
-        <div
-          class="qrc-bg"
-          aria-hidden="true"
-        >
-          <div
-            v-for="i in 18"
-            :key="i"
-            class="qrc-particle"
-            :style="particleStyle(i)"
-          />
-        </div>
-
-        <div class="qrc-card">
-          <div class="qrc-eyebrow">
-            ⚔ Quest Complete
-          </div>
-          <div class="qrc-title-row">
-            <span class="qrc-icon">{{ activeCeremony.icon }}</span>
-            <h2 class="qrc-title">
+        <div class="qrc-toast-inner">
+          <span class="qrc-toast-icon">{{ activeCeremony.icon }}</span>
+          <div class="qrc-toast-body">
+            <div class="qrc-toast-eyebrow">
+              ⚔ Quest Complete
+            </div>
+            <div class="qrc-toast-title">
               {{ activeCeremony.name }}
-            </h2>
-          </div>
-          <p class="qrc-tagline">
-            {{ activeCeremony.tagline }}
-          </p>
-
-          <div class="qrc-section">
-            <div class="qrc-section-label">
-              ◆ Stat Changes
             </div>
-            <div class="qrc-stat-grid">
-              <div
-                v-for="desc in statDescriptors"
-                :key="desc.id"
-                class="qrc-stat"
-                :class="{ 'qrc-stat--up': activeCeremony.statDelta[desc.id] > 0 }"
-              >
-                <span class="qrc-stat-icon">{{ desc.icon }}</span>
-                <span class="qrc-stat-abbr">{{ desc.abbr }}</span>
-                <span class="qrc-stat-bar">
-                  <span
-                    class="qrc-stat-bar-fill"
-                    :style="{
-                      width: activeCeremony.statsAfter[desc.id] + '%',
-                      background: desc.color,
-                    }"
-                  />
-                </span>
-                <span class="qrc-stat-value">
-                  {{ activeCeremony.statsBefore[desc.id] }}
-                  <template v-if="activeCeremony.statDelta[desc.id] !== 0">
-                    <span class="qrc-stat-arrow">→</span>
-                    <strong>{{ activeCeremony.statsAfter[desc.id] }}</strong>
-                    <span
-                      v-if="activeCeremony.statDelta[desc.id] > 0"
-                      class="qrc-stat-delta"
-                    >+{{ activeCeremony.statDelta[desc.id] }}</span>
-                  </template>
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div
-            v-if="activeCeremony.rewards.length"
-            class="qrc-section"
-          >
-            <div class="qrc-section-label">
-              ◆ Rewards Granted
-            </div>
-            <div class="qrc-reward-list">
+            <div
+              v-if="changedStats.length"
+              class="qrc-toast-stats"
+            >
               <span
-                v-for="(r, i) in activeCeremony.rewards"
-                :key="i"
-                class="qrc-reward"
+                v-for="s in changedStats"
+                :key="s.id"
+                class="qrc-toast-stat"
               >
-                {{ activeCeremony.rewardIcons[i] || '🎁' }} {{ r }}
+                {{ s.icon }} {{ s.abbr }} +{{ s.delta }}
               </span>
             </div>
           </div>
-
-          <div
-            v-if="activeCeremony.newCombos.length"
-            class="qrc-section"
-          >
-            <div class="qrc-section-label">
-              ◆ New Combos
-            </div>
-            <div class="qrc-combo-list">
-              <div
-                v-for="combo in activeCeremony.newCombos"
-                :key="combo.name"
-                class="qrc-combo"
-              >
-                <span class="qrc-combo-icon">{{ combo.icon }}</span>
-                <div>
-                  <div class="qrc-combo-name">
-                    {{ combo.name }}
-                  </div>
-                  <div class="qrc-combo-desc">
-                    {{ combo.description }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <button
-            class="qrc-dismiss"
+            class="qrc-toast-close"
             data-testid="qrc-dismiss"
+            aria-label="Dismiss"
             @click="dismiss"
           >
-            Continue ▸
+            ✕
           </button>
         </div>
+        <div
+          class="qrc-toast-progress"
+          :style="{ animationDuration: AUTO_DISMISS_MS + 'ms' }"
+        />
       </div>
     </Transition>
   </Teleport>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, onUnmounted } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { computeStats, STAT_DESCRIPTORS, type StatSnapshot } from '../utils/stats';
 import type { ComboRef, SkillNode } from '../stores/skill-tree';
@@ -152,10 +71,19 @@ interface Ceremony {
 const skillTree = useSkillTreeStore();
 const queue = ref<Ceremony[]>([]);
 const activeCeremony = ref<Ceremony | null>(null);
-const statDescriptors = STAT_DESCRIPTORS;
+
+const AUTO_DISMISS_MS = 6000;
 
 let autoDismissTimer: ReturnType<typeof setTimeout> | null = null;
-const AUTO_DISMISS_MS = 8000;
+
+/** Stats that actually changed for the current ceremony (for compact display). */
+const changedStats = computed(() => {
+  const c = activeCeremony.value;
+  if (!c) return [];
+  return STAT_DESCRIPTORS
+    .filter(d => c.statDelta[d.id] > 0)
+    .map(d => ({ id: d.id, icon: d.icon, abbr: d.abbr, delta: c.statDelta[d.id] }));
+});
 
 /** Activate the next queued ceremony, if any. */
 function showNext() {
@@ -250,192 +178,141 @@ watch(
   { deep: true, immediate: true },
 );
 
-function particleStyle(i: number): Record<string, string> {
-  // Pseudo-random but deterministic positions for SSR-friendly tests.
-  const angle = (i * 137.508) % 360;
-  const distance = 30 + ((i * 53) % 50);
-  return {
-    '--qrc-x': `${Math.cos((angle * Math.PI) / 180) * distance}vw`,
-    '--qrc-y': `${Math.sin((angle * Math.PI) / 180) * distance}vh`,
-    '--qrc-d': `${1.5 + (i % 7) * 0.3}s`,
-    '--qrc-delay': `${(i % 5) * 0.2}s`,
-  } as Record<string, string>;
-}
-
 onUnmounted(() => {
   if (autoDismissTimer) clearTimeout(autoDismissTimer);
 });
 </script>
 
 <style scoped>
-.quest-reward-ceremony {
+/* ── Compact top-of-screen toast notification ── */
+.quest-reward-toast {
   position: fixed;
-  inset: 0;
-  z-index: 1100;
-  background: radial-gradient(ellipse at center, rgba(20, 18, 50, 0.85), rgba(4, 4, 14, 0.96));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  backdrop-filter: blur(8px);
-}
-
-.qrc-bg { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
-.qrc-particle {
-  position: absolute;
-  top: 50%;
+  top: 16px;
   left: 50%;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--ts-quest-gold);
-  box-shadow: 0 0 12px var(--ts-quest-gold-glow);
-  animation: qrc-burst var(--qrc-d, 2s) ease-out var(--qrc-delay, 0s) infinite;
-}
-@keyframes qrc-burst {
-  0% { transform: translate(-50%, -50%); opacity: 1; }
-  100% { transform: translate(calc(-50% + var(--qrc-x)), calc(-50% + var(--qrc-y))); opacity: 0; }
+  transform: translateX(-50%);
+  z-index: 1100;
+  width: min(420px, calc(100vw - 32px));
+  pointer-events: auto;
 }
 
-.qrc-card {
-  position: relative;
-  width: 100%;
-  max-width: 520px;
-  background: linear-gradient(170deg, rgba(28, 24, 56, 0.98), rgba(12, 10, 28, 0.98));
-  border: 1.5px solid rgba(220, 195, 110, 0.5);
-  border-radius: 8px;
-  padding: 24px 28px;
-  box-shadow:
-    0 24px 80px rgba(0, 0, 0, 0.7),
-    0 0 60px rgba(220, 195, 110, 0.18),
-    inset 0 0 30px rgba(220, 195, 110, 0.04);
-  text-align: center;
-}
-
-.qrc-eyebrow {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.18em;
-  color: var(--ts-quest-gold);
-  text-transform: uppercase;
-  text-shadow: 0 0 10px var(--ts-quest-gold-glow);
-}
-
-.qrc-title-row {
+.qrc-toast-inner {
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 12px;
-  margin: 8px 0 4px;
-}
-.qrc-icon { font-size: 2.2rem; filter: drop-shadow(0 0 12px rgba(220, 195, 110, 0.6)); }
-.qrc-title {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 800;
-  color: var(--ts-quest-text);
-  text-shadow: 0 0 14px var(--ts-quest-gold-glow);
-}
-.qrc-tagline {
-  margin: 0 0 18px;
-  font-size: 0.85rem;
-  color: rgba(220, 220, 235, 0.7);
-  font-style: italic;
+  padding: 12px 16px;
+  background: var(--ts-bg-elevated, linear-gradient(170deg, rgba(28, 24, 56, 0.96), rgba(12, 10, 28, 0.96)));
+  backdrop-filter: blur(20px) saturate(1.3);
+  -webkit-backdrop-filter: blur(20px) saturate(1.3);
+  border: 1.5px solid var(--ts-quest-border, rgba(220, 195, 110, 0.4));
+  border-radius: var(--ts-radius-lg, 14px);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.35),
+    0 0 24px var(--ts-quest-gold-glow, rgba(220, 195, 110, 0.12));
 }
 
-.qrc-section { text-align: left; margin-top: 14px; }
-.qrc-section-label {
-  font-size: 0.65rem;
+.qrc-toast-icon {
+  font-size: 1.8rem;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 8px var(--ts-quest-gold-glow, rgba(220, 195, 110, 0.5)));
+}
+
+.qrc-toast-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.qrc-toast-eyebrow {
+  font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.14em;
-  color: var(--ts-quest-gold);
   text-transform: uppercase;
-  margin-bottom: 8px;
+  color: var(--ts-quest-gold, #dcc36e);
+  text-shadow: 0 0 8px var(--ts-quest-gold-glow, rgba(220, 195, 110, 0.4));
+  line-height: 1;
+  margin-bottom: 2px;
 }
 
-.qrc-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px 14px; }
-.qrc-stat {
-  display: grid;
-  grid-template-columns: 18px 30px 1fr auto;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.7rem;
-  padding: 3px 0;
-  color: rgba(200, 200, 220, 0.7);
-}
-.qrc-stat-icon { line-height: 1; text-align: center; }
-.qrc-stat-abbr { font-weight: 700; color: var(--ts-quest-gold); font-size: 0.6rem; letter-spacing: 0.05em; }
-.qrc-stat-bar {
-  height: 6px;
-  background: var(--ts-bg-hover);
-  border-radius: 3px;
+.qrc-toast-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ts-text-primary);
+  line-height: 1.25;
+  white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
-.qrc-stat-bar-fill { display: block; height: 100%; transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
-.qrc-stat-value { font-variant-numeric: tabular-nums; white-space: nowrap; font-size: 0.7rem; }
-.qrc-stat-arrow { color: rgba(200, 200, 220, 0.4); margin: 0 4px; }
-.qrc-stat-delta {
-  margin-left: 6px;
-  font-weight: 700;
+
+.qrc-toast-stats {
+  display: flex;
+  gap: 8px;
+  margin-top: 3px;
+  flex-wrap: wrap;
+}
+
+.qrc-toast-stat {
+  font-size: 0.68rem;
+  font-weight: 600;
   color: #80c882;
-  text-shadow: 0 0 6px rgba(128, 200, 130, 0.5);
-}
-.qrc-stat--up .qrc-stat-abbr { color: #80c882; }
-
-.qrc-reward-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.qrc-reward {
-  font-size: 0.75rem;
-  padding: 4px 10px;
-  border-radius: 3px;
-  background: var(--ts-quest-gold-dim);
-  color: var(--ts-quest-gold);
-  border: 1px solid var(--ts-quest-border);
+  text-shadow: 0 0 4px rgba(128, 200, 130, 0.3);
 }
 
-.qrc-combo-list { display: flex; flex-direction: column; gap: 8px; }
-.qrc-combo {
-  display: flex; align-items: center; gap: 12px;
-  padding: 8px 12px;
-  background: rgba(142, 200, 246, 0.08);
-  border: 1px solid rgba(142, 200, 246, 0.28);
-  border-radius: 4px;
-}
-.qrc-combo-icon { font-size: 1.4rem; }
-.qrc-combo-name { font-weight: 700; color: #8ec8f6; font-size: 0.8rem; }
-.qrc-combo-desc { font-size: 0.7rem; color: rgba(200, 200, 220, 0.65); margin-top: 2px; }
-
-.qrc-dismiss {
-  margin-top: 22px;
-  padding: 10px 28px;
-  background: linear-gradient(180deg, var(--ts-quest-gold-dim), rgba(0,0,0,0));
-  border: 1px solid var(--ts-quest-border);
-  color: var(--ts-quest-text);
-  font-size: 0.85rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border-radius: 4px;
+.qrc-toast-close {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ts-text-muted);
+  font-size: 0.8rem;
   cursor: pointer;
-  transition: all 0.15s ease;
-  text-shadow: 0 0 8px var(--ts-quest-gold-glow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
 }
-.qrc-dismiss:hover {
-  background: linear-gradient(180deg, rgba(220, 195, 110, 0.4), rgba(180, 160, 100, 0.2));
-  box-shadow: 0 0 18px var(--ts-quest-gold-glow);
+
+.qrc-toast-close:hover {
+  background: var(--ts-bg-hover);
+  color: var(--ts-text-primary);
+}
+
+/* Auto-dismiss progress bar */
+.qrc-toast-progress {
+  height: 3px;
+  margin: 0 4px;
+  border-radius: 0 0 var(--ts-radius-lg, 14px) var(--ts-radius-lg, 14px);
+  background: var(--ts-quest-gold, #dcc36e);
+  transform-origin: left;
+  animation: qrc-countdown linear forwards;
+  opacity: 0.6;
+}
+
+@keyframes qrc-countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
 }
 
 /* Transitions */
-.qrc-enter-active, .qrc-leave-active { transition: opacity 0.4s ease; }
-.qrc-enter-active .qrc-card, .qrc-leave-active .qrc-card { transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.qrc-enter-from { opacity: 0; }
-.qrc-enter-from .qrc-card { transform: scale(0.85); }
-.qrc-leave-to { opacity: 0; }
-.qrc-leave-to .qrc-card { transform: scale(0.95); }
+.qrc-enter-active {
+  transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.qrc-leave-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.qrc-enter-from {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-20px);
+}
+.qrc-leave-to {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-12px);
+}
 
 @media (max-width: 640px) {
-  .qrc-card { padding: 18px 18px; }
-  .qrc-title { font-size: 1.2rem; }
-  .qrc-icon { font-size: 1.8rem; }
-  .qrc-stat-grid { grid-template-columns: 1fr; }
+  .quest-reward-toast {
+    top: 8px;
+    width: calc(100vw - 16px);
+  }
 }
 </style>

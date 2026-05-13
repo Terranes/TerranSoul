@@ -32,7 +32,8 @@ import { test, expect } from '@playwright/test';
 import {
   collectConsoleErrors,
   assertNoCrashErrors,
-  waitForAppReady,
+  connectToDesktopApp,
+  ensureDesktopTab,
   getPiniaState,
   sendMessage,
   waitForAssistantResponse,
@@ -40,10 +41,20 @@ import {
   waitForModelLoaded,
 } from './helpers';
 
-test('animation: LLM responds with clap, angry, and happy emotions', async ({ page }) => {
+async function warmLocalBrain(page: import('@playwright/test').Page): Promise<void> {
+  await page.evaluate(async () => {
+    const app = (document.querySelector('#app') as any)?.__vue_app__;
+    const brainStore = app?.config.globalProperties.$pinia?._s?.get('brain');
+    if (brainStore?.brainMode?.mode === 'local_ollama') {
+      await brainStore.warmupLocalOllama(brainStore.brainMode.model);
+    }
+  });
+}
+
+test('animation: LLM responds with clap, angry, and happy emotions', async () => {
+  const { page } = await connectToDesktopApp();
+  await ensureDesktopTab(page, 'Chat');
   const errors = collectConsoleErrors(page);
-  await page.goto('/');
-  await waitForAppReady(page);
 
   // ── 1. VRM model loaded, brain configured ─────────────────────────────
   await waitForModelLoaded(page);
@@ -51,9 +62,10 @@ test('animation: LLM responds with clap, angry, and happy emotions', async ({ pa
   await page.keyboard.press('Control+d');
 
   const brainState = (await getPiniaState(page, 'brain')) as any;
-  expect(brainState?.brainMode?.mode).toBe('free_api');
+  expect(['free_api', 'local_ollama', 'paid_api']).toContain(brainState?.brainMode?.mode);
 
   // ── 2. Ask model to clap ──────────────────────────────────────────────
+  await warmLocalBrain(page);
   // Capture the maximum streamingText length observed during the request to
   // prove that **stream 1** (incremental llm-chunk text deltas) is reaching
   // the conversation store. Polling races sendMessage so we sample while
@@ -75,9 +87,9 @@ test('animation: LLM responds with clap, angry, and happy emotions', async ({ pa
     })
     .catch(() => 0);
 
-  await sendMessage(page, 'Please clap your hands for me!');
+  await sendMessage(page, 'Clap.');
 
-  const clapResponse = await waitForAssistantResponse(page);
+  const clapResponse = await waitForAssistantResponse(page, { enforceLatencyBudget: false });
   expect(clapResponse.length).toBeGreaterThan(0);
 
   // Stream 1 verified: incremental text was observed mid-stream.
@@ -102,9 +114,10 @@ test('animation: LLM responds with clap, angry, and happy emotions', async ({ pa
   expect(clapMsg.content).not.toContain('</anim>');
 
   // ── 3. Ask model to be angry ──────────────────────────────────────────
+  await warmLocalBrain(page);
   await sendMessage(page, 'Be really angry at me! Yell at me!');
 
-  const angryResponse = await waitForAssistantResponse(page);
+  const angryResponse = await waitForAssistantResponse(page, { enforceLatencyBudget: false });
   expect(angryResponse.length).toBeGreaterThan(0);
 
   // Check for anger signal: character state, sentiment, motion, or content.
@@ -124,9 +137,10 @@ test('animation: LLM responds with clap, angry, and happy emotions', async ({ pa
   }).toPass({ timeout: 5_000 });
 
   // ── 4. Ask model to be happy ──────────────────────────────────────────
+  await warmLocalBrain(page);
   await sendMessage(page, 'Now be super happy and excited! Jump for joy!');
 
-  const happyResponse = await waitForAssistantResponse(page);
+  const happyResponse = await waitForAssistantResponse(page, { enforceLatencyBudget: false });
   expect(happyResponse.length).toBeGreaterThan(0);
 
   // Check for happiness signal

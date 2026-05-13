@@ -1,13 +1,17 @@
 <template>
   <div class="design-showcase">
-    <h2 class="showcase-title">Design System Showcase</h2>
+    <h2 class="showcase-title">
+      Design System Showcase
+    </h2>
     <p class="showcase-subtitle">
       Validates TerranSoul tokens against docs/DESIGN.md spec
     </p>
 
     <!-- Color Palette -->
     <section class="showcase-section">
-      <h3 class="section-heading">Color Palette</h3>
+      <h3 class="section-heading">
+        Color Palette
+      </h3>
       <div class="swatch-grid">
         <div
           v-for="swatch in colorSwatches"
@@ -26,13 +30,25 @@
 
     <!-- Typography -->
     <section class="showcase-section">
-      <h3 class="section-heading">Typography Scale</h3>
+      <h3 class="section-heading">
+        Typography Scale
+      </h3>
       <div class="type-stack">
-        <p class="type-sample type-xl">XL — Page Titles (1.35rem)</p>
-        <p class="type-sample type-lg">LG — Section Headings (1.1rem)</p>
-        <p class="type-sample type-base">Base — Body Text (0.9rem)</p>
-        <p class="type-sample type-sm">SM — Captions (0.8rem)</p>
-        <p class="type-sample type-xs">XS — Badges (0.7rem)</p>
+        <p class="type-sample type-xl">
+          XL — Page Titles (1.35rem)
+        </p>
+        <p class="type-sample type-lg">
+          LG — Section Headings (1.1rem)
+        </p>
+        <p class="type-sample type-base">
+          Base — Body Text (0.9rem)
+        </p>
+        <p class="type-sample type-sm">
+          SM — Captions (0.8rem)
+        </p>
+        <p class="type-sample type-xs">
+          XS — Badges (0.7rem)
+        </p>
       </div>
       <div class="type-mono">
         <code class="mono-sample">const brain = useBrainStore() // JetBrains Mono</code>
@@ -41,10 +57,19 @@
 
     <!-- Spacing -->
     <section class="showcase-section">
-      <h3 class="section-heading">Spacing Scale</h3>
+      <h3 class="section-heading">
+        Spacing Scale
+      </h3>
       <div class="spacing-stack">
-        <div v-for="space in spacingScale" :key="space.token" class="spacing-row">
-          <div class="spacing-bar" :style="{ width: `var(${space.token})` }" />
+        <div
+          v-for="space in spacingScale"
+          :key="space.token"
+          class="spacing-row"
+        >
+          <div
+            class="spacing-bar"
+            :style="{ width: `var(${space.token})` }"
+          />
           <span class="spacing-label">{{ space.name }} — {{ space.token }}</span>
         </div>
       </div>
@@ -52,7 +77,9 @@
 
     <!-- Radius -->
     <section class="showcase-section">
-      <h3 class="section-heading">Border Radius</h3>
+      <h3 class="section-heading">
+        Border Radius
+      </h3>
       <div class="radius-grid">
         <div
           v-for="r in radiusScale"
@@ -67,23 +94,41 @@
 
     <!-- Shadows -->
     <section class="showcase-section">
-      <h3 class="section-heading">Elevation / Shadows</h3>
+      <h3 class="section-heading">
+        Elevation / Shadows
+      </h3>
       <div class="shadow-grid">
-        <div class="shadow-card shadow-sm">--ts-shadow-sm</div>
-        <div class="shadow-card shadow-md">--ts-shadow-md</div>
-        <div class="shadow-card shadow-lg">--ts-shadow-lg</div>
+        <div class="shadow-card shadow-sm">
+          --ts-shadow-sm
+        </div>
+        <div class="shadow-card shadow-md">
+          --ts-shadow-md
+        </div>
+        <div class="shadow-card shadow-lg">
+          --ts-shadow-lg
+        </div>
       </div>
     </section>
 
     <!-- Component Examples -->
     <section class="showcase-section">
-      <h3 class="section-heading">Component Patterns</h3>
+      <h3 class="section-heading">
+        Component Patterns
+      </h3>
       <div class="component-grid">
-        <button class="btn-primary-demo">Primary Button</button>
-        <button class="btn-secondary-demo">Secondary Button</button>
+        <button class="btn-primary-demo">
+          Primary Button
+        </button>
+        <button class="btn-secondary-demo">
+          Secondary Button
+        </button>
         <div class="card-demo">
-          <h4 class="card-demo-title">Card Pattern</h4>
-          <p class="card-demo-text">Surface with subtle border and shadow.</p>
+          <h4 class="card-demo-title">
+            Card Pattern
+          </h4>
+          <p class="card-demo-text">
+            Surface with subtle border and shadow.
+          </p>
         </div>
         <div class="message-demo">
           <div class="message-demo--assistant">

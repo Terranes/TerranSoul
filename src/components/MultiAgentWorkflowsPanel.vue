@@ -1,10 +1,24 @@
 <template>
-  <section class="maw-panel" aria-labelledby="maw-panel-title">
+  <section
+    class="maw-panel"
+    aria-labelledby="maw-panel-title"
+  >
     <header class="maw-panel-header">
       <div class="maw-panel-title-row">
-        <span class="maw-panel-icon" aria-hidden="true">🤖</span>
-        <h2 id="maw-panel-title" class="maw-panel-title">Multi-Agent Workflows</h2>
-        <span class="maw-pill" :class="{ 'maw-pill-active': activeCount > 0 }">
+        <span
+          class="maw-panel-icon"
+          aria-hidden="true"
+        >🤖</span>
+        <h2
+          id="maw-panel-title"
+          class="maw-panel-title"
+        >
+          Multi-Agent Workflows
+        </h2>
+        <span
+          class="maw-pill"
+          :class="{ 'maw-pill-active': activeCount > 0 }"
+        >
           {{ activeCount }} active
         </span>
       </div>
@@ -14,7 +28,10 @@
         Microsoft Teams calendar.
       </p>
 
-      <nav class="maw-tabs" role="tablist">
+      <nav
+        class="maw-tabs"
+        role="tablist"
+      >
         <button
           v-for="tab in tabs"
           :key="tab.id"
@@ -30,18 +47,31 @@
     </header>
 
     <!-- WORKFLOWS TAB -->
-    <div v-if="activeTab === 'workflows'" class="maw-tab-body">
+    <div
+      v-if="activeTab === 'workflows'"
+      class="maw-tab-body"
+    >
       <div class="maw-toolbar">
-        <button class="maw-btn maw-btn-primary" @click="showNewPlanForm = !showNewPlanForm">
+        <button
+          class="maw-btn maw-btn-primary"
+          @click="showNewPlanForm = !showNewPlanForm"
+        >
           + New Workflow
         </button>
-        <button class="maw-btn" :disabled="store.loading" @click="store.loadPlans()">
+        <button
+          class="maw-btn"
+          :disabled="store.loading"
+          @click="store.loadPlans()"
+        >
           ↻ Refresh
         </button>
       </div>
 
       <!-- New plan form -->
-      <div v-if="showNewPlanForm" class="maw-card maw-new-form">
+      <div
+        v-if="showNewPlanForm"
+        class="maw-card maw-new-form"
+      >
         <h3>Create new workflow</h3>
         <label class="maw-field">
           <span>What do you want done?</span>
@@ -60,18 +90,33 @@
           </select>
         </label>
         <div class="maw-form-actions">
-          <button class="maw-btn maw-btn-primary" :disabled="!newPlanRequest.trim()" @click="createNewPlan">
+          <button
+            class="maw-btn maw-btn-primary"
+            :disabled="!newPlanRequest.trim()"
+            @click="createNewPlan"
+          >
             Create
           </button>
-          <button class="maw-btn" @click="showNewPlanForm = false">Cancel</button>
+          <button
+            class="maw-btn"
+            @click="showNewPlanForm = false"
+          >
+            Cancel
+          </button>
         </div>
       </div>
 
       <!-- Plans list -->
-      <div v-if="store.plans.length === 0 && !store.loading" class="maw-empty">
+      <div
+        v-if="store.plans.length === 0 && !store.loading"
+        class="maw-empty"
+      >
         No workflow plans yet. Create one to get started.
       </div>
-      <ul v-else class="maw-plans-list">
+      <ul
+        v-else
+        class="maw-plans-list"
+      >
         <li
           v-for="plan in store.plans"
           :key="plan.id"
@@ -79,47 +124,88 @@
           @click="selectPlan(plan.id)"
         >
           <div class="maw-plan-header">
-            <span class="maw-kind-badge" :class="`maw-kind-${plan.kind}`">{{ kindLabel(plan.kind) }}</span>
+            <span
+              class="maw-kind-badge"
+              :class="`maw-kind-${plan.kind}`"
+            >{{ kindLabel(plan.kind) }}</span>
             <span class="maw-plan-title">{{ plan.title }}</span>
-            <span class="maw-status-dot" :style="{ background: statusColor(plan.status) }" />
+            <span
+              class="maw-status-dot"
+              :style="{ background: statusColor(plan.status) }"
+            />
           </div>
           <div class="maw-plan-meta">
             <span>{{ plan.completed_steps }}/{{ plan.step_count }} steps</span>
-            <span v-if="plan.recurring" class="maw-recurring-badge">↻ recurring</span>
-            <span v-if="plan.next_occurrence" class="maw-next-occurrence">
+            <span
+              v-if="plan.recurring"
+              class="maw-recurring-badge"
+            >↻ recurring</span>
+            <span
+              v-if="plan.next_occurrence"
+              class="maw-next-occurrence"
+            >
               Next: {{ formatDateTime(plan.next_occurrence) }}
             </span>
           </div>
-          <div v-if="plan.tags.length > 0" class="maw-tags">
-            <span v-for="t in plan.tags" :key="t" class="maw-tag">#{{ t }}</span>
+          <div
+            v-if="plan.tags.length > 0"
+            class="maw-tags"
+          >
+            <span
+              v-for="t in plan.tags"
+              :key="t"
+              class="maw-tag"
+            >#{{ t }}</span>
           </div>
         </li>
       </ul>
 
       <!-- Active plan editor -->
-      <div v-if="store.activePlan" class="maw-card maw-plan-editor">
+      <div
+        v-if="store.activePlan"
+        class="maw-card maw-plan-editor"
+      >
         <header class="maw-editor-header">
           <h3>{{ store.activePlan.title }}</h3>
           <div class="maw-editor-actions">
-            <button class="maw-btn maw-btn-danger-outline" @click="onDeletePlan">Delete</button>
+            <button
+              class="maw-btn maw-btn-danger-outline"
+              @click="onDeletePlan"
+            >
+              Delete
+            </button>
           </div>
         </header>
-        <p class="maw-plan-request"><em>"{{ store.activePlan.user_request }}"</em></p>
+        <p class="maw-plan-request">
+          <em>"{{ store.activePlan.user_request }}"</em>
+        </p>
 
         <h4>Steps</h4>
         <ol class="maw-steps">
-          <li v-for="step in store.activePlan.steps" :key="step.id" class="maw-step">
+          <li
+            v-for="step in store.activePlan.steps"
+            :key="step.id"
+            class="maw-step"
+          >
             <div class="maw-step-row">
               <span class="maw-agent-badge">
                 {{ agentIcon(step.agent) }} {{ agentLabel(step.agent) }}
               </span>
               <span class="maw-step-id">{{ step.id }}</span>
-              <span class="maw-status-pill" :style="{ background: statusColor(step.status) + '22', color: statusColor(step.status) }">
+              <span
+                class="maw-status-pill"
+                :style="{ background: statusColor(step.status) + '22', color: statusColor(step.status) }"
+              >
                 {{ stepStatusLabel(step.status) }}
               </span>
-              <span v-if="step.requires_approval" class="maw-approval-flag">⚠ approval</span>
+              <span
+                v-if="step.requires_approval"
+                class="maw-approval-flag"
+              >⚠ approval</span>
             </div>
-            <p class="maw-step-desc">{{ step.description }}</p>
+            <p class="maw-step-desc">
+              {{ step.description }}
+            </p>
             <div class="maw-step-llm">
               <label>
                 <span>LLM:</span>
@@ -139,51 +225,91 @@
                 </select>
               </label>
             </div>
-            <div v-if="step.depends_on.length > 0" class="maw-step-deps">
-              Depends on: <code v-for="d in step.depends_on" :key="d">{{ d }}</code>
+            <div
+              v-if="step.depends_on.length > 0"
+              class="maw-step-deps"
+            >
+              Depends on: <code
+                v-for="d in step.depends_on"
+                :key="d"
+              >{{ d }}</code>
             </div>
-            <details v-if="step.output" class="maw-step-output">
+            <details
+              v-if="step.output"
+              class="maw-step-output"
+            >
               <summary>Output</summary>
               <pre>{{ step.output }}</pre>
             </details>
-            <div v-if="step.error" class="maw-step-error">{{ step.error }}</div>
+            <div
+              v-if="step.error"
+              class="maw-step-error"
+            >
+              {{ step.error }}
+            </div>
           </li>
         </ol>
 
         <!-- Schedule editor -->
         <details class="maw-schedule-editor">
           <summary>{{ store.activePlan.schedule ? 'Edit schedule' : 'Add schedule (recurring)' }}</summary>
-          <ScheduleEditor :plan="store.activePlan" @save="onSaveSchedule" />
+          <ScheduleEditor
+            :plan="store.activePlan"
+            @save="onSaveSchedule"
+          />
         </details>
       </div>
     </div>
 
     <!-- CALENDAR TAB -->
-    <div v-else-if="activeTab === 'calendar'" class="maw-tab-body">
+    <div
+      v-else-if="activeTab === 'calendar'"
+      class="maw-tab-body"
+    >
       <WorkflowCalendar />
     </div>
 
     <!-- AGENTS TAB -->
-    <div v-else-if="activeTab === 'agents'" class="maw-tab-body">
+    <div
+      v-else-if="activeTab === 'agents'"
+      class="maw-tab-body"
+    >
       <div class="maw-roles-grid">
-        <article v-for="role in store.recommendations" :key="role.role" class="maw-role-card">
+        <article
+          v-for="role in store.recommendations"
+          :key="role.role"
+          class="maw-role-card"
+        >
           <header class="maw-role-header">
             <span class="maw-role-icon">{{ agentIcon(role.role) }}</span>
             <h3>{{ role.display_name }}</h3>
           </header>
           <ul class="maw-role-recs">
-            <li v-for="rec in role.recommendations" :key="rec.model">
-              <span class="maw-tier-pill" :class="`maw-tier-${rec.tier}`">{{ rec.tier }}</span>
+            <li
+              v-for="rec in role.recommendations"
+              :key="rec.model"
+            >
+              <span
+                class="maw-tier-pill"
+                :class="`maw-tier-${rec.tier}`"
+              >{{ rec.tier }}</span>
               <strong>{{ rec.model }}</strong>
               <span class="maw-rec-provider">({{ rec.provider }})</span>
-              <p class="maw-rec-reason">{{ rec.reason }}</p>
+              <p class="maw-rec-reason">
+                {{ rec.reason }}
+              </p>
             </li>
           </ul>
         </article>
       </div>
     </div>
 
-    <p v-if="store.error" class="maw-error">{{ store.error }}</p>
+    <p
+      v-if="store.error"
+      class="maw-error"
+    >
+      {{ store.error }}
+    </p>
   </section>
 </template>
 

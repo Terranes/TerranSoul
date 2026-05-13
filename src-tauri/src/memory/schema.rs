@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 20;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 21;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -343,9 +343,7 @@ fn ensure_v20_tables(conn: &Connection) -> SqlResult<()> {
         }
     }
     if !has_confidence {
-        conn.execute_batch(
-            "ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0",
-        )?;
+        conn.execute_batch("ALTER TABLE memories ADD COLUMN confidence REAL NOT NULL DEFAULT 1.0")?;
     }
 
     // Create the four new tables (IF NOT EXISTS makes them idempotent)
@@ -384,7 +382,111 @@ fn ensure_v20_tables(conn: &Connection) -> SqlResult<()> {
             decided_via TEXT    NOT NULL DEFAULT 'auto'
         );
         CREATE INDEX IF NOT EXISTS idx_safety_decided_at ON safety_decisions(decided_at);"
-    )
+    )?;
+    ensure_v21_fts5(conn)
+}
+
+/// V21 migration: FTS5 full-text keyword index + covering indexes for recency.
+///
+/// Creates an external-content FTS5 virtual table backed by the `memories`
+/// table. Triggers keep the FTS index in sync on INSERT/UPDATE/DELETE.
+/// Also adds covering indexes on `(last_accessed DESC)` and
+/// `(decay_score DESC, last_accessed DESC)` so recency/decay signals never
+/// require a full table scan.
+fn ensure_v21_fts5(conn: &Connection) -> SqlResult<()> {
+    // Check if FTS5 table already exists.
+    let fts_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='memories_fts'",
+            [],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0)
+        > 0;
+
+    if fts_exists {
+        // Ensure covering indexes exist even if FTS was created in a prior run.
+        conn.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_memories_last_accessed ON memories(last_accessed DESC);
+             CREATE INDEX IF NOT EXISTS idx_memories_decay_recency ON memories(decay_score DESC, last_accessed DESC);",
+        )?;
+        return Ok(());
+    }
+
+    // Create external-content FTS5 table. The `content=memories` directive
+    // tells FTS5 the real data lives in the `memories` table (no duplication).
+    // `content_rowid=id` maps FTS rowid to `memories.id`.
+    // tokenize: unicode61 with remove_diacritics for broad language support.
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
+            content,
+            tags,
+            content=memories,
+            content_rowid=id,
+            tokenize='unicode61 remove_diacritics 2'
+        );",
+    )?;
+
+    // Triggers to keep FTS5 in sync with the source table.
+    conn.execute_batch(
+        "CREATE TRIGGER IF NOT EXISTS memories_fts_ai AFTER INSERT ON memories BEGIN
+            INSERT INTO memories_fts(rowid, content, tags)
+            VALUES (new.id, new.content, new.tags);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS memories_fts_ad AFTER DELETE ON memories BEGIN
+            INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+            VALUES ('delete', old.id, old.content, old.tags);
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS memories_fts_au AFTER UPDATE OF content, tags ON memories BEGIN
+            INSERT INTO memories_fts(memories_fts, rowid, content, tags)
+            VALUES ('delete', old.id, old.content, old.tags);
+            INSERT INTO memories_fts(rowid, content, tags)
+            VALUES (new.id, new.content, new.tags);
+        END;",
+    )?;
+
+    // Covering indexes for recency/decay signals (never full-table-scan).
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_memories_last_accessed ON memories(last_accessed DESC);
+         CREATE INDEX IF NOT EXISTS idx_memories_decay_recency ON memories(decay_score DESC, last_accessed DESC);",
+    )?;
+
+    // Backfill: populate FTS5 from existing data.
+    conn.execute_batch(
+        "INSERT INTO memories_fts(rowid, content, tags)
+         SELECT id, content, tags FROM memories;",
+    )?;
+
+    // --- Graph paging infrastructure (also V21) ---
+    ensure_v21_graph_indexes(conn)
+}
+
+/// V21 graph paging: composite covering indexes on `memory_edges` for
+/// efficient paged adjacency, plus a pre-aggregated `memory_graph_clusters`
+/// table used by the overview zoom to avoid full-table scans.
+fn ensure_v21_graph_indexes(conn: &Connection) -> SqlResult<()> {
+    // Composite covering indexes for paged adjacency queries:
+    // (src_id, rel_type) enables "get outgoing edges of node X filtered by type"
+    // (dst_id, rel_type) enables "get incoming edges of node X filtered by type"
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_edges_src_type ON memory_edges(src_id, rel_type);
+         CREATE INDEX IF NOT EXISTS idx_edges_dst_type ON memory_edges(dst_id, rel_type);",
+    )?;
+
+    // Pre-aggregated cluster stats table. Refreshed during compaction.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_graph_clusters (
+            kind            TEXT PRIMARY KEY,
+            node_count      INTEGER NOT NULL DEFAULT 0,
+            edge_count      INTEGER NOT NULL DEFAULT 0,
+            avg_importance  REAL    NOT NULL DEFAULT 0.0,
+            updated_at      INTEGER NOT NULL DEFAULT 0
+        );",
+    )?;
+
+    Ok(())
 }
 
 /// Return the recorded canonical schema version, or 0 before initialization.
@@ -676,13 +778,23 @@ mod tests {
         let conn = fresh_conn();
         create_canonical_schema(&conn).unwrap();
 
-        conn.execute("INSERT INTO memories (content, created_at) VALUES ('test', 100)", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO memories (content, created_at) VALUES ('test', 100)",
+            [],
+        )
+        .unwrap();
 
         let confidence: f64 = conn
-            .query_row("SELECT confidence FROM memories WHERE content = 'test'", [], |row| row.get(0))
+            .query_row(
+                "SELECT confidence FROM memories WHERE content = 'test'",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
-        assert!((confidence - 1.0).abs() < f64::EPSILON, "default confidence should be 1.0");
+        assert!(
+            (confidence - 1.0).abs() < f64::EPSILON,
+            "default confidence should be 1.0"
+        );
     }
 
     #[test]
@@ -696,7 +808,10 @@ mod tests {
             "memory_gaps",
             "safety_decisions",
         ] {
-            assert!(object_exists(&conn, "table", table), "missing V20 table {table}");
+            assert!(
+                object_exists(&conn, "table", table),
+                "missing V20 table {table}"
+            );
         }
     }
 
@@ -709,10 +824,14 @@ mod tests {
         create_canonical_schema(&conn).unwrap();
         // We can't DROP COLUMN in older SQLite, so instead let's start
         // from a minimal V19-like memories table without confidence.
-        conn.execute_batch("DROP TABLE IF EXISTS memory_reinforcements").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS memory_trigger_patterns").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS memory_gaps").unwrap();
-        conn.execute_batch("DROP TABLE IF EXISTS safety_decisions").unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_reinforcements")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_trigger_patterns")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS memory_gaps")
+            .unwrap();
+        conn.execute_batch("DROP TABLE IF EXISTS safety_decisions")
+            .unwrap();
 
         // Verify tables are gone
         assert!(!object_exists(&conn, "table", "memory_reinforcements"));
@@ -727,7 +846,10 @@ mod tests {
             "memory_gaps",
             "safety_decisions",
         ] {
-            assert!(object_exists(&conn, "table", table), "V20 upgrade missing table {table}");
+            assert!(
+                object_exists(&conn, "table", table),
+                "V20 upgrade missing table {table}"
+            );
         }
     }
 
@@ -736,14 +858,22 @@ mod tests {
         let conn = fresh_conn();
         create_canonical_schema(&conn).unwrap();
 
-        conn.execute("INSERT INTO memories (content, created_at) VALUES ('m1', 100)", []).unwrap();
+        conn.execute(
+            "INSERT INTO memories (content, created_at) VALUES ('m1', 100)",
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO memory_reinforcements (memory_id, session_id, message_index, ts) VALUES (1, 'sess-1', 0, 200)",
             [],
         ).unwrap();
 
         let count: i64 = conn
-            .query_row("SELECT COUNT(*) FROM memory_reinforcements WHERE memory_id = 1", [], |row| row.get(0))
+            .query_row(
+                "SELECT COUNT(*) FROM memory_reinforcements WHERE memory_id = 1",
+                [],
+                |row| row.get(0),
+            )
             .unwrap();
         assert_eq!(count, 1);
     }

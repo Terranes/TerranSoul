@@ -22,9 +22,9 @@ import { normaliseTranslatorLanguage, type TranslatorLanguage } from '../utils/t
 
 // ── LLM-powered intent classifier (Rust: `brain::intent_classifier`) ──
 // Mirrors the wire format emitted by the `classify_intent` Tauri command.
-// Replaces the three legacy regex detectors (`detectLearnWithDocsIntent`,
-// `detectTeachIntent`, `detectGatedSetupCommand`) on the live message path
-// — they are now only used as deterministic test fixtures.
+// Mirrors the wire format emitted by the `classify_intent` Tauri command.
+// Contentful side-channel routing is owned by the backend brain classifier
+// for every brain mode; the frontend only handles the returned decision.
 export type GatedSetupKind = 'upgrade_gemini' | 'provide_context';
 export type IntentDecision =
   | { kind: 'chat' }
@@ -32,6 +32,39 @@ export type IntentDecision =
   | { kind: 'teach_ingest'; topic: string }
   | { kind: 'gated_setup'; setup: GatedSetupKind }
   | { kind: 'unknown' };
+
+const DOCUMENT_LEARNING_EXACT_PHRASES = [
+  'learn from my documents',
+  'learn my documents',
+  'learn documents',
+  'learn from my docs',
+  'learn from my files',
+  'learn from my notes',
+  'learn using my documents',
+  'learn with my documents',
+  'study my documents',
+] as const;
+
+/**
+ * High-confidence side-channel phrases should wait for the classifier before
+ * streaming starts. Otherwise the user can hear a normal LLM answer while the
+ * visible UI is already switching to Scholar's Quest.
+ */
+export function shouldAwaitIntentBeforeStreaming(text: string): boolean {
+  const normalized = text.trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!normalized) return false;
+  if (DOCUMENT_LEARNING_EXACT_PHRASES.some((phrase) => normalized === phrase)) {
+    return true;
+  }
+  if (
+    normalized.includes('my provided documents') &&
+    /\b(learn|study)\b/.test(normalized)
+  ) {
+    return true;
+  }
+  return /\b(learn|study)\b/.test(normalized) &&
+    /\b(my|provided|own)\b.*\b(documents|docs|files|notes|pdfs|sources)\b/.test(normalized);
+}
 
 interface TranslatorModeState {
   active: boolean;
@@ -62,29 +95,32 @@ export function isStopTranslatorModeRequest(userInput: string): boolean {
 
 
 /**
- * Keyword-based sentiment detection from text content.
- * Used as a fallback when the LLM response doesn't include emotion tags.
- * Checks both user input and assistant response for emotional cues.
+ * Default sentiment when the LLM does not emit an `<anim>` emotion tag.
+ * The LLM decides emotion via `<anim>{"emotion":"..."}` in the stream;
+ * this function is only the last-resort fallback and always returns neutral.
  */
-export function detectSentiment(text: string): 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral' {
-  const lower = text.toLowerCase();
-
-  if (lower.includes('angry') || lower.includes('furious') || lower.includes('annoyed') || lower.includes('frustrat')) {
-    return 'angry';
-  }
-  if (lower.includes('surprise') || lower.includes('wow') || lower.includes('unexpected') || lower.includes('amazing') || lower.includes('whoa') || lower.includes('omg')) {
-    return 'surprised';
-  }
-  if (lower.includes('relax') || lower.includes('calm') || lower.includes('peaceful') || lower.includes('chill') || lower.includes('meditat')) {
-    return 'relaxed';
-  }
-  if (lower.includes('sad') || lower.includes('bad') || lower.includes('hate') || lower.includes('sorry') || lower.includes('cry')) {
-    return 'sad';
-  }
-  if (lower.includes('hello') || /\bhi\b/.test(lower) || lower.startsWith('hey') || lower.includes('happy') || lower.includes('great') || lower.includes('awesome') || lower.includes('love')) {
-    return 'happy';
-  }
+export function detectSentiment(_text: string): 'happy' | 'sad' | 'angry' | 'relaxed' | 'surprised' | 'neutral' {
   return 'neutral';
+}
+
+/**
+ * Returns true for short content-light chat turns that should stay on the
+ * fastest possible path. These turns are too small to benefit from RAG or an
+ * LLM intent-classifier pass, and running either can contend with LocalLLM.
+ */
+export function shouldUseFastChatPath(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) return true;
+  const tokens = trimmed.split(/\s+/);
+  return tokens.length <= 3 && tokens.every((token) => Array.from(token).length <= 5);
+}
+
+function shouldRunIntentClassifierForTurn(
+  text: string,
+  brain: ReturnType<typeof useBrainStore>,
+): boolean {
+  if (shouldUseFastChatPath(text)) return false;
+  return brain.hasBrain || isTauriAvailable();
 }
 
 /**
@@ -121,38 +157,15 @@ function applyWarningAsQuest(msg: Message, _warning: string): void {
   ];
 }
 
-/** Browser-side persona fallback when no brain is configured at all. */
-function createPersonaResponse(content: string): Message {
-  const sentiment = detectSentiment(content);
-  let response: string;
-
-  switch (sentiment) {
-    case 'angry':
-      response = "I can sense your frustration. Take a deep breath — I'm here to help. 🔥";
-      break;
-    case 'surprised':
-      response = "Wow, that's surprising! Tell me more! 😮";
-      break;
-    case 'relaxed':
-      response = "That sounds so peaceful. Let's take a moment to enjoy the calm. 🧘";
-      break;
-    case 'sad':
-      response = "I understand you're going through something difficult. I'm here for you. 💙";
-      break;
-    case 'happy':
-      response = "That's wonderful to hear! Your positive energy is contagious! ✨";
-      break;
-    default:
-      response = `Hello! I'm TerranSoul. Please configure a brain (free cloud API or paid API) in the Marketplace so I can have a real conversation with you!`;
-      break;
-  }
-
+/** Browser-side persona fallback when no brain is configured at all.
+ *  Without an LLM, no emotion inference is possible — always neutral. */
+function createPersonaResponse(_content: string): Message {
   return {
     id: crypto.randomUUID(),
     role: 'assistant',
-    content: response,
+    content: 'Hello! I\'m TerranSoul. Please configure a brain (free cloud API or paid API) in the Marketplace so I can have a real conversation with you!',
     agentName: 'TerranSoul',
-    sentiment,
+    sentiment: 'neutral',
     timestamp: Date.now(),
   };
 }
@@ -187,15 +200,10 @@ async function classifyIntent(text: string, hasBrain: boolean): Promise<IntentDe
   } catch {
     // Pinia not active — fall through to default-on behaviour.
   }
-  // No brain configured → classifier has no provider to ask. We deliberately
-  // return `chat` (not `unknown`) here so the existing persona-fallback UX
-  // handles the turn — that fallback already prompts the user to install a
-  // brain and is friendlier than the install-all overlay for someone who's
-  // just exploring the UI.  In real-world flows the free brain auto-
-  // configures on first launch, so `hasBrain` is true by the time the user
-  // ever types a real message; the install-all overlay is reserved for the
-  // documented "free LLM was tried but couldn't decide" failure mode below.
-  if (!hasBrain) return { kind: 'chat' };
+  // In the desktop app the Rust classifier owns deterministic shortcuts such
+  // as "Learn from my documents" even before a brain provider is configured.
+  // Browser-only/unit-test runtimes still keep the old persona fallback.
+  if (!hasBrain && !isTauriAvailable()) return { kind: 'chat' };
   try {
     const decision = await invoke<IntentDecision>('classify_intent', { text });
     if (decision && typeof decision === 'object' && 'kind' in decision) {
@@ -328,10 +336,6 @@ const QUEST_MATCH_STOP_WORDS = new Set([
 /**
  * Push the Scholar's Quest message for an explicit teach/ingest intent
  * with the topic already extracted (by the LLM intent classifier).
- *
- * Kept separate from `maybeShowScholarQuestFromTeachIntent` (the legacy
- * regex-driven entry point) so the new classifier-driven path doesn't
- * need to re-run the brittle regex.
  */
 function pushTeachScholarQuestForTopic(topic: string): void {
   const conversation = useConversationStore();
@@ -351,54 +355,6 @@ function pushTeachScholarQuestForTopic(topic: string): void {
       { label: 'No thanks', value: 'dismiss', icon: '💤' },
     ],
   });
-}
-
-/**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect an explicit "teach the AI" instruction from the user.
- *
- * We only fire Scholar's Quest on phrases that clearly request ingestion of
- * new source material.  A plain question like *"I want to learn about X"* is
- * NOT an instruction to ingest — it's a question the LLM should answer
- * directly, so it must NOT match here.
- *
- * Matching phrases (case-insensitive):
- *   "remember the following law: …"
- *   "remember this law …"
- *   "learn the following …"
- *   "memori(s|z)e this …"
- *   "ingest this …" / "import this document/file/url …"
- *   "provide your own context" / "provide my own context"
- *   "here is the context/source/document …"
- */
-export function detectTeachIntent(userInput: string): { topic: string } | null {
-  const trimmed = userInput.trim();
-
-  const patterns: Array<{ re: RegExp; capture: number }> = [
-    // "remember/learn (the|this) following [law|article|rule|text|content|…]: …"
-    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following(?:\s+\w+)?\s*[:\-–]\s*(.+)$/i, capture: 1 },
-    { re: /^(?:please\s+)?(?:remember|learn|memori[sz]e)\s+(?:the|this)\s+following\b(.*)$/i, capture: 1 },
-    // "remember/memorize this law/article/rule/fact: …"
-    { re: /^(?:please\s+)?(?:remember|memori[sz]e)\s+this\s+(?:law|article|rule|fact|statute|regulation|text|document)\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "ingest/import this/the following document/file/url: …"
-    { re: /^(?:please\s+)?(?:ingest|import)\s+(?:this|the\s+following)\s*(?:document|file|url|page)?\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
-    { re: /^(?:i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\b[:\s\-–]*(.*)$/i, capture: 1 },
-    // "here is / here's (the|my) context/source/document/article"
-    { re: /^here\s*(?:'s|is)\s+(?:the|my)\s+(?:context|source|document|article|law|text)\b[:\s\-–]*(.*)$/i, capture: 1 },
-  ];
-
-  for (const { re, capture } of patterns) {
-    const m = trimmed.match(re);
-    if (m) {
-      const topic = (m[capture] ?? '').trim() || 'the provided content';
-      return { topic };
-    }
-  }
-  return null;
 }
 
 /**
@@ -462,44 +418,12 @@ function maybeShowDontKnowPrompt(responseText: string): void {
 }
 
 /**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect the two gated setup commands the user can type after a
- * "don't-know" prompt.  These are literal confirmations — we only fire the
- * matching setup flow when the user explicitly types one.
- */
-export function detectGatedSetupCommand(userInput: string):
-  | { type: 'upgrade_gemini' }
-  | { type: 'provide_context' }
-  | null {
-  const lower = userInput.toLowerCase().trim();
-
-  // "upgrade to gemini [model]"  (typo-tolerant: gem(i)?ni)
-  if (/^(?:please\s+)?upgrade\s+to\s+gem[i]?ni(?:\s+model)?\s*[.!]?$/i.test(lower)
-    || /^switch\s+to\s+gem[i]?ni(?:\s+model)?\s+(?:for\s+)?(?:google\s+)?search\b/i.test(lower)
-    || /^use\s+gem[i]?ni\s+(?:for|with)\s+(?:google\s+)?search\b/i.test(lower)) {
-    return { type: 'upgrade_gemini' };
-  }
-
-  // "provide (my|your) own context"  (typo-tolerant: prov(i)?de)
-  if (/^(?:please\s+|i(?:'ll|\s+will)?\s+)?prov[i]?de\s+(?:my|your)\s+own\s+context\s*[.!]?$/i.test(lower)) {
-    return { type: 'provide_context' };
-  }
-
-  return null;
-}
-
-/**
  * Execute a gated setup command.  Returns the assistant message to push into
  * the conversation; the message carries quest choices that wire up into the
  * existing overlay so the user can proceed with a single click.
  *
- * The shape `{ type: 'upgrade_gemini' | 'provide_context' }` is shared by
- * both the legacy `detectGatedSetupCommand()` regex (test-only) and the
- * `IntentDecision::GatedSetup` branch returned by the LLM-powered
- * classifier.
+ * The shape `{ type: 'upgrade_gemini' | 'provide_context' }` mirrors the
+ * `IntentDecision::GatedSetup` branch returned by the backend classifier.
  */
 function executeGatedSetupCommand(
   cmd: { type: 'upgrade_gemini' } | { type: 'provide_context' },
@@ -547,35 +471,10 @@ function executeGatedSetupCommand(
 // ── "Learn X using my documents" flow ────────────────────────────────────────
 
 /**
- * @deprecated The live message path now routes through the LLM-powered
- * intent classifier (`brain::intent_classifier::classify_user_intent`).
- * Kept as a deterministic test fixture for `conversation.test.ts`.
- *
- * Detect an explicit "learn / study X using my documents" request.
- *
- * Examples that match:
- *   "Learn Vietnamese laws using my provided documents"
- *   "Study quantum physics with my files"
- *   "Learn about contract law from my notes"
- *
- * Returns the extracted topic, or null when the phrase doesn't match.
- */
-export function detectLearnWithDocsIntent(userInput: string): { topic: string } | null {
-  const trimmed = userInput.trim();
-  const re =
-    /^(?:please\s+|i\s+(?:want|would\s+like)\s+to\s+)?(?:learn|study)\s+(?:about\s+)?(.+?)\s+(?:using|with|from|via)\s+(?:my|the|our)\s+(?:own\s+|provided\s+)?(?:documents?|docs?|files?|sources?|notes?|materials?|pdfs?|articles?)\b[\s.!?]*$/i;
-  const m = trimmed.match(re);
-  if (m) {
-    const topic = (m[1] ?? '').trim();
-    if (topic) return { topic };
-  }
-  return null;
-}
-
-/**
  * Walk the prerequisite chain of `targetQuestId` and return the ordered list
- * of quest IDs that aren't yet `active`. The target quest itself is included
- * at the end of the list when it isn't active either.
+ * of prerequisite quest IDs that aren't yet `active`. The target quest itself
+ * is intentionally excluded: Scholar's Quest is the guided flow we start after
+ * its setup prerequisites are active, not another prerequisite to auto-complete.
  *
  * The order is dependency-first: every prerequisite appears before the quest
  * that depends on it, so the auto-install loop can simply iterate left → right.
@@ -584,35 +483,117 @@ export function getMissingPrereqQuests(
   skillTree: ReturnType<typeof useSkillTreeStore>,
   targetQuestId: string,
 ): string[] {
+  return buildLearnDocsPrereqPrecheck(skillTree, targetQuestId).missingIds;
+}
+
+interface LearnDocsPrereqEvaluation {
+  id: string;
+  active: boolean;
+  detail: string;
+}
+
+interface LearnDocsPrereqPrecheck {
+  missingIds: string[];
+  evaluations: LearnDocsPrereqEvaluation[];
+}
+
+function evaluateLiveLearnDocsPrerequisite(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  id: string,
+): Omit<LearnDocsPrereqEvaluation, 'id'> {
+  const brain = useBrainStore();
+  const memory = useMemoryStore();
+
+  if (id === 'free-brain') {
+    return brain.hasBrain
+      ? { active: true, detail: 'a brain provider is configured now' }
+      : { active: false, detail: 'no active brain provider is configured now' };
+  }
+
+  if (id === 'memory') {
+    return brain.brainMode !== null
+      ? { active: true, detail: 'memory can attach to the current brain mode' }
+      : { active: false, detail: 'memory needs an active brain mode' };
+  }
+
+  if (id === 'rag-knowledge') {
+    const hasBrain = brain.brainMode !== null;
+    const memoryCount = memory.memories.length;
+    const active = hasBrain && memoryCount > 0;
+    if (active) {
+      return { active: true, detail: `current brain mode is active and ${memoryCount} memory item(s) exist` };
+    }
+    const needs = [
+      !hasBrain ? 'an active brain mode' : null,
+      memoryCount === 0 ? 'at least one memory' : null,
+    ].filter(Boolean).join(' and ');
+    return { active: false, detail: `needs ${needs}` };
+  }
+
+  try {
+    const status = skillTree.getSkillStatus(id);
+    return status === 'active'
+      ? { active: true, detail: 'quest status is active' }
+      : { active: false, detail: `quest status is ${status}` };
+  } catch (err) {
+    console.warn(`getSkillStatus(${id}) failed; assuming not active`, err);
+    return { active: false, detail: 'status check failed, so setup is required' };
+  }
+}
+
+function buildLearnDocsPrereqPrecheck(
+  skillTree: ReturnType<typeof useSkillTreeStore>,
+  targetQuestId: string,
+): LearnDocsPrereqPrecheck {
   const ordered: string[] = [];
+  const evaluations: LearnDocsPrereqEvaluation[] = [];
   const seen = new Set<string>();
 
-  function visit(id: string): void {
+  function visit(id: string, includeSelf: boolean): void {
     if (seen.has(id)) return;
     seen.add(id);
     const node = skillTree.nodes.find((n) => n.id === id);
     if (!node) return;
-    for (const req of node.requires) visit(req);
-    let status: string;
-    try {
-      status = skillTree.getSkillStatus(id);
-    } catch (err) {
-      // Defensive: treat status-check failures as "not active yet" so the
-      // quest is included in the install list rather than silently skipped.
-      console.warn(`getSkillStatus(${id}) failed; assuming not active`, err);
-      status = 'available';
-    }
-    if (status !== 'active') ordered.push(id);
+    for (const req of node.requires) visit(req, true);
+    if (!includeSelf) return;
+    const result = evaluateLiveLearnDocsPrerequisite(skillTree, id);
+    evaluations.push({ id, ...result });
+    if (!result.active) ordered.push(id);
   }
 
-  visit(targetQuestId);
-  return ordered;
+  visit(targetQuestId, false);
+  return { missingIds: ordered, evaluations };
 }
 
 /** Look up a quest's display name (fallback: the id itself). */
 function questDisplayName(skillTree: ReturnType<typeof useSkillTreeStore>, id: string): string {
   const node = skillTree.nodes.find((n) => n.id === id);
   return node ? `${node.icon} ${node.name}` : id;
+}
+
+function buildLearnDocsThinking(
+  topic: string,
+  precheck: LearnDocsPrereqPrecheck,
+): string {
+  const skillTree = useSkillTreeStore();
+  const lines = [
+    `Considering whether Scholar's Quest can start for **${topic}**.`,
+    'I am checking the current brain and memory state instead of trusting saved quest completion, because setup can be removed later.',
+    ...precheck.evaluations.map((item) => {
+      const state = item.active ? 'ready' : 'needs setup';
+      return `- **${questDisplayName(skillTree, item.id)}**: ${state} — ${item.detail}.`;
+    }),
+  ];
+
+  if (precheck.missingIds.length === 0) {
+    lines.push('All prerequisites are live now, so the next step is the Scholar\'s Quest start prompt.');
+  } else if (precheck.missingIds.length === 1) {
+    lines.push(`Only **${questDisplayName(skillTree, precheck.missingIds[0])}** is missing, so the hotseat should show Install and Cancel.`);
+  } else {
+    lines.push('Multiple prerequisites are missing, so the hotseat should offer the setup chain before Scholar\'s Quest starts.');
+  }
+
+  return lines.join('\n');
 }
 
 /**
@@ -623,30 +604,105 @@ function questDisplayName(skillTree: ReturnType<typeof useSkillTreeStore>, id: s
  * `topic` is round-tripped through the choice values so we can resume the
  * flow without keeping any extra state in the store.
  */
-function pushMissingComponentsPrompt(topic: string, missingIds: string[]): void {
+function pushMissingComponentsPrompt(
+  topic: string,
+  missingIds: string[],
+  thinkingContent: string,
+): void {
   const conversation = useConversationStore();
   const skillTree = useSkillTreeStore();
   const list = missingIds
     .map((id) => `• **${questDisplayName(skillTree, id)}**`)
     .join('\n');
   const enc = encodeURIComponent(topic);
+  const isSingleMissing = missingIds.length === 1;
+  const choices = isSingleMissing
+    ? [
+        {
+          label: `Install ${questDisplayName(skillTree, missingIds[0])}`,
+          value: `learn-docs:install-quest:${missingIds[0]}:${enc}`,
+          icon: '⚔️',
+        },
+        { label: 'Cancel', value: 'dismiss', icon: '❌' },
+      ]
+    : [
+        { label: 'Auto install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
+        { label: 'Start chain quest', value: `learn-docs:install-each:${enc}`, icon: '📋' },
+        { label: 'Cancel', value: 'dismiss', icon: '❌' },
+      ];
   conversation.messages.push({
     id: crypto.randomUUID(),
     role: 'assistant',
     content:
-      `To learn **${topic}** from your documents I need a few quests to be active first:\n\n` +
+      `To learn **${topic}** from your documents I need ${isSingleMissing ? 'this quest' : 'a few quests'} to be active first:\n\n` +
       `${list}\n\n` +
       `How would you like to proceed?`,
     agentName: 'System',
     sentiment: 'neutral',
     timestamp: Date.now(),
     questId: 'learn-docs-missing',
-    questChoices: [
-      { label: 'Auto install all', value: `learn-docs:install-all:${enc}`, icon: '⚡' },
-      { label: 'Start chain quest', value: `learn-docs:install-each:${enc}`, icon: '📋' },
-      { label: 'Cancel', value: 'dismiss', icon: '❌' },
-    ],
+    thinkingLabel: 'Checking Learn Docs setup',
+    thinkingContent,
+    questChoices: choices,
   });
+}
+
+async function installLearnDocsPrerequisite(topic: string, questId: string): Promise<void> {
+  const brain = useBrainStore();
+
+  if (questId === 'free-brain') {
+    try {
+      await brain.autoConfigureForDesktop();
+    } catch {
+      brain.autoConfigureFreeApi();
+    }
+    return;
+  }
+
+  if (questId === 'memory') {
+    if (!brain.brainMode) {
+      try {
+        await brain.autoConfigureForDesktop();
+      } catch {
+        brain.autoConfigureFreeApi();
+      }
+    }
+    return;
+  }
+
+  if (questId === 'rag-knowledge') {
+    const memStore = useMemoryStore();
+    if (memStore.memories.length === 0) {
+      const entry = await memStore.addMemory({
+        content: `I want to learn about ${topic} from my own documents.`,
+        tags: 'learning,goal',
+        importance: 5,
+        memory_type: 'context',
+      });
+      if (!entry) {
+        const now = Date.now();
+        memStore.memories.push({
+          id: now,
+          content: `I want to learn about ${topic} from my own documents.`,
+          tags: 'learning,goal',
+          importance: 5,
+          memory_type: 'context',
+          created_at: now,
+          last_accessed: null,
+          access_count: 0,
+          tier: 'short',
+          decay_score: 1,
+          session_id: null,
+          parent_id: null,
+          token_count: 12,
+          confidence: 1.0,
+        });
+      }
+    }
+    return;
+  }
+
+  throw new Error(`No automatic installer is available for ${questId}.`);
 }
 
 /** Sub-prompt for "Install one by one": one button per missing quest. */
@@ -682,7 +738,7 @@ function pushInstallEachPrompt(topic: string, missingIds: string[]): void {
  * documents about `topic` to import. This is the same overlay the rest of
  * the codebase uses for the document-gather step.
  */
-function pushReadyForLearnDocs(topic: string): void {
+function pushReadyForLearnDocs(topic: string, thinkingContent?: string): void {
   const conversation = useConversationStore();
   conversation.messages.push({
     id: crypto.randomUUID(),
@@ -693,6 +749,8 @@ function pushReadyForLearnDocs(topic: string): void {
     sentiment: 'happy',
     timestamp: Date.now(),
     questId: 'scholar-quest',
+    thinkingLabel: thinkingContent ? 'Checking Learn Docs setup' : undefined,
+    thinkingContent,
     questChoices: [
       { label: 'Start Knowledge Quest', value: 'knowledge-quest-start', icon: '⚔️' },
       { label: 'No thanks', value: 'dismiss', icon: '💤' },
@@ -708,32 +766,32 @@ function pushReadyForLearnDocs(topic: string): void {
  */
 function startLearnDocsFlow(topic: string): void {
   const skillTree = useSkillTreeStore();
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  if (missing.length === 0) {
-    pushReadyForLearnDocs(topic);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const thinkingContent = buildLearnDocsThinking(topic, precheck);
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, thinkingContent);
     return;
   }
-  pushMissingComponentsPrompt(topic, missing);
+  pushMissingComponentsPrompt(topic, precheck.missingIds, thinkingContent);
 }
 
 /**
  * Auto-install path: actually activate every missing quest in the prereq
- * chain by performing the real configuration (brain setup, memory bootstrap,
- * manual-completion marking) rather than just clicking "accept" on the
- * quest-guide chat flow.
+ * chain by performing the real configuration (brain setup and memory
+ * bootstrap) rather than just clicking "accept" on the quest-guide chat flow.
  *
  * Install order (from brain-advanced-design.md):
  *   1. 🧠 Awaken the Mind  — free cloud LLM provider
  *   2. 📖 Long-Term Memory  — SQLite memory store (auto-active once brain set)
  *   3. 📚 Sage's Library    — RAG pipeline (needs brain + ≥1 memory)
- *   4. 📚 Scholar's Quest   — document ingestion (chain quest, mark complete)
+ *   4. 📚 Scholar's Quest   — document ingestion chain starts after setup
  */
 async function runAutoInstall(topic: string): Promise<void> {
   const skillTree = useSkillTreeStore();
   const conversation = useConversationStore();
-  const brain = useBrainStore();
 
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
+  const initialPrecheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const missing = initialPrecheck.missingIds;
   const installed: string[] = [];
 
   conversation.messages.push({
@@ -743,62 +801,13 @@ async function runAutoInstall(topic: string): Promise<void> {
     agentName: 'System',
     sentiment: 'happy',
     timestamp: Date.now(),
+    thinkingLabel: 'Checking Learn Docs setup',
+    thinkingContent: buildLearnDocsThinking(topic, initialPrecheck),
   });
 
   for (const id of missing) {
     try {
-      // Perform the actual activation for each quest type.
-      if (id === 'free-brain') {
-        // Configure a free cloud LLM provider (Pollinations).
-        try {
-          await brain.autoConfigureForDesktop();
-        } catch {
-          brain.autoConfigureFreeApi();
-        }
-      } else if (id === 'memory') {
-        // Memory auto-activates once the brain is configured.
-        // Ensure brain mode is set (should be from free-brain step).
-        if (!brain.brainMode) {
-          try { await brain.autoConfigureForDesktop(); }
-          catch { brain.autoConfigureFreeApi(); }
-        }
-      } else if (id === 'rag-knowledge') {
-        // RAG requires brain + at least one memory.
-        // Seed a bootstrap memory so the RAG quest becomes active.
-        const memStore = useMemoryStore();
-        if (memStore.memories.length === 0) {
-          // addMemory catches errors internally and returns null (never throws).
-          const entry = await memStore.addMemory({
-            content: `I want to learn about ${topic} from my own documents.`,
-            tags: 'learning,goal',
-            importance: 5,
-            memory_type: 'context',
-          });
-          if (!entry) {
-            // Invoke failed — push a local-only entry so the status check passes.
-            const now = Date.now();
-            memStore.memories.push({
-              id: now,
-              content: `I want to learn about ${topic} from my own documents.`,
-              tags: 'learning,goal',
-              importance: 5,
-              memory_type: 'context',
-              created_at: now,
-              last_accessed: null,
-              access_count: 0,
-              tier: 'short',
-              decay_score: 1,
-              session_id: null,
-              parent_id: null,
-              token_count: 12,
-              confidence: 1.0,
-            });
-          }
-        }
-      } else if (id === 'scholar-quest') {
-        // Scholar's Quest is a chain quest — mark it manually completed.
-        skillTree.markComplete(id);
-      }
+      await installLearnDocsPrerequisite(topic, id);
       installed.push(id);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
@@ -829,9 +838,10 @@ async function runAutoInstall(topic: string): Promise<void> {
   }
 
   // Recompute — anything still inactive is something we couldn't auto-finish.
-  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  if (stillMissing.length > 0) {
-    const list = stillMissing.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
+  const finalPrecheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  const finalThinking = buildLearnDocsThinking(topic, finalPrecheck);
+  if (finalPrecheck.missingIds.length > 0) {
+    const list = finalPrecheck.missingIds.map((id) => `• ${questDisplayName(skillTree, id)}`).join('\n');
     conversation.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
@@ -842,6 +852,8 @@ async function runAutoInstall(topic: string): Promise<void> {
       sentiment: 'neutral',
       timestamp: Date.now(),
       questId: 'learn-docs-followup',
+      thinkingLabel: 'Checking Learn Docs setup',
+      thinkingContent: finalThinking,
       questChoices: [
         { label: 'Open Quests tab', value: 'navigate:skills', icon: '🗺️' },
         { label: 'Dismiss', value: 'dismiss', icon: '💤' },
@@ -849,7 +861,7 @@ async function runAutoInstall(topic: string): Promise<void> {
     });
     return;
   }
-  pushReadyForLearnDocs(topic);
+  pushReadyForLearnDocs(topic, finalThinking);
 }
 
 /**
@@ -859,8 +871,12 @@ async function runAutoInstall(topic: string): Promise<void> {
  */
 function runManualInstall(topic: string): void {
   const skillTree = useSkillTreeStore();
-  const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-  pushInstallEachPrompt(topic, missing);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, buildLearnDocsThinking(topic, precheck));
+    return;
+  }
+  pushInstallEachPrompt(topic, precheck.missingIds);
 }
 
 /** Trigger a single missing quest (used by the per-quest buttons). */
@@ -868,28 +884,24 @@ async function runInstallSingleQuest(topic: string, questId: string): Promise<vo
   const skillTree = useSkillTreeStore();
   const conversation = useConversationStore();
   try {
-    skillTree.triggerQuestEvent(questId);
+    await installLearnDocsPrerequisite(topic, questId);
   } catch (err) {
-    // triggerQuestEvent throws before handleQuestChoice runs — surface the
-    // error explicitly so the user isn't left with a silent no-op.
+    // Surface setup failures explicitly so the user isn't left with a silent no-op.
     const detail = err instanceof Error ? err.message : String(err);
     conversation.messages.push({
       id: crypto.randomUUID(),
       role: 'assistant',
-      content: `⚠️ Could not start **${questDisplayName(skillTree, questId)}**: ${detail}. Try opening it from the Quests tab.`,
+      content: `⚠️ Could not install **${questDisplayName(skillTree, questId)}**: ${detail}. Try opening it from the Quests tab.`,
       agentName: 'System',
       sentiment: 'sad',
       timestamp: Date.now(),
     });
   }
-  // Re-evaluate after the user finishes interacting with this quest. We
-  // surface the rest of the missing list so the user can keep going, or the
-  // ready-for-docs prompt if everything's now active.
-  const stillMissing = getMissingPrereqQuests(skillTree, 'scholar-quest').filter((id) => id !== questId);
-  if (stillMissing.length === 0) {
-    pushReadyForLearnDocs(topic);
+  const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+  if (precheck.missingIds.length === 0) {
+    pushReadyForLearnDocs(topic, buildLearnDocsThinking(topic, precheck));
   } else {
-    pushInstallEachPrompt(topic, stillMissing);
+    pushInstallEachPrompt(topic, precheck.missingIds);
   }
 }
 
@@ -941,8 +953,13 @@ export async function handleLearnDocsChoice(value: string): Promise<boolean> {
     }
     case 'install-back': {
       const skillTree = useSkillTreeStore();
-      const missing = getMissingPrereqQuests(skillTree, 'scholar-quest');
-      pushMissingComponentsPrompt(topic, missing);
+      const precheck = buildLearnDocsPrereqPrecheck(skillTree, 'scholar-quest');
+      const thinkingContent = buildLearnDocsThinking(topic, precheck);
+      if (precheck.missingIds.length === 0) {
+        pushReadyForLearnDocs(topic, thinkingContent);
+      } else {
+        pushMissingComponentsPrompt(topic, precheck.missingIds, thinkingContent);
+      }
       return true;
     }
     default:
@@ -1728,47 +1745,63 @@ export const useConversationStore = defineStore('conversation', () => {
       return;
     }
 
-    // ── LLM-powered intent classification ──────────────────────────────
-    // Replaces three regex detectors that used to short-circuit here.
-    // The configured brain (Free → Paid → Local) decides what to do;
-    // failure (no brain, timeout, malformed JSON) maps to `unknown` and
-    // falls back to the install-all path so future turns work offline.
-    const decision = await classifyIntent(content, brain.hasBrain);
-    switch (decision.kind) {
-      case 'gated_setup': {
-        messages.value.push(executeGatedSetupCommand({ type: decision.setup }));
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'learn_with_docs': {
-        startLearnDocsFlow(decision.topic);
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'teach_ingest': {
-        pushTeachScholarQuestForTopic(decision.topic);
-        isThinking.value = false;
-        generationActive.value = false;
-        void drainQueue();
-        return;
-      }
-      case 'unknown': {
-        // Classifier couldn't decide (no brain, timeout, malformed JSON).
-        // The safe default is to fall through to the streaming chat path —
-        // never assume the user wants to learn from documents just because
-        // the classifier failed. The persona-fallback UX will handle the
-        // turn if no brain is configured.
-        break;
-      }
-      case 'chat':
-      default:
-        // Fall through to the normal streaming chat path below.
-        break;
+    // ── LLM-powered intent classification (non-blocking) ─────────────
+    // Fire classification concurrently with the streaming path so casual
+    // chat messages (the ~95% case) don't pay a 0-3s classification
+    // penalty.  If the classifier comes back with a side-channel intent
+    // (learn_with_docs, teach_ingest, gated_setup) we abort the stream
+    // and handle it.  For `chat` / `unknown` the stream is already
+    // running — zero wasted time.
+    // Short content-light turns still bypass the classifier. Contentful setup
+    // requests, including LocalLLM turns, go through the backend classifier so
+    // the brain can use its app/RAG knowledge to route side-channel intents.
+    const classifyPromise: Promise<IntentDecision> = shouldRunIntentClassifierForTurn(content, brain)
+      ? classifyIntent(content, brain.hasBrain)
+      : Promise.resolve({ kind: 'chat' });
+    let classifyDecision: IntentDecision | null = null;
+    const shouldAwaitIntent = shouldAwaitIntentBeforeStreaming(content);
+    // Check synchronously — if the cache already has the answer it
+    // resolves immediately (microtask), so we can short-circuit before
+    // even starting the stream for non-chat intents.
+    const quickDecision = shouldAwaitIntent
+      ? await classifyPromise
+      : await Promise.race([
+          classifyPromise.then((decision) => decision),
+          // 0ms normally only picks up cached results. When the desktop app has no
+          // brain configured, wait briefly so backend-owned deterministic shortcuts
+          // can pre-empt the persona fallback before the streaming path fails.
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), brain.hasBrain ? 0 : 500)),
+        ]);
+    if (quickDecision && quickDecision.kind !== 'chat' && quickDecision.kind !== 'unknown') {
+      classifyDecision = quickDecision;
     }
+    if (classifyDecision) {
+      switch (classifyDecision.kind) {
+        case 'gated_setup': {
+          messages.value.push(executeGatedSetupCommand({ type: classifyDecision.setup }));
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+        case 'learn_with_docs': {
+          startLearnDocsFlow(classifyDecision.topic);
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+        case 'teach_ingest': {
+          pushTeachScholarQuestForTopic(classifyDecision.topic);
+          isThinking.value = false;
+          generationActive.value = false;
+          void drainQueue();
+          return;
+        }
+      }
+    }
+    // For non-cached results, classification continues in the background
+    // and is checked after streaming starts (see below).
 
 
     if (import.meta.env.VITE_E2E && !isTauriAvailable()) {
@@ -1808,21 +1841,63 @@ export const useConversationStore = defineStore('conversation', () => {
         // Don't set isStreaming immediately - wait for first chunk
         // Keep character in thinking state until text actually arrives
 
+        // Background classifier: when a side-channel intent arrives, abort
+        // the stream and handle the intent. For document-learning and
+        // teach/ingest intents we always divert — even if some stream text
+        // has already arrived — because the user explicitly asked for a
+        // workflow, not a chat answer. For gated_setup we only divert when
+        // no text has streamed yet, since setup confirmations are less
+        // disruptive as a post-response prompt.
+        let bgIntentHandled = false;
+        if (!classifyDecision) {
+          classifyPromise.then((d) => {
+            if (bgIntentHandled) return;
+            if (d.kind === 'chat' || d.kind === 'unknown') return;
+            // gated_setup only pre-empts when no text has streamed yet.
+            if (d.kind === 'gated_setup' && streaming.streamText) return;
+            bgIntentHandled = true;
+            // Push the quest/setup flow first, then abort — the abort
+            // handler discards partial stream text and drains the queue.
+            switch (d.kind) {
+              case 'gated_setup':
+                messages.value.push(executeGatedSetupCommand({ type: d.setup }));
+                break;
+              case 'learn_with_docs':
+                startLearnDocsFlow(d.topic);
+                break;
+              case 'teach_ingest':
+                pushTeachScholarQuestForTopic(d.topic);
+                break;
+            }
+            activeAbortController?.abort();
+          }).catch(() => { /* classifier errors are non-fatal */ });
+        }
+
         // While `invoke` blocks, mirror `streaming.streamText` into this
-        // store's `streamingText` at ~50ms intervals so reactive UI stays live.
+        // store's `streamingText` at ~16ms intervals so reactive UI stays live.
         // Also checks the abort signal for user-initiated stop.
         const abortSignal = activeAbortController?.signal;
         const syncInterval = setInterval(() => {
           streamingText.value = streaming.streamText;
-          // Sync isStreaming state with the streaming store
+          // Sync isStreaming state with the streaming store.
+          // Clear isThinking as soon as actual text arrives so the avatar
+          // transitions from "thinking" to "talking" immediately — without
+          // this, isThinking stayed true for the entire stream and the 3D
+          // model kept showing the thinking animation even while text was
+          // visibly rendering in the chat bubble.
           if (streaming.isStreaming && !isStreaming.value) {
             isStreaming.value = true;
+            // Only clear isThinking when answer text arrives (not during
+            // the extended-thinking phase).
+            if (!streaming.isThinkingPhase) {
+              isThinking.value = false;
+            }
           } else if (!streaming.isStreaming && isStreaming.value) {
             isStreaming.value = false;
           }
-        }, 50);
+        }, 16);
 
-        const TAURI_STREAM_TIMEOUT_MS = 60_000; // 60s timeout
+        const TAURI_STREAM_TIMEOUT_MS = 180_000; // 180s timeout (large models need cold-start loading)
         let sendOk = false;
         let wasAborted = false;
         try {
@@ -1885,12 +1960,14 @@ export const useConversationStore = defineStore('conversation', () => {
         if (!sendOk) throw new Error(streaming.error ?? 'Streaming failed');
 
         // Grace period for any in-flight events after invoke resolves.
+        // Rust emits done:true reliably, so we only need a very short
+        // grace — just enough for the Tauri event to transit IPC.
         if (streaming.isStreaming) {
-          const graceWait = 1_500;
+          const graceWait = 200;
           const start = Date.now();
           while (streaming.isStreaming && Date.now() - start < graceWait) {
             streamingText.value = streaming.streamText;
-            await new Promise((r) => setTimeout(r, 50));
+            await new Promise((r) => setTimeout(r, 16));
           }
         }
 
@@ -1902,11 +1979,58 @@ export const useConversationStore = defineStore('conversation', () => {
         // but the LLM may still return JSON-wrapped text outside tags.
         const parsed = parseTags(streaming.streamText);
         const cleanText = parsed.text;
+
+        // ── Post-stream classifier check ──────────────────────────────
+        // With LocalOllama (NUM_PARALLEL=1) the classifier request is
+        // queued behind the chat stream in Ollama's request queue. The
+        // stream finishes before the classifier, so the background
+        // `.then()` handler can't abort in time. Now that the GPU is
+        // free, wait briefly for the classifier; if it returns a
+        // side-channel intent, show the quest flow instead of the chat
+        // response.
+        if (!bgIntentHandled) {
+          try {
+            const POST_STREAM_CLASSIFY_WAIT_MS = 5000;
+            const postDecision = await Promise.race([
+              classifyPromise,
+              new Promise<IntentDecision>((r) =>
+                setTimeout(() => r({ kind: 'chat' }), POST_STREAM_CLASSIFY_WAIT_MS),
+              ),
+            ]);
+            if (
+              postDecision.kind !== 'chat' &&
+              postDecision.kind !== 'unknown'
+            ) {
+              bgIntentHandled = true;
+              streaming.reset();
+              switch (postDecision.kind) {
+                case 'learn_with_docs':
+                  startLearnDocsFlow(postDecision.topic);
+                  break;
+                case 'teach_ingest':
+                  pushTeachScholarQuestForTopic(postDecision.topic);
+                  break;
+                case 'gated_setup':
+                  messages.value.push(
+                    executeGatedSetupCommand({ type: postDecision.setup }),
+                  );
+                  break;
+              }
+              // Skip the chat response — quest flow handles the turn.
+              // The finally block cleans up isThinking/isStreaming/etc.
+              return;
+            }
+          } catch {
+            // Classifier error — proceed with the normal chat response.
+          }
+        }
+
         if (cleanText) {
           // Emotion comes from the streaming store (set by llm-animation events).
           const sentiment = streaming.currentEmotion ?? parsed.emotion ?? detectSentiment(content);
           const motion = streaming.currentMotion ?? parsed.motion ?? undefined;
           const { clean, warning } = extractWarning(cleanText);
+          const thinkingContent = streaming.thinkingText || undefined;
           const assistantMsg: Message = {
             id: crypto.randomUUID(),
             role: 'assistant',
@@ -1916,6 +2040,7 @@ export const useConversationStore = defineStore('conversation', () => {
             timestamp: Date.now(),
             emoji: parsed.emoji ?? undefined,
             motion,
+            thinkingContent,
           };
           stampAgent(assistantMsg);
           if (warning) applyWarningAsQuest(assistantMsg, warning);
@@ -1933,7 +2058,7 @@ export const useConversationStore = defineStore('conversation', () => {
       } catch {
         // Tauri streaming failed — fall back to non-streaming invoke with timeout
         try {
-          const FALLBACK_TIMEOUT_MS = 30_000;
+          const FALLBACK_TIMEOUT_MS = 120_000;
           const response = await Promise.race([
             invoke<Message>('send_message', {
               message: content,
@@ -1976,13 +2101,15 @@ export const useConversationStore = defineStore('conversation', () => {
 
         // RAG: fetch relevant memories from Tauri or browser-native storage.
         let memoryBlock = '';
-        try {
-          const results = await useMemoryStore().hybridSearch(content, 5);
-          if (results && results.length > 0) {
-            memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+        if (!shouldUseFastChatPath(content)) {
+          try {
+            const results = await useMemoryStore().hybridSearch(content, 5);
+            if (results && results.length > 0) {
+              memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+            }
+          } catch {
+            // No memories — continue without RAG.
           }
-        } catch {
-          // No memories — continue without RAG.
         }
 
         // Try the primary provider, then rotate to next healthy on rate-limit

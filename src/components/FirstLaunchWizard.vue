@@ -288,6 +288,7 @@
 <script setup lang="ts">
 /* eslint-disable max-lines */
 import { ref, computed, nextTick, onUnmounted } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useVoiceStore } from '../stores/voice';
@@ -370,7 +371,6 @@ const doneMessage = computed(() => {
 /** Start listening to Ollama pull progress events from the Tauri backend. */
 async function startPullProgressListener() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{
       status: string;
       digest: string;
@@ -419,7 +419,6 @@ let installListenCleanup: (() => void) | null = null;
 /** Start listening to Ollama install progress events (download + setup phases). */
 async function startInstallProgressListener() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{ phase: string; percent: number }>('ollama-install-progress', (event) => {
       const p = event.payload;
       setupMessage.value = p.phase;
@@ -574,6 +573,13 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
             label: `Brain connected (Local — ${result.model}${pullNote})${installNote}`,
           });
           logDebug(`Brain configured: local ${result.model}${pullNote}${installNote}`);
+
+          // Pre-warm the chat model into VRAM so the first user reply
+          // lands in milliseconds instead of paying a 10–20s cold-load.
+          // Fire-and-forget — the wizard does not block on this.
+          void brain.warmupLocalOllama(result.model).then((ms) => {
+            if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+          });
         } else if (result.pullFailed) {
           // Download was attempted but failed — show as error.
           logDebug(`Model download failed: ${result.pullFailed}`, 'error');
@@ -603,10 +609,47 @@ async function runRecommendedSetup(autoAcceptAll: boolean) {
         logDebug('Brain configured: Pollinations AI');
       }
     } else {
+      // Brain is already configured from a prior session. If the user chose
+      // the recommended setup and we're currently on a cloud fallback, try to
+      // upgrade to local — the user may have installed Ollama since last time.
       const mode = brain.brainMode;
-      if (mode?.mode === 'local_ollama') {
+      const preferLocal = settingsStore.settings.prefer_local_brain !== false;
+      const isLocal = mode?.mode === 'local_ollama';
+
+      if (!isLocal && preferLocal) {
+        logDebug('Brain is cloud but prefer_local_brain is true — attempting local upgrade...');
+        const result = await brain.autoConfigureLocalFirst({
+          onProgress: (msg: string) => {
+            setupMessage.value = msg;
+            logDebug(msg);
+          },
+        });
+        autoConfigured.push('brain');
+
+        if (result.mode === 'local') {
+          const pullNote = result.pulled ? ' — just downloaded' : '';
+          items.push({
+            icon: '🧠',
+            label: `Brain upgraded to local (${result.model}${pullNote})`,
+          });
+          logDebug(`Brain upgraded: local ${result.model}${pullNote}`);
+          void brain.warmupLocalOllama(result.model).then((ms) => {
+            if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+          });
+        } else {
+          items.push({
+            icon: '🧠',
+            label: `Brain connected (${(mode && 'provider_id' in mode ? mode.provider_id : null) ?? 'cloud'} — free cloud, local unavailable)`,
+          });
+          logDebug('Local upgrade failed — keeping existing cloud config');
+        }
+      } else if (isLocal && mode) {
         items.push({ icon: '🧠', label: `Brain connected (Local — ${mode.model})` });
         logDebug(`Brain already configured: local ${mode.model}`);
+        // Pre-warm even on returning launches so the first reply is fast.
+        void brain.warmupLocalOllama(mode.model).then((ms) => {
+          if (ms !== null) logDebug(`Local model pre-warmed in ${ms} ms`);
+        });
       } else if (mode?.mode === 'free_api') {
         items.push({ icon: '🧠', label: `Brain connected (${mode.provider_id} — free cloud)` });
         logDebug(`Brain already configured: ${mode.provider_id}`);

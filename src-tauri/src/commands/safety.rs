@@ -2,9 +2,7 @@
 
 use tauri::State;
 
-use crate::coding::safety::{
-    self, Action, SafetyConfig, SafetyDecisionRecord,
-};
+use crate::coding::safety::{self, Action, SafetyConfig, SafetyDecisionRecord};
 use crate::AppState;
 
 /// Request permission for an action. Returns `true` if auto-approved (Tier 1).
@@ -17,8 +15,7 @@ pub async fn safety_request_permission(
     let action = parse_action(&action)?;
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     let config = SafetyConfig::default();
-    safety::request_permission(&store.conn, action, &config, &reason)
-        .map_err(|e| e.to_string())
+    safety::request_permission(&store.conn, action, &config, &reason).map_err(|e| e.to_string())
 }
 
 /// List recent safety decisions.
@@ -41,8 +38,7 @@ pub async fn safety_check_promotion(
     let action = parse_action(&action)?;
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     let config = SafetyConfig::default();
-    safety::check_promotion(&store.conn, action, &config)
-        .map_err(|e| e.to_string())
+    safety::check_promotion(&store.conn, action, &config).map_err(|e| e.to_string())
 }
 
 fn parse_action(s: &str) -> Result<Action, String> {

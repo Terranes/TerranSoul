@@ -1,66 +1,39 @@
 {
   // TerranSoul MCP servers — connects VS Code Copilot to the brain.
   //
-  // Three servers are configured so dev, release, and the headless
-  // "MCP pet mode" runner (`npm run mcp`) can run in parallel without
-  // stealing each other's port:
-  //   - terransoul-brain     → port 7421 (release build)
-  //   - terransoul-brain-dev → port 7422 (dev/debug build via `cargo tauri dev`)
-  //   - terransoul-brain-mcp → port 7423 (headless `npm run mcp` runner)
+  // `terransoul-brain-mcp` is a lightweight stdio proxy. It does not start a
+  // second brain process; it attaches to the first running TerranSoul MCP
+  // server in priority order:
+  //   1. release app on 127.0.0.1:7421
+  //   2. MCP tray (`npm run mcp`) on 127.0.0.1:7423
+  //   3. dev app on 127.0.0.1:7422
   //
-  // VS Code will connect to whichever server is actually running.
-  // The headless runner is the one external AI coding agents
-  // (Copilot/Codex/Claude Code/Clawcode) auto-bootstrap during a
-  // coding session — see `rules/agent-mcp-bootstrap.md`.
-  //
-  // Token setup:
-  //   1. Start the server you want:
-  //        Release/Dev: launch the TerranSoul app — auto-generates
-  //                     mcp-token.txt under the Tauri app data dir.
-  //        Headless:   `npm run mcp` — auto-generates
-  //                     `<repo>/mcp-data/mcp-token.txt`.
-  //   2. Set env vars (one for each profile you use):
-  //
-  //      Release (Windows):
-  //        $env:TERRANSOUL_MCP_TOKEN = Get-Content "$env:APPDATA/com.terranes.terransoul/mcp-token.txt"
-  //      Dev (Windows):
-  //        $env:TERRANSOUL_MCP_TOKEN_DEV = Get-Content "$env:APPDATA/com.terranes.terransoul/dev/mcp-token.txt"
-  //      Headless / pet mode:
-  //        $env:TERRANSOUL_MCP_TOKEN_MCP = Get-Content "mcp-data/mcp-token.txt"
-  //
-  //      On Linux/macOS, replace $env:APPDATA with ~/.local/share.
-  //   3. Restart VS Code so the env vars are picked up.
+  // The proxy reads the matching token file itself, so Copilot sessions do not
+  // need bearer-token environment variables or a VS Code restart. The workspace
+  // auto-start task still starts the tray when no release/tray/dev server is already
+  // serving MCP. See `rules/agent-mcp-bootstrap.md`.
 
   "servers": {
-    "terransoul-brain": {
-      "type": "http",
-      "url": "http://127.0.0.1:7421/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN}"
-      }
-    },
-    "terransoul-brain-dev": {
-      "type": "http",
-      "url": "http://127.0.0.1:7422/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN_DEV}"
-      }
-    },
     "terransoul-brain-mcp": {
-      "type": "http",
-      "url": "http://127.0.0.1:7423/mcp",
-      "headers": {
-        "Authorization": "Bearer ${env:TERRANSOUL_MCP_TOKEN_MCP}"
-      }
-    },
-    "terransoul-brain-stdio": {
       "type": "stdio",
-      "command": "${workspaceFolder}/target-mcp/release/terransoul.exe",
+      "command": "node",
       "args": [
-        "--mcp-stdio"
+        "${workspaceFolder}/scripts/mcp-tray-proxy.mjs"
       ],
       "env": {
-        "TERRANSOUL_MCP_DATA_DIR": "${workspaceFolder}/mcp-data"
+        "TERRANSOUL_MCP_WORKSPACE": "${workspaceFolder}",
+        "TERRANSOUL_MCP_PROXY_WAIT": "240"
+      }
+    },
+    "github": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-github"
+      ],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${env:TERRANSOUL_MCP_GITHUB_TOKEN}"
       }
     }
   }

@@ -131,8 +131,7 @@ pub async fn import_user_model(
 ) -> Result<UserModel, String> {
     let data_dir = state.data_dir.clone();
     let mut settings = state.app_settings.lock().map_err(|e| e.to_string())?;
-    let mut entry =
-        import_user_model_inner(&data_dir, &mut settings, Path::new(&source_path))?;
+    let mut entry = import_user_model_inner(&data_dir, &mut settings, Path::new(&source_path))?;
     let mut changed = false;
     if let Some(n) = name {
         let trimmed = n.trim();

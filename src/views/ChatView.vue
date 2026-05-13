@@ -8,17 +8,15 @@
     <div
       v-if="!props.chatboxMode"
       class="viewport-layer"
+      :class="{ 'viewport-layer--settings-priority': viewportOverlayOpen }"
     >
       <CharacterViewport
         ref="viewportRef"
+        :hide-settings-dialog="chatDrawerExpanded"
         @request-add-music="handleAddMusicRequest"
-      />
-      <!-- Teleport target for the music bar (left side, below settings button).
-           Must live inside .viewport-layer so its z-index competes with the
-           settings dropdown rather than sitting above the entire viewport. -->
-      <div
-        id="music-bar-portal"
-        class="music-bar-portal"
+        @overlay-open="handleViewportOverlayOpen"
+        @set-display-mode="(mode: 'desktop' | 'chatbox') => $emit('set-display-mode', mode)"
+        @toggle-pet-mode="$emit('toggle-pet-mode')"
       />
     </div>
 
@@ -120,30 +118,6 @@
       </div>
     </Transition>
 
-    <!-- Floating subtitle — shows AI response synced with TTS voice -->
-    <Transition
-      name="subtitle"
-      mode="out-in"
-    >
-      <div
-        v-if="subtitleVisible && !props.chatboxMode"
-        :key="subtitleKey"
-        class="subtitle-overlay"
-        :style="{ bottom: subtitleBottom }"
-      >
-        <div
-          ref="subtitleRef"
-          class="subtitle-text"
-        >
-          <span
-            v-for="(segment, index) in subtitleSegments"
-            :key="index"
-            :class="segment.className"
-          >{{ segment.text }}</span>
-        </div>
-      </div>
-    </Transition>
-
     <!-- Floating emoji popup above character head -->
     <Transition name="emoji-pop">
       <div
@@ -155,28 +129,9 @@
       </div>
     </Transition>
 
-    <!-- AI state pill is now rendered by CharacterViewport's corner cluster
-         (single flex stack with the Settings button — no overlap risk).
-         In chatbox mode the pill is rendered inline in the chatbox header
-         further down. -->
-    <!-- Brain status (shows active provider/model — 3D mode only) -->
-    <Transition name="fade">
-      <div
-        v-if="(usesRemoteConversation || (!browserRuntime && brain.hasBrain) || (browserRuntime && brain.browserAuthSession)) && !props.chatboxMode"
-        class="brain-status-pill"
-      >
-        <span class="brain-pill-dot" />
-        <span>{{ activeProviderName }}</span>
-        <button
-          v-if="browserRuntime && !usesRemoteConversation"
-          type="button"
-          class="brain-reconfigure-btn"
-          @click="showBrowserLlmConfig = !showBrowserLlmConfig"
-        >
-          Reconfigure LLM
-        </button>
-      </div>
-    </Transition>
+    <!-- In 3D mode, top-row model + state bubbles are rendered once in
+         CharacterViewport's corner cluster. Chatbox mode keeps its own inline
+         provider/state pills below. -->
 
     <!-- ═══ CHATBOX-ONLY LAYOUT ═══ -->
     <!-- Clean full-height chat when 3D viewport is hidden -->
@@ -245,6 +200,8 @@
           :is-thinking="conversationStore.isThinking"
           :streaming-text="conversationStore.streamingText"
           :is-streaming="conversationStore.isStreaming"
+          :streaming-thinking-text="streaming.thinkingText"
+          :is-thinking-phase="streaming.isThinkingPhase"
           @suggest="handleSend"
           @start-quest="handleStartQuest"
           @navigate="(target: string) => emit('navigate', target)"
@@ -262,13 +219,32 @@
           @dismiss="dismissHotseat"
         />
         <TaskControls
-          :visible="conversationStore.isThinking || conversationStore.isStreaming"
+          :visible="showTaskControls"
           :queue-count="conversationStore.messageQueue.length"
           @stop="conversationStore.stopGeneration()"
           @stop-and-send="conversationStore.stopAndSend()"
           @add-to-queue="(msg: string) => conversationStore.addToQueue(msg)"
           @steer="(msg: string) => conversationStore.steerWithMessage(msg)"
         />
+        <div class="input-top-left-controls">
+          <select
+            class="reasoning-effort-select"
+            :value="reasoningEffortUiValue"
+            :title="brain.hasBrain ? `Reasoning effort: ${reasoningEffortUiValue}` : 'Configure Brain to enable reasoning controls'"
+            :disabled="!brain.hasBrain"
+            @change="handleReasoningEffortChange"
+          >
+            <option value="off">
+              💬 Instant
+            </option>
+            <option value="medium">
+              ⚖ Balanced
+            </option>
+            <option value="high">
+              🧠 Deep
+            </option>
+          </select>
+        </div>
         <div class="input-row">
           <button
             v-if="voice.config.asr_provider"
@@ -304,6 +280,7 @@
           </button>
           <ChatInput
             :disabled="conversationStore.isThinking"
+            :thinking="conversationStore.isThinking || streaming.isThinkingPhase"
             @submit="handleSend"
             @focus="onInputFocused"
             @blur="onInputBlurred"
@@ -311,8 +288,6 @@
         </div>
       </div>
     </div>
-
-    <!-- Game-dialog upgrade prompt -->
     <UpgradeDialog
       :visible="showUpgradeDialog"
       :current-model-name="currentUpgradeModel"
@@ -346,7 +321,51 @@
           @click.stop
         >
           <div class="chat-history-header">
-            <span class="chat-history-title">Chat History</span>
+            <div class="chat-history-controls">
+              <button
+                class="chat-drawer-toggle active"
+                aria-label="Hide chat"
+                @click="toggleChatDrawer()"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span class="toggle-label">Hide</span>
+              </button>
+              <select
+                v-if="brain.hasBrain"
+                class="reasoning-effort-select"
+                :value="reasoningEffortUiValue"
+                :title="`Reasoning effort: ${reasoningEffortUiValue}`"
+                @change="handleReasoningEffortChange"
+              >
+                <option value="off">
+                  💬 Instant
+                </option>
+                <option value="medium">
+                  ⚖ Balanced
+                </option>
+                <option value="high">
+                  🧠 Deep
+                </option>
+              </select>
+              <span
+                v-if="activeProviderName"
+                class="chat-context-pill"
+                :title="activeProviderName"
+              >
+                {{ activeProviderName }}
+              </span>
+            </div>
             <div class="chat-history-actions">
               <button
                 class="chat-history-action-btn"
@@ -370,13 +389,6 @@
               >
                 Skip
               </button>
-              <button
-                class="chat-history-close"
-                aria-label="Close chat history"
-                @click="toggleChatDrawer()"
-              >
-                &times;
-              </button>
             </div>
           </div>
           <TaskProgressBar />
@@ -397,6 +409,8 @@
             :is-thinking="conversationStore.isThinking"
             :streaming-text="conversationStore.streamingText"
             :is-streaming="conversationStore.isStreaming"
+            :streaming-thinking-text="streaming.thinkingText"
+            :is-thinking-phase="streaming.isThinkingPhase"
             @suggest="handleSend"
             @start-quest="handleStartQuest"
             @navigate="(target: string) => emit('navigate', target)"
@@ -416,14 +430,39 @@
         />
         <!-- Long-running task controls — shown while AI is thinking/streaming -->
         <TaskControls
-          :visible="conversationStore.isThinking || conversationStore.isStreaming"
+          :visible="showTaskControls"
           :queue-count="conversationStore.messageQueue.length"
           @stop="conversationStore.stopGeneration()"
           @stop-and-send="conversationStore.stopAndSend()"
           @add-to-queue="(msg: string) => conversationStore.addToQueue(msg)"
           @steer="(msg: string) => conversationStore.steerWithMessage(msg)"
         />
-        <div class="input-row">
+        <!-- Karaoke subtitle — inline above the chat toggle group, full width -->
+        <Transition
+          name="subtitle"
+          mode="out-in"
+        >
+          <div
+            v-if="karaokeDialogEnabled && subtitleVisible && !chatDrawerExpanded"
+            :key="subtitleKey"
+            class="subtitle-inline"
+          >
+            <div
+              ref="subtitleRef"
+              class="subtitle-text"
+            >
+              <span
+                v-for="(segment, index) in subtitleSegments"
+                :key="index"
+                :class="segment.className"
+              >{{ segment.text }}</span>
+            </div>
+          </div>
+        </Transition>
+        <div
+          v-if="!chatDrawerExpanded"
+          class="input-top-left-controls"
+        >
           <button
             class="chat-drawer-toggle"
             :class="{ active: chatDrawerExpanded }"
@@ -444,6 +483,32 @@
             </svg>
             <span class="toggle-label">{{ chatDrawerExpanded ? 'Hide' : 'Chat' }}</span>
           </button>
+          <select
+            v-if="brain.hasBrain"
+            class="reasoning-effort-select"
+            :value="reasoningEffortUiValue"
+            :title="`Reasoning effort: ${reasoningEffortUiValue}`"
+            @change="handleReasoningEffortChange"
+          >
+            <option value="off">
+              💬 Instant
+            </option>
+            <option value="medium">
+              ⚖ Balanced
+            </option>
+            <option value="high">
+              🧠 Deep
+            </option>
+          </select>
+          <span
+            v-if="activeProviderName"
+            class="chat-context-pill"
+            :title="activeProviderName"
+          >
+            {{ activeProviderName }}
+          </span>
+        </div>
+        <div class="input-row">
           <button
             v-if="voice.config.asr_provider"
             class="mic-btn"
@@ -478,6 +543,7 @@
           </button>
           <ChatInput
             :disabled="conversationStore.isThinking"
+            :thinking="conversationStore.isThinking || streaming.isThinkingPhase"
             @submit="handleSend"
             @focus="onInputFocused"
             @blur="onInputBlurred"
@@ -497,6 +563,7 @@ import { onUnmounted } from 'vue';
 import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { loadBrowserLanHost } from '../utils/browser-lan';
@@ -511,8 +578,7 @@ import { useKeyboardDetector } from '../composables/useKeyboardDetector';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
 import { useAsrManager } from '../composables/useAsrManager';
 import { useLipSyncBridge } from '../composables/useLipSyncBridge';
-import { GENDER_VOICES } from '../config/default-models';
-import type { CharacterState } from '../types';
+import type { CharacterState, Message } from '../types';
 import type { MemoryEdge, MemoryEntry } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
@@ -552,8 +618,8 @@ const { tryDispatchSlashCommand } = usePluginSlashDispatch();
 const { tryDispatchPromptCommand } = usePromptCommandDispatch();
 const promptCommandsStore = usePromptCommandsStore();
 const tts = useTtsPlayback({
-  getBrowserPitch: () => GENDER_VOICES[characterStore.currentGender()].browserPitch,
-  getBrowserRate: () => GENDER_VOICES[characterStore.currentGender()].browserRate,
+  getBrowserPitch: () => characterStore.currentBrowserPitch(),
+  getBrowserRate: () => characterStore.currentBrowserRate(),
   mutedRef: audioMuted,
 });
 const asr = useAsrManager({
@@ -620,6 +686,11 @@ let unlistenProvidersExhausted: (() => void) | null = null;
 let isStreamTtsActive = false;
 
 const viewportRef = ref<InstanceType<typeof CharacterViewport> | null>(null);
+const viewportOverlayOpen = ref(false);
+
+function handleViewportOverlayOpen(open: boolean): void {
+  viewportOverlayOpen.value = open;
+}
 
 /** Access the AvatarStateMachine from the viewport (null before mount). */
 function getAsm(): AvatarStateMachine | null {
@@ -768,16 +839,33 @@ function dismissHotseat() {
 // Reset dismissed flag when a new quest message with choices arrives.
 // Compare against the last-picked message ID so we don't re-show the exact
 // same choices, but DO show follow-up choices from the same quest.
-watch(() => conversationStore.messages.length, () => {
+// Also trigger karaoke + TTS for quest messages pushed directly (not via LLM stream).
+let prevMessageCount = 0;
+let lastQuestSpeechMessageId: string | null = null;
+watch(() => conversationStore.messages.length, (count) => {
   const msgs = conversationStore.messages;
   for (let i = msgs.length - 1; i >= 0; i--) {
     if (msgs[i].questChoices?.length) {
       if (msgs[i].id !== lastPickedMessageId.value) {
         hotseatDismissed.value = false;
       }
-      return;
+      break;
     }
   }
+
+  // When a new assistant message arrives outside of LLM streaming (e.g. quest
+  // flow pushes from startLearnDocsFlow, pushTeachScholarQuestForTopic),
+  // trigger karaoke subtitle + TTS so the user hears and sees it.
+  // Also fires when the background intent classifier aborts a stream and
+  // pushes a quest message mid-generation — the quest text replaces whatever
+  // partial LLM text was being spoken.
+  if (count > prevMessageCount) {
+    const last = msgs[msgs.length - 1];
+    if (last?.role === 'assistant' && last.questChoices?.length) {
+      showAndSpeakQuestMessage(last);
+    }
+  }
+  prevMessageCount = count;
 });
 
 // ── Emoji popup — floating emoji above character head ─────────────
@@ -798,6 +886,24 @@ function showEmojiPopup(emoji: string) {
   }, EMOJI_POPUP_DURATION_MS);
 }
 
+// ── TaskControls linger — keep stop/queue visible briefly after streaming ends ──
+const taskControlsLinger = ref(false);
+let taskControlsLingerTimer: ReturnType<typeof setTimeout> | null = null;
+const TASK_CONTROLS_LINGER_MS = 2000;
+const showTaskControls = computed(() =>
+  conversationStore.isThinking || conversationStore.isStreaming || taskControlsLinger.value,
+);
+watch(
+  () => conversationStore.isThinking || conversationStore.isStreaming,
+  (active) => {
+    if (taskControlsLingerTimer) { clearTimeout(taskControlsLingerTimer); taskControlsLingerTimer = null; }
+    if (!active) {
+      taskControlsLinger.value = true;
+      taskControlsLingerTimer = setTimeout(() => { taskControlsLinger.value = false; }, TASK_CONTROLS_LINGER_MS);
+    }
+  },
+);
+
 // ── Subtitle system — karaoke-style word highlight synced with TTS ───
 const subtitleKey = ref(0);
 const subtitleRef = ref<HTMLElement | null>(null);
@@ -807,16 +913,9 @@ const subtitleFullText = ref('');
 const subtitleVisible = ref(false);
 let subtitleHideTimer: ReturnType<typeof setTimeout> | null = null;
 /** Duration to keep the subtitle visible after TTS finishes. */
-const SUBTITLE_LINGER_MS = 3000;
+const SUBTITLE_LINGER_MS = 8000;
 
-/** Dynamic bottom offset for subtitle — stays above the bottom panel. */
-const subtitleBottom = computed(() => {
-  // Base: input footer height (~60px) + gap
-  let offset = 70;
-  if (activeQuestChoices.value.length > 0) offset += 60; // quest choice strip
-  if (chatDrawerExpanded.value) offset = Math.max(offset, 320); // chat history open
-  return `${offset}px`;
-});
+const karaokeDialogEnabled = computed(() => settingsStore.settings.karaoke_dialog_enabled !== false);
 
 type SubtitleSegment = { text: string; className?: string };
 
@@ -887,6 +986,7 @@ function stripMarkdownForSubtitle(text: string): string {
 
 /** Show the subtitle with the full response text. */
 function showSubtitle(text: string) {
+  if (!karaokeDialogEnabled.value) return;
   if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
   subtitleFullText.value = stripMarkdownForSubtitle(text);
   subtitleVisible.value = true;
@@ -1146,6 +1246,18 @@ function precomputePendingEmotionForStreaming(message: string): void {
   pendingEmotion.value = sentimentToState(userSentiment);
 }
 
+const reasoningEffortUiValue = computed<'off' | 'medium' | 'high'>(() => {
+  const value = settingsStore.settings.reasoning_effort ?? 'off';
+  if (value === 'off' || value === 'medium' || value === 'high') return value;
+  // Migrate legacy "low" to the new 3-level UI as "balanced".
+  return 'medium';
+});
+
+function handleReasoningEffortChange(e: Event) {
+  const value = (e.target as HTMLSelectElement).value as 'off' | 'medium' | 'high';
+  settingsStore.saveSettings({ reasoning_effort: value });
+}
+
 async function handleSend(message: string) {
   if (browserRuntime.value && !brain.browserAuthSession && !brain.hasBrain) {
     showBrowserLlmConfig.value = true;
@@ -1245,18 +1357,17 @@ async function handleSend(message: string) {
 
   // Show the AI's response as a floating subtitle
   if (lastMsg?.role === 'assistant') {
-    showSubtitle(lastMsg.content);
+    if (lastMsg.questChoices?.length) {
+      showAndSpeakQuestMessage(lastMsg);
+    } else {
+      showSubtitle(lastMsg.content);
+    }
 
     // Trigger VRMA body animation from the LLM's motion tag (if any).
     // For the Tauri streaming path the motion is applied live via llm-animation
     // events, but for browser-side streaming/fallback it arrives here.
     if (lastMsg.motion) {
       viewportRef.value?.playMotion(lastMsg.motion);
-    }
-
-    // Speak quest messages via TTS (they bypass LLM streaming so feedChunk is never called)
-    if (lastMsg.questChoices?.length) {
-      speakQuestText(lastMsg.content);
     }
 
     // Show emoji popup above character if the response included one
@@ -1413,7 +1524,11 @@ async function handleUpgradeAccept(optionId: string) {
   }
 }
 
-const emit = defineEmits<{ navigate: [target: string] }>();
+const emit = defineEmits<{
+  navigate: [target: string];
+  'set-display-mode': [mode: 'desktop' | 'chatbox'];
+  'toggle-pet-mode': [];
+}>();
 
 const props = defineProps<{
   /** When true, hide the 3D character and show a clean chat-only layout. */
@@ -1432,6 +1547,13 @@ function speakQuestText(text: string) {
   tts.flush();
 }
 
+function showAndSpeakQuestMessage(message: Message) {
+  if (lastQuestSpeechMessageId === message.id) return;
+  lastQuestSpeechMessageId = message.id;
+  showSubtitle(message.content);
+  speakQuestText(message.content);
+}
+
 /** Trigger the first available quest from the welcome screen. */
 function handleStartQuest() {
   setChatDrawerExpanded(true);
@@ -1441,8 +1563,12 @@ function handleStartQuest() {
     // Speak the newly injected quest message
     const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
     if (lastMsg?.role === 'assistant') {
-      showSubtitle(lastMsg.content);
-      speakQuestText(lastMsg.content);
+      if (lastMsg.questChoices?.length) {
+        showAndSpeakQuestMessage(lastMsg);
+      } else {
+        showSubtitle(lastMsg.content);
+        speakQuestText(lastMsg.content);
+      }
     }
   }
 }
@@ -1495,26 +1621,32 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
           await voice.setTtsProvider('web-speech');
           
           // Add confirmation message
+          const speechMsg = `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis - free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`;
           await conversationStore.addMessage({
             id: generateMessageId(),
             role: 'assistant',
-            content: `Perfect! I've enabled Web Speech (your browser's built-in voice synthesis - free, offline-capable, no third-party API). You'll now hear my responses spoken aloud. Try sending me a message to test it!`,
+            content: speechMsg,
             agentName: 'TerranSoul',
             sentiment: 'happy',
             timestamp: Date.now(),
           });
+          showSubtitle(speechMsg);
+          speakQuestText(speechMsg);
           
         } catch (error) {
           console.warn('Auto-config failed:', error);
           // Show error message
+          const errMsg = `I had trouble setting up voice automatically. You can configure it manually in the Voice tab.`;
           await conversationStore.addMessage({
             id: generateMessageId(),
             role: 'assistant',
-            content: `I had trouble setting up voice automatically. You can configure it manually in the Voice tab.`,
+            content: errMsg,
             agentName: 'TerranSoul',
             sentiment: 'sad',
             timestamp: Date.now(),
           });
+          showSubtitle(errMsg);
+          speakQuestText(errMsg);
         }
       } else if (questIdToConfig === 'superior-intellect') {
         // Guide to brain setup
@@ -1571,35 +1703,44 @@ async function handleQuestChoice(questId: string, choiceValue: string) {
   // Speak the follow-up quest response via TTS
   const lastMsg = conversationStore.messages[conversationStore.messages.length - 1];
   if (lastMsg?.role === 'assistant') {
-    showSubtitle(lastMsg.content);
-    speakQuestText(lastMsg.content);
+    if (lastMsg.questChoices?.length) {
+      showAndSpeakQuestMessage(lastMsg);
+    } else {
+      showSubtitle(lastMsg.content);
+      speakQuestText(lastMsg.content);
+    }
   }
 }
 
 /** Called when the Knowledge Quest chain completes — close dialog and notify. */
 function handleKnowledgeQuestFinish() {
   showKnowledgeQuest.value = false;
+  skillTree.markComplete('scholar-quest');
   setChatDrawerExpanded(true);
+  const content =
+    `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +
+    `Go ahead and ask me questions — my answers will now draw from the source materials you provided!`;
   conversationStore.addMessage({
     id: generateMessageId(),
     role: 'assistant',
-    content:
-      `📚 **Scholar's Quest Complete!** I've finished learning about **${knowledgeQuestTopic.value}**.\n\n` +
-      `Go ahead and ask me questions — my answers will now draw from the source materials you provided!`,
+    content,
     agentName: 'TerranSoul',
     sentiment: 'happy',
     timestamp: Date.now(),
   });
+  showSubtitle(content);
+  speakQuestText(content);
 }
 
 /** Set up Tauri event listeners for dual-stream LLM events. */
 async function setupTauriEventListener() {
   if (usesRemoteConversation) return;
   try {
-    const { listen } = await import('@tauri-apps/api/event');
-
     // Text stream — already clean (anim blocks stripped by Rust parser).
-    const unlistenChunk = await listen<{ text: string; done: boolean }>('llm-chunk', (event) => {
+    // Thinking chunks (`thinking:true`) are reasoning traces and must NOT
+    // be spoken or fed into TTS — only the answer chunks reach the voice
+    // pipeline.
+    const unlistenChunk = await listen<{ text: string; done: boolean; thinking?: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
 
       // Feed text directly into TTS — no tag stripping needed.
@@ -1607,7 +1748,7 @@ async function setupTauriEventListener() {
         if (event.payload.done) {
           tts.flush();
           isStreamTtsActive = false;
-        } else if (event.payload.text) {
+        } else if (event.payload.text && !event.payload.thinking) {
           if (!isStreamTtsActive) {
             // New AI response started: stop previous speech and only speak latest.
             tts.stop();
@@ -1663,14 +1804,18 @@ watch(
       // Always show 'talking' while streaming — real emotions arrive via
       // llm-animation events which call setAvatarState directly.
       setAvatarState('talking');
-    } else if (streaming.currentEmotion) {
-      // Stream done — set final emotion from parsed tags (once, not per-chunk)
+    } else if (!tts.isSpeaking.value && streaming.currentEmotion) {
+      // Stream done AND TTS not speaking — set final emotion.
+      // If TTS is still speaking, the isSpeaking watcher handles
+      // the transition when speech finishes.
       characterStore.setState(sentimentToState(streaming.currentEmotion), streaming.currentEmotionIntensity);
       const asm = getAsm();
       if (asm) asm.setEmotion(streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion, streaming.currentEmotionIntensity);
     }
-    if (!active && isStreamTtsActive) {
-      tts.flush();
+    // Note: tts.flush() is NOT called here — the llm-chunk done:true
+    // handler already flushes the TTS buffer. Double-flushing caused
+    // the last sentence to be spoken twice.
+    if (!active) {
       isStreamTtsActive = false;
     }
   },
@@ -1680,7 +1825,7 @@ watch(
 watch(
   () => conversationStore.streamingText,
   (text) => {
-    if (text) {
+    if (text && karaokeDialogEnabled.value) {
       if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
       subtitleFullText.value = stripMarkdownForSubtitle(text);
       subtitleVisible.value = true;
@@ -1688,7 +1833,7 @@ watch(
   },
 );
 
-// TTS speaking state → body='talk', done → body='idle' + schedule subtitle hide
+// TTS speaking state → body='talk', done → apply final emotion + schedule subtitle hide
 watch(tts.isSpeaking, (speaking) => {
   // Don't override state when a VRMA mood animation is active
   const vrmaActive = viewportRef.value?.isAnimationActive ?? false;
@@ -1700,18 +1845,42 @@ watch(tts.isSpeaking, (speaking) => {
       characterStore.setState('talking');
     }
     // Keep subtitle visible while speaking
-    if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
-    subtitleVisible.value = true;
+    if (karaokeDialogEnabled.value) {
+      if (subtitleHideTimer) { clearTimeout(subtitleHideTimer); subtitleHideTimer = null; }
+      subtitleVisible.value = true;
+    }
   } else {
     if (!vrmaActive) {
       asm.forceBody('idle');
-      characterStore.setState('idle');
+      // Apply final emotion from stream instead of just going idle
+      if (streaming.currentEmotion) {
+        characterStore.setState(
+          sentimentToState(streaming.currentEmotion),
+          streaming.currentEmotionIntensity,
+        );
+        asm.setEmotion(
+          streaming.currentEmotion === 'neutral' ? 'neutral' : streaming.currentEmotion,
+          streaming.currentEmotionIntensity,
+        );
+      } else {
+        characterStore.setState('idle');
+      }
     }
     // TTS finished — schedule subtitle to fade away
     if (subtitleFullText.value) {
       scheduleSubtitleHide();
     }
   }
+});
+
+watch(karaokeDialogEnabled, (enabled) => {
+  if (enabled) return;
+  if (subtitleHideTimer) {
+    clearTimeout(subtitleHideTimer);
+    subtitleHideTimer = null;
+  }
+  subtitleVisible.value = false;
+  subtitleFullText.value = '';
 });
 
 // Auto-scroll subtitle to keep the highlighted sentence visible
@@ -1751,6 +1920,9 @@ onMounted(async () => {
   } else {
     try {
       await brain.initialise();
+      // If on a free cloud API but Ollama is running locally,
+      // auto-upgrade for dramatically lower latency (~400ms vs 5-25s).
+      await brain.maybeUpgradeToLocalOllama();
       if (brain.topRecommendation) {
         selectedBrain.value = brain.topRecommendation.model_tag;
       }
@@ -1802,6 +1974,7 @@ onUnmounted(() => {
   }
   useTaskStore().cleanup();
   if (subtitleHideTimer) clearTimeout(subtitleHideTimer);
+  if (taskControlsLingerTimer) clearTimeout(taskControlsLingerTimer);
   tts.stop();
   lipSyncBridge.dispose();
 });
@@ -1830,17 +2003,8 @@ onUnmounted(() => {
   z-index: 0;
 }
 
-/* Portal for the music bar — top-left, below the character name row.
-   Positioned after the mode-toggle pill zone. */
-.music-bar-portal {
-  position: absolute;
-  top: 56px;
-  left: 12px;
+.viewport-layer--settings-priority {
   z-index: 16;
-  pointer-events: none;
-}
-.music-bar-portal > * {
-  pointer-events: auto;
 }
 
 /* ── AI state pill colours — used by `.chatbox-state-pill` in chatbox header.
@@ -1900,7 +2064,7 @@ onUnmounted(() => {
   border-radius: var(--ts-radius-pill);
   padding: 0.28rem 0.6rem;
   color: var(--ts-text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.04));
   font-size: 0.68rem;
   font-weight: 800;
   cursor: pointer;
@@ -1913,39 +2077,28 @@ onUnmounted(() => {
   border-color: rgba(124, 111, 255, 0.4);
 }
 
-/* ── Floating subtitle overlay — karaoke-style word sync ── */
-.subtitle-overlay {
-  position: absolute;
-  bottom: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 20;
-  width: 75%;
-  max-width: 620px;
-  pointer-events: none;
-  transition: bottom 0.3s ease;
+/* ── Inline subtitle — karaoke-style word sync, full width above chat controls ── */
+.subtitle-inline {
+  width: 100%;
+  margin-bottom: 4px;
 }
 .subtitle-text {
   margin: 0;
-  padding: 14px 22px;
+  padding: 10px 16px;
   background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
   backdrop-filter: blur(20px) saturate(1.4);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-radius: var(--ts-radius-lg);
-  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3),
-              inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.08));
   color: var(--ts-text-primary);
   font-size: 0.93rem;
   line-height: 1.6;
   text-align: center;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   max-height: 8em;
   overflow-y: auto;
   scroll-behavior: smooth;
-  pointer-events: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+  scrollbar-color: var(--ts-text-dim) transparent;
 }
 .subtitle-text::-webkit-scrollbar { width: 4px; }
 .subtitle-text::-webkit-scrollbar-track { background: transparent; }
@@ -1972,8 +2125,8 @@ onUnmounted(() => {
 /* Subtitle transition */
 .subtitle-enter-active { transition: opacity 0.3s ease, transform 0.3s ease; }
 .subtitle-leave-active { transition: opacity 0.25s ease, transform 0.25s ease; }
-.subtitle-enter-from { opacity: 0; transform: translateX(-50%) translateY(8px); }
-.subtitle-leave-to { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+.subtitle-enter-from { opacity: 0; transform: translateY(8px); }
+.subtitle-leave-to { opacity: 0; transform: translateY(-4px); }
 
 /* ── Floating emoji popup above character head ── */
 .emoji-popup {
@@ -2008,7 +2161,7 @@ onUnmounted(() => {
 /* ── Bottom panel — input + expandable chat history ── */
 .bottom-panel {
   position: absolute;
-  bottom: 0;
+  bottom: var(--ts-chat-bottom-nav-offset, 0px);
   left: 0;
   right: 0;
   z-index: 15;
@@ -2043,29 +2196,29 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 6px 12px 6px;
+  border-bottom: 1px solid var(--ts-border-subtle, rgba(255, 255, 255, 0.05));
   flex-shrink: 0;
 }
 .chat-history-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .chat-history-action-btn {
-  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--ts-border-subtle, rgba(255, 255, 255, 0.08));
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.04));
   color: var(--ts-text-primary);
-  font-size: 0.68rem;
+  font-size: 0.6rem;
   font-weight: 700;
   border-radius: var(--ts-radius-sm);
-  padding: 5px 10px;
+  padding: 3px 7px;
   cursor: pointer;
   transition: all var(--ts-transition-fast);
 }
 .chat-history-action-btn:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
+  background: var(--ts-bg-hover);
+  border-color: var(--ts-border);
 }
 .chat-history-action-btn.skip {
   border-color: rgba(239, 68, 68, 0.35);
@@ -2106,8 +2259,17 @@ onUnmounted(() => {
   backdrop-filter: blur(24px) saturate(1.3);
   -webkit-backdrop-filter: blur(24px) saturate(1.3);
   border-top: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  padding: 10px 14px 12px;
+  padding: 6px 12px var(--ts-chat-footer-bottom-padding, 12px);
   box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Collapsed footer should not paint a full-width glass strip. */
+.bottom-panel:not(.expanded) .input-footer {
+  background: transparent;
+  border-top-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 .input-row {
   display: flex;
@@ -2115,17 +2277,125 @@ onUnmounted(() => {
   gap: 8px;
 }
 
+.input-top-left-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 4px;
+  align-self: flex-start;
+  width: fit-content;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--ts-glass-bg, rgba(15, 23, 42, 0.72)) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.input-row :deep(.chat-input-bar) {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-history-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  width: fit-content;
+  padding: 2px;
+  border-radius: 999px;
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: color-mix(in srgb, var(--ts-glass-bg, rgba(15, 23, 42, 0.72)) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* Compact sizing for the top-left control rows only (not global pills). */
+.input-top-left-controls .chat-drawer-toggle,
+.chat-history-controls .chat-drawer-toggle {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 0.62rem;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.input-top-left-controls .reasoning-effort-select,
+.chat-history-controls .reasoning-effort-select,
+.input-top-left-controls .chat-context-pill,
+.chat-history-controls .chat-context-pill {
+  height: 26px;
+  padding: 0 6px;
+  font-size: 0.64rem;
+  border: 0;
+  background: transparent;
+  max-width: 8rem;
+}
+
+.input-top-left-controls .chat-drawer-toggle + .reasoning-effort-select,
+.chat-history-controls .chat-drawer-toggle + .reasoning-effort-select,
+.input-top-left-controls .reasoning-effort-select + .chat-context-pill,
+.chat-history-controls .reasoning-effort-select + .chat-context-pill {
+  border-left: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.12));
+  border-radius: 0;
+  padding-left: 6px;
+}
+
+.chat-context-pill {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  color: var(--ts-text-secondary, rgba(226, 232, 240, 0.82));
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.reasoning-effort-select {
+  height: 26px;
+  padding: 0 4px;
+  border-radius: var(--ts-radius-sm, 6px);
+  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
+  color: var(--ts-text-primary, #e2e8f0);
+  font-size: 0.68rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  transition: border-color 0.2s, background 0.2s;
+  /* Inherit from <html> color-scheme so the native popup adopts the
+     active theme's light/dark scheme automatically. */
+  color-scheme: inherit;
+  accent-color: var(--ts-accent, #7c3aed);
+}
+
+.reasoning-effort-select:hover,
+.reasoning-effort-select:focus {
+  border-color: var(--ts-accent, #7c3aed);
+  background: var(--ts-glass-bg-focus, var(--ts-glass-bg, rgba(15, 23, 42, 0.85)));
+}
+
+.reasoning-effort-select option {
+  background: var(--ts-bg-surface, var(--ts-bg-base, #0f172a));
+  color: var(--ts-text-primary, #e2e8f0);
+}
+
 /* ── Chat toggle button — pill with icon + label ── */
 .chat-drawer-toggle {
-  height: 40px;
-  padding: 0 16px;
+  height: 28px;
+  padding: 0 10px;
   border-radius: var(--ts-radius-pill);
   border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
   background: var(--ts-glass-bg, rgba(15, 23, 42, 0.72));
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   color: var(--ts-text-primary);
-  font-size: 0.72rem;
+  font-size: 0.64rem;
   font-weight: 600;
   cursor: pointer;
   display: flex;
@@ -2222,7 +2492,7 @@ onUnmounted(() => {
   padding: 6px 12px;
   border-radius: var(--ts-radius-sm);
   border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--ts-bg-input, rgba(255, 255, 255, 0.03));
   color: var(--ts-text-secondary);
   font-size: 0.75rem;
   cursor: pointer;
@@ -2233,14 +2503,14 @@ onUnmounted(() => {
 }
 .brain-model-btn.top { border-color: rgba(59, 130, 246, 0.35); }
 .brain-model-btn.selected { border-color: var(--ts-success); background: rgba(34, 197, 94, 0.08); color: var(--ts-success); box-shadow: 0 0 10px rgba(34, 197, 94, 0.15); }
-.brain-model-btn:hover { background: rgba(255, 255, 255, 0.06); transform: translateY(-1px); }
+.brain-model-btn:hover { background: var(--ts-bg-hover); transform: translateY(-1px); }
 .brain-star { font-size: 0.7rem; }
 .brain-warn { font-size: var(--ts-text-sm); color: var(--ts-warning-text); background: rgba(239, 68, 68, 0.08); padding: 8px 12px; border-radius: var(--ts-radius-sm); border: 1px solid rgba(239, 68, 68, 0.15); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.brain-warn code { background: rgba(0, 0, 0, 0.3); padding: 2px 6px; border-radius: 3px; font-size: 0.72rem; }
+.brain-warn code { background: var(--ts-bg-input, rgba(0, 0, 0, 0.3)); padding: 2px 6px; border-radius: 3px; font-size: 0.72rem; }
 .brain-retry-btn { padding: 3px 10px; border: none; background: rgba(124, 111, 255, 0.12); color: var(--ts-accent-blue); border-radius: 4px; cursor: pointer; font-size: 0.72rem; transition: all var(--ts-transition-fast); }
 .brain-retry-btn:hover { background: rgba(124, 111, 255, 0.2); }
 .brain-pulling { display: flex; align-items: center; gap: 8px; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
-.brain-spinner { width: 14px; height: 14px; border: 2px solid rgba(255, 255, 255, 0.1); border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
+.brain-spinner { width: 14px; height: 14px; border: 2px solid var(--ts-border, rgba(255, 255, 255, 0.1)); border-top-color: var(--ts-accent-blue); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .brain-activate-btn {
   padding: 8px 18px;
@@ -2272,7 +2542,7 @@ onUnmounted(() => {
 .brain-local-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(96, 165, 250, 0.3); }
 .brain-free-start { display: flex; flex-direction: column; gap: 6px; }
 .brain-free-start p { margin: 0; font-size: var(--ts-text-sm); color: var(--ts-text-secondary); }
-.brain-local-section { border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 8px; margin-top: 4px; }
+.brain-local-section { border-top: 1px solid var(--ts-border-subtle, rgba(255, 255, 255, 0.05)); padding-top: 8px; margin-top: 4px; }
 
 /* ── Mobile adjustments ── */
 /* ═══ CHATBOX-ONLY MODE ═══
@@ -2405,6 +2675,10 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+.chatbox-footer .input-top-left-controls {
+  margin-bottom: 12px;
+}
+
 /* ── Mobile responsive for chatbox mode ── */
 @media (max-width: 640px) {
   .chatbox-header { padding: 8px 10px; }
@@ -2414,7 +2688,6 @@ onUnmounted(() => {
 
 @media (max-width: 640px) {
   .bottom-panel { max-height: 50vh; }
-  .subtitle-overlay { width: 90%; bottom: 75px; font-size: 0.82rem; }
   .subtitle-text { padding: 8px 14px; font-size: 0.82rem; }
   /* AI state pill mobile sizing now lives in CharacterViewport.vue alongside
      the corner cluster — keep brain-status / music-bar overrides here. */
@@ -2427,11 +2700,14 @@ onUnmounted(() => {
     font-size: 0.58rem;
     padding: 2px 8px;
   }
-  /* Music bar: below brain status */
-  .music-bar-portal { top: 66px; left: 10px; }
+  .brain-status-pill:hover {
+    transform: translateY(-1px);
+  }
   .brain-overlay { width: 92vw; }
   /* Compact input footer */
-  .input-footer { padding: 6px 8px 8px; }
+  .input-footer { padding: 6px 8px var(--ts-chat-footer-bottom-padding, 12px); }
+  .input-top-left-controls { margin-bottom: 4px; }
+  .chatbox-footer .input-top-left-controls { margin-bottom: 4px; }
   .chat-drawer-toggle { height: 34px; padding: 0 10px; }
   .toggle-label { display: none; }
 }

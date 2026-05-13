@@ -11,30 +11,27 @@ use std::collections::HashSet;
 
 /// 80 single-word adjectives — all lowercase ASCII, no hyphens.
 const ADJECTIVES: &[&str] = &[
-    "agile", "amber", "arctic", "azure", "blazing", "bold", "bright", "brisk",
-    "calm", "cedar", "clever", "cobalt", "coral", "cosmic", "crimson", "crystal",
-    "daring", "dawn", "deep", "desert", "dusk", "eager", "echo", "ember",
-    "fair", "fern", "fierce", "flint", "frost", "gentle", "gilded", "gleaming",
-    "golden", "grand", "harbor", "hidden", "hollow", "humble", "iron", "ivory",
-    "jade", "keen", "kind", "lemon", "light", "lively", "lunar", "maple",
-    "marble", "mellow", "misty", "modest", "mossy", "nimble", "noble", "ocean",
-    "olive", "opal", "pale", "pine", "plum", "polar", "proud", "quiet",
-    "rapid", "raven", "rosy", "rustic", "sage", "scarlet", "serene", "sharp",
-    "silent", "silver", "slate", "solar", "steady", "stone", "swift", "tidal",
+    "agile", "amber", "arctic", "azure", "blazing", "bold", "bright", "brisk", "calm", "cedar",
+    "clever", "cobalt", "coral", "cosmic", "crimson", "crystal", "daring", "dawn", "deep",
+    "desert", "dusk", "eager", "echo", "ember", "fair", "fern", "fierce", "flint", "frost",
+    "gentle", "gilded", "gleaming", "golden", "grand", "harbor", "hidden", "hollow", "humble",
+    "iron", "ivory", "jade", "keen", "kind", "lemon", "light", "lively", "lunar", "maple",
+    "marble", "mellow", "misty", "modest", "mossy", "nimble", "noble", "ocean", "olive", "opal",
+    "pale", "pine", "plum", "polar", "proud", "quiet", "rapid", "raven", "rosy", "rustic", "sage",
+    "scarlet", "serene", "sharp", "silent", "silver", "slate", "solar", "steady", "stone", "swift",
+    "tidal",
 ];
 
 /// 80 single-word animal names — all lowercase ASCII, no hyphens.
 const ANIMALS: &[&str] = &[
-    "ant", "badger", "bear", "bee", "bison", "bobcat", "bull", "bunny",
-    "camel", "cat", "cheetah", "cobra", "condor", "coyote", "crane", "crow",
-    "deer", "dog", "dolphin", "dove", "dragon", "eagle", "elk", "falcon",
-    "ferret", "finch", "fox", "frog", "gazelle", "gecko", "goat", "goose",
-    "gorilla", "hawk", "heron", "horse", "hound", "ibis", "iguana", "impala",
-    "jackal", "jaguar", "jay", "kite", "koala", "lark", "lemur", "leopard",
-    "lion", "llama", "lynx", "magpie", "marten", "moose", "moth", "newt",
-    "octopus", "otter", "owl", "panda", "parrot", "pelican", "pike", "puma",
-    "quail", "raven", "robin", "salmon", "seal", "shark", "snake", "sparrow",
-    "squid", "stag", "swan", "tiger", "toucan", "turtle", "viper", "wolf",
+    "ant", "badger", "bear", "bee", "bison", "bobcat", "bull", "bunny", "camel", "cat", "cheetah",
+    "cobra", "condor", "coyote", "crane", "crow", "deer", "dog", "dolphin", "dove", "dragon",
+    "eagle", "elk", "falcon", "ferret", "finch", "fox", "frog", "gazelle", "gecko", "goat",
+    "goose", "gorilla", "hawk", "heron", "horse", "hound", "ibis", "iguana", "impala", "jackal",
+    "jaguar", "jay", "kite", "koala", "lark", "lemur", "leopard", "lion", "llama", "lynx",
+    "magpie", "marten", "moose", "moth", "newt", "octopus", "otter", "owl", "panda", "parrot",
+    "pelican", "pike", "puma", "quail", "raven", "robin", "salmon", "seal", "shark", "snake",
+    "sparrow", "squid", "stag", "swan", "tiger", "toucan", "turtle", "viper", "wolf",
 ];
 
 /// Generate a memorable `adjective-animal` name that does not collide
@@ -52,7 +49,9 @@ pub fn generate_unique(existing: &HashSet<String>) -> String {
     // Fast path: try a few pseudo-random combinations.
     let mut h = seed;
     for _ in 0..20 {
-        h = h.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        h = h
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         let ai = (h >> 32) as usize % ADJECTIVES.len();
         let ni = (h >> 16) as usize % ANIMALS.len();
         let candidate = format!("{}-{}", ADJECTIVES[ai], ANIMALS[ni]);
@@ -87,7 +86,9 @@ pub fn normalize(name: &str) -> String {
 pub fn is_valid_memorable_name(name: &str) -> bool {
     let parts: Vec<&str> = name.split('-').collect();
     parts.len() == 2
-        && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric()))
+        && parts
+            .iter()
+            .all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
 #[cfg(test)]

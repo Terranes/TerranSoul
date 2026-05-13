@@ -113,6 +113,27 @@ pub fn cascade_expand(
     Ok(result)
 }
 
+// ── MemoryStore wrapper ───────────────────────────────────────────────────────
+
+impl crate::memory::store::MemoryStore {
+    /// Public wrapper around [`cascade_expand`] for callers outside the
+    /// `terransoul_lib` crate (e.g. the `longmemeval-ipc` bench binary).
+    /// Internal callers (the chat path and MCP gateway) keep using
+    /// `cascade_expand(&store.conn, …)` directly because they already
+    /// hold a `MemoryStore` reference and avoid the extra wrapper hop.
+    ///
+    /// BENCH-KG-2: lets the bench harness call the same 1–2 hop
+    /// `memory_edges` BFS the chat surface uses, so retrieval-stage
+    /// parity between chat and bench can be measured end-to-end.
+    pub fn cascade_expand_seeds(
+        &self,
+        seeds: &[(i64, f64)],
+        max_depth: Option<usize>,
+    ) -> SqlResult<Vec<(i64, f64)>> {
+        cascade_expand(self.conn(), seeds, max_depth)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

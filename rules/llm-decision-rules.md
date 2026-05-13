@@ -19,6 +19,11 @@ RAG, whether to switch models — it **MUST**:
    unreachable (timeout, no provider, malformed JSON) — and that fallback
    must respect the same user toggle.
 
+For document-learning/quest routing specifically: malformed classifier output
+must resolve to `Unknown` and let the normal chat/install flow continue.
+Do not force `learn_with_docs` / `teach_ingest` / `gated_setup` from
+`regex`, `.contains`, `.includes`, or keyword arrays.
+
 ## Why this rule exists
 
 TerranSoul is multilingual, paraphrase-heavy, and runs on user-owned
@@ -85,6 +90,8 @@ Is your code about to take an AI action based on text content?
 - `/learn about (.+)/i.exec(message)` to decide what tool to call
 - `if (response.includes("I don't know"))` to push a follow-up overlay
 - `KEYWORDS.some(k => msg.includes(k))` to choose an agent
+- Forcing docs/setup intent from raw user text with `contains` checks when
+  classifier JSON is malformed or unknown
 - Any `RegExp[]` constant whose name ends in `_PATTERNS` and whose result
   drives a UI surface change without consulting the brain
 - A new "auto-X" feature that scans text and acts without an

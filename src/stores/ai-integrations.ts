@@ -140,7 +140,7 @@ export const useAiIntegrationsStore = defineStore('ai-integrations', () => {
 
   /** Run auto-setup for a given client. Selects HTTP vs stdio command. */
   async function setupClient(
-    client: 'vscode' | 'claude' | 'codex',
+    client: 'vscode' | 'claude' | 'codex' | 'hermes',
     workspaceRoot: string,
     transport: Transport = preferredTransport.value,
   ): Promise<SetupResult | null> {
@@ -163,7 +163,7 @@ export const useAiIntegrationsStore = defineStore('ai-integrations', () => {
   }
 
   async function removeClient(
-    client: 'vscode' | 'claude' | 'codex',
+    client: 'vscode' | 'claude' | 'codex' | 'hermes',
     workspaceRoot: string,
   ): Promise<SetupResult | null> {
     error.value = null;

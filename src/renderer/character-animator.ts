@@ -183,18 +183,19 @@ const STATE_BONE_POSES: Record<CharacterState, BonePose> = {
     leftShoulder:  [0, 0, 0.05],
     rightShoulder: [0, 0, -0.05],
   },
+  // happy: facial-expression-only — no body pose change (same as idle)
   happy: {
-    head:  [-0.06, 0, 0.04],       // head up, slight tilt
-    spine: [-0.04, 0, 0],          // chest out
-    chest: [-0.02, 0, 0],
+    head:  [0, 0, 0],
+    spine: [0, 0, 0],
+    chest: [0, 0, 0],
     hips:  [0, 0, 0],
-    neck:  [-0.04, 0, 0.02],
-    leftUpperArm:  [-0.1, 0, 1.15],  // arms wider (open body language)
-    rightUpperArm: [-0.1, 0, -1.15],
-    leftLowerArm:  [0, 0, 0.25],
-    rightLowerArm: [0, 0, -0.25],
-    leftShoulder:  [0, 0, 0.08],
-    rightShoulder: [0, 0, -0.08],
+    neck:  [0, 0, 0],
+    leftUpperArm:  [0, 0, 1.35],
+    rightUpperArm: [0, 0, -1.35],
+    leftLowerArm:  [0, 0, 0.15],
+    rightLowerArm: [0, 0, -0.15],
+    leftShoulder:  [0, 0, 0.05],
+    rightShoulder: [0, 0, -0.05],
   },
   sad: {
     head:  [0.15, 0, -0.02],       // head down
@@ -830,12 +831,15 @@ export class CharacterAnimator {
         headOscX = Math.sin(t * 1.8) * 0.02;
         spineOscY = Math.sin(t * 1.5) * 0.015;
         break;
-      case 'happy':
-        // Bouncy, energetic
-        headOscZ = Math.sin(t * 3.0) * 0.04;
-        spineOscX = Math.sin(t * 2.5) * -0.02;
-        hipsOscY = Math.sin(t * 2.0) * 0.02;
+      case 'happy': {
+        // Upbeat breathing with gentle bounce — keeps character alive
+        const bounce = Math.sin(t * 2.5) * 0.5 + 0.5; // 0..1
+        headOscX = breathCycle * 0.012 - bounce * 0.015;
+        headOscY = Math.sin(t * 0.6) * 0.025;
+        spineOscX = breathCycle * 0.01 - bounce * 0.008;
+        hipsOscY = Math.sin(t * 1.25) * 0.008;
         break;
+      }
       case 'sad':
         // Slow, droopy
         headOscX = Math.sin(t * 0.3) * 0.02;

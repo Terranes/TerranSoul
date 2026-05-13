@@ -55,11 +55,9 @@ describe('model-benchmarks', () => {
   it('Claude Opus 4.7 boosts INT much more than Gemma 4 e2b (benchmark-grounded)', () => {
     const opus = getModelBoost('claude-opus-4.7');
     const gemma = getModelBoost('gemma4:e2b');
-    // Real MMLU gap (Claude 3.5 Sonnet 88.7% vs Gemma 2 2B ~52.2%) ≈ 36 pp.
-    // Tier midpoints (S 85, C 55) yield a 30 pp gap — preserved here as
-    // a strict lower bound so the gap can never erode below the
-    // documented benchmark spread.
-    expect((opus.intelligence ?? 0) - (gemma.intelligence ?? 0)).toBeGreaterThanOrEqual(25);
+    // Rebalanced progression keeps Opus clearly ahead while compressing
+    // absolute values so recommended setups land around Lv.20.
+    expect((opus.intelligence ?? 0) - (gemma.intelligence ?? 0)).toBeGreaterThanOrEqual(15);
   });
 
   it('getModelBoost returns an empty object when no model is given', () => {

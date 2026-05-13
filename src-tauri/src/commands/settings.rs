@@ -18,6 +18,9 @@ pub async fn save_app_settings(
     settings: AppSettings,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    // Propagate debug-logging toggle to the Ollama agent layer immediately so
+    // fire-and-forget spawns pick it up without needing an AppState reference.
+    crate::brain::ollama_agent::set_debug_logging(settings.debug_logging);
     config_store::save(&state.data_dir, &settings)?;
     let mut current = state.app_settings.lock().map_err(|e| e.to_string())?;
     *current = settings;
@@ -93,6 +96,8 @@ mod tests {
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: crate::settings::DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -113,6 +118,12 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -154,6 +165,8 @@ mod tests {
                 crate::settings::DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: crate::settings::DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -174,6 +187,12 @@ mod tests {
             sqlite_mmap_mb: crate::settings::DEFAULT_SQLITE_MMAP_MB,
             code_index_cache_mb: crate::settings::DEFAULT_CODE_INDEX_CACHE_MB,
             code_index_mmap_mb: crate::settings::DEFAULT_CODE_INDEX_MMAP_MB,
+            context_folders: Vec::new(),
+            scholar_crawl_enabled: false,
+            scholar_crawl_max_depth: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+            scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+            reasoning_effort: crate::settings::ReasoningEffort::Off,
+            debug_logging: false,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

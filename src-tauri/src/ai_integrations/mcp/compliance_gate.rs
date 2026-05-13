@@ -240,11 +240,7 @@ pub fn new_compliance_state() -> ComplianceState {
 
 /// Called by the router AFTER dispatching a tool call. Updates compliance
 /// state based on which tool was called and its arguments.
-pub async fn on_tool_called(
-    state: &ComplianceState,
-    tool_name: &str,
-    args: &serde_json::Value,
-) {
+pub async fn on_tool_called(state: &ComplianceState, tool_name: &str, args: &serde_json::Value) {
     let mut s = state.lock().await;
     s.tool_call_count += 1;
 

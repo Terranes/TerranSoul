@@ -20,6 +20,7 @@ vi.mock('@tauri-apps/api/core', () => ({
 }));
 
 import { usePersonaStore } from './persona';
+import { useCharacterStore } from './character';
 import { defaultPersona } from './persona-types';
 
 describe('usePersonaStore', () => {
@@ -101,6 +102,30 @@ describe('usePersonaStore', () => {
     const store = usePersonaStore();
     expect(store.personaBlock).toContain('[PERSONA]');
     expect(store.personaBlock).toContain(defaultPersona().name);
+  });
+
+  it('overlays the selected character profile into the persona block', async () => {
+    const personaStore = usePersonaStore();
+    const characterStore = useCharacterStore();
+
+    await characterStore.updateModelProfile('shinra', {
+      name: 'Nova',
+      gender: 'male',
+      persona: 'archivist pilot',
+      voiceProfile: {
+        gender: 'male',
+        age: 'adult',
+        pitch: 'low',
+        style: 'whisper',
+        englishAccent: 'british',
+        chineseDialect: 'none',
+        voiceName: 'en-GB-RyanNeural',
+      },
+    });
+
+    expect(personaStore.personaBlock).toContain('You are Nova, archivist pilot.');
+    expect(personaStore.personaBlock).toContain('male adult voice');
+    expect(personaStore.personaBlock).toContain('preferred TTS voice en-GB-RyanNeural');
   });
 
   it('recordBrainExtraction stamps lastBrainExtractedAt for the master-echo gate', () => {

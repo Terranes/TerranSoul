@@ -28,6 +28,10 @@ export interface Message {
   charismaAssets?: CharismaTurnAsset[];
   /** User's 1-5 turn-level rating distributed to all fired Charisma assets. */
   charismaTurnRating?: number;
+  /** Extended-thinking or status text (collapsible in UI). */
+  thinkingContent?: string;
+  /** Optional label for the collapsible thinking/status block. */
+  thinkingLabel?: string;
 }
 
 export interface QuestChoice {
@@ -243,6 +247,26 @@ export interface MemoryEntry {
   parent_id: number | null;
   token_count: number;
   confidence: number;
+}
+
+export interface CompactMemoryResult {
+  id: number;
+  rank: number;
+  title: string;
+  preview: string;
+  tags: string;
+  importance: number;
+  memory_type: MemoryType;
+  tier: MemoryTier;
+  created_at: number;
+  updated_at: number | null;
+  session_id: string | null;
+  parent_id: number | null;
+}
+
+export interface ProgressiveMemorySearchResponse {
+  compact: CompactMemoryResult[];
+  expanded: MemoryEntry[];
 }
 
 /** A reinforcement provenance record (Chunk 43.4). */
@@ -716,8 +740,12 @@ export interface VoiceProviderInfo {
 export interface VoiceConfig {
   asr_provider: string | null;
   tts_provider: string | null;
+  tts_voice?: string | null;
+  tts_pitch?: number;
+  tts_rate?: number;
   api_key: string | null;
   endpoint_url: string | null;
+  hotwords?: Array<{ phrase: string; boost: number }>;
 }
 
 // ── Provider Health / Rotation ────────────────────────────────────────────────

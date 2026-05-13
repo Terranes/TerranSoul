@@ -5,6 +5,21 @@ import QuestBubble from './QuestBubble.vue';
 import { useSkillTreeStore } from '../stores/skill-tree';
 import { useBrainStore } from '../stores/brain';
 
+function mountQuestBubbleWithPortal() {
+  const portal = document.createElement('div');
+  portal.id = 'corner-cluster-portal';
+  document.body.appendChild(portal);
+  return mount(QuestBubble, { attachTo: document.body });
+}
+
+function getTeleportedOrb() {
+  return document.body.querySelector('.ff-orb') as HTMLElement | null;
+}
+
+function getTeleportedOrbText(selector: string) {
+  return document.body.querySelector(selector)?.textContent ?? '';
+}
+
 // Create mock objects first
 const mockConversationStore = {
   sendMessage: vi.fn(),
@@ -99,6 +114,7 @@ const mockBrainStore = {
 
 describe('QuestBubble', () => {
   beforeEach(() => {
+    document.body.innerHTML = '';
     vi.mocked(useSkillTreeStore).mockReturnValue(mockSkillTreeStore as never);
     vi.mocked(useBrainStore).mockReturnValue(mockBrainStore as never);
     mockConversationStore.messages = [];
@@ -110,59 +126,70 @@ describe('QuestBubble', () => {
     mockSkillTreeStore.unpinQuest.mockClear();
   });
 
-  it('renders progress orb with percentage', () => {
-    const wrapper = mount(QuestBubble);
-    expect(wrapper.find('.ff-orb-pct').text()).toBe('42%');
-    expect(wrapper.find('.ff-orb').exists()).toBe(true);
+  it('renders progress orb with percentage', async () => {
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    expect(getTeleportedOrbText('.ff-orb-pct')).toBe('42%');
+    expect(getTeleportedOrb()).not.toBeNull();
+    wrapper.unmount();
   });
 
   it('opens the constellation when the orb is clicked', async () => {
-    const wrapper = mount(QuestBubble);
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
     expect(wrapper.find('.skill-constellation').exists()).toBe(false);
 
-    await wrapper.find('.ff-orb').trigger('click');
+    getTeleportedOrb()?.click();
     await nextTick();
 
     expect(wrapper.find('.skill-constellation').exists()).toBe(true);
+    wrapper.unmount();
   });
 
   it('toggles the constellation closed when the orb is clicked again', async () => {
-    const wrapper = mount(QuestBubble);
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
 
-    await wrapper.find('.ff-orb').trigger('click');
+    getTeleportedOrb()?.click();
     await nextTick();
     expect(wrapper.find('.skill-constellation').exists()).toBe(true);
 
-    await wrapper.find('.ff-orb').trigger('click');
+    getTeleportedOrb()?.click();
     await nextTick();
     expect(wrapper.find('.skill-constellation').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it('closes the constellation when its close event fires', async () => {
-    const wrapper = mount(QuestBubble);
-    await wrapper.find('.ff-orb').trigger('click');
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    getTeleportedOrb()?.click();
     await nextTick();
 
     await wrapper.find('.mock-close').trigger('click');
     await nextTick();
 
     expect(wrapper.find('.skill-constellation').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it('shows confirmation dialog when constellation emits begin', async () => {
-    const wrapper = mount(QuestBubble);
-    await wrapper.find('.ff-orb').trigger('click');
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    getTeleportedOrb()?.click();
     await nextTick();
 
     await wrapper.find('.mock-begin').trigger('click');
     await nextTick();
 
     expect(wrapper.find('.quest-confirm-dialog').exists()).toBe(true);
+    wrapper.unmount();
   });
 
   it('routes confirmation-dialog Accept directly to handleQuestChoice (no double prompt)', async () => {
-    const wrapper = mount(QuestBubble);
-    await wrapper.find('.ff-orb').trigger('click');
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    getTeleportedOrb()?.click();
     await nextTick();
 
     await wrapper.find('.mock-begin').trigger('click');
@@ -176,11 +203,13 @@ describe('QuestBubble', () => {
     // "A New Quest Appears!" prompt asking them to accept again.
     expect(mockSkillTreeStore.triggerQuestEvent).not.toHaveBeenCalled();
     expect(mockSkillTreeStore.handleQuestChoice).toHaveBeenCalledWith('quest-1', 'accept');
+    wrapper.unmount();
   });
 
   it('emits navigate when constellation emits navigate', async () => {
-    const wrapper = mount(QuestBubble);
-    await wrapper.find('.ff-orb').trigger('click');
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    getTeleportedOrb()?.click();
     await nextTick();
 
     await wrapper.find('.mock-navigate').trigger('click');
@@ -188,14 +217,17 @@ describe('QuestBubble', () => {
 
     expect(wrapper.emitted('navigate')).toBeTruthy();
     expect(wrapper.emitted('navigate')![0]).toEqual(['voice']);
+    wrapper.unmount();
   });
 
-  it('shows progress ring with the correct stroke offset', () => {
-    const wrapper = mount(QuestBubble);
-    const ring = wrapper.find('.ff-orb-ring-fill');
+  it('shows progress ring with the correct stroke offset', async () => {
+    const wrapper = mountQuestBubbleWithPortal();
+    await nextTick();
+    const ring = document.body.querySelector('.ff-orb-ring-fill');
     const circumference = 2 * Math.PI * 22;
     const expectedOffset = circumference - (circumference * 42) / 100;
-    expect(ring.attributes('stroke-dashoffset')).toBe(expectedOffset.toString());
+    expect(ring?.getAttribute('stroke-dashoffset')).toBe(expectedOffset.toString());
+    wrapper.unmount();
   });
 
   it('calls AI sorting on mount when a brain is available', async () => {
@@ -211,8 +243,7 @@ describe('QuestBubble', () => {
     mockBrainStore.processPromptSilently.mockRejectedValueOnce(new Error('AI unavailable'));
     const wrapper = mount(QuestBubble);
     await nextTick();
-    // Component should still render without throwing.
-    expect(wrapper.find('.ff-orb').exists()).toBe(true);
+    expect(wrapper.exists()).toBe(true);
   });
 
   describe('positioning (corner-cluster portal)', () => {
@@ -221,22 +252,21 @@ describe('QuestBubble', () => {
     // flex column via Vue's `<Teleport>` API.  See `rules/coding-standards.md`
     // § "UI Framework — No CSS Hacking".
 
-    it('renders the orb without any inline `top` / `right` / `position` styles', () => {
-      const wrapper = mount(QuestBubble);
-      const orb = wrapper.find('.ff-orb').element as HTMLElement;
+    it('renders the orb without any inline `top` / `right` / `position` styles', async () => {
+      const wrapper = mountQuestBubbleWithPortal();
+      await nextTick();
+      const orb = getTeleportedOrb();
       // The flex parent (.corner-cluster) owns the layout — the orb itself
       // must NOT carry hand-tuned positioning.
-      expect(orb.style.top).toBe('');
-      expect(orb.style.right).toBe('');
-      expect(orb.style.position).toBe('');
+      expect(orb?.style.top).toBe('');
+      expect(orb?.style.right).toBe('');
+      expect(orb?.style.position).toBe('');
+      wrapper.unmount();
     });
 
-    it('falls back to in-place rendering when the corner-cluster portal is missing', () => {
-      // In tests there is no `#corner-cluster-portal` target, so `<Teleport
-      // :disabled>` keeps the orb in the component's DOM where test
-      // selectors can still reach it.
+    it('renders no orb when the settings portal is missing', () => {
       const wrapper = mount(QuestBubble);
-      expect(wrapper.find('.ff-orb').exists()).toBe(true);
+      expect(wrapper.find('.ff-orb').exists()).toBe(false);
     });
   });
 });

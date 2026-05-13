@@ -5,6 +5,15 @@ import type { BgmTrack } from '../composables/useBgmPlayer';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
+/** A user-defined folder scanned for knowledge ingestion. */
+export interface ContextFolder {
+  path: string;
+  label: string;
+  enabled: boolean;
+  last_synced_at: number;
+  last_file_count: number;
+}
+
 export interface AppSettings {
   /** Schema version — used for migration/corruption detection. */
   version: number;
@@ -91,7 +100,24 @@ export interface AppSettings {
   code_index_cache_mb?: number;
   /** SQLite mmap window for code_index.sqlite (MiB). Default 32. Takes effect on restart. */
   code_index_mmap_mb?: number;
+  /** User-defined context folders for knowledge ingestion (brute-force scan, not recommended for large trees). */
+  context_folders?: ContextFolder[];
+  /** Default Scholar's Quest web crawl toggle. */
+  scholar_crawl_enabled?: boolean;
+  /** Scholar's Quest crawl depth limit. Default 2. */
+  scholar_crawl_max_depth?: number;
+  /** Scholar's Quest crawl page limit. Default 20. */
+  scholar_crawl_max_pages?: number;
+  /** Controls extended-thinking (chain-of-thought) depth for the LLM. Only affects models supporting Ollama's `think` parameter. */
+  reasoning_effort?: ReasoningEffort;
+  /** When true, show karaoke-style subtitle dialog above chat controls during TTS playback. */
+  karaoke_dialog_enabled?: boolean;
+  /** When true, verbose debug messages are printed (e.g. chat-rewarm timings). Default false. */
+  debug_logging?: boolean;
 }
+
+/** Reasoning effort level for extended-thinking models. */
+export type ReasoningEffort = 'off' | 'low' | 'medium' | 'high';
 
 const MIN_MAX_MEMORY_GB = 1;
 const MAX_MAX_MEMORY_GB = 100;
@@ -116,6 +142,14 @@ export const MAX_CODE_INDEX_CACHE_MB = 256;
 export const DEFAULT_CODE_INDEX_MMAP_MB = 32;
 export const MIN_CODE_INDEX_MMAP_MB = 0;
 export const MAX_CODE_INDEX_MMAP_MB = 1024;
+
+export const DEFAULT_SCHOLAR_CRAWL_ENABLED = false;
+export const DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH = 2;
+export const MIN_SCHOLAR_CRAWL_MAX_DEPTH = 1;
+export const MAX_SCHOLAR_CRAWL_MAX_DEPTH = 5;
+export const DEFAULT_SCHOLAR_CRAWL_MAX_PAGES = 20;
+export const MIN_SCHOLAR_CRAWL_MAX_PAGES = 1;
+export const MAX_SCHOLAR_CRAWL_MAX_PAGES = 100;
 
 export const DEFAULT_MAX_LONG_TERM_ENTRIES = 1_000_000;
 export const MIN_MAX_LONG_TERM_ENTRIES = 1_000;
@@ -164,7 +198,36 @@ const DEFAULT_SETTINGS: AppSettings = {
   sqlite_mmap_mb: DEFAULT_SQLITE_MMAP_MB,
   code_index_cache_mb: DEFAULT_CODE_INDEX_CACHE_MB,
   code_index_mmap_mb: DEFAULT_CODE_INDEX_MMAP_MB,
+  context_folders: [],
+  scholar_crawl_enabled: DEFAULT_SCHOLAR_CRAWL_ENABLED,
+  scholar_crawl_max_depth: DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+  scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+  reasoning_effort: 'off',
+  karaoke_dialog_enabled: true,
+  debug_logging: false,
 };
+
+const KARAOKE_DIALOG_STORAGE_KEY = 'ts.karaokeDialogEnabled';
+
+function readKaraokeDialogPreference(): boolean {
+  try {
+    if (typeof window === 'undefined') return true;
+    const raw = window.localStorage.getItem(KARAOKE_DIALOG_STORAGE_KEY);
+    if (raw == null) return true;
+    return raw === '1';
+  } catch {
+    return true;
+  }
+}
+
+function writeKaraokeDialogPreference(enabled: boolean): void {
+  try {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(KARAOKE_DIALOG_STORAGE_KEY, enabled ? '1' : '0');
+  } catch {
+    // Best-effort persistence when localStorage is unavailable.
+  }
+}
 
 // ── Store ─────────────────────────────────────────────────────────────────────
 
@@ -182,7 +245,11 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value = await invoke<AppSettings>('get_app_settings');
     } catch {
       // Tauri unavailable — keep defaults
+      settings.value = { ...settings.value, karaoke_dialog_enabled: readKaraokeDialogPreference() };
     } finally {
+      const karaokeEnabled = settings.value.karaoke_dialog_enabled ?? readKaraokeDialogPreference();
+      settings.value = { ...settings.value, karaoke_dialog_enabled: karaokeEnabled };
+      writeKaraokeDialogPreference(karaokeEnabled);
       isLoading.value = false;
     }
   }
@@ -190,6 +257,9 @@ export const useSettingsStore = defineStore('settings', () => {
   async function saveSettings(patch: Partial<AppSettings>): Promise<void> {
     const updated: AppSettings = { ...settings.value, ...patch };
     settings.value = updated;
+    if (Object.prototype.hasOwnProperty.call(patch, 'karaoke_dialog_enabled')) {
+      writeKaraokeDialogPreference(updated.karaoke_dialog_enabled !== false);
+    }
     try {
       await invoke('save_app_settings', { settings: updated });
     } catch {
@@ -217,6 +287,11 @@ export const useSettingsStore = defineStore('settings', () => {
   /** Toggle chatbox-only mode (hides the 3D character). */
   async function setChatboxMode(enabled: boolean): Promise<void> {
     await saveSettings({ chatbox_mode: enabled });
+  }
+
+  /** Toggle karaoke subtitle dialog visibility. */
+  async function setKaraokeDialogEnabled(enabled: boolean): Promise<void> {
+    await saveSettings({ karaoke_dialog_enabled: enabled });
   }
 
   async function saveMaxMemoryGb(gb: number): Promise<void> {
@@ -291,6 +366,28 @@ export const useSettingsStore = defineStore('settings', () => {
     await saveSettings({ code_index_mmap_mb: clamped });
   }
 
+  async function saveScholarCrawlSettings(enabled: boolean, maxDepth: number, maxPages: number): Promise<void> {
+    const clampedDepth = Math.min(
+      MAX_SCHOLAR_CRAWL_MAX_DEPTH,
+      Math.max(
+        MIN_SCHOLAR_CRAWL_MAX_DEPTH,
+        Number.isFinite(maxDepth) ? Math.round(maxDepth) : DEFAULT_SCHOLAR_CRAWL_MAX_DEPTH,
+      ),
+    );
+    const clampedPages = Math.min(
+      MAX_SCHOLAR_CRAWL_MAX_PAGES,
+      Math.max(
+        MIN_SCHOLAR_CRAWL_MAX_PAGES,
+        Number.isFinite(maxPages) ? Math.round(maxPages) : DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
+      ),
+    );
+    await saveSettings({
+      scholar_crawl_enabled: enabled,
+      scholar_crawl_max_depth: clampedDepth,
+      scholar_crawl_max_pages: clampedPages,
+    });
+  }
+
   return {
     // state
     settings,
@@ -303,6 +400,7 @@ export const useSettingsStore = defineStore('settings', () => {
     saveCameraState,
     saveBgmState,
     setChatboxMode,
+    setKaraokeDialogEnabled,
     saveMaxMemoryGb,
     saveMaxMemoryMb,
     saveMaxLongTermEntries,
@@ -312,5 +410,6 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSqliteMmapMb,
     saveCodeIndexCacheMb,
     saveCodeIndexMmapMb,
+    saveScholarCrawlSettings,
   };
 });

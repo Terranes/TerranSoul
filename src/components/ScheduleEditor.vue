@@ -14,54 +14,98 @@
     <template v-if="kind !== 'none'">
       <label class="se-field">
         <span>Start at</span>
-        <input v-model="startAtLocal" type="datetime-local" />
+        <input
+          v-model="startAtLocal"
+          type="datetime-local"
+        >
       </label>
 
       <label class="se-field">
         <span>Duration (minutes)</span>
-        <input v-model.number="durationMinutes" type="number" min="5" max="1440" />
+        <input
+          v-model.number="durationMinutes"
+          type="number"
+          min="5"
+          max="1440"
+        >
       </label>
 
       <template v-if="kind !== 'once'">
         <label class="se-field">
           <span>Repeat every</span>
           <div class="se-interval-row">
-            <input v-model.number="interval" type="number" min="1" max="365" />
+            <input
+              v-model.number="interval"
+              type="number"
+              min="1"
+              max="365"
+            >
             <span>{{ intervalUnit }}</span>
           </div>
         </label>
 
-        <div v-if="kind === 'weekly'" class="se-field">
+        <div
+          v-if="kind === 'weekly'"
+          class="se-field"
+        >
           <span>On these days</span>
           <div class="se-weekdays">
-            <label v-for="d in weekdayOptions" :key="d.value" class="se-weekday">
+            <label
+              v-for="d in weekdayOptions"
+              :key="d.value"
+              class="se-weekday"
+            >
               <input
                 type="checkbox"
                 :checked="selectedWeekdays.has(d.value)"
                 @change="toggleWeekday(d.value)"
-              />
+              >
               <span>{{ d.label }}</span>
             </label>
           </div>
         </div>
 
-        <label v-if="kind === 'monthly'" class="se-field">
+        <label
+          v-if="kind === 'monthly'"
+          class="se-field"
+        >
           <span>Day of month</span>
-          <input v-model.number="dayOfMonth" type="number" min="1" max="31" />
+          <input
+            v-model.number="dayOfMonth"
+            type="number"
+            min="1"
+            max="31"
+          >
         </label>
 
         <label class="se-field">
           <span>End on (optional)</span>
-          <input v-model="endByLocal" type="date" />
+          <input
+            v-model="endByLocal"
+            type="date"
+          >
         </label>
       </template>
 
-      <p class="se-preview">{{ previewText }}</p>
+      <p class="se-preview">
+        {{ previewText }}
+      </p>
     </template>
 
     <div class="se-actions">
-      <button class="se-btn se-btn-primary" @click="onSave">Save schedule</button>
-      <button v-if="props.plan.schedule" class="se-btn" @click="onClear">Remove schedule</button>
+      <button
+        class="se-btn se-btn-primary"
+        @click="onSave"
+      >
+        Save schedule
+      </button>
+      <button
+        v-if="props.plan.schedule"
+        class="se-btn"
+        @click="onClear"
+      >
+        Remove schedule
+      </button>
     </div>
   </div>
 </template>

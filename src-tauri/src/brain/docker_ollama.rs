@@ -74,9 +74,26 @@ pub async fn check_docker_status() -> DockerStatus {
     }
 }
 
-/// Attempt to launch Docker Desktop (Windows: starts the exe, macOS: `open -a`,
-/// Linux: `systemctl start docker`). Returns Ok once the launch command has been
-/// dispatched — it does NOT wait for the daemon to become ready.
+/// Attempt to launch Docker Desktop in **tray / minimized** mode so the
+/// app's dashboard window does not steal focus or pop up over the user's
+/// work. Returns Ok once the launch command has been dispatched — it
+/// does NOT wait for the daemon to become ready.
+///
+/// Per-OS strategy (2026-05-13: user requested tray-only auto-start):
+///
+/// * **Windows** — invoke via `cmd /C start "" /MIN "<exe>"`. The `/MIN`
+///   switch tells Windows to start the process with its main window
+///   minimized; Docker Desktop's tray icon (always shown in the system
+///   tray once the engine boots) lets the user reopen the dashboard on
+///   demand. Spawning the exe directly via `Command::new(path)` would
+///   skip the shell `/MIN` handling and pop the dashboard, which is
+///   what we want to avoid for an auto-start trigger.
+/// * **macOS** — `open -gja Docker`: `-g` keeps the launched app in the
+///   background (no Dock activation), `-j` launches it hidden. Docker
+///   Desktop still installs its menu-bar (tray) icon so the user can
+///   bring up the dashboard manually.
+/// * **Linux** — start the system `docker.service` via `systemctl`,
+///   which is headless by definition (no GUI to suppress).
 pub async fn start_docker_desktop() -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {
@@ -87,18 +104,23 @@ pub async fn start_docker_desktop() -> Result<String, String> {
         ];
         for path in &paths {
             if std::path::Path::new(path).exists() {
-                Command::new(path)
+                // Use `cmd /C start "" /MIN` so the dashboard launches
+                // minimized — Docker Desktop will live in the system
+                // tray and not steal focus from the TerranSoul window.
+                Command::new("cmd")
+                    .args(["/C", "start", "", "/MIN", path])
                     .stdin(Stdio::null())
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn()
                     .map_err(|e| format!("Failed to launch Docker Desktop: {e}"))?;
-                return Ok("Docker Desktop launch initiated".to_string());
+                return Ok("Docker Desktop launch initiated (minimized to tray)".to_string());
             }
         }
-        // Try via Start-Process in case it's on a custom path
+        // Fallback for custom-path installs — same `/MIN` switch via
+        // PATH lookup of the shortcut name.
         let status = Command::new("cmd")
-            .args(["/C", "start", "", "Docker Desktop"])
+            .args(["/C", "start", "", "/MIN", "Docker Desktop"])
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -106,20 +128,25 @@ pub async fn start_docker_desktop() -> Result<String, String> {
             .await
             .map_err(|e| format!("Failed to start Docker Desktop: {e}"))?;
         if status.success() {
-            return Ok("Docker Desktop launch initiated via cmd".to_string());
+            return Ok(
+                "Docker Desktop launch initiated via cmd (minimized to tray)".to_string(),
+            );
         }
         Err("Docker Desktop not found. Please install it from https://www.docker.com/products/docker-desktop/".to_string())
     }
 
     #[cfg(target_os = "macos")]
     {
+        // `-g` = don't bring app to foreground; `-j` = launch hidden.
+        // The menu-bar icon still appears so the user can open the
+        // dashboard manually.
         let status = Command::new("open")
-            .args(["-a", "Docker"])
+            .args(["-gja", "Docker"])
             .status()
             .await
             .map_err(|e| format!("Failed to open Docker Desktop: {e}"))?;
         if status.success() {
-            Ok("Docker Desktop launch initiated".to_string())
+            Ok("Docker Desktop launch initiated (background, hidden)".to_string())
         } else {
             Err("Docker Desktop not found. Install from https://www.docker.com/products/docker-desktop/".to_string())
         }

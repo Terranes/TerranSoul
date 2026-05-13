@@ -50,7 +50,6 @@ import { useAudioStore } from '../stores/audio';
 import { useCharacterStore } from '../stores/character';
 import { useMcpActivityStore } from '../stores/mcp-activity';
 import { useTtsPlayback } from '../composables/useTtsPlayback';
-import { GENDER_VOICES } from '../config/default-models';
 
 const activity = useMcpActivityStore();
 const character = useCharacterStore();
@@ -59,8 +58,8 @@ const { muted: audioMuted } = storeToRefs(audio);
 const collapsed = ref(false);
 
 const tts = useTtsPlayback({
-  getBrowserPitch: () => GENDER_VOICES[character.currentGender()].browserPitch,
-  getBrowserRate: () => GENDER_VOICES[character.currentGender()].browserRate,
+  getBrowserPitch: () => character.currentBrowserPitch(),
+  getBrowserRate: () => character.currentBrowserRate(),
   mutedRef: audioMuted,
 });
 
