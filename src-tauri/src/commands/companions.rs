@@ -50,6 +50,7 @@ pub async fn companions_open_install_page(
         return Err(format!("unknown companion id: {id}"));
     };
     use tauri_plugin_shell::ShellExt;
+    #[allow(deprecated)]
     app_handle
         .shell()
         .open(&app.official_url, None)

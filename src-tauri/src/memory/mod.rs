@@ -6,6 +6,7 @@ pub mod auto_tag;
 pub mod backend;
 pub mod brain_maintenance;
 pub mod brain_memory;
+pub mod cap;
 pub mod cascade;
 pub mod chunking;
 pub mod cognitive_kind;

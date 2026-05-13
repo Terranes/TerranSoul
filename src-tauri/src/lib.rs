@@ -31,6 +31,7 @@ pub mod package_manager;
 pub mod persona;
 pub mod plugins;
 pub mod registry_server;
+pub mod resilience;
 pub mod routing;
 pub mod sandbox;
 pub mod settings;
@@ -351,6 +352,12 @@ pub struct AppStateInner {
     /// chat model from VRAM, costing 10-20s on the next chat. `0` means
     /// no chat has happened yet this session.
     pub last_chat_at_ms: AtomicU64,
+    /// App-level safe-mode flag (RESILIENCE-1). Set by the crash-loop guard
+    /// on startup if ≥ 3 crashes detected within 5 min. Subsystems check
+    /// this before starting background work (plugins, embedding worker,
+    /// hive relay, MCP server). Auto-clears after 10 min or manual user
+    /// exit. See `docs/availability-slo.md`.
+    pub safe_mode: Arc<AtomicBool>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -453,6 +460,7 @@ impl AppState {
             ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
             last_chat_at_ms: AtomicU64::new(Self::now_ms_u64()),
+            safe_mode: Arc::new(AtomicBool::new(false)),
         }))
     }
 
@@ -521,6 +529,7 @@ impl AppState {
             ann_flush_handle: memory::ann_flush::AnnFlushHandle::new(),
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
             last_chat_at_ms: AtomicU64::new(0),
+            safe_mode: Arc::new(AtomicBool::new(false)),
         }))
     }
 }

@@ -119,13 +119,16 @@ async function openOfficialPage(id: string): Promise<void> {
 }
 
 function normaliseDetectStatus(raw: unknown): DetectStatus {
+  // Rust serde tag for unit variants is a bare string ("NotInstalled");
+  // tuple/struct variants come through as { VariantName: ... }.
+  if (raw === 'NotInstalled') return { type: 'not_installed' };
   if (!raw || typeof raw !== 'object') return null;
   const obj = raw as Record<string, unknown>;
   if ('Installed' in obj) {
     const inner = obj.Installed as { version?: string };
     return { type: 'installed', version: inner?.version ?? '' };
   }
-  if ('NotInstalled' in obj || raw === 'NotInstalled') {
+  if ('NotInstalled' in obj) {
     return { type: 'not_installed' };
   }
   if ('Unknown' in obj) {
@@ -153,6 +156,11 @@ function describeOutcome(raw: unknown): string {
     return `Unknown companion id: ${inner?.id ?? '?'}`;
   }
   return 'Install dispatched';
+}
+
+function installedVersion(id: string): string {
+  const status = detectStatus.value[id];
+  return status && status.type === 'installed' ? status.version : '';
 }
 
 onMounted(() => {
@@ -209,14 +217,16 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
             requires elevation
           </span>
         </header>
-        <p class="cp-role">{{ app.role }}</p>
+        <p class="cp-role">
+          {{ app.role }}
+        </p>
 
         <div
           class="cp-status"
           :data-testid="`companion-status-${app.id}`"
         >
           <template v-if="detectStatus[app.id]?.type === 'installed'">
-            ✓ Installed (v{{ detectStatus[app.id]!.type === 'installed' ? (detectStatus[app.id] as { type: 'installed'; version: string }).version : '' }})
+            ✓ Installed (v{{ installedVersion(app.id) }})
           </template>
           <template v-else-if="detectStatus[app.id]?.type === 'not_installed'">
             • Not installed
@@ -278,8 +288,12 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
           <strong>{{ ref_app.display_name }}</strong>
           <span class="cp-badge cp-badge-ref">design reference only</span>
         </header>
-        <p class="cp-role">{{ ref_app.role }}</p>
-        <p class="cp-note">{{ ref_app.note }}</p>
+        <p class="cp-role">
+          {{ ref_app.role }}
+        </p>
+        <p class="cp-note">
+          {{ ref_app.note }}
+        </p>
       </li>
     </ul>
   </section>

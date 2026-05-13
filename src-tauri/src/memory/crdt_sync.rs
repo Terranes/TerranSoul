@@ -192,6 +192,19 @@ impl MemoryStore {
         rows.collect()
     }
 
+    /// Compute deltas for a peer, excluding any memory whose tags contain
+    /// a `private:*` entry. This is the hard-ACL invariant documented in
+    /// `docs/cross-instance-knowledge-sharing.md` — private-tagged memories
+    /// MUST NEVER appear in any outbound sync operation.
+    pub fn compute_sync_deltas_filtered(
+        &self,
+        since_timestamp: i64,
+        local_device_id: &str,
+    ) -> SqlResult<Vec<SyncDelta>> {
+        let deltas = self.compute_sync_deltas(since_timestamp, local_device_id)?;
+        Ok(filter_private_tags(deltas))
+    }
+
     /// Apply inbound deltas from a peer device using HLC-based LWW conflict resolution.
     ///
     /// For each delta:
@@ -398,6 +411,32 @@ impl MemoryStore {
         }
         Ok(map)
     }
+}
+
+// ─── Private-Tag Filter (SCALE-INF-1 ACL invariant) ────────────────────
+
+/// Remove any delta whose `tags` field contains a tag starting with `private:`.
+/// This is a hard-block — no memory with a `private:*` tag may ever leave
+/// the originating device, regardless of `share_scope` or subscription config.
+pub fn filter_private_tags(deltas: Vec<SyncDelta>) -> Vec<SyncDelta> {
+    deltas
+        .into_iter()
+        .filter(|d| !has_private_tag(&d.tags))
+        .collect()
+}
+
+/// Check if a JSON-encoded tags string contains any `private:*` entry.
+/// Tags are stored as a JSON array of strings (e.g., `["work","private:darren"]`).
+fn has_private_tag(tags_json: &str) -> bool {
+    // Fast path: if the raw JSON doesn't contain "private:" at all, skip parsing
+    if !tags_json.contains("private:") {
+        return false;
+    }
+    // Parse as array of strings
+    if let Ok(tags) = serde_json::from_str::<Vec<String>>(tags_json) {
+        return tags.iter().any(|t| t.starts_with("private:"));
+    }
+    false
 }
 
 // ─── Tests ─────────────────────────────────────────────────────────────
@@ -859,5 +898,94 @@ mod tests {
         // A second backfill should not re-queue.
         let queued2 = crate::memory::embedding_queue::backfill_queue(store.conn()).unwrap();
         assert_eq!(queued2, 0, "should not re-queue already-pending entries");
+    }
+
+    // ── SCALE-INF-1: ACL leak test ─────────────────────────────────────────
+
+    /// Proves that memories tagged `private:darren` NEVER appear in outbound
+    /// sync deltas, even under aggressive sync pressure (full-sync with
+    /// since_timestamp=0). This is the hard-ACL invariant from
+    /// `docs/cross-instance-knowledge-sharing.md`.
+    #[test]
+    fn acl_private_tag_never_leaks_in_sync() {
+        let store = make_store();
+
+        // Insert 5 public memories (no private tag)
+        for i in 0..5 {
+            store
+                .add(NewMemory {
+                    content: format!("Public fact #{i}"),
+                    tags: serde_json::to_string(&vec!["work", "general"]).unwrap(),
+                    importance: 5,
+                    memory_type: MemoryType::Fact,
+                    source_url: None,
+                    source_hash: None,
+                    expires_at: None,
+                    created_at: None,
+                })
+                .unwrap();
+        }
+
+        // Insert 5 private memories tagged private:darren
+        for i in 0..5 {
+            store
+                .add(NewMemory {
+                    content: format!("Secret thought #{i} — darren only"),
+                    tags: serde_json::to_string(&vec!["private:darren", "personal"]).unwrap(),
+                    importance: 8,
+                    memory_type: MemoryType::Fact,
+                    source_url: None,
+                    source_hash: None,
+                    expires_at: None,
+                    created_at: None,
+                })
+                .unwrap();
+        }
+
+        // Full sync from timestamp 0 — should return ALL 10 memories (unfiltered)
+        let all_deltas = store
+            .compute_sync_deltas(0, "device-A")
+            .unwrap();
+        assert_eq!(all_deltas.len(), 10, "unfiltered should return all 10");
+
+        // Filtered sync — MUST exclude the 5 private:darren memories
+        let filtered = store
+            .compute_sync_deltas_filtered(0, "device-A")
+            .unwrap();
+        assert_eq!(
+            filtered.len(),
+            5,
+            "filtered should return only 5 public memories, got {}",
+            filtered.len()
+        );
+
+        // Double-check: none of the filtered deltas contain "private:darren"
+        for delta in &filtered {
+            assert!(
+                !delta.tags.contains("private:darren"),
+                "LEAK DETECTED: private:darren found in sync delta: {}",
+                delta.content
+            );
+            assert!(
+                !delta.content.contains("darren only"),
+                "LEAK DETECTED: private content in sync delta"
+            );
+        }
+    }
+
+    /// Proves the filter handles edge cases: empty tags, malformed JSON,
+    /// partial matches (e.g., "private_note" should NOT be filtered).
+    #[test]
+    fn acl_filter_edge_cases() {
+        // "private:" prefix required — "private_note" is NOT a private tag
+        assert!(!has_private_tag(r#"["private_note","work"]"#));
+        assert!(!has_private_tag(r#"["myprivate:stuff"]"#));
+        assert!(!has_private_tag(r#"[]"#));
+        assert!(!has_private_tag(r#""#));
+
+        // These should match
+        assert!(has_private_tag(r#"["private:darren"]"#));
+        assert!(has_private_tag(r#"["work","private:team-a","general"]"#));
+        assert!(has_private_tag(r#"["private:"]"#));
     }
 }

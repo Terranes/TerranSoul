@@ -129,6 +129,7 @@ mod tests {
             scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: crate::settings::CapProfile::Availability,
         };
         save(dir.path(), &s).unwrap();
         let loaded = load(dir.path());
@@ -209,6 +210,7 @@ mod tests {
             scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: crate::settings::CapProfile::Availability,
         };
         let json = serde_json::to_string(&stale).unwrap();
         fs::write(dir.path().join("app_settings.json"), json).unwrap();
@@ -274,6 +276,7 @@ mod tests {
             scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: crate::settings::CapProfile::Availability,
         };
         save(dir.path(), &s).unwrap();
 

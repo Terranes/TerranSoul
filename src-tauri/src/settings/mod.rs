@@ -420,6 +420,34 @@ pub struct AppSettings {
     /// settings panel when diagnosing performance or provider issues.
     #[serde(default)]
     pub debug_logging: bool,
+
+    /// Default CAP profile for new memories (CAP-1, Phase INFRA).
+    /// - `Availability` (default): write succeeds immediately via CRDT;
+    ///   merges on reconnect. Suitable for everyday memories.
+    /// - `Consistency`: write goes through the hive relay as a linearizable
+    ///   log with quorum-2 acks; offline devices block the write until
+    ///   reachable. Suitable for legal/financial/shared-team facts.
+    ///
+    /// Per-memory override via `cap_profile` column in `memories` table.
+    /// See `docs/cap-profile.md`.
+    #[serde(default)]
+    pub cap_profile_default: CapProfile,
+}
+
+/// CAP profile for memory write path (CAP-1, Phase INFRA).
+///
+/// Partition-tolerance is always mandatory (the app works offline).
+/// This enum selects between Availability (AP) and Consistency (CP).
+/// See `docs/cap-profile.md` for the full trade-off explanation.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapProfile {
+    /// AP: write succeeds immediately via CRDT, merges on reconnect.
+    #[default]
+    Availability,
+    /// CP: write requires quorum-2 ack from hive relay before local UI
+    /// confirms. Offline devices block the write until reachable.
+    Consistency,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -694,6 +722,7 @@ impl Default for AppSettings {
             scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: CapProfile::Availability,
         }
     }
 }
@@ -884,6 +913,7 @@ mod tests {
             scholar_crawl_max_pages: DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: CapProfile::Availability,
         };
         let json = serde_json::to_string(&s).unwrap();
         let parsed: AppSettings = serde_json::from_str(&json).unwrap();

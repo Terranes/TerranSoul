@@ -173,6 +173,31 @@
   --ts-gradient-accent-bar: linear-gradient(90deg, var(--ts-accent), var(--ts-accent-blue));
   --ts-gradient-progress: linear-gradient(90deg, var(--ts-accent), var(--ts-success));
   --ts-gradient-danger: linear-gradient(135deg, var(--ts-error), #b91c1c);
+
+  /* ── Galaxy palette (3D memory graph HUD) ────────────────────────────────
+     Neutral descriptive names; visually inspired by a dark-space aesthetic.
+     Use for HUD chrome, planet swatches, and starfield tint accents only. */
+  --ts-galaxy-bg-deep: #04030a;
+  --ts-galaxy-bg-mid:  #0a0814;
+  --ts-galaxy-bg-soft: #14121c;
+  --ts-galaxy-violet:  #b9ace8;
+  --ts-galaxy-violet-deep: #4d3075;
+  --ts-galaxy-teal:    #97baba;
+  --ts-galaxy-teal-deep:   #1e5b67;
+  --ts-galaxy-gold:    #e8ce96;
+  --ts-galaxy-gold-deep:   #8e7029;
+  --ts-galaxy-sage:    #a3ca8c;
+  --ts-galaxy-sage-deep:   #517222;
+  --ts-galaxy-doc:     #c8d9f5;
+  --ts-galaxy-chunk:   var(--ts-galaxy-teal);
+  --ts-galaxy-entity:  var(--ts-galaxy-gold);
+  --ts-galaxy-status:  #80994d;
+  --ts-galaxy-hud-bg:        rgba(20, 18, 28, 0.62);
+  --ts-galaxy-hud-border:    rgba(255, 255, 255, 0.08);
+  --ts-galaxy-hud-fg:        rgba(255, 255, 255, 0.92);
+  --ts-galaxy-hud-fg-muted:  rgba(255, 255, 255, 0.55);
+  --ts-galaxy-hud-fg-dim:    rgba(255, 255, 255, 0.35);
+  --ts-galaxy-ease:    cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ═════════════════════════════════════════════════════════════════════════════
