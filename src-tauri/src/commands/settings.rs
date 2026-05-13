@@ -124,6 +124,7 @@ mod tests {
             scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: crate::settings::CapProfile::Availability,
         };
         // Directly update in-memory state (simulating command effect)
         {
@@ -193,6 +194,7 @@ mod tests {
             scholar_crawl_max_pages: crate::settings::DEFAULT_SCHOLAR_CRAWL_MAX_PAGES,
             reasoning_effort: crate::settings::ReasoningEffort::Off,
             debug_logging: false,
+            cap_profile_default: crate::settings::CapProfile::Availability,
         };
         config_store::save(dir.path(), &settings).unwrap();
         let loaded = config_store::load(dir.path());

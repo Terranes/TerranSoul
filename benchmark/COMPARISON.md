@@ -450,21 +450,68 @@ No competitor publishes quality-at-100k LoCoMo numbers in the directly-comparabl
 
 ### Methodology-gap matrix — non-comparable cells
 
+> ⚠️ **Methodology mismatch — do NOT compare cells across the two matrices below.**
+> The TerranSoul retrieval matrices above measure **retrieval-only** (`R@10`,
+> `NDCG@10`, `MRR` — did the right memory show up in the top-K?). The
+> Mem0-paper end-to-end `J` matrix below measures **generation-quality**
+> (`gpt-4o-mini`-judged answer correctness after both retrieval AND
+> generation). Retrieval is an *upper bound* on `J` (you can't generate a
+> right answer from memories you never retrieved), but it is not the same
+> metric. **Same-cell rule:** no system appears in both lanes' ranked cells.
+
 The Mem0 paper (arXiv:2504.19413, Table 1) reports **end-to-end QA accuracy** (F1, BLEU-1, and LLM-as-Judge `J` evaluated by `gpt-4o-mini`) on LoCoMo with gold answers. TerranSoul publishes **retrieval-only** numbers on the same dataset. These two metric families measure different things and **cannot be placed in the same cell**: a perfect retriever does not guarantee a perfect generator, and an end-to-end agent's `J` score collapses retrieval and generation into one number.
 
-Published Mem0-paper LoCoMo end-to-end `J` scores (higher is better, `gpt-4o-mini` judge, 10-run mean):
+#### End-to-end LLM-as-Judge `J` lane (Mem0-paper Table 1, full set)
 
-| System | Single-Hop `J` | Multi-Hop `J` | Open-Domain `J` | Temporal `J` |
-|---|---:|---:|---:|---:|
-| **Mem0** | **67.13** | **51.15** | 72.93 | 55.51 |
-| Mem0_g (graph) | 65.71 | 47.19 | 75.71 | **58.13** |
-| **Zep** | 61.70 | 41.35 | **76.60** | 49.31 |
-| LangMem (Hot Path) | 62.23 | 47.92 | 71.12 | 23.43 |
-| OpenAI Memory (`gpt-4o-mini`) | 63.79 | 42.92 | 62.29 | 21.71 |
-| A-Mem\* (temp-0 re-run) | 39.79 | 18.85 | 54.05 | 49.91 |
-| Full-context (no memory) | — | — | — | — (overall `J` ≈ 72.90) |
+Reproduced verbatim from Chhikara et al. (arXiv:2504.19413v1) Table 1. All scores are `J` (`gpt-4o-mini` judge, 10-run mean ± 1σ). `–` means the paper did not publish a `J` for that baseline (only F1 / BLEU-1). Higher is better.
 
-TerranSoul **does not publish a `J` row** on this matrix today. The closest existing TerranSoul signal is per-task **retrieval `R@10`** from BENCH-LCM-8: single-hop 77.6 %, multi-hop 44.0 %, temporal 74.2 %, open-domain 39.7 %, adversarial 67.7 %. These are *upper-bound* signals — `J` cannot exceed retrieval `R@10` if the generator can only use what is retrieved — but they are not the same metric. Treating them as comparable would either falsely flatter TerranSoul (retrieval ≫ end-to-end on Mem0 paper numbers) or falsely punish it (TerranSoul retrieval > Mem0 `J` on single-hop and temporal does not prove TerranSoul wins end-to-end).
+| System | Single-Hop `J` | Multi-Hop `J` | Open-Domain `J` | Temporal `J` | Overall `J` | Source |
+|---|---:|---:|---:|---:|---:|---|
+| **Mem0** | **67.13 ± 0.65** | **51.15 ± 0.31** | 72.93 ± 0.11 | 55.51 ± 0.34 | **66.88 ± 0.15** (T2) | Mem0 paper Table 1 |
+| **Mem0_g** (graph) | 65.71 ± 0.45 | 47.19 ± 0.67 | 75.71 ± 0.21 | **58.13 ± 0.44** | **68.44 ± 0.17** (T2) | Mem0 paper Table 1 |
+| **Zep** | 61.70 ± 0.32 | 41.35 ± 0.48 | **76.60 ± 0.13** | 49.31 ± 0.50 | 65.99 ± 0.16 (T2) | Mem0 paper Table 1 |
+| **LangMem (Hot Path)** | 62.23 ± 0.75 | 47.92 ± 0.47 | 71.12 ± 0.20 | 23.43 ± 0.39 | 58.10 ± 0.21 (T2) | Mem0 paper Table 1 |
+| **OpenAI Memory** (`gpt-4o-mini`) | 63.79 ± 0.46 | 42.92 ± 0.63 | 62.29 ± 0.12 | 21.71 ± 0.20 | 52.90 ± 0.14 (T2) | Mem0 paper Table 1 |
+| **A-Mem\*** (temp-0 re-run) | 39.79 ± 0.38 | 18.85 ± 0.31 | 54.05 ± 0.22 | 49.91 ± 0.31 | 48.38 ± 0.15 (T2) | Mem0 paper Table 1 |
+| **A-Mem** (original) | – | – | – | – | – | Mem0 paper Table 1 (F1/B1 only; no J) |
+| **MemGPT** | – | – | – | – | – | Mem0 paper Table 1 (F1/B1 only; no J) |
+| **ReadAgent** | – | – | – | – | – | Mem0 paper Table 1 (F1/B1 only; no J) |
+| **MemoryBank** | – | – | – | – | – | Mem0 paper Table 1 (F1/B1 only; no J) |
+| **LoCoMo** (baseline) | – | – | – | – | – | Mem0 paper Table 1 (F1/B1 only; no J) |
+| **Full-context** (no memory) | – | – | – | – | 72.90 ± 0.19 (T2) | Mem0 paper Table 2 |
+| **TerranSoul** | **retrieval-only; end-to-end `J` pending TOP1-2 harness** | – | – | – | – | this repo: BENCH-LCM-8 |
+
+> **TerranSoul row caveat (TOP1-3, 2026-05-14).** TerranSoul does not publish a
+> `J` row on this lane today. The closest existing signal is per-task
+> **retrieval `R@10`** from BENCH-LCM-8 (single-hop 77.6 %, multi-hop 44.0 %,
+> temporal 74.2 %, open-domain 39.7 %, adversarial 67.7 %). These are
+> *upper-bound* signals — `J` cannot exceed retrieval `R@10` if the
+> generator can only use what is retrieved — but they are **not** the same
+> metric and must not be ranked against the `J` cells above. Generating
+> a `J` row requires the TOP1-2 harness (paid `gpt-4o-mini` budget or an
+> explicit local-judge variant).
+
+#### F1 / BLEU-1 baselines from the same Table 1 (informational only — not a ranked TerranSoul lane)
+
+Recorded so the four baselines without a published `J` (LoCoMo, ReadAgent, MemoryBank, MemGPT, A-Mem) are still represented per TOP1-3 acceptance bar (2). TerranSoul does not publish F1 / BLEU-1 either, so these are reproduced verbatim as a static reference; nobody is ranked here.
+
+| System | SH F1 | SH B1 | MH F1 | MH B1 | OD F1 | OD B1 | T F1 | T B1 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| LoCoMo (Maharana et al. 2024) | 25.02 | 19.75 | 12.04 | 11.16 | 40.36 | 29.05 | 18.41 | 14.77 |
+| ReadAgent (Lee et al. 2024) | 9.15 | 6.48 | 5.31 | 5.12 | 9.67 | 7.66 | 12.60 | 8.87 |
+| MemoryBank (Zhong et al. 2024) | 5.00 | 4.77 | 5.56 | 5.94 | 6.61 | 5.16 | 9.68 | 6.99 |
+| MemGPT (Packer et al. 2023) | 26.65 | 17.72 | 9.15 | 7.44 | 41.04 | 34.34 | 25.52 | 19.44 |
+| A-Mem (Xu et al. 2025) | 27.02 | 20.09 | 12.14 | 12.00 | 44.65 | 37.06 | 45.85 | 36.67 |
+| A-Mem\* (paper temp-0 re-run) | 20.76 | 14.90 | 9.22 | 8.81 | 33.34 | 27.58 | 35.40 | 31.08 |
+| LangMem (Hot Path) | 35.51 | 26.86 | 26.04 | 22.32 | 40.91 | 33.63 | 30.75 | 25.84 |
+| Zep | 35.74 | 23.30 | 19.37 | 14.82 | 49.56 | 38.92 | 42.00 | 34.53 |
+| OpenAI Memory | 34.30 | 23.72 | 20.09 | 15.42 | 39.31 | 31.16 | 14.04 | 11.25 |
+| Mem0 | 38.72 | 27.13 | 28.64 | 21.58 | 47.65 | 38.72 | 48.93 | 40.51 |
+| Mem0_g | 38.09 | 26.03 | 24.32 | 18.82 | 49.27 | 40.30 | 51.55 | 40.28 |
+
+All numbers above are reproduced verbatim from Chhikara et al., *Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory*, arXiv:2504.19413v1 (28 Apr 2025), Table 1 (per-task F1 / B1 / J) and Table 2 (Overall J, the `(T2)` rows). License: arXiv non-exclusive distribution. The numbers belong to their authors; TerranSoul reproduces them solely for cross-system comparison.
+
+Treating these `J` rows as comparable to TerranSoul's retrieval rows would either falsely flatter TerranSoul (retrieval ≫ end-to-end on Mem0 paper numbers) or falsely punish it (TerranSoul retrieval > Mem0 `J` on single-hop and temporal does not prove TerranSoul wins end-to-end).
 
 ### Losing-cell roll-up
 

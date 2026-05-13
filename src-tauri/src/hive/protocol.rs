@@ -194,6 +194,40 @@ pub struct Capability {
     pub value: String,
 }
 
+// ─── Subscribe Model (SCALE-INF-1) ──────────────────────────────────────
+
+/// A subscribe request from a client to a Hive relay. The relay will push
+/// matching bundles as they arrive — filtered by shard topic, tag, and the
+/// hard `private:*` ACL block.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscribeRequest {
+    /// Shard topics to subscribe to (e.g., `["procedural/long", "semantic/working"]`).
+    /// Format: `<cognitive_kind>/<tier>`. Empty = subscribe to all.
+    pub shard_topics: Vec<String>,
+    /// Only receive memories matching ALL of these tags (AND semantics).
+    pub include_tags: Vec<String>,
+    /// Never receive memories with ANY of these tags. `private:*` is always
+    /// implicitly in this list — the relay enforces it even if omitted.
+    pub exclude_tags: Vec<String>,
+    /// Only deltas with `hlc_counter > since_hlc` are forwarded.
+    pub since_hlc: u64,
+}
+
+/// Relay's acknowledgement of a subscribe request.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscribeAck {
+    /// Opaque subscription ID for unsubscribe/status queries.
+    pub subscription_id: String,
+    /// Confirmed shard topics (may be a subset if ACL restricts some).
+    pub shard_topics: Vec<String>,
+}
+
+/// Unsubscribe from a previously established subscription.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Unsubscribe {
+    pub subscription_id: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

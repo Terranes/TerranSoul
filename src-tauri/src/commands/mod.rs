@@ -7,6 +7,7 @@ pub mod charisma;
 pub mod chat;
 pub mod coding;
 pub mod coding_sessions;
+pub mod companions;
 pub mod consolidation;
 pub mod context_folder;
 pub mod crag;

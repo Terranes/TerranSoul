@@ -1263,6 +1263,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
         assert!(entry.id > 0);
@@ -1289,6 +1290,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1301,6 +1303,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1328,6 +1331,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1340,6 +1344,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1352,6 +1357,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1410,6 +1416,7 @@ mod tests {
                     source_url: None,
                     source_hash: None,
                     expires_at: None,
+                    created_at: None,
                 },
                 "This passage is from a chapter about animal intelligence.",
                 MemoryTier::Long,
@@ -1439,6 +1446,7 @@ mod tests {
                 source_url: None,
                 source_hash: None,
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
 

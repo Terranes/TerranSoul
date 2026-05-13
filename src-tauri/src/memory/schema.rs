@@ -189,6 +189,7 @@ pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     ensure_hlc_counter(conn)?;
     ensure_edge_crdt_columns(conn)?;
     ensure_share_scope(conn)?;
+    ensure_cap_profile(conn)?;
     ensure_v20_tables(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
@@ -324,6 +325,20 @@ fn ensure_share_scope(conn: &Connection) -> SqlResult<()> {
     conn.execute_batch(
         "ALTER TABLE memories ADD COLUMN share_scope TEXT NOT NULL DEFAULT 'private'",
     )
+}
+
+/// Ensure the `cap_profile` column exists on `memories` (CAP-1, Phase INFRA).
+/// Defaults to NULL which means "use AppSettings.cap_profile_default".
+fn ensure_cap_profile(conn: &Connection) -> SqlResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(memories)")?;
+    let mut rows = stmt.query([])?;
+    while let Some(row) = rows.next()? {
+        let name: String = row.get(1)?;
+        if name == "cap_profile" {
+            return Ok(());
+        }
+    }
+    conn.execute_batch("ALTER TABLE memories ADD COLUMN cap_profile TEXT DEFAULT NULL")
 }
 
 /// V20 migration: add `confidence` column, reinforcements, trigger patterns,

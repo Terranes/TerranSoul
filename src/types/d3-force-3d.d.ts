@@ -76,6 +76,26 @@ declare module 'd3-force-3d' {
     z?: number,
   ): ForceCenter<N>;
 
+  export function forceCollide<N extends SimulationNodeDatum>(
+    radius?: number | ((node: N, i: number, nodes: N[]) => number),
+  ): Force<N> & {
+    radius(): (node: N, i: number, nodes: N[]) => number;
+    radius(radius: number | ((node: N, i: number, nodes: N[]) => number)): ForceCollide<N>;
+    strength(): number;
+    strength(strength: number): ForceCollide<N>;
+    iterations(): number;
+    iterations(iterations: number): ForceCollide<N>;
+  };
+
+  interface ForceCollide<N extends SimulationNodeDatum> extends Force<N> {
+    radius(): (node: N, i: number, nodes: N[]) => number;
+    radius(radius: number | ((node: N, i: number, nodes: N[]) => number)): this;
+    strength(): number;
+    strength(strength: number): this;
+    iterations(): number;
+    iterations(iterations: number): this;
+  }
+
   interface ForceCenter<N extends SimulationNodeDatum> extends Force<N> {
     x(): number;
     x(x: number): this;

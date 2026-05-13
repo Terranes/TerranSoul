@@ -129,6 +129,134 @@ export function buildStarfield(sprite: Texture): Points {
   return stars;
 }
 
+// --- Twinkle starfield (multi-layer, time-driven shimmer) ---
+
+/** Vertex shader for twinkling stars — accepts a uTime uniform for shimmer. */
+export const TWINKLE_STAR_VS = `
+  uniform float uTime;
+  attribute float size;
+  attribute vec3 nodeColor;
+  attribute float emphasis;
+  attribute float phase;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vColor = nodeColor;
+    float twinkle = 0.82 + 0.18 * sin(uTime * 0.6 + phase);
+    vAlpha = (0.18 + emphasis * 0.42) * twinkle;
+    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    gl_PointSize = size * (320.0 / -mv.z) * (0.92 + 0.08 * twinkle);
+    gl_Position = projectionMatrix * mv;
+  }
+`;
+
+export const TWINKLE_STAR_FS = `
+  uniform sampler2D map;
+  varying vec3 vColor;
+  varying float vAlpha;
+  void main() {
+    vec2 uv = gl_PointCoord;
+    vec4 tex = texture2D(map, uv);
+    if (tex.a < 0.01) discard;
+    gl_FragColor = vec4(vColor, tex.a * vAlpha);
+  }
+`;
+
+export interface TwinkleStarfieldResult {
+  bg: Points;
+  fg: Points;
+  /** Call each frame with performance.now() / 1000 to drive twinkle. */
+  update(timeSec: number): void;
+}
+
+/**
+ * Two-layer twinkling starfield for the galaxy aesthetic.
+ * - Background layer: ~3000 stars, radius 600–1600, small, mostly white
+ * - Foreground layer: ~600 stars, radius 80–300, slightly larger, tinted
+ *
+ * Both layers share a uTime uniform that drives per-star sinusoidal shimmer
+ * via a per-vertex `phase` attribute seeded from position hash.
+ */
+export function buildTwinkleStarfield(sprite: Texture): TwinkleStarfieldResult {
+  const bgCount = 3000;
+  const fgCount = 600;
+
+  function makeLayer(count: number, rMin: number, rMax: number, sizeMin: number, sizeMax: number, tints: [number, number, number][]) {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const sizes = new Float32Array(count);
+    const emphasis = new Float32Array(count);
+    const phase = new Float32Array(count);
+    for (let i = 0; i < count; i++) {
+      const r = rMin + Math.random() * (rMax - rMin);
+      const phi = Math.acos(2 * Math.random() - 1);
+      const theta = Math.random() * Math.PI * 2;
+      const px = r * Math.sin(phi) * Math.cos(theta);
+      const py = r * Math.cos(phi);
+      const pz = r * Math.sin(phi) * Math.sin(theta);
+      positions[i * 3] = px;
+      positions[i * 3 + 1] = py;
+      positions[i * 3 + 2] = pz;
+      const tint = tints[Math.floor(Math.random() * tints.length)];
+      colors[i * 3] = tint[0];
+      colors[i * 3 + 1] = tint[1];
+      colors[i * 3 + 2] = tint[2];
+      sizes[i] = sizeMin + Math.random() * (sizeMax - sizeMin);
+      emphasis[i] = 0.35 + Math.random() * 0.55;
+      phase[i] = px * 0.7 + pz * 0.4 + py * 0.3;
+    }
+    const geo = new BufferGeometry();
+    geo.setAttribute('position', new BufferAttribute(positions, 3));
+    geo.setAttribute('nodeColor', new BufferAttribute(colors, 3));
+    geo.setAttribute('size', new BufferAttribute(sizes, 1));
+    geo.setAttribute('emphasis', new BufferAttribute(emphasis, 1));
+    geo.setAttribute('phase', new BufferAttribute(phase, 1));
+    return geo;
+  }
+
+  const bgTints: [number, number, number][] = [
+    [0.92, 0.94, 1.0],   // cool white
+    [0.88, 0.90, 0.96],  // blue-white
+    [1.0, 0.96, 0.90],   // warm white
+  ];
+  const fgTints: [number, number, number][] = [
+    [0.72, 0.67, 0.91],  // violet (--ts-galaxy-violet family)
+    [0.59, 0.73, 0.73],  // teal (--ts-galaxy-teal family)
+    [0.91, 0.81, 0.59],  // gold (--ts-galaxy-gold family)
+    [0.64, 0.79, 0.55],  // sage (--ts-galaxy-sage family)
+    [0.92, 0.94, 1.0],   // white
+  ];
+
+  const bgGeo = makeLayer(bgCount, 600, 1600, 0.5, 1.5, bgTints);
+  const fgGeo = makeLayer(fgCount, 80, 300, 1.0, 3.2, fgTints);
+
+  const uTimeBg = { value: 0 };
+  const uTimeFg = { value: 0 };
+
+  const makeMat = (uTime: { value: number }) => new ShaderMaterial({
+    uniforms: { map: { value: sprite }, uTime },
+    vertexShader: TWINKLE_STAR_VS,
+    fragmentShader: TWINKLE_STAR_FS,
+    transparent: true,
+    depthWrite: false,
+    blending: AdditiveBlending,
+  });
+
+  const bg = new Points(bgGeo, makeMat(uTimeBg));
+  bg.frustumCulled = false;
+  const fg = new Points(fgGeo, makeMat(uTimeFg));
+  fg.frustumCulled = false;
+
+  return {
+    bg,
+    fg,
+    update(timeSec: number) {
+      uTimeBg.value = timeSec;
+      uTimeFg.value = timeSec;
+    },
+  };
+}
+
 /**
  * Single bright additive sprite at the origin used as the "galactic core"
  * — gives the brain-graph swirl a luminous anchor point.

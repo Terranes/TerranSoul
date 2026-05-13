@@ -10,6 +10,9 @@ use std::collections::HashMap;
 
 use super::protocol::{Bundle, EdgeDelta, MemoryDelta, ShareScope};
 
+// serde_json used by has_private_tag for tag-array parsing
+use serde_json;
+
 /// Target audience for a bundle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BundleTarget {
@@ -40,11 +43,12 @@ pub fn filter_bundle(bundle: &Bundle, target: BundleTarget) -> Option<Bundle> {
         BundleTarget::Hive => ShareScope::Hive,
     };
 
-    // Filter memories by scope
+    // Filter memories by scope AND the hard private:* tag block (SCALE-INF-1)
     let allowed_memories: Vec<MemoryDelta> = bundle
         .memory_deltas
         .iter()
         .filter(|m| scope_satisfies(m.share_scope, min_scope))
+        .filter(|m| !has_private_tag(&m.tags))
         .cloned()
         .collect();
 
@@ -76,6 +80,19 @@ pub fn filter_bundle(bundle: &Bundle, target: BundleTarget) -> Option<Bundle> {
         memory_deltas: allowed_memories,
         edge_deltas: allowed_edges,
     })
+}
+
+/// Hard-ACL check: returns true if the JSON tags string contains any tag
+/// starting with `private:`. This is the SCALE-INF-1 invariant — private-
+/// tagged memories must NEVER appear in outbound sync bundles.
+fn has_private_tag(tags_json: &str) -> bool {
+    if !tags_json.contains("private:") {
+        return false;
+    }
+    if let Ok(tags) = serde_json::from_str::<Vec<String>>(tags_json) {
+        return tags.iter().any(|t| t.starts_with("private:"));
+    }
+    false
 }
 
 /// Check if a scope satisfies the minimum required scope.
@@ -362,5 +379,28 @@ mod tests {
 
         // Should NOT downgrade an explicitly-set scope
         assert_eq!(deltas[0].share_scope, ShareScope::Hive);
+    }
+
+    /// SCALE-INF-1: Hive bundle filter blocks memories with `private:*` tags
+    /// even if their share_scope is Hive.
+    #[test]
+    fn filter_bundle_blocks_private_tagged_memories() {
+        let mut public_mem = make_memory("pub1", ShareScope::Hive);
+        public_mem.tags = r#"["work","general"]"#.to_string();
+
+        let mut private_mem = make_memory("priv1", ShareScope::Hive);
+        private_mem.tags = r#"["private:darren","personal"]"#.to_string();
+
+        let bundle = Bundle {
+            bundle_id: "test-bundle".into(),
+            hlc_from: 0,
+            hlc_to: 100,
+            memory_deltas: vec![public_mem, private_mem],
+            edge_deltas: vec![],
+        };
+
+        let filtered = filter_bundle(&bundle, BundleTarget::Hive).unwrap();
+        assert_eq!(filtered.memory_deltas.len(), 1);
+        assert_eq!(filtered.memory_deltas[0].content_hash, "pub1");
     }
 }

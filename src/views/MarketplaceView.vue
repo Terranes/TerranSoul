@@ -26,7 +26,7 @@
         v-for="tab in tabs"
         :key="tab.id"
         :class="['mp-tab', { active: activeTab === tab.id }]"
-        @click="activeTab = tab.id"
+        @click="selectTab(tab.id)"
       >
         {{ tab.icon }} {{ tab.label }}
       </button>
@@ -987,6 +987,14 @@
       </div>
     </div>
 
+    <!-- ── Companions tab ── -->
+    <div
+      v-if="activeTab === 'companions'"
+      class="mp-panel"
+    >
+      <CompanionsPanel />
+    </div>
+
     <!-- Consent dialog -->
     <CapabilityConsentDialog
       v-if="consentAgent"
@@ -1057,6 +1065,7 @@ import {
   type BrowserAuthModelOption,
 } from '../stores/brain';
 import CapabilityConsentDialog from '../components/CapabilityConsentDialog.vue';
+import CompanionsPanel from '../components/CompanionsPanel.vue';
 import type { AgentSearchResult } from '../types';
 import { formatRam } from '../utils/format';
 
@@ -1386,11 +1395,23 @@ async function applyLmStudioModel() {
   };
 }
 
-const activeTab = ref<'browse' | 'installed'>('browse');
+const activeTab = ref<'browse' | 'installed' | 'companions'>('browse');
 const tabs = [
   { id: 'browse' as const, icon: '🔍', label: 'Browse' },
   { id: 'installed' as const, icon: '📦', label: 'Installed' },
+  { id: 'companions' as const, icon: '🤝', label: 'Companions' },
 ];
+
+function selectTab(id: 'browse' | 'installed' | 'companions'): void {
+  activeTab.value = id;
+  if (id === 'companions') {
+    try {
+      localStorage.setItem('ts-companions-tab-visited', '1');
+    } catch {
+      /* localStorage unavailable in some embedded contexts */
+    }
+  }
+}
 
 const searchQuery = ref('');
 const isLoading = computed(() => packageStore.isLoading);

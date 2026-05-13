@@ -213,6 +213,7 @@
       class="bgv-legend bgv-community-legend"
       data-testid="bgv-legend"
     >
+      <span class="bgv-legend-head">Sectors</span>
       <span
         v-for="item in communityLegend"
         :key="item.label"
@@ -223,6 +224,41 @@
           :style="{ background: item.colour }"
         />{{ item.label }} <em>{{ item.count }}</em>
       </span>
+    </div>
+
+    <div
+      class="bgv-hud-brand"
+      data-testid="bgv-hud-brand"
+      aria-hidden="true"
+    >
+      <span class="mark" />
+      <span class="titles">
+        <span class="t1">Memory</span>
+        <span class="t2">Knowledge Graph</span>
+      </span>
+    </div>
+
+    <div
+      class="bgv-hud-status"
+      data-testid="bgv-hud-status"
+      aria-label="Graph statistics"
+    >
+      <span><span class="dot" />ACTIVE</span>
+      <span><span class="stat-num">{{ graphStats.nodeCount.toLocaleString() }}</span> NODES</span>
+      <span><span class="stat-num">{{ graphStats.linkCount.toLocaleString() }}</span> LINKS</span>
+      <span
+        v-if="graphStats.communityCount > 0"
+      ><span class="stat-num">{{ graphStats.communityCount.toLocaleString() }}</span> SECTORS</span>
+    </div>
+
+    <div
+      class="bgv-hud-hint"
+      data-testid="bgv-hud-hint"
+      aria-hidden="true"
+    >
+      <span class="k"><kbd>Drag</kbd> orbit</span>
+      <span class="k"><kbd>Scroll</kbd> zoom</span>
+      <span class="k"><kbd>Click</kbd> select</span>
     </div>
   </div>
 </template>
@@ -253,6 +289,9 @@ import {
   FogExp2,
   Group,
 } from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import {
   forceSimulation,
   forceLink,
@@ -288,7 +327,7 @@ import {
   dominantTag,
   communityColour,
 } from './BrainGraphHelpers';
-import { makeSpriteTexture, NODE_FS, GLOW_FS, HALO_FS, makeNodeMaterial as makeNodeMaterialBase, buildStarfield as createStarfield, buildEdgeLines as createEdgeLines } from './BrainGraphShaders';
+import { makeSpriteTexture, NODE_FS, GLOW_FS, HALO_FS, makeNodeMaterial as makeNodeMaterialBase, buildStarfield as createStarfield, buildTwinkleStarfield, buildEdgeLines as createEdgeLines, type TwinkleStarfieldResult } from './BrainGraphShaders';
 import { createGraphSelection, type SearchableNode } from './useGraphSelection';
 import SelectedNodesPanel from './SelectedNodesPanel.vue';
 import GraphControlPanel from './GraphControlPanel.vue';
@@ -417,6 +456,7 @@ let lassoEndScreen: [number, number] | null = null;
 let scene: Scene | null = null;
 let camera: PerspectiveCamera | null = null;
 let renderer: WebGLRenderer | null = null;
+let composer: EffectComposer | null = null;
 let sim: ReturnType<typeof forceSimulation<GraphNode>> | null = null;
 let rafId = 0;
 let nodes: GraphNode[] = [];
@@ -1116,10 +1156,18 @@ function buildEdges() {
   if (linesMesh) worldGroup.add(linesMesh);
 }
 
+let twinkleStars: TwinkleStarfieldResult | null = null;
+
 function buildStarfield() {
   if (!scene || !spriteTexture) return;
+  // Legacy single-layer starfield kept as fallback reference
   starsPoints = createStarfield(spriteTexture);
+  starsPoints.visible = false;
   scene.add(starsPoints);
+  // Two-layer twinkling starfield for galaxy aesthetic
+  twinkleStars = buildTwinkleStarfield(spriteTexture);
+  scene.add(twinkleStars.bg);
+  scene.add(twinkleStars.fg);
 }
 
 function updateNodeAttributes() {
@@ -1242,7 +1290,11 @@ function animate(now?: number) {
     // static so the planet ring stays oriented for a top-down read.
     worldGroup.rotation.y += dt * 0.00012;
   }
-  renderer.render(scene, camera);
+  // Drive twinkle animation
+  if (twinkleStars) twinkleStars.update(t * 0.001);
+  // Render through bloom composer when available, else direct
+  if (composer) composer.render();
+  else renderer.render(scene, camera);
 }
 
 function onResize() {
@@ -1253,6 +1305,7 @@ function onResize() {
   camera.aspect = width / height;
   camera.updateProjectionMatrix();
   renderer.setSize(width, height, false);
+  if (composer) composer.setSize(width, height);
 }
 
 function onWheel(event: WheelEvent) {
@@ -1531,11 +1584,11 @@ onMounted(() => {
   const canvas = canvasRef.value!;
   const width = container.clientWidth || 600;
   const height = container.clientHeight || 420;
-  const background = new Color('#0b1426');
+  const background = new Color('#04030a');
 
   scene = new Scene();
-  scene.fog = new FogExp2(background.getHex(), 0.0009);
-  camera = new PerspectiveCamera(58, width / height, 0.1, 4000);
+  scene.fog = new FogExp2(0x05040a, 0.0012);
+  camera = new PerspectiveCamera(55, width / height, 0.1, 4000);
   updateCameraFromOrbit();
 
   // `preserveDrawingBuffer: true` keeps the WebGL back buffer alive between
@@ -1546,6 +1599,12 @@ onMounted(() => {
   renderer.setClearColor(background, 1);
   renderer.setSize(width, height, false);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+  // Bloom postprocessing via UnrealBloomPass
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloomPass = new UnrealBloomPass(new Vector2(width, height), 0.5, 0.85, 0.35);
+  composer.addPass(bloomPass);
 
   spriteTexture = makeSpriteTexture();
   worldGroup = new Group();
@@ -1580,10 +1639,17 @@ onBeforeUnmount(() => {
   if (planetGlow) { planetGlow.geometry.dispose(); (planetGlow.material as ShaderMaterial).dispose?.(); }
   if (planetArcs) { planetArcs.geometry.dispose(); (planetArcs.material as ShaderMaterial).dispose?.(); }
   if (starsPoints) { starsPoints.geometry.dispose(); scene?.remove(starsPoints); }
+  if (twinkleStars) {
+    twinkleStars.bg.geometry.dispose(); (twinkleStars.bg.material as ShaderMaterial).dispose();
+    twinkleStars.fg.geometry.dispose(); (twinkleStars.fg.material as ShaderMaterial).dispose();
+    scene?.remove(twinkleStars.bg); scene?.remove(twinkleStars.fg);
+    twinkleStars = null;
+  }
   nodeMaterial?.dispose();
   glowMaterial?.dispose();
   haloMaterial?.dispose();
   spriteTexture?.dispose();
+  composer?.dispose();
   renderer?.dispose();
 });
 

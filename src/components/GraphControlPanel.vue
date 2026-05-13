@@ -424,21 +424,23 @@ defineEmits<{
 <style scoped>
 .gcp-panel {
   position: absolute;
-  top: 0.7rem;
-  left: 0.7rem;
+  top: 4.8rem;
+  left: 1.2rem;
   z-index: 5;
-  width: min(280px, calc(100% - 1.4rem));
-  max-height: calc(100% - 1.4rem);
+  width: min(260px, calc(100% - 2.4rem));
+  max-height: calc(100% - 6rem);
   display: flex;
   flex-direction: column;
-  background: color-mix(in srgb, var(--ts-bg-base, #0b1426) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
-  border-radius: 6px;
-  color: var(--ts-text-primary, #e0f0ff);
-  box-shadow: var(--ts-shadow-lg, 0 12px 28px rgba(0, 0, 0, 0.45));
-  backdrop-filter: blur(16px);
+  background: var(--ts-galaxy-hud-bg, rgba(20, 18, 28, 0.62));
+  border: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
+  border-radius: 14px;
+  color: var(--ts-galaxy-hud-fg, rgba(255, 255, 255, 0.92));
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   overflow: hidden;
-  font-size: 0.78rem;
+  font-size: 0.76rem;
+  font-family: var(--ts-font-family, Inter, system-ui, sans-serif);
 }
 
 .gcp-collapsed {
@@ -450,8 +452,8 @@ defineEmits<{
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.45rem 0.55rem;
-  border-bottom: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 18%, transparent);
+  padding: 0.5rem 0.7rem;
+  border-bottom: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
 }
 
 .gcp-collapsed .gcp-head {
@@ -460,30 +462,35 @@ defineEmits<{
 
 .gcp-title {
   font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ts-galaxy-hud-fg-muted, rgba(255, 255, 255, 0.72));
 }
 
 .gcp-icon-button {
   border: 0;
   background: transparent;
-  color: var(--ts-text-secondary, #cbd5e1);
+  color: var(--ts-galaxy-hud-fg-muted, rgba(255, 255, 255, 0.72));
   cursor: pointer;
-  font-size: 0.9rem;
-  padding: 0.1rem 0.4rem;
-  border-radius: 4px;
+  font-size: 0.85rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 6px;
+  transition: background 140ms var(--ts-galaxy-ease, ease);
 }
 
 .gcp-icon-button:hover {
-  background: color-mix(in srgb, var(--ts-text-muted, #475569) 18%, transparent);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .gcp-body {
   overflow-y: auto;
-  padding: 0.25rem 0.55rem 0.55rem;
+  padding: 0.3rem 0.7rem 0.7rem;
 }
 
 .gcp-section {
-  border-top: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 12%, transparent);
-  padding: 0.25rem 0;
+  border-top: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
+  padding: 0.3rem 0;
 }
 
 .gcp-section:first-of-type {
@@ -494,8 +501,10 @@ defineEmits<{
   cursor: pointer;
   padding: 0.25rem 0;
   font-weight: 600;
-  font-size: 0.74rem;
-  color: var(--ts-text-secondary, #cbd5e1);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ts-galaxy-hud-fg-muted, rgba(255, 255, 255, 0.72));
   list-style: none;
 }
 
@@ -529,19 +538,20 @@ defineEmits<{
 .gcp-input,
 .gcp-select {
   width: 100%;
-  padding: 0.3rem 0.4rem;
-  font-size: 0.74rem;
-  background: color-mix(in srgb, var(--ts-bg-surface, #131a26) 80%, transparent);
-  color: var(--ts-text-primary, #e0f0ff);
-  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
-  border-radius: 4px;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+  background: rgba(10, 8, 20, 0.55);
+  color: var(--ts-galaxy-hud-fg, rgba(255, 255, 255, 0.92));
+  border: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
   font-family: inherit;
+  transition: border-color 140ms var(--ts-galaxy-ease, ease);
 }
 
 .gcp-input:focus,
 .gcp-select:focus {
   outline: 0;
-  border-color: color-mix(in srgb, var(--ts-accent, #7c6fff) 55%, transparent);
+  border-color: var(--ts-galaxy-violet, #b9ace8);
 }
 
 .gcp-readout {
@@ -549,39 +559,41 @@ defineEmits<{
   justify-content: space-between;
   gap: 0.5rem;
   padding: 0.2rem 0;
-  font-size: 0.7rem;
-  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.68rem;
+  color: var(--ts-galaxy-hud-fg-dim, rgba(255, 255, 255, 0.48));
   font-variant-numeric: tabular-nums;
 }
 
 .gcp-btn {
-  padding: 0.36rem 0.5rem;
-  font-size: 0.72rem;
-  background: color-mix(in srgb, var(--ts-bg-surface, #131a26) 80%, transparent);
-  color: var(--ts-text-primary, #e0f0ff);
-  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
-  border-radius: 4px;
+  padding: 0.36rem 0.55rem;
+  font-size: 0.7rem;
+  background: rgba(10, 8, 20, 0.45);
+  color: var(--ts-galaxy-hud-fg, rgba(255, 255, 255, 0.92));
+  border: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
+  border-radius: 8px;
   cursor: pointer;
   font-family: inherit;
   text-align: left;
+  transition: border-color 140ms var(--ts-galaxy-ease, ease), background 140ms var(--ts-galaxy-ease, ease);
 }
 
 .gcp-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--ts-accent, #7c6fff) 55%, transparent);
+  border-color: var(--ts-galaxy-violet, #b9ace8);
+  background: rgba(185, 172, 232, 0.08);
 }
 
 .gcp-btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .gcp-btn-primary {
-  background: color-mix(in srgb, var(--ts-accent, #7c6fff) 22%, transparent);
-  border-color: color-mix(in srgb, var(--ts-accent, #7c6fff) 55%, transparent);
+  background: rgba(185, 172, 232, 0.12);
+  border-color: rgba(185, 172, 232, 0.3);
 }
 
 .gcp-btn-primary:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--ts-accent, #7c6fff) 35%, transparent);
+  background: rgba(185, 172, 232, 0.2);
 }
 
 .gcp-btn-pair {
@@ -599,8 +611,8 @@ defineEmits<{
 }
 
 .gcp-fields-label {
-  font-size: 0.66rem;
-  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.64rem;
+  color: var(--ts-galaxy-hud-fg-dim, rgba(255, 255, 255, 0.48));
   margin-right: 0.15rem;
 }
 
@@ -608,12 +620,17 @@ defineEmits<{
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.12rem 0.4rem;
-  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 26%, transparent);
+  padding: 0.14rem 0.45rem;
+  border: 1px solid var(--ts-galaxy-hud-border, rgba(255, 255, 255, 0.08));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--ts-bg-surface, #131a26) 60%, transparent);
-  font-size: 0.66rem;
+  background: rgba(10, 8, 20, 0.4);
+  font-size: 0.64rem;
   cursor: pointer;
+  transition: border-color 140ms var(--ts-galaxy-ease, ease);
+}
+
+.gcp-field-chip:hover {
+  border-color: rgba(255, 255, 255, 0.18);
 }
 
 .gcp-field-chip input {
@@ -624,16 +641,16 @@ defineEmits<{
 
 .gcp-hint {
   margin-top: 0.35rem;
-  font-size: 0.66rem;
-  line-height: 1.35;
-  color: var(--ts-text-muted, #94a3b8);
+  font-size: 0.64rem;
+  line-height: 1.4;
+  color: var(--ts-galaxy-hud-fg-dim, rgba(255, 255, 255, 0.48));
 }
 
 .gcp-val {
   min-width: 1.6rem;
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--ts-text-muted, #94a3b8);
+  color: var(--ts-galaxy-hud-fg-dim, rgba(255, 255, 255, 0.48));
 }
 
 .gcp-legend {
@@ -666,7 +683,7 @@ defineEmits<{
 }
 
 .gcp-legend-count {
-  color: var(--ts-text-muted, #94a3b8);
+  color: var(--ts-galaxy-hud-fg-dim, rgba(255, 255, 255, 0.48));
   font-variant-numeric: tabular-nums;
 }
 
@@ -676,6 +693,6 @@ input[type="range"] {
 }
 
 input[type="checkbox"] {
-  accent-color: var(--ts-accent, #7c6fff);
+  accent-color: var(--ts-galaxy-violet, #b9ace8);
 }
 </style>

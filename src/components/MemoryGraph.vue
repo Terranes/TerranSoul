@@ -11,19 +11,19 @@
     >
       <button
         type="button"
-        :class="['mg-mode-btn', { active: mode === '2d' }]"
-        data-testid="mg-mode-2d"
-        @click="mode = '2d'"
-      >
-        Lite 2D
-      </button>
-      <button
-        type="button"
         :class="['mg-mode-btn', { active: mode === '3d' }]"
         data-testid="mg-mode-3d"
         @click="mode = '3d'"
       >
         3D
+      </button>
+      <button
+        type="button"
+        :class="['mg-mode-btn', { active: mode === '2d' }]"
+        data-testid="mg-mode-2d"
+        @click="mode = '2d'"
+      >
+        Lite 2D
       </button>
     </div>
 
@@ -203,14 +203,14 @@ import MemoryGraph3D from './MemoryGraph3D.vue';
 
 // ── Render mode (2D Canvas / 3D WebGL) ──────────────────────────────────────
 // The 3D path delegates to `MemoryGraph3D.vue` (formerly BrainGraphViewport).
-// User preference is persisted across sessions.
+// User preference is persisted across sessions; default is 3D.
 const MODE_KEY = 'memory-graph-mode';
 function loadMode(): '2d' | '3d' {
   try {
     const v = localStorage.getItem(MODE_KEY);
-    return v === '3d' ? '3d' : '2d';
+    return v === '2d' ? '2d' : '3d';
   } catch {
-    return '2d';
+    return '3d';
   }
 }
 const mode = ref<'2d' | '3d'>(loadMode());
