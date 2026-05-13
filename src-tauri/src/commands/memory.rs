@@ -330,6 +330,25 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
     };
 
     let brain_mode_for_refine = brain_mode;
+
+    // CHAT-PARITY-4 (2026-05-13): snapshot the pre-save high-water mark
+    // so we can enumerate facts inserted during this turn for the
+    // `auto_detect_conflicts` post-pass below. Captured BEFORE the save
+    // block so a row inserted by save_facts / save_facts_refined satisfies
+    // `id > pre_max_id`. SELECT MAX(id) on a fresh table returns NULL ⇒
+    // we map to 0 so the comparison still works for the first ever fact.
+    let pre_max_id: i64 = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .conn()
+            .query_row(
+                "SELECT COALESCE(MAX(id), 0) FROM memories",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap_or(0)
+    };
+
     let count = if let Some(mode) = brain_mode_for_refine.as_ref() {
         // Brain available → refine each fact through the LLM so we
         // update existing knowledge instead of accumulating duplicates.
@@ -349,6 +368,87 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
         let store = state.memory_store.lock().map_err(|e| e.to_string())?;
         crate::memory::brain_memory::save_facts(&facts, &store)
     };
+
+    // CHAT-PARITY-4 (2026-05-13): auto-detect contradictions on
+    // chat-extracted facts when the user opted in via
+    // `AppSettings.auto_detect_conflicts` (default `false`). For each
+    // fact inserted in this turn (id > `pre_max_id`), embed the content,
+    // ask the store for a high-cosine (≥ 0.85) near-duplicate, then ask
+    // the active brain whether the new fact actually CONTRADICTS the
+    // existing one. If yes, the pure helper `record_contradiction_if`
+    // opens a `memory_conflicts` row so the user can pick a winner.
+    //
+    // The explicit `add_memory` Tauri command has had unconditional
+    // auto-detect since Chunk 17.2 — that path is for user-driven memory
+    // creation. This block extends the same pattern to chat-extracted
+    // facts but keeps it opt-in because each near-duplicate ingest costs
+    // one LLM round-trip and chat sessions typically extract many facts.
+    //
+    // Best-effort throughout: every step is silently skipped on lock
+    // poisoning, embedding failure, or brain unreachability so the
+    // primary fact-save count stays authoritative.
+    if count > 0 {
+        let auto_detect = state
+            .app_settings
+            .lock()
+            .map(|s| s.auto_detect_conflicts)
+            .unwrap_or(false);
+        let active_model = state
+            .active_brain
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        if auto_detect {
+            if let Some(ref model) = active_model {
+                let new_rows: Vec<(i64, String)> = (|| -> Vec<(i64, String)> {
+                    let Ok(s) = state.memory_store.lock() else {
+                        return Vec::new();
+                    };
+                    let Ok(mut stmt) = s.conn().prepare(
+                        "SELECT id, content FROM memories WHERE id > ?1 ORDER BY id ASC",
+                    ) else {
+                        return Vec::new();
+                    };
+                    let Ok(rows) = stmt.query_map(rusqlite::params![pre_max_id], |r| {
+                        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                    }) else {
+                        return Vec::new();
+                    };
+                    rows.filter_map(|r| r.ok()).collect()
+                })();
+                let agent = crate::brain::OllamaAgent::new(model);
+                for (new_id, new_content) in new_rows {
+                    let Some(emb) = embed(&state, &new_content).await else {
+                        continue;
+                    };
+                    let dup_opt = match state.memory_store.lock() {
+                        Ok(s) => s
+                            .find_duplicate(&emb, 0.85)
+                            .ok()
+                            .flatten()
+                            .filter(|&dup_id| dup_id != new_id)
+                            .and_then(|dup_id| {
+                                s.get_by_id(dup_id).ok().map(|d| (dup_id, d.content))
+                            }),
+                        Err(_) => None,
+                    };
+                    let Some((dup_id, dup_content)) = dup_opt else {
+                        continue;
+                    };
+                    let Some(verdict) =
+                        agent.check_contradiction(&dup_content, &new_content).await
+                    else {
+                        continue;
+                    };
+                    if let Ok(s) = state.memory_store.lock() {
+                        let _ = crate::memory::conflicts::record_contradiction_if(
+                            &s, new_id, dup_id, &verdict,
+                        );
+                    }
+                }
+            }
+        }
+    }
 
     // Chunk 26.3 — auto-fire edge extraction so newly-learned facts
     // immediately participate in the typed-edge knowledge graph instead of

@@ -58,3 +58,4 @@ scripts/*.py
 /target-ci
 test_output.txt
 test_output_combined.txt
+/recording

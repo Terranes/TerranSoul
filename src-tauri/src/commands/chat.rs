@@ -122,9 +122,15 @@ pub(super) fn build_budgeted_prompt(
 /// `docs/brain-advanced-design.md` retrieval pipeline:
 /// embed → `hybrid_search_rrf` (6-signal hybrid + RRF fusion) → optional
 /// 1–2 hop KG cascade expansion (`memory::cascade::cascade_expand`, gated
-/// on `AppSettings.enable_kg_boost`, BENCH-KG-1) → optional
-/// LLM-as-judge cross-encoder rerank with threshold (LCM-8) → reinforcement
-/// telemetry.
+/// on `AppSettings.enable_kg_boost`, BENCH-KG-1) → optional natural-language
+/// time-range filter (`memory::temporal::parse_time_range`, CHAT-PARITY-3,
+/// fires only when the query contains an explicit time expression like
+/// "yesterday" / "last week" / "since 2026-04-01") → cognitive-kind boost
+/// (`memory::cognitive_kind::classify` + `query_intent::classify_query`,
+/// CHAT-PARITY-5, multiplicative ×1.15 on candidates whose classified kind
+/// matches the query intent's preferred kind, no-op on `QueryIntent::Unknown`)
+/// → optional LLM-as-judge cross-encoder rerank with threshold (LCM-8) →
+/// reinforcement telemetry.
 ///
 /// Test coverage: `retrieve_prompt_memories_uses_rrf_pipeline_without_brain`
 /// asserts the RRF stage runs and surfaces seeded memories when no brain is
@@ -186,6 +192,48 @@ pub(crate) async fn retrieve_prompt_memories(
     if candidates.is_empty() {
         return Vec::new();
     }
+
+    // CHAT-PARITY-3: if the user's turn carries an explicit natural-language
+    // time expression ("yesterday", "last week", "since 2026-04-01", …)
+    // narrow the candidate pool to memories whose `created_at` falls inside
+    // that range. `parse_time_range` returns `None` when the query has no
+    // recognisable time expression, in which case this stage is a no-op
+    // (zero false positives — the user must explicitly ask). Filter happens
+    // BEFORE the reranker so the LLM-as-judge isn't paying token cost on
+    // out-of-range candidates.
+    let candidates = {
+        let now_ms = crate::memory::store::now_ms();
+        match crate::memory::temporal::parse_time_range(query, now_ms) {
+            Some(range) => candidates
+                .into_iter()
+                .filter(|entry| {
+                    entry.created_at >= range.start_ms && entry.created_at < range.end_ms
+                })
+                .collect::<Vec<_>>(),
+            None => candidates,
+        }
+    };
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    // CHAT-PARITY-5 (2026-05-13): cognitive-kind boost. Pure-logic ranking
+    // signal — no LLM hop. Classify the query's intent (procedural /
+    // episodic / factual / semantic / unknown) via the existing heuristic
+    // `query_intent::classify_query`, derive the matching `CognitiveKind`,
+    // and reorder the candidate pool by `(rank_score × boost)` where
+    // `boost = 1.15` iff `cognitive_kind::classify(entry)` matches the
+    // intent's preferred kind. Ordering only affects what survives the
+    // `take(limit)` truncation below and what the reranker sees first;
+    // since the boost is multiplicative on a position-derived score,
+    // matching entries can move up at most ~1 rank — safe for cases where
+    // intent classification is wrong (defaults to `Unknown` → no-op).
+    //
+    // The kind is computed on demand from `(memory_type, tags, content)`
+    // because `MemoryEntry` deliberately does NOT carry a `cognitive_kind`
+    // column (per `cognitive_kind.rs` "Why no schema migration?" rationale).
+    let candidates = boost_by_cognitive_kind(candidates, query);
 
     let Some(model) = active_brain else {
         return candidates.into_iter().take(limit).collect();
@@ -275,6 +323,96 @@ fn expand_seeds_via_kg(
         }
     }
     out
+}
+
+/// CHAT-PARITY-5 (2026-05-13): does the candidate's `CognitiveKind`
+/// match the query's `QueryIntent`-preferred kind?
+///
+/// Mapping (per the milestone spec, chosen to mirror the
+/// `cognitive_kind::classify` + `query_intent::classify_query`
+/// vocabularies):
+///
+/// * `Procedural` intent → `Procedural` kind
+/// * `Episodic` intent   → `Episodic` kind
+/// * `Factual` intent    → `Semantic` kind (factual lookups want stable knowledge)
+/// * `Semantic` intent   → `Semantic` OR `Judgment` kind (judgments are stored opinions)
+/// * `Unknown` intent    → no preference (caller treats as no-op)
+///
+/// `Negative` (anti-pattern memories) is intentionally NEVER preferred —
+/// it's a "do-not" annotation, not a primary retrieval target.
+///
+/// Pure logic, no LLM hop. Returns `false` for `Unknown` intent so
+/// callers can short-circuit the boost.
+pub(crate) fn intent_prefers_kind(
+    intent: crate::memory::query_intent::QueryIntent,
+    kind: crate::memory::cognitive_kind::CognitiveKind,
+) -> bool {
+    use crate::memory::cognitive_kind::CognitiveKind;
+    use crate::memory::query_intent::QueryIntent;
+    matches!(
+        (intent, kind),
+        (QueryIntent::Procedural, CognitiveKind::Procedural)
+            | (QueryIntent::Episodic, CognitiveKind::Episodic)
+            | (QueryIntent::Factual, CognitiveKind::Semantic)
+            | (QueryIntent::Semantic, CognitiveKind::Semantic)
+            | (QueryIntent::Semantic, CognitiveKind::Judgment)
+    )
+}
+
+/// CHAT-PARITY-5 (2026-05-13): re-rank `candidates` by a multiplicative
+/// ×1.15 boost on entries whose classified `CognitiveKind` matches the
+/// query intent's preferred kind. Stable: ties (same effective score)
+/// preserve the inbound order from RRF + cascade + temporal filter.
+///
+/// No-op cases (return inbound order unchanged):
+/// * < 2 candidates (nothing to reorder)
+/// * `QueryIntent::Unknown` (heuristic could not classify the query —
+///   trust the upstream signal mix)
+/// * No candidate matches the preferred kind (no relative reordering possible)
+fn boost_by_cognitive_kind(
+    candidates: Vec<crate::memory::MemoryEntry>,
+    query: &str,
+) -> Vec<crate::memory::MemoryEntry> {
+    if candidates.len() < 2 {
+        return candidates;
+    }
+    let intent = crate::memory::query_intent::classify_query(query).intent;
+    if matches!(intent, crate::memory::query_intent::QueryIntent::Unknown) {
+        return candidates;
+    }
+
+    const BOOST: f64 = 1.15;
+    let n = candidates.len();
+    let mut scored: Vec<(f64, usize, crate::memory::MemoryEntry)> = candidates
+        .into_iter()
+        .enumerate()
+        .map(|(i, entry)| {
+            // Position-derived base score (top inbound = highest base).
+            // Using `n - i` instead of `1.0 / (i + 1)` keeps the boost
+            // arithmetic simple and the displacement bounded to ~1 rank.
+            let base = (n - i) as f64;
+            let kind = crate::memory::cognitive_kind::classify(
+                &entry.memory_type,
+                &entry.tags,
+                &entry.content,
+            );
+            let multiplier = if intent_prefers_kind(intent, kind) {
+                BOOST
+            } else {
+                1.0
+            };
+            (base * multiplier, i, entry)
+        })
+        .collect();
+
+    // Stable sort: primary by score desc, secondary by original index asc
+    // so ties preserve the inbound order from earlier pipeline stages.
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then(a.1.cmp(&b.1))
+    });
+    scored.into_iter().map(|(_, _, entry)| entry).collect()
 }
 
 fn retrieve_local_ollama_keyword_memories(
@@ -914,6 +1052,321 @@ mod tests {
         assert!(
             !ids.contains(&neighbour_id),
             "Edge-only neighbour must NOT appear when enable_kg_boost is off; got {ids:?}"
+        );
+    }
+
+    /// CHAT-PARITY-3: when the user's turn carries an explicit time
+    /// expression (e.g. "yesterday"), `retrieve_prompt_memories` must
+    /// drop candidates whose `created_at` falls outside the parsed
+    /// range. Without this gate, time-scoped questions silently pull
+    /// stale memories into the prompt — design-doc §17.3 promises
+    /// `memory::temporal::parse_time_range` filtering at retrieval time.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_filters_by_explicit_time_range() {
+        use rusqlite::params;
+        let state = make_state();
+
+        let now = crate::memory::store::now_ms();
+        let one_day_ms: i64 = 24 * 60 * 60 * 1000;
+        let recent_ts = now - 6 * 60 * 60 * 1000; // ~6h ago (yesterday-window UTC)
+        let stale_ts = now - 30 * one_day_ms; // 30 days ago — outside "yesterday"
+
+        let (recent_id, stale_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let recent = store
+                .add(crate::memory::NewMemory {
+                    content: "Discussed Python async patterns and Tokio futures.".to_string(),
+                    tags: "context,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            let stale = store
+                .add(crate::memory::NewMemory {
+                    content: "Old note about Python list comprehensions and decorators."
+                        .to_string(),
+                    tags: "context,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            // Backdate so the temporal filter has something to discriminate on.
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![recent_ts, recent],
+                )
+                .unwrap();
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![stale_ts, stale],
+                )
+                .unwrap();
+            (recent, stale)
+        };
+
+        // The word "today" forces parse_time_range -> Some(midnight..now).
+        let results =
+            super::retrieve_prompt_memories(&state, "What about Python today?", None, None, 5)
+                .await;
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&recent_id),
+            "Memory created today must survive the temporal filter; got {ids:?}"
+        );
+        assert!(
+            !ids.contains(&stale_id),
+            "30-day-old memory must be filtered out by 'today'; got {ids:?}"
+        );
+    }
+
+    /// CHAT-PARITY-3 negative: when the query has NO time expression,
+    /// the temporal filter must be a no-op — backdated memories must
+    /// still surface so general (non-time-scoped) chat keeps working.
+    /// Guards against accidentally always-on filtering breaking the
+    /// default RAG path.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_no_time_filter_when_query_lacks_time_expression() {
+        use rusqlite::params;
+        let state = make_state();
+
+        let now = crate::memory::store::now_ms();
+        let stale_ts = now - 365 * 24 * 60 * 60 * 1000; // 1 year ago
+
+        let stale_id = {
+            let store = state.memory_store.lock().unwrap();
+            let stale = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .conn
+                .execute(
+                    "UPDATE memories SET created_at = ?1 WHERE id = ?2",
+                    params![stale_ts, stale],
+                )
+                .unwrap();
+            stale
+        };
+
+        // No time keyword in the query — temporal stage must be a no-op.
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&stale_id),
+            "Stale memory must still surface when query has no time expression; got {ids:?}"
+        );
+    }
+
+    // ----- CHAT-PARITY-5: cognitive-kind boost -----
+
+    #[test]
+    fn intent_prefers_kind_matrix() {
+        use crate::memory::cognitive_kind::CognitiveKind;
+        use crate::memory::query_intent::QueryIntent;
+
+        // Procedural intent → only Procedural kind preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Procedural
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Semantic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Procedural,
+            CognitiveKind::Episodic
+        ));
+
+        // Episodic intent → only Episodic kind preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Episodic,
+            CognitiveKind::Episodic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Episodic,
+            CognitiveKind::Semantic
+        ));
+
+        // Factual intent → Semantic preferred (factual lookups want stable knowledge).
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Factual,
+            CognitiveKind::Semantic
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Factual,
+            CognitiveKind::Episodic
+        ));
+
+        // Semantic intent → Semantic OR Judgment preferred.
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Semantic
+        ));
+        assert!(super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Judgment
+        ));
+        assert!(!super::intent_prefers_kind(
+            QueryIntent::Semantic,
+            CognitiveKind::Procedural
+        ));
+
+        // Negative kind is NEVER preferred (anti-patterns are annotations, not targets).
+        for intent in [
+            QueryIntent::Procedural,
+            QueryIntent::Episodic,
+            QueryIntent::Factual,
+            QueryIntent::Semantic,
+            QueryIntent::Unknown,
+        ] {
+            assert!(
+                !super::intent_prefers_kind(intent, CognitiveKind::Negative),
+                "Negative kind should never be preferred (intent={intent:?})"
+            );
+        }
+
+        // Unknown intent → no kind preferred.
+        for kind in [
+            CognitiveKind::Procedural,
+            CognitiveKind::Episodic,
+            CognitiveKind::Semantic,
+            CognitiveKind::Judgment,
+            CognitiveKind::Negative,
+        ] {
+            assert!(
+                !super::intent_prefers_kind(QueryIntent::Unknown, kind),
+                "Unknown intent should never prefer any kind (kind={kind:?})"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kind_boost_promotes_procedural_for_how_to_query() {
+        // Seed pool with semantic facts ranked AHEAD of a procedural how-to.
+        // A "how do I deploy" query should classify as Procedural intent and
+        // bubble the procedural memory ahead of the unrelated semantic ones.
+        let state = make_state();
+
+        let proc_id = {
+            let store = state.memory_store.lock().unwrap();
+            // Seed two semantic memories first (so RRF likely ranks them ahead
+            // on tag/keyword overlap with "deploy").
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Deployment is the act of releasing software to production."
+                        .to_string(),
+                    tags: "semantic:deploy,definition".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Production deployments require a release manager.".to_string(),
+                    tags: "semantic:deploy,policy".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            // Procedural how-to entry — explicit `procedural:*` tag prefix
+            // makes `cognitive_kind::classify` return `Procedural`.
+            let proc_entry = store
+                .add(crate::memory::NewMemory {
+                    content:
+                        "How to deploy: first, run tests; next, tag the release; finally, push."
+                            .to_string(),
+                    tags: "procedural:deploy,how-to".to_string(),
+                    importance: 4,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            proc_entry.id
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "How do I deploy to production?", None, None, 3)
+                .await;
+
+        assert!(!results.is_empty(), "expected at least one result");
+        // The procedural memory must survive the top-3 truncation thanks to
+        // the ×1.15 kind boost on a "how do I" query (Procedural intent).
+        let ids: Vec<i64> = results.iter().map(|e| e.id).collect();
+        assert!(
+            ids.contains(&proc_id),
+            "Procedural how-to memory should be promoted into top-3 by kind boost \
+             on a 'how do I' query (Procedural intent); got ids={ids:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kind_boost_no_op_on_unknown_intent() {
+        // A query that classify_query treats as `Unknown` (no procedural /
+        // episodic / factual / semantic signal) must NOT reorder candidates
+        // — preserving the inbound RRF + cascade order.
+        let state = make_state();
+
+        let first_id = {
+            let store = state.memory_store.lock().unwrap();
+            let first = store
+                .add(crate::memory::NewMemory {
+                    content: "Alpha banana cherry delta echo foxtrot golf hotel.".to_string(),
+                    tags: "semantic:nato".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            // Procedural-tagged memory that, IF the boost fired, would jump
+            // ahead. With Unknown intent it must stay in inbound order.
+            store
+                .add(crate::memory::NewMemory {
+                    content: "Procedure: tango uniform victor whiskey xray.".to_string(),
+                    tags: "procedural:nato,steps".to_string(),
+                    importance: 3,
+                    memory_type: crate::memory::store::MemoryType::Fact,
+                    ..Default::default()
+                })
+                .unwrap();
+            first.id
+        };
+
+        // Sanity-check the classifier on the chosen query — must be Unknown
+        // for this test's premise to hold.
+        let intent = crate::memory::query_intent::classify_query("foxtrot golf hotel").intent;
+        assert_eq!(
+            intent,
+            crate::memory::query_intent::QueryIntent::Unknown,
+            "test premise: query must classify as Unknown so boost is a no-op"
+        );
+
+        let results =
+            super::retrieve_prompt_memories(&state, "foxtrot golf hotel", None, None, 5).await;
+
+        assert!(!results.is_empty(), "expected at least one result");
+        // First result must be the alpha-bravo entry (it has the keyword
+        // overlap), proving the procedural-tagged entry was NOT promoted.
+        assert_eq!(
+            results[0].id, first_id,
+            "Unknown intent should leave RRF order intact; got ids={:?}",
+            results.iter().map(|e| e.id).collect::<Vec<_>>()
         );
     }
 }

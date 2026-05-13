@@ -799,15 +799,31 @@ impl OllamaAgent {
         let embed_model = resolve_embed_model(model_hint).await;
 
         if is_known_unsupported(&embed_model).await {
+            eprintln!(
+                "[brain/embed] resolved embed model '{embed_model}' is in the unsupported set; \
+                 returning {} None entries. Reset via `clear_embed_caches` (brain mode change \
+                 clears it) or restart the app after installing a working embedder \
+                 (`ollama pull nomic-embed-text`).",
+                texts.len()
+            );
             return vec![None; texts.len()];
         }
 
         let client = match Client::builder().timeout(Duration::from_secs(60)).build() {
             Ok(c) => c,
-            Err(_) => return vec![None; texts.len()],
+            Err(e) => {
+                eprintln!("[brain/embed] failed to build HTTP client: {e}");
+                return vec![None; texts.len()];
+            }
         };
 
         let mut results = Vec::with_capacity(texts.len());
+        // Diagnostic gate: log the FIRST failure cause per call so the user
+        // sees actionable detail (resolved model + status / network error
+        // / empty response) without being spammed once per failed text.
+        // Subsequent failures inside this same call are silent — the queue
+        // already prints the aggregate "0 embedded, N failed" line.
+        let mut first_failure_logged = false;
 
         for chunk in texts.chunks(batch_size) {
             // Filter out empty texts but track indices for reassembly.
@@ -838,7 +854,15 @@ impl OllamaAgent {
                 .await
             {
                 Ok(r) => r,
-                Err(_) => {
+                Err(e) => {
+                    if !first_failure_logged {
+                        eprintln!(
+                            "[brain/embed] /api/embed network error (model='{embed_model}'): {e}. \
+                             Is Ollama running on `{}`?",
+                            ollama_api_url("")
+                        );
+                        first_failure_logged = true;
+                    }
                     results.extend(std::iter::repeat_n(None, chunk.len()));
                     continue;
                 }
@@ -846,6 +870,16 @@ impl OllamaAgent {
 
             if !resp.status().is_success() {
                 let status = resp.status().as_u16();
+                if !first_failure_logged {
+                    let body_preview = resp.text().await.unwrap_or_default();
+                    let body_short: String =
+                        body_preview.chars().take(200).collect();
+                    eprintln!(
+                        "[brain/embed] /api/embed returned HTTP {status} \
+                         (model='{embed_model}'): {body_short}"
+                    );
+                    first_failure_logged = true;
+                }
                 mark_unsupported(&embed_model, status).await;
                 results.extend(std::iter::repeat_n(None, chunk.len()));
                 continue;
@@ -853,7 +887,14 @@ impl OllamaAgent {
 
             let json: serde_json::Value = match resp.json().await {
                 Ok(v) => v,
-                Err(_) => {
+                Err(e) => {
+                    if !first_failure_logged {
+                        eprintln!(
+                            "[brain/embed] /api/embed JSON parse error \
+                             (model='{embed_model}'): {e}"
+                        );
+                        first_failure_logged = true;
+                    }
                     results.extend(std::iter::repeat_n(None, chunk.len()));
                     continue;
                 }
@@ -864,6 +905,16 @@ impl OllamaAgent {
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
+
+            if embeddings.is_empty() && !first_failure_logged {
+                let json_preview: String =
+                    json.to_string().chars().take(200).collect();
+                eprintln!(
+                    "[brain/embed] /api/embed returned 200 but `embeddings` array is \
+                     missing/empty (model='{embed_model}'). Response preview: {json_preview}"
+                );
+                first_failure_logged = true;
+            }
 
             // Re-assemble: put embeddings back at their original indices.
             let mut chunk_results = vec![None; chunk.len()];

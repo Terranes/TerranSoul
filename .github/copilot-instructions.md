@@ -78,7 +78,7 @@ Frontend (WebView — Vue 3 + TS)
   └── Design system: CSS custom properties (--ts-* tokens in style.css)
       ↕ Tauri IPC (invoke / emit)
 Rust Core Engine (src-tauri/src/)
-  ├── commands/ — 150+ Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
+  ├── commands/ — 349 Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
   ├── brain/ — LLM providers: OllamaAgent, OpenAiClient, FreeProvider, ProviderRotator
   │   ├── model_recommender.rs — RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6 cloud)
   │   ├── ollama_agent.rs — embed_text(), hyde_complete(), rerank_score()
@@ -132,7 +132,7 @@ Every chat message triggers:
 6. Top-k injected as `[LONG-TERM MEMORY]` block in system prompt
 7. Keyword fallback when Ollama is unreachable
 
-**Vector support:** Ollama `nomic-embed-text` (768-dim) locally, or cloud embedding API (`/v1/embeddings`) for paid/free modes. HNSW ANN index via `usearch` for O(log n) scaling to 1M+ entries.
+**Vector support:** Ollama `mxbai-embed-large` (1024-dim, current default — promoted in BENCH-LCM-5) or `nomic-embed-text` (768-dim, lightweight fallback) locally; cloud embedding API (`/v1/embeddings`) for paid/free modes. HNSW ANN index via `usearch` for O(log n) scaling to 1M+ entries. Storage is sharded into **15 logical shards** (3 tiers × 5 cognitive_kinds), router-routed by default with a `ShardMode::AllShards` toggle for bench baselines (BENCH-SCALE-2).
 
 ## Skill Tree Quest System
 
@@ -144,7 +144,7 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - **State**: `AppState(Arc<AppStateInner>)` — cheaply clonable Arc newtype; all fields accessed via auto-`Deref`. Enables background servers (MCP, gRPC) to hold references without lifetime issues.
 - **Streaming**: SSE via Tauri events (`llm-chunk`), parsed by `StreamTagParser` state machine
 - **Error handling**: `?` operator, `thiserror` for typed errors, never `.unwrap()` in library code
-- **Testing**: Vitest for frontend (1164 tests), `cargo test` for Rust (1075+ tests)
+- **Testing**: Vitest for frontend (1738+ tests), `cargo test` for Rust (2836+ tests)
 - **CSS**: Use `var(--ts-*)` design tokens from `src/style.css`, never hardcode hex colors
 
 ## Coding Standards

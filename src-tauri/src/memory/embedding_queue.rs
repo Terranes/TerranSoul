@@ -318,6 +318,11 @@ fn spawn_worker_inner(
         let mut interval = tokio::time::interval(WORKER_TICK_INTERVAL);
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let mut consecutive_rate_limits: u32 = 0;
+        // Throttle for the "no embedding-capable brain configured" skip
+        // log so an unconfigured app doesn't spam one line per 10 s tick.
+        // Reset to `false` as soon as a brain becomes available, so a
+        // subsequent unconfigure cycle still logs once.
+        let mut no_brain_logged: bool = false;
         // Periodic backfill counter: re-scan for unembedded entries every
         // BACKFILL_EVERY ticks (~60 s) to catch memories that arrived via
         // CRDT sync or other paths that bypass the embedding queue.
@@ -358,6 +363,41 @@ fn spawn_worker_inner(
                 .lock()
                 .ok()
                 .and_then(|m| m.as_ref().map(provider_category));
+
+            // Brain-config gate (2026-05-14): when neither `brain_mode` nor
+            // `active_brain` is set, `embed_batch_for_mode` silently returns
+            // `vec![None; texts.len()]` — bypassing every per-failure
+            // diagnostic in `OllamaAgent::embed_text_batch` and
+            // `embed_batch_openai`. Without this gate the worker would
+            // grind through any backfilled queue every 10 s, printing the
+            // aggregate `[embed-queue] batch: 0 embedded, N failed …` line
+            // forever with no actionable detail (symptom seen after
+            // `mcp-seed-embedded skipped: no embedding-capable brain
+            // configured` queued 251 entries from the seed). Mirror the
+            // same bail-out `mcp-seed-embedded` uses in `lib.rs`: skip the
+            // tick entirely until a brain is configured. Log once per
+            // brain-config-change so the user sees what's happening
+            // without spam.
+            let active_brain_set = state
+                .active_brain
+                .lock()
+                .ok()
+                .map(|m| m.is_some())
+                .unwrap_or(false);
+            if provider_name.is_none() && !active_brain_set {
+                if !no_brain_logged {
+                    eprintln!(
+                        "[embed-queue] no embedding-capable brain configured — skipping ticks \
+                         until `brain_mode` or `active_brain` is set (queue retains entries; \
+                         worker will resume automatically once a brain is selected)"
+                    );
+                    no_brain_logged = true;
+                }
+                continue;
+            }
+            // Reset the throttle so a future deconfigure → reconfigure
+            // cycle still emits one fresh log line.
+            no_brain_logged = false;
 
             // VRAM-protection gate: in LocalOllama mode the embedding model
             // (e.g. nomic-embed-text) and the chat model (e.g. gemma4:e4b)
@@ -418,13 +458,22 @@ fn spawn_worker_inner(
             // Process results.
             let mut success_count = 0u32;
             let mut fail_count = 0u32;
-            let mut batch_rate_limited = false;
 
-            // If all results are None, treat it as a potential rate limit.
-            let all_failed = results.iter().all(|r| r.is_none());
-            if all_failed && !results.is_empty() {
-                batch_rate_limited = true;
-            }
+            // If all results are None, that *might* mean the cloud provider
+            // is rate-limiting us (HTTP 429). But for local providers
+            // (Ollama, LM Studio) there is no real rate limit — an all-None
+            // batch almost always means: no embedding model is configured,
+            // the picked model isn't an embedder (e.g. user selected a chat
+            // model like `gemma3:4b` as `active_brain`), or the local server
+            // is unreachable. Falsely classifying that as "rate-limited"
+            // triggers a 30→60→120→240→480s exponential backoff that masks
+            // the real issue and silently stalls embedding (issue 2026-05-13:
+            // "Why do we have rate limited for local LLM?"). Per-entry
+            // failures still fall through to `record_failure` which has its
+            // own exponential backoff via `compute_backoff`.
+            let all_failed = !results.is_empty() && results.iter().all(|r| r.is_none());
+            let provider_can_rate_limit = provider_can_rate_limit(provider_name.as_deref());
+            let batch_rate_limited = all_failed && provider_can_rate_limit;
 
             {
                 let Ok(s) = state.memory_store.lock() else {
@@ -476,13 +525,17 @@ fn spawn_worker_inner(
             }
 
             if success_count > 0 || fail_count > 0 {
+                let suffix = if batch_rate_limited {
+                    " (rate-limited)"
+                } else if all_failed && !provider_can_rate_limit {
+                    // All-None on a local provider: real cause is config or
+                    // connectivity, not throttling. Tell the user where to look.
+                    " (local provider returned no embeddings — check that an embedding-capable model is configured and the local server is reachable)"
+                } else {
+                    ""
+                };
                 eprintln!(
-                    "[embed-queue] batch: {success_count} embedded, {fail_count} failed{}",
-                    if batch_rate_limited {
-                        " (rate-limited)"
-                    } else {
-                        ""
-                    }
+                    "[embed-queue] batch: {success_count} embedded, {fail_count} failed{suffix}"
                 );
             }
         }
@@ -509,6 +562,15 @@ fn provider_category(mode: &crate::brain::BrainMode) -> String {
         crate::brain::BrainMode::PaidApi { .. } => "paid".to_string(),
         crate::brain::BrainMode::FreeApi { .. } => "free".to_string(),
     }
+}
+
+/// Returns true if the provider category can plausibly return HTTP 429
+/// rate-limit responses. Only cloud providers (paid/free) rate-limit;
+/// local providers (Ollama, LM Studio) do not, so an all-None batch from
+/// them must be treated as a configuration/connectivity error rather than
+/// throttling — see the worker loop for context.
+fn provider_can_rate_limit(category: Option<&str>) -> bool {
+    matches!(category, Some("paid") | Some("free"))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -577,6 +639,22 @@ mod tests {
         enqueue(&conn, 1).unwrap(); // Should not fail or duplicate
         let status = queue_status(&conn).unwrap();
         assert_eq!(status.pending, 1);
+    }
+
+    #[test]
+    fn provider_can_rate_limit_only_for_cloud() {
+        // Cloud providers (paid/free) can return HTTP 429.
+        assert!(provider_can_rate_limit(Some("paid")));
+        assert!(provider_can_rate_limit(Some("free")));
+        // Local providers do not rate-limit; an all-None batch from them
+        // means a config or connectivity error, not throttling.
+        assert!(!provider_can_rate_limit(Some("ollama")));
+        assert!(!provider_can_rate_limit(Some("local")));
+        // Unknown / unset provider must not trigger the rate-limit pause
+        // cascade either — otherwise the worker silently stalls when no
+        // brain is configured (the original 2026-05-13 bug report).
+        assert!(!provider_can_rate_limit(None));
+        assert!(!provider_can_rate_limit(Some("something-else")));
     }
 
     #[test]

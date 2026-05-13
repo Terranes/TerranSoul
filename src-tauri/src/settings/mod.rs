@@ -241,6 +241,21 @@ pub struct AppSettings {
     #[serde(default)]
     pub enable_kg_boost: bool,
 
+    /// Opt-in: when chat-extracted facts hit `extract_memories_from_session`,
+    /// embed each newly inserted fact, look for an existing high-cosine
+    /// near-duplicate (≥ 0.85) and ask the active brain whether the new
+    /// fact actually *contradicts* the existing one. If yes, open a
+    /// `memory_conflicts` row so the user can pick a winner instead of
+    /// letting two contradictory facts silently coexist. Default `false`
+    /// because each near-duplicate ingest then costs one LLM round-trip
+    /// (`OllamaAgent::check_contradiction`); the explicit `add_memory`
+    /// Tauri command has had auto-detect since Chunk 17.2 unconditionally
+    /// — this flag only controls the chat-extracted path.
+    /// Tracked under CHAT-PARITY-4 in `rules/milestones.md`; see
+    /// `docs/brain-advanced-design.md` § Phase-5 "Contradiction resolution".
+    #[serde(default)]
+    pub auto_detect_conflicts: bool,
+
     /// Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
     /// (Chunk 27.3). Default `false` — the camera mirror routes through
     /// the 6-preset baseline (`mapBlendshapesToVRM`) so every VRM works.
@@ -652,6 +667,7 @@ impl Default for AppSettings {
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
             enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -841,6 +857,7 @@ mod tests {
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
             enable_kg_boost: false,
+            auto_detect_conflicts: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,

@@ -1073,6 +1073,15 @@ pub struct NewMemory {
     /// TTL timestamp — memory auto-expires after this Unix-ms time (optional).
     #[serde(default)]
     pub expires_at: Option<i64>,
+    /// BENCH-PARITY-3 (2026-05-13): override `created_at` (Unix ms) on insert.
+    /// `None` (default) uses wall-clock `now_ms()` — the only behavior callers
+    /// previously had. Set to a session/conversation timestamp when ingesting
+    /// historical data so downstream temporal filters
+    /// ([`crate::memory::temporal::parse_time_range`] +
+    /// [`crate::memory::temporal::filter_entries_in_query_range`]) match the
+    /// memory's logical creation moment, not the moment it was loaded.
+    #[serde(default)]
+    pub created_at: Option<i64>,
 }
 
 fn default_importance() -> i64 {
@@ -1135,6 +1144,25 @@ pub const ROUTER_REFRESH_COOLDOWN_MS: i64 = 15 * 60 * 1000;
 /// threshold, a background-safe refresh becomes eligible.
 pub const ROUTER_REFRESH_MIN_MUTATIONS: u64 = 500;
 
+/// Shard-routing policy for `select_shards_for_query` (BENCH-SCALE-2,
+/// 2026-05-14). Default is [`ShardMode::RouterRouted`] which preserves the
+/// production code path: cached router → persisted router → throttled
+/// rebuild → fall back to all 15 shards. [`ShardMode::AllShards`] forces
+/// every query to probe every shard, bypassing the coarse router entirely
+/// — used by the LoCoMo-at-scale bench harness to measure the router's
+/// contribution to latency/recall at 1M docs (single-index-style baseline
+/// vs router-routed comparison). No production callers use `AllShards`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShardMode {
+    /// Use the coarse router → top-p shards, fall back to all shards on miss.
+    /// This is the production default.
+    #[default]
+    RouterRouted,
+    /// Bypass the router and probe every shard on every query. Useful as
+    /// a comparison baseline at scale; not recommended for production.
+    AllShards,
+}
+
 pub struct MemoryStore {
     pub(crate) conn: Connection,
     /// Shard-keyed ANN indices for fast vector search (Chunk 48.2).
@@ -1158,6 +1186,9 @@ pub struct MemoryStore {
     router_last_refresh_mutation: Cell<u64>,
     /// Last wall-clock rebuild attempt timestamp (ms). Used for cooldown.
     router_last_refresh_attempt_ms: Cell<i64>,
+    /// Shard-routing policy. Defaults to [`ShardMode::RouterRouted`].
+    /// Mutated only via [`MemoryStore::set_shard_mode`].
+    shard_mode: Cell<ShardMode>,
 }
 
 impl MemoryStore {
@@ -1208,6 +1239,7 @@ impl MemoryStore {
             mutations: AtomicU64::new(0),
             router_last_refresh_mutation: Cell::new(0),
             router_last_refresh_attempt_ms: Cell::new(0),
+            shard_mode: Cell::new(ShardMode::default()),
         }
     }
 
@@ -1229,7 +1261,21 @@ impl MemoryStore {
             mutations: AtomicU64::new(0),
             router_last_refresh_mutation: Cell::new(0),
             router_last_refresh_attempt_ms: Cell::new(0),
+            shard_mode: Cell::new(ShardMode::default()),
         }
+    }
+
+    /// Set the shard-routing policy (BENCH-SCALE-2, 2026-05-14). See
+    /// [`ShardMode`]. Used by the LoCoMo-at-scale bench harness to compare
+    /// router-routed vs all-shards probe at 1M docs. Production callers
+    /// should keep the default ([`ShardMode::RouterRouted`]).
+    pub fn set_shard_mode(&self, mode: ShardMode) {
+        self.shard_mode.set(mode);
+    }
+
+    /// Return the current shard-routing policy.
+    pub fn shard_mode(&self) -> ShardMode {
+        self.shard_mode.get()
     }
 
     /// Return the current schema version.
@@ -1378,7 +1424,7 @@ impl MemoryStore {
         }
 
         let importance = m.importance.clamp(1, 5);
-        let now = now_ms();
+        let now = m.created_at.unwrap_or_else(now_ms);
         let token_count = estimate_tokens(&content);
         self.conn.execute(
             "INSERT INTO memories (content, tags, importance, memory_type, created_at, access_count, tier, decay_score, token_count, source_url, source_hash, expires_at)
@@ -1434,12 +1480,16 @@ impl MemoryStore {
                 });
                 let importance = m.importance.clamp(1, 5);
                 let token_count = estimate_tokens(&content);
+                // BENCH-PARITY-3: per-row override falls back to the batch
+                // `now` snapshot so historical-ingest paths can stamp each
+                // memory with its session timestamp.
+                let row_created_at = m.created_at.unwrap_or(now);
                 stmt.execute(params![
                     content,
                     m.tags,
                     importance,
                     m.memory_type.as_str(),
-                    now,
+                    row_created_at,
                     tier_str,
                     token_count,
                     m.source_url,
@@ -3873,7 +3923,15 @@ impl MemoryStore {
 
     /// Select top-p shards for a query embedding using the coarse router.
     /// Falls back to "all shards" if the router is missing, stale, or invalid.
+    ///
+    /// When [`ShardMode::AllShards`] is set via [`MemoryStore::set_shard_mode`],
+    /// the router is bypassed entirely and every query probes every shard
+    /// (BENCH-SCALE-2, 2026-05-14 — used to measure the router's
+    /// contribution to latency/recall at scale).
     pub fn select_shards_for_query(&self, query_embedding: &[f32]) -> Vec<ShardKey> {
+        if self.shard_mode.get() == ShardMode::AllShards {
+            return ShardKey::all();
+        }
         // Try to use the cached router
         {
             let router_ref = self.router.borrow();
@@ -4456,12 +4514,89 @@ mod tests {
     }
 
     #[test]
+    fn shard_mode_defaults_to_router_routed() {
+        let store = MemoryStore::in_memory();
+        assert_eq!(store.shard_mode(), ShardMode::RouterRouted);
+    }
+
+    #[test]
+    fn shard_mode_set_and_get_roundtrip() {
+        let store = MemoryStore::in_memory();
+        store.set_shard_mode(ShardMode::AllShards);
+        assert_eq!(store.shard_mode(), ShardMode::AllShards);
+        store.set_shard_mode(ShardMode::RouterRouted);
+        assert_eq!(store.shard_mode(), ShardMode::RouterRouted);
+    }
+
+    #[test]
+    fn shard_mode_all_shards_bypasses_router_and_returns_every_shard() {
+        // BENCH-SCALE-2: in AllShards mode, `select_shards_for_query`
+        // must return every logical shard regardless of router state.
+        // An empty in-memory store has no router built and no
+        // embeddings, so the router fallback would also return all
+        // shards \u2014 but the toggle should short-circuit before any
+        // router work is done. We rely on `ShardKey::all()` being the
+        // canonical list and assert exact equality.
+        let store = MemoryStore::in_memory();
+        store.set_shard_mode(ShardMode::AllShards);
+        let dummy_query_embedding = vec![0.0f32; 4];
+        let shards = store.select_shards_for_query(&dummy_query_embedding);
+        let mut got: Vec<String> = shards.iter().map(|s| s.as_path_token()).collect();
+        let mut want: Vec<String> =
+            ShardKey::all().iter().map(|s| s.as_path_token()).collect();
+        got.sort();
+        want.sort();
+        assert_eq!(got, want);
+    }
+
+    #[test]
     fn add_and_get_roundtrip() {
         let store = MemoryStore::in_memory();
         let entry = store.add(new_memory("User prefers Python")).unwrap();
         assert_eq!(entry.content, "User prefers Python");
         assert_eq!(entry.importance, 3);
         assert_eq!(entry.access_count, 0);
+    }
+
+    /// BENCH-PARITY-3 (2026-05-13): callers can override `created_at` on
+    /// insert to mirror historical learning timestamps. Default behavior
+    /// (no override) keeps stamping with wall-clock `now_ms()`.
+    #[test]
+    fn add_many_honors_created_at_override() {
+        let store = MemoryStore::in_memory();
+        let custom_ts: i64 = 1_700_000_000_000; // 2023-11-14T22:13:20Z
+        let now_before = now_ms();
+        let ids = store
+            .add_many(vec![
+                NewMemory {
+                    content: "historical event".into(),
+                    tags: "test".into(),
+                    importance: 3,
+                    created_at: Some(custom_ts),
+                    ..Default::default()
+                },
+                NewMemory {
+                    content: "live event".into(),
+                    tags: "test".into(),
+                    importance: 3,
+                    ..Default::default()
+                },
+            ])
+            .unwrap();
+        let now_after = now_ms();
+        assert_eq!(ids.len(), 2);
+
+        let historical = store.get_by_id(ids[0]).unwrap();
+        let live = store.get_by_id(ids[1]).unwrap();
+        assert_eq!(
+            historical.created_at, custom_ts,
+            "explicit created_at must be persisted verbatim"
+        );
+        assert!(
+            live.created_at >= now_before && live.created_at <= now_after,
+            "default created_at must fall in [now_before, now_after]; got {}",
+            live.created_at
+        );
     }
 
     #[test]
@@ -5518,6 +5653,7 @@ mod tests {
                 source_url: Some("https://example.com/rules".to_string()),
                 source_hash: Some("abc123".to_string()),
                 expires_at: None,
+                created_at: None,
             })
             .unwrap();
         assert_eq!(
@@ -5935,6 +6071,7 @@ mod tests {
             source_url: None,
             source_hash: None,
             expires_at: None,
+            created_at: None,
         };
         let e = store.add(m).unwrap();
         // Force last_accessed to ~30 days ago so apply_decay actually moves the score.

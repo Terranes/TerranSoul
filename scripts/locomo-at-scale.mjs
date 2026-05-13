@@ -32,6 +32,10 @@ const DEFAULT_TARGET_DIR = resolve(REPO_ROOT, 'target-copilot-bench');
 const ALL_TASKS = ['single_hop', 'multi_hop', 'temporal_reasoning', 'open_domain', 'adversarial'];
 const ALL_SYSTEMS = new Set(['rrf', 'rrf_rerank']);
 const RERANK_SYSTEMS = new Set(['rrf_rerank']);
+// BENCH-SCALE-2 (2026-05-14): valid `--shard-mode` values. Plumbed into
+// the spawned `longmemeval-ipc` process via `LONGMEM_SHARD_MODE` to compare
+// router-routed (production default) vs all-shards probe at 1M+ docs.
+const ALL_SHARD_MODES = new Set(['routed', 'all']);
 const METRIC_KS = [1, 5, 10, 20, 100];
 const INGEST_BATCH_SIZE = 500;
 
@@ -75,6 +79,9 @@ Options:
   --scale=<n>           Total corpus size including target + distractors (default: 1000000)
   --limit=<n>           Queries to score; 0 means all (default: 100)
   --top-k=<n>           Retrieval depth requested (default: 100)
+  --shard-mode=<m>      Shard policy: routed (production default, coarse router → top-p shards)
+                        or all (bypass router, probe every shard — single-index-style baseline
+                        for BENCH-SCALE-2). Plumbed via LONGMEM_SHARD_MODE. (default: routed)
   --data-dir=<path>     LoCoMo parquet dir (default: target-copilot-bench/locomo-mteb)
   --out-dir=<path>      Report dir (default: target-copilot-bench/bench-results)
 
@@ -269,7 +276,7 @@ function buildScaleCorpus({ targetCorpus, otherCorpora, qrels, scale, seed }) {
 // ----- IPC client (mirrors locomo-mteb.mjs) --------------------------------
 
 class JsonlClient {
-  constructor({ embed = true, rerank = false } = {}) {
+  constructor({ embed = true, rerank = false, shardMode = 'routed' } = {}) {
     this.nextId = 1;
     this.pending = new Map();
     this.buffer = '';
@@ -277,6 +284,10 @@ class JsonlClient {
       ...process.env,
       ...(embed ? { LONGMEM_EMBED: '1' } : {}),
       ...(rerank ? { LONGMEM_RERANK: '1' } : {}),
+      // BENCH-SCALE-2 (2026-05-14): plumb the shard-routing policy into
+      // the spawned `longmemeval-ipc` process. The bench bin maps this to
+      // `MemoryStore::set_shard_mode` via `IndexState::shard_mode_from_env`.
+      LONGMEM_SHARD_MODE: shardMode,
     };
     this.proc = spawn('cargo', [
       'run',
@@ -431,6 +442,7 @@ async function run(opts) {
   console.log(`[scale] target task: ${opts.task}`);
   console.log(`[scale] scale: ${opts.scale.toLocaleString('en-US')}`);
   console.log(`[scale] systems: ${opts.systems.join(',')}`);
+  console.log(`[scale] shard-mode: ${opts.shardMode}`);
 
   const target = await loadTaskFull(opts.task, targetDir);
   console.log(`[scale] target corpus=${target.corpus.length} queries=${target.queries.length} qrels=${target.qrels.size}`);
@@ -456,7 +468,7 @@ async function run(opts) {
   }
 
   const rerank = opts.systems.some(s => RERANK_SYSTEMS.has(s));
-  const client = new JsonlClient({ embed: true, rerank });
+  const client = new JsonlClient({ embed: true, rerank, shardMode: opts.shardMode });
   let report;
   try {
     await client.send({ op: 'reset' });
@@ -522,6 +534,11 @@ async function run(opts) {
       task: opts.task,
       scale: built.corpus.length,
       systems: opts.systems,
+      // BENCH-SCALE-2 (2026-05-14): record the shard-routing policy used
+      // for this run so JSON consumers and the markdown report can
+      // distinguish router-routed vs all-shards baselines without
+      // re-parsing filenames.
+      shard_mode: opts.shardMode,
       ingest_seconds: ingestSecs,
       embedded_total: ing.embedded,
       systems_results: systemReports,
@@ -531,7 +548,10 @@ async function run(opts) {
   }
 
   mkdirSync(opts.outDir, { recursive: true });
-  const tag = `scale_${built.corpus.length}_${opts.task}_${opts.limit || 'all'}q`;
+  // BENCH-SCALE-2 (2026-05-14): include shard-mode in the filename so a
+  // back-to-back router-routed vs all-shards comparison run does not
+  // overwrite the earlier report (SCALE-1b hit this overwrite footgun).
+  const tag = `scale_${built.corpus.length}_${opts.task}_${opts.limit || 'all'}q_${opts.shardMode}`;
   const jsonPath = resolve(opts.outDir, `locomo_${tag}.json`);
   const mdPath = resolve(opts.outDir, `locomo_${tag}.md`);
   writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf8');
@@ -548,6 +568,7 @@ function markdownReport(report) {
   L.push(`Task: ${report.task}`);
   L.push(`Scale: ${report.scale.toLocaleString('en-US')} chunks`);
   L.push(`Systems: ${report.systems.join(', ')}`);
+  L.push(`Shard mode: ${report.shard_mode ?? 'routed'}`);
   L.push(`Ingest time: ${report.ingest_seconds.toFixed(1)}s (${report.embedded_total} embedded)`);
   L.push('');
   L.push('## Quality + Latency');
@@ -578,9 +599,14 @@ async function main() {
   for (const s of systems) {
     if (!ALL_SYSTEMS.has(s)) throw new Error(`unknown system ${s}; use rrf or rrf_rerank`);
   }
+  const shardMode = option('shard-mode', 'routed').toLowerCase();
+  if (!ALL_SHARD_MODES.has(shardMode)) {
+    throw new Error(`unknown --shard-mode '${shardMode}'; use routed or all`);
+  }
   const opts = {
     task,
     systems,
+    shardMode,
     scale: numberOption('scale', 1_000_000),
     limit: numberOption('limit', 100),
     topK: numberOption('top-k', 100),

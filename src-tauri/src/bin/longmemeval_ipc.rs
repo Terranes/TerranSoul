@@ -31,6 +31,18 @@
 //!   Mirrors the chat-side `commands::chat::expand_seeds_via_kg` helper
 //!   shipped by BENCH-KG-1 so chat and bench exercise the same cascade
 //!   stage. BENCH-KG-2.
+//! - `rrf_temporal` / `rrf_temporal_rerank`: same retrieval pipeline as
+//!   `rrf` / `rrf_rerank`, plus a post-RRF window narrowing via
+//!   [`terransoul_lib::memory::temporal::filter_entries_in_query_range`]
+//!   that drops candidates whose `created_at` falls outside the time
+//!   range parsed from the query (`"yesterday"`, `"last week"`,
+//!   `"since 2025-03-01"`, `"between 2025-01-01 and 2025-04-01"`).
+//!   No-op when the query has no recognisable time expression so
+//!   non-temporal task queries are not affected. Memory `created_at`
+//!   is stamped from `IpcSession.date` at ingest time
+//!   (see `parse_session_date_ms`) so the bench mirrors what
+//!   production chat sees from `commands::chat::retrieve_prompt_memories`
+//!   (CHAT-PARITY-3). BENCH-PARITY-3.
 
 use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, Write};
@@ -40,7 +52,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use terransoul_lib::memory::edges::{EdgeSource, NewMemoryEdge};
 use terransoul_lib::memory::hyde::{build_hyde_prompt, clean_hyde_reply};
-use terransoul_lib::memory::store::{MemoryStore, MemoryType, NewMemory};
+use terransoul_lib::memory::store::{MemoryStore, MemoryType, NewMemory, ShardMode};
 
 const SOURCE_URL_PREFIX: &str = "longmemeval://session/";
 const RRF_K: f32 = 60.0;
@@ -144,6 +156,40 @@ fn session_content(session: &IpcSession) -> String {
     }
     parts.push(session.text.clone());
     parts.join("\n")
+}
+
+/// BENCH-PARITY-3 (2026-05-13): parse a LongMemEval session date string
+/// (e.g. `"2025-03-15"`, `"2025/03/15 14:00"`, or RFC-3339-ish prefixes)
+/// into Unix milliseconds. Returns `None` when the input doesn't begin
+/// with a valid `YYYY-MM-DD`/`YYYY/MM/DD`. Treated as midnight UTC for
+/// the day so the temporal filter window math matches what production
+/// chat sees from `parse_time_range`. Centralised here (not in
+/// `memory::temporal`) because it's a bench-data shape concern, not a
+/// query-side parser.
+fn parse_session_date_ms(raw: &str) -> Option<i64> {
+    let raw = raw.trim();
+    if raw.len() < 10 {
+        return None;
+    }
+    let head = &raw[..10];
+    let bytes = head.as_bytes();
+    let sep = bytes[4];
+    if (sep != b'-' && sep != b'/') || bytes[7] != sep {
+        return None;
+    }
+    let year: i32 = head[0..4].parse().ok()?;
+    let month: u32 = head[5..7].parse().ok()?;
+    let day: u32 = head[8..10].parse().ok()?;
+    if year < 1970 || !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    // Match `memory::temporal::ymd_to_ms` semantics (Gregorian midnight UTC).
+    // Reuse the lib's date math so any leap-year fix stays in one place.
+    Some(terransoul_lib::memory::temporal::ymd_to_ms(
+        year as i64,
+        month,
+        day,
+    ))
 }
 
 // ---- Embedding backend ----------------------------------------------------
@@ -771,9 +817,46 @@ struct IndexState {
 }
 
 impl IndexState {
+    /// BENCH-SCALE-2 (2026-05-14): resolve the shard-routing policy for
+    /// this bench process from the `LONGMEM_SHARD_MODE` env var.
+    ///
+    /// Accepted values (case-insensitive):
+    /// - `routed` / `router` / `default` / unset / empty
+    ///   -> `ShardMode::RouterRouted` (production default; coarse router
+    ///      selects top-p shards per query and falls back to all shards).
+    /// - `all` / `allshards` / `all_shards` / `single`
+    ///   -> `ShardMode::AllShards` (bypass the router; every query probes
+    ///      every shard). This is the comparison baseline used by
+    ///      `scripts/locomo-at-scale.mjs` to measure the router's
+    ///      contribution to latency/recall at 1M+ docs.
+    ///
+    /// Unrecognized values log a one-line warning and fall back to the
+    /// production default so a typo never silently changes bench semantics.
+    fn shard_mode_from_env() -> ShardMode {
+        let raw = std::env::var("LONGMEM_SHARD_MODE").ok();
+        let normalized = raw.as_deref().map(str::trim).map(str::to_ascii_lowercase);
+        match normalized.as_deref() {
+            None | Some("") | Some("routed") | Some("router") | Some("default") => {
+                ShardMode::RouterRouted
+            }
+            Some("all") | Some("allshards") | Some("all_shards") | Some("single") => {
+                ShardMode::AllShards
+            }
+            Some(other) => {
+                eprintln!(
+                    "[longmemeval-ipc] unknown LONGMEM_SHARD_MODE='{}', falling back to RouterRouted",
+                    other
+                );
+                ShardMode::RouterRouted
+            }
+        }
+    }
+
     fn new() -> Self {
+        let store = MemoryStore::in_memory();
+        store.set_shard_mode(Self::shard_mode_from_env());
         Self {
-            store: MemoryStore::in_memory(),
+            store,
             embeddings: HashMap::new(),
             session_ids: HashMap::new(),
             token_counts: HashMap::new(),
@@ -784,6 +867,7 @@ impl IndexState {
 
     fn reset(&mut self) {
         self.store = MemoryStore::in_memory();
+        self.store.set_shard_mode(Self::shard_mode_from_env());
         self.embeddings.clear();
         self.session_ids.clear();
         self.token_counts.clear();
@@ -866,6 +950,12 @@ fn add_sessions(
             source_url: Some(session_source_url(&session.session_id)),
             source_hash: Some(format!("longmemeval:{question_id}:{}", session.session_id)),
             expires_at: None,
+            // BENCH-PARITY-3: stamp each memory with its conversation date
+            // (when the IPC session payload carries one) so the
+            // `rrf_temporal` mode's `parse_time_range` filter can narrow
+            // candidates by `created_at` like production chat does.
+            // Falls back to wall-clock `now_ms()` when no date is provided.
+            created_at: session.date.as_deref().and_then(parse_session_date_ms),
         })
         .collect::<Vec<_>>();
 
@@ -1001,6 +1091,14 @@ fn search(
     // candidate set via `cascade_expand` before truncating to `limit`.
     let wants_kg = matches!(mode, "rrf_kg" | "rrf_kg_rerank");
 
+    // BENCH-PARITY-3 (2026-05-13): when temporal-filter modes are requested,
+    // the lexical/vector pipeline is identical to `rrf` / `rrf_rerank` — we
+    // just narrow the post-RRF candidate set via
+    // `temporal::filter_entries_in_query_range` before the rerank/truncate
+    // step. Pure logic, no LLM hop. Mirrors what
+    // `commands::chat::retrieve_prompt_memories` does on every chat turn.
+    let wants_temporal = matches!(mode, "rrf_temporal" | "rrf_temporal_rerank");
+
     // HyDE expansion: when enabled and the mode opts in, generate a
     // hypothetical answer and embed THAT for the vector channel. Reuses the
     // exact production prompt from `terransoul_lib::memory::hyde`. Falls back
@@ -1019,14 +1117,17 @@ fn search(
             .store
             .search(&request.query)
             .map_err(|err| err.to_string())?,
-        "rrf" | "hybrid_search_rrf" | "rrf_kg" => {
+        "rrf" | "hybrid_search_rrf" | "rrf_kg" | "rrf_temporal" => {
             // If embeddings are available, compute query embedding for the
             // internal vector ranking signal in hybrid_search_rrf.
             let q_emb = embedder.and_then(|e| e.embed(&request.query, EmbedRole::Query).ok());
             // BENCH-KG-2: for `rrf_kg`, pull a wider seed pool (default 30,
             // same as the rerank pool tuning sweet-spot) so cascade has
             // meaningful seeds before truncation.
-            let pool = if wants_kg {
+            // BENCH-PARITY-3: `rrf_temporal` pulls the same wide pool so the
+            // post-RRF temporal filter has enough candidates to survive
+            // window-narrowing before truncating to `limit`.
+            let pool = if wants_kg || wants_temporal {
                 reranker.map(|r| r.pool).unwrap_or(DEFAULT_RERANK_POOL)
             } else {
                 limit
@@ -1036,7 +1137,7 @@ fn search(
                 .hybrid_search_rrf(&request.query, q_emb.as_deref(), pool)
                 .map_err(|err| err.to_string())?
         }
-        "rrf_rerank" | "rrf_kg_rerank" => {
+        "rrf_rerank" | "rrf_kg_rerank" | "rrf_temporal_rerank" => {
             // Retrieve a wider candidate pool so the cross-encoder has room
             // to promote a buried correct passage. Pool size is configurable
             // via LONGMEM_RERANK_POOL (LCM-9 found 30 is the sweet spot).
@@ -1088,12 +1189,40 @@ fn search(
         entries
     };
 
+    // BENCH-PARITY-3 (2026-05-13): post-RRF (and post-KG) temporal-window
+    // narrowing. Mirrors the chat path's CHAT-PARITY-3 stage: when the
+    // user query carries an explicit time expression ("yesterday",
+    // "last week", "since 2025-03-01", "between 2025-01-01 and
+    // 2025-04-01"), drop candidates whose `created_at` falls outside the
+    // resolved window. `parse_time_range` returns `None` on non-temporal
+    // queries, so this stage is a strict no-op outside the
+    // `temporal_reasoning` task by construction.
+    //
+    // For the bench harness, `created_at` was stamped from
+    // `IpcSession.date` in `add_sessions` (see
+    // `parse_session_date_ms`) — so this filter actually narrows the
+    // pool here exactly the way it does in production chat where
+    // memories carry the wall-clock moment they were learned.
+    let entries = if wants_temporal {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        terransoul_lib::memory::temporal::filter_entries_in_query_range(
+            entries,
+            &request.query,
+            now_ms,
+        )
+    } else {
+        entries
+    };
+
     let hits: Vec<SearchHit> = match mode {
         "emb" => emb_only_hits(state, embedder, &request.query, limit)?,
         "rrf_emb" => rrf_emb_hits(state, embedder, &request.query, limit)?,
         "search_emb" => search_emb_hits(state, embedder, &request.query, limit)?,
         "best" => best_hits(state, embedder, &request.query, limit)?,
-        "rrf_rerank" | "rrf_hyde_rerank" | "rrf_kg_rerank" => {
+        "rrf_rerank" | "rrf_hyde_rerank" | "rrf_kg_rerank" | "rrf_temporal_rerank" => {
             rerank_hits(reranker, &request.query, entries, limit)?
         }
         _ => entries

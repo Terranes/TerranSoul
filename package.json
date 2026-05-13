@@ -38,6 +38,9 @@
     "mcp:sync-docs": "node scripts/sync-docs-to-mcp.mjs",
     "mcp:obsidian": "node scripts/mcp-obsidian.mjs"
   },
+  "overrides": {
+    "@protobufjs/utf8": "1.1.1"
+  },
   "dependencies": {
     "@bufbuild/connect": "^0.13.0",
     "@bufbuild/connect-web": "^0.13.0",

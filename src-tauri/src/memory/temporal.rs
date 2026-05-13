@@ -90,6 +90,34 @@ pub fn parse_time_range(question: &str, now_ms: i64) -> Option<TimeRange> {
     None
 }
 
+/// BENCH-PARITY-3 (2026-05-13): apply [`parse_time_range`] to `query`,
+/// then filter `entries` by `created_at` falling inside the resolved
+/// `[start_ms, end_ms)` window. Returns `entries` unchanged when the
+/// query carries no recognisable time expression — by construction this
+/// stage is a strict no-op on non-temporal queries (zero false-positive
+/// risk for the bench harness or chat path).
+///
+/// Reused by:
+/// * `commands::chat::retrieve_prompt_memories` (CHAT-PARITY-3, chat path)
+/// * `bin/longmemeval_ipc` `rrf_temporal` / `rrf_temporal_rerank` modes
+///   (BENCH-PARITY-3, bench harness)
+///
+/// Filter semantics match the chat path exactly: inclusive `start_ms`,
+/// exclusive `end_ms`. Memories with `created_at == end_ms` are excluded.
+pub fn filter_entries_in_query_range(
+    entries: Vec<crate::memory::MemoryEntry>,
+    query: &str,
+    now_ms: i64,
+) -> Vec<crate::memory::MemoryEntry> {
+    match parse_time_range(query, now_ms) {
+        Some(range) => entries
+            .into_iter()
+            .filter(|entry| entry.created_at >= range.start_ms && entry.created_at < range.end_ms)
+            .collect(),
+        None => entries,
+    }
+}
+
 // ── Parsers ──────────────────────────────────────────────────────────
 
 fn try_between(lower: &str) -> Option<TimeRange> {
@@ -265,7 +293,12 @@ fn parse_ymd(s: &str) -> Option<i64> {
 
 /// Convert year/month/day → Unix ms at midnight UTC.
 /// Uses the inverse of Howard Hinnant's civil_from_days algorithm.
-fn ymd_to_ms(year: i64, month: u32, day: u32) -> i64 {
+///
+/// Public so bench / ingest tooling
+/// (`bin/longmemeval_ipc::parse_session_date_ms`) can stamp historical
+/// rows with the same date math the [`parse_time_range`] window arithmetic
+/// uses — keeping query-time and ingest-time semantics identical.
+pub fn ymd_to_ms(year: i64, month: u32, day: u32) -> i64 {
     let y = if month <= 2 { year - 1 } else { year };
     let m = if month <= 2 { month + 9 } else { month - 3 };
     let era = if y >= 0 { y / 400 } else { (y - 399) / 400 };
@@ -433,5 +466,88 @@ mod tests {
     fn midnight_of_now() {
         let m = midnight_utc(NOW);
         assert_eq!(m, ymd_to_ms(2026, 4, 25));
+    }
+
+    // ── filter_entries_in_query_range (BENCH-PARITY-3) ───────────────
+
+    fn make_entry(id: i64, created_at: i64) -> crate::memory::MemoryEntry {
+        crate::memory::MemoryEntry {
+            id,
+            content: format!("entry-{id}"),
+            tags: String::new(),
+            importance: 3,
+            memory_type: crate::memory::store::MemoryType::Fact,
+            created_at,
+            last_accessed: None,
+            access_count: 0,
+            embedding: None,
+            tier: crate::memory::store::MemoryTier::Long,
+            decay_score: 1.0,
+            session_id: None,
+            parent_id: None,
+            token_count: 4,
+            source_url: None,
+            source_hash: None,
+            expires_at: None,
+            valid_to: None,
+            obsidian_path: None,
+            last_exported: None,
+            updated_at: None,
+            origin_device: None,
+            hlc_counter: None,
+            confidence: 1.0,
+        }
+    }
+
+    #[test]
+    fn filter_entries_passes_through_when_query_has_no_time_expression() {
+        let entries = vec![
+            make_entry(1, ymd_to_ms(2024, 1, 1)),
+            make_entry(2, ymd_to_ms(2025, 6, 15)),
+            make_entry(3, NOW - MS_PER_DAY),
+        ];
+        let out = filter_entries_in_query_range(entries.clone(), "what is rust?", NOW);
+        assert_eq!(out.len(), 3, "non-temporal query must be a strict no-op");
+        assert_eq!(
+            out.iter().map(|e| e.id).collect::<Vec<_>>(),
+            vec![1, 2, 3],
+            "ordering must be preserved on no-op"
+        );
+    }
+
+    #[test]
+    fn filter_entries_narrows_to_since_window() {
+        // "since 2025-01-01" → keep id=2 (2025-06-15) and id=3 (yesterday),
+        // drop id=1 (2024-01-01).
+        let entries = vec![
+            make_entry(1, ymd_to_ms(2024, 1, 1)),
+            make_entry(2, ymd_to_ms(2025, 6, 15)),
+            make_entry(3, NOW - MS_PER_DAY),
+        ];
+        let out = filter_entries_in_query_range(entries, "since 2025-01-01", NOW);
+        let ids: Vec<i64> = out.iter().map(|e| e.id).collect();
+        assert_eq!(ids, vec![2, 3], "got {ids:?}");
+    }
+
+    #[test]
+    fn filter_entries_yesterday_window_is_exclusive_of_today() {
+        // `parse_time_range("yesterday", NOW)` returns
+        // [yesterday_midnight, today_midnight). Build three entries to
+        // probe both bounds + a clearly-outside row.
+        let today_midnight = midnight_utc(NOW);
+        let yesterday_midnight = today_midnight - MS_PER_DAY;
+        let entries = vec![
+            make_entry(1, yesterday_midnight),                  // included (== start)
+            make_entry(2, yesterday_midnight + MS_PER_HOUR),    // included
+            make_entry(3, today_midnight),                       // excluded (== end)
+            make_entry(4, ymd_to_ms(2024, 1, 1)),                // excluded (way before)
+        ];
+        let out = filter_entries_in_query_range(entries, "what did we discuss yesterday?", NOW);
+        let ids: Vec<i64> = out.iter().map(|e| e.id).collect();
+        assert_eq!(
+            ids,
+            vec![1, 2],
+            "yesterday window is [start, end) — inclusive start, exclusive end; got {ids:?}"
+        );
     }
 }

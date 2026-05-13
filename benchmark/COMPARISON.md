@@ -1,5 +1,7 @@
 # TerranSoul Memory — Retrieval-Quality Comparison
 
+> **Navigation:** This is the cross-system results matrix. For round-by-round narratives, see [terransoul/](terransoul/README.md). For per-task indexes (LongMemEval-S, LoCoMo MTEB, LoCoMo at scale, agentmemory quality), see the subfolders under `terransoul/`. For runner script flags, see [scripts/](scripts/README.md). For dataset provenance, see [fixtures/](fixtures/README.md). Top-level index: [README.md](README.md).
+
 > Folder layout mirrors the convention from <https://github.com/rohitg00/agentmemory/tree/main/benchmark> (`benchmark/COMPARISON.md`).
 > Reference fixture pinned commit: `ae8f061cd66093d7be1539c24da6d3e595531dd2`
 > Last bench run: 2026-05-11 (BENCH-AM-7 feature parity + quality regression guard)
@@ -383,3 +385,113 @@ TerranSoul is the only system on this matrix that ships all of {HyDE, LLM-as-jud
 - No active BENCH-AM chunks remain. Open a new chunk when a new benchmark, source system, or implementation target is added.
 
 See [rules/milestones.md → Phase BENCH-AM](../rules/milestones.md#phase-bench-am--beat-agentmemorys-published-benchmark) for the live plan.
+
+
+---
+
+## Phase TOP1 — Round 1 (TOP1-1, 2026-05-14) — cross-system matrix
+
+This is the chunk that fulfils the Phase TOP1 loop rule: assemble every public competitor number we have today, score every cell, and explicitly flag every losing or non-comparable cell. Each gap becomes either a TOP1-N fix-chunk or a documented methodology gap.
+
+### Sources used
+
+| System | Numbers source | Methodology |
+|---|---|---|
+| **TerranSoul** | this repo: BENCH-LCM-8 (LoCoMo retrieval), BENCH-AM-6.1 (LongMemEval-S), BENCH-AM-7 (agentmemory bench), BENCH-SCALE-1b (LoCoMo @ 100k) | Retrieval-only: `R@5/10/20`, `NDCG@10`, `MRR`. No LLM judge in the loop. |
+| **agentmemory v0.6.0** | upstream `benchmark/QUALITY.md` (commit `ae8f061c`) + the agentmemory LongMemEval row in `docs/agentmemory-comparison.md` | Retrieval-only on its own concept-tagged corpus + retrieval on LongMemEval-S. |
+| **MemPalace** | MemPalace paper headline figure for LongMemEval-S R@5 | Retrieval-only. |
+| **Mem0 / Mem0_g** | Chhikara et al., *Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory*, arXiv:2504.19413, Table 1 | **End-to-end QA**: F1, BLEU-1, and `J` (LLM-as-a-Judge by `gpt-4o-mini`) on LoCoMo with gold answers. Not retrieval R@10. |
+| **LangMem (Hot Path)** | same Mem0 paper Table 1 (open-source baseline run by Chhikara et al.) | End-to-end QA, same setup as above. |
+| **Zep** | same Mem0 paper Table 1 (commercial memory baseline run by Chhikara et al.) | End-to-end QA, same setup as above. |
+| **A-Mem / A-Mem\*** | same Mem0 paper Table 1 | End-to-end QA (A-Mem\* is Chhikara et al.'s temp-0 re-run). |
+| **MemGPT / Letta** | same Mem0 paper Table 1 (carried forward from Maharana et al. LoCoMo paper) | End-to-end QA. |
+| **MemoryBank / ReadAgent / LoCoMo** | Maharana et al. 2024 (LoCoMo paper) baselines, carried into Mem0 Table 1 | End-to-end QA. |
+
+### Direct retrieval matrix — apples-to-apples cells
+
+Only systems with directly-comparable retrieval metrics on the same dataset appear here.
+
+**LongMemEval-S — retrieval-only (`R@5 / R@10 / R@20 / NDCG@10 / MRR`):**
+
+| System | R@5 | R@10 | R@20 | NDCG@10 | MRR | Rank |
+|---|---:|---:|---:|---:|---:|---:|
+| **TerranSoul `search` (BENCH-AM-6.1)** | **99.2 %** | **99.6 %** | **100.0 %** | **91.3 %** | **92.6 %** | **#1** |
+| TerranSoul `rrf` | 99.0 % | 99.6 % | 100.0 % | 91.0 % | 92.0 % | #2 |
+| agentmemory LongMemEval-S | 95.2 % | 98.6 % | 99.4 % | 87.9 % | 88.2 % | #3 |
+| MemPalace LongMemEval-S | ~96.6 % | — | — | — | — | n/a |
+
+**agentmemory concept-tagged corpus — retrieval-only (`R@10 / NDCG@10 / MRR`, pinned commit `ae8f061c`):**
+
+| System | R@10 | NDCG@10 | MRR | Rank |
+|---|---:|---:|---:|---:|
+| **TerranSoul `search` (BENCH-AM-7 post-fix)** | **66.4 %** | **96.5 %** | **100.0 %** | **#1** |
+| **TerranSoul `hybrid_search_rrf` no-vec (BENCH-AM-7 post-fix)** | **67.1 %** | **98.2 %** | **100.0 %** | **#1 (tie on MRR, #1 R@10/NDCG)** |
+| agentmemory dual-stream (BM25 + Vector) | 58.6 % | 84.7 % | 95.4 % | #4 |
+| agentmemory triple-stream (BM25 + Vector + Graph) | 58.0 % | 81.7 % | 87.9 % | #5 |
+| agentmemory BM25-only | 55.9 % | 82.7 % | 95.5 % | #6 |
+| agentmemory built-in (CLAUDE.md / grep) | 55.8 % | 80.3 % | 82.5 % | #7 |
+| agentmemory built-in (200-line MEMORY.md) | 37.8 % | 56.4 % | 65.5 % | #8 |
+
+**LoCoMo MTEB retrieval — retrieval-only (`R@10` overall, BENCH-LCM-8 canonical `rrf_rerank`):**
+
+| System | overall R@10 | single-hop | multi-hop | temporal | open-domain | adversarial |
+|---|---:|---:|---:|---:|---:|---:|
+| **TerranSoul `rrf_rerank` (BENCH-LCM-8)** | **68.3 %** | **77.6 %** | 44.0 % | **74.2 %** | 39.7 % | **67.7 %** |
+
+No directly-comparable competitor publishes retrieval `R@10` per-task on LoCoMo MTEB. Mem0/Zep/LangMem report end-to-end LLM-as-Judge on the same dataset — see the methodology-gap matrix below.
+
+**LoCoMo at scale (100 000 distractor corpus) — retrieval-only (`R@10 / NDCG@10 / MAP@10 / R@100`, BENCH-SCALE-1b canonical `rrf`):**
+
+| System | R@10 | NDCG@10 | MAP@10 | R@100 | p50 / p95 latency |
+|---|---:|---:|---:|---:|---|
+| **TerranSoul `rrf` @ 100k (BENCH-SCALE-1b)** | **64.0 %** | **46.7 %** | **41.0 %** | **80.0 %** | 1.21 s / 3.68 s |
+
+No competitor publishes quality-at-100k LoCoMo numbers in the directly-comparable retrieval format.
+
+### Methodology-gap matrix — non-comparable cells
+
+The Mem0 paper (arXiv:2504.19413, Table 1) reports **end-to-end QA accuracy** (F1, BLEU-1, and LLM-as-Judge `J` evaluated by `gpt-4o-mini`) on LoCoMo with gold answers. TerranSoul publishes **retrieval-only** numbers on the same dataset. These two metric families measure different things and **cannot be placed in the same cell**: a perfect retriever does not guarantee a perfect generator, and an end-to-end agent's `J` score collapses retrieval and generation into one number.
+
+Published Mem0-paper LoCoMo end-to-end `J` scores (higher is better, `gpt-4o-mini` judge, 10-run mean):
+
+| System | Single-Hop `J` | Multi-Hop `J` | Open-Domain `J` | Temporal `J` |
+|---|---:|---:|---:|---:|
+| **Mem0** | **67.13** | **51.15** | 72.93 | 55.51 |
+| Mem0_g (graph) | 65.71 | 47.19 | 75.71 | **58.13** |
+| **Zep** | 61.70 | 41.35 | **76.60** | 49.31 |
+| LangMem (Hot Path) | 62.23 | 47.92 | 71.12 | 23.43 |
+| OpenAI Memory (`gpt-4o-mini`) | 63.79 | 42.92 | 62.29 | 21.71 |
+| A-Mem\* (temp-0 re-run) | 39.79 | 18.85 | 54.05 | 49.91 |
+| Full-context (no memory) | — | — | — | — (overall `J` ≈ 72.90) |
+
+TerranSoul **does not publish a `J` row** on this matrix today. The closest existing TerranSoul signal is per-task **retrieval `R@10`** from BENCH-LCM-8: single-hop 77.6 %, multi-hop 44.0 %, temporal 74.2 %, open-domain 39.7 %, adversarial 67.7 %. These are *upper-bound* signals — `J` cannot exceed retrieval `R@10` if the generator can only use what is retrieved — but they are not the same metric. Treating them as comparable would either falsely flatter TerranSoul (retrieval ≫ end-to-end on Mem0 paper numbers) or falsely punish it (TerranSoul retrieval > Mem0 `J` on single-hop and temporal does not prove TerranSoul wins end-to-end).
+
+### Losing-cell roll-up
+
+| Cell | Status | Action |
+|---|---|---|
+| **agentmemory bench** (R@10 / NDCG@10 / MRR) | **TerranSoul rank 1** on every metric vs every published agentmemory configuration | None |
+| **LongMemEval-S retrieval** (R@5 / R@10 / R@20 / NDCG@10 / MRR) | **TerranSoul rank 1** on every metric vs agentmemory + MemPalace | None |
+| **LoCoMo MTEB retrieval** (overall R@10 + per-task) | **TerranSoul has no published competitor** in the same retrieval-only metric family | None — open for the community to publish a comparable retrieval row |
+| **LoCoMo at scale 100k** (R@10 / NDCG@10 / MAP@10 / R@100) | **TerranSoul has no published competitor** at this corpus size in any metric family | None — first system to publish; will revisit after BENCH-SCALE-2 |
+| **LoCoMo end-to-end `J` (LLM-as-Judge)** | **TerranSoul does not publish a `J` row** — methodology gap, not a quality regression | **TOP1-2** (end-to-end QA harness) |
+
+### Verdict
+
+TerranSoul holds **rank 1 on every retrieval cell where a directly-comparable competitor number exists** (agentmemory bench, LongMemEval-S). On LoCoMo MTEB retrieval and LoCoMo at 100k there is currently no published competitor in the same metric family, so rank cannot be determined — TerranSoul is the first publisher in those cells.
+
+The single material gap is the **LoCoMo end-to-end LLM-as-Judge `J` row**. This is not a quality regression: it is a missing measurement axis. The retrieval numbers TerranSoul does publish are an upper bound on what `J` could be, but they cannot substitute for an actual `J` run.
+
+### TOP1-2 — scope
+
+Per the Phase TOP1 loop rule, TOP1-2's scope is *auto-determined by TOP1-1's losing cells*. There is exactly one such cell: the missing LoCoMo end-to-end `J` row.
+
+**TOP1-2 scope (proposed):** *Build an end-to-end LoCoMo QA harness that mirrors the Mem0 paper's `gpt-4o-mini` generator + `gpt-4o-mini` `J`-judge methodology (Chhikara et al. 2025, Appendix A), then publish TerranSoul's per-task `J` row against the Mem0-paper baselines. Reuse the existing `scripts/locomo-mteb.mjs` harness ingestion path; add a `--qa-eval=mem0-paper` mode that, per query, retrieves top-K, prompts the configured chat brain (cloud or local) for a concise answer, then prompts the judge model (defaults to the active brain so local-only runs work; explicit `--judge=gpt-4o-mini` for parity with the paper). Add `J`-score reporting to the JSON/Markdown output. Acceptance bar: TerranSoul `J` strictly ≥ every Mem0-paper baseline on at least 3 of 4 task categories.*
+
+**TOP1-2 status:** scoped + queued. Not started in this chunk. The actual run requires either paid `gpt-4o-mini` API access (Mem0-paper-parity) or a documented local-judge variant (`gemma3:4b` / `qwen2.5:14b`) with the caveat that local-judge numbers are not strictly comparable to the paper. Owner sign-off needed before spending paid API budget.
+
+### Durable lessons (synced to MCP seed)
+
+1. **Methodology family matters more than headline number.** Mem0/Zep/LangMem publish `J` (end-to-end LLM-as-Judge). TerranSoul publishes `R@10` (retrieval-only). Both are valid and both are useful, but they live in different cells — putting them on one ranked table without a methodology column is misleading. Future TOP1-N rounds must include the methodology column.
+2. **A missing-measurement gap is not a quality regression.** TOP1-2 was opened *because* TerranSoul doesn't publish a `J` row, not because TerranSoul lost a `J` cell. The Phase TOP1 loop rule needs that nuance explicit to avoid spawning fix-chunks for non-defects.
+3. **Mem0 paper baselines we now have on hand (LoCoMo end-to-end `J`, single/multi/open/temporal):** Mem0 67.13 / 51.15 / 72.93 / 55.51 ; Mem0_g 65.71 / 47.19 / 75.71 / 58.13 ; Zep 61.70 / 41.35 / 76.60 / 49.31 ; LangMem 62.23 / 47.92 / 71.12 / 23.43 ; OpenAI memory 63.79 / 42.92 / 62.29 / 21.71 ; A-Mem\* 39.79 / 18.85 / 54.05 / 49.91 ; full-context overall `J` ≈ 72.90. Cite as Chhikara et al. 2025, arXiv:2504.19413, Table 1 (`gpt-4o-mini` judge, 10-run mean).

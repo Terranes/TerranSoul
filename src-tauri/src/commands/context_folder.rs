@@ -634,6 +634,7 @@ pub async fn convert_context_to_knowledge(
             source_url: Some(source.clone()),
             source_hash: None,
             expires_at: None,
+            created_at: None,
         };
 
         match store.add(new_mem) {

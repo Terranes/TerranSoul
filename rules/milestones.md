@@ -1,4 +1,4 @@
-# TerranSoul — Milestones
+567# TerranSoul — Milestones
 
 > **To continue development, tell the AI agent:**
 >
@@ -32,32 +32,85 @@
 
 ## Next Chunk
 
-Next up: **BENCH-SCALE-2** — sharded-HNSW quality-at-scale bench. BENCH-KG-2 (2026-05-13) closed the last bench-dark retrieval stage by wiring `cascade_expand` into the LoCoMo bench as `rrf_kg` / `rrf_kg_rerank` modes with ingest-time entity-overlap edges. Cloud streaming chat now exercises **all 5** design-doc retrieval stages AND the LoCoMo bench harness exercises all 5 too — chat and bench have full retrieval parity. Only outstanding scale work is BENCH-SCALE-2 (sharded HNSW at 1M) and BENCH-SCALE-3 (IVF-PQ at 10M).
+Next up: **INTEGRATE-1** — detect-and-link companion AI registry (Hermes Desktop, Hermes Agent CLI, OpenClaw, Temporal.io). Doc-only portions of Phase INTEGRATE (INTEGRATE-2/-3/-4) shipped 2026-05-14; the code-side work (registry + Tauri commands + chat-side suggest-hook + quest-based guided installer) is queued under the normal CI gate. See Phase INTEGRATE below.
+
+Also queued: **BENCH-SCALE-2 run** — harness work landed 2026-05-14, actual two-arm 1M-doc run pending. **Deferred per user (2026-05-14): "Finish the entire chunks left except Phase BENCH-SCALE".**
+
+Phases **HYBRID-DOC** and **TOP1** complete (2026-05-14 — see `rules/completion-log.md`).
+
+Also queued: **TOP1-3 methodology-normalized LoCoMo compare** — ingest Mem0 paper Table 1 (Mem0, Mem0g, LangMem, Zep, A-Mem, MemGPT, ReadAgent, MemoryBank, OpenAI) into a separate end-to-end `J` lane so TerranSoul retrieval metrics are never placed in the same cell.
+
+Also queued: **Phase INFRA** — close the gap between the README "Why TerranSoul is different" pillars and what's actually measured (`RESILIENCE-1` five-nines SLO, `SCALE-INF-1` cross-instance knowledge sharing, `CAP-1` per-memory AP/CP profile selector). See Phase INFRA below.
+
+---
+
+## Phase INFRA — Distributed-infrastructure pillars (resilience, scale-to-infinity, CAP)
+
+Goal: close the gap between the README's "Why TerranSoul is different" claims and what's actually measured/shipped. Each pillar that's marked "design target" in the README must have a milestone chunk that converts it into a measurable contract before we can re-mark it "shipped".
+
+> **Honesty rule.** No pillar moves from "design target" to "shipped" in the README until its chunk's acceptance evidence is logged in `rules/completion-log.md`. README and milestones stay in sync — if a pillar's chunk is open here, the README must say "design target" there.
+
+| Chunk | Status | Scope |
+|---|---|---|
+| RESILIENCE-1 | not-started | **Five-nines availability SLO + telemetry + chaos test.** Define the local-TerranSoul uptime SLO as 99.999 % measured per calendar quarter (~5 min unplanned downtime budget). Add in-process uptime telemetry: heartbeat timestamp written every 30 s to `app-data/uptime/heartbeat.jsonl` with atomic write, gap detection on startup classifies the previous run as `clean_exit` / `crash` / `power_loss`. Add a crash-loop guard: ≥ 3 crashes inside 5 min triggers safe-mode (disable plugins, embedding worker, hive relay) and surfaces a one-click "send debug bundle" action. Add a hermetic chaos test that kills the renderer, the embedding worker, and the MCP server in sequence and asserts: (a) no memory loss, (b) auto-recovery within 30 s, (c) heartbeat resumes. Acceptance: telemetry+guard shipped, 2 hermetic tests pass, design doc `docs/availability-slo.md` defines the SLO calculation. **Until this chunk lands, the README must say "design target — five nines" not "five nines".** |
+| SCALE-INF-1 | not-started | **Cross-TerranSoul knowledge sharing audit + org/team relay contract.** Peer-to-peer pairing already ships (CRDT over QUIC, Ed25519 device identity, hive relay). What's missing for "another TerranSoul's partner / company / another PC": (a) a documented contract for **subscribing** to a remote TerranSoul's specific shards under ACL (today the model is push-bundle, not subscribe), (b) a multi-tenant ACL test proving that a tag `private:darren` never leaks across the relay even under aggressive sync pressure, (c) an audit doc `docs/cross-instance-knowledge-sharing.md` describing partner / team / company use cases and the trust model for each. Acceptance: contract doc shipped, 1 hermetic Rust test for the ACL leak scenario, 1 Playwright e2e for the subscribe-handshake UX. |
+| CAP-1 | not-started | **Per-memory CAP profile selector (P mandatory, A or C per purpose).** Today every memory rides the CRDT (AP / eventual consistency) lane. Some memories need stronger guarantees: legal/financial/shared-team facts where two devices disagreeing is worse than one device blocking. New `AppSettings.cap_profile_default` (`Availability` | `Consistency`) plus a per-memory `cap_profile: Option<CapProfile>` column. AP path: existing CRDT merge. CP path: writes go through the hive relay as a single-writer linearizable log with quorum=2 acks before the originating device's UI confirms the write; offline devices that hold a CP memory **block** the write until reachable. Hermetic test pair: (1) AP write succeeds offline, merges on reconnect; (2) CP write blocks offline, succeeds online, never produces a divergent state. Design doc `docs/cap-profile.md` explains the trade-off in plain language for users. |
+| ACTOR-MODEL-1 | not-started | **Formal agent-fleet supervision tree (actor-style).** Today agents run as separate OS processes registered with the orchestrator (good isolation), but supervision is ad-hoc (manual retry, no formal restart policy per agent kind). Add a typed supervision spec: each registered agent declares `restart: { policy: Always | OnFailure | Never, max_restarts: u32, window: Duration, backoff: ExponentialBackoff }`, enforced by the orchestrator. Add 2 hermetic tests: an agent that crashes 3× in 1 min trips its restart budget and is marked `degraded`; an agent with `policy: Always` survives an OOM-kill and resumes. This formalises the "actor model" framing from the README pillar. |
+
+> **Loop rule.** When a Phase INFRA chunk completes, update its README pillar status from "design target" to "shipped" in the **same PR**, and re-grep README for any other pillar accidentally drifting from the milestone status.
+
+---
+
+## Phase INTEGRATE — Companion AI ecosystem (detect-and-link)
+
+Goal: TerranSoul is a personal assistant, not a walled garden. When a user's question is heavier than TerranSoul should answer alone — long deep-research, full-IDE coding sessions, durable multi-day workflows — TerranSoul should suggest the right companion AI app and help the user install it the safe way (guided installer with explicit click + OS-level UAC prompt). No silent background installs. No bundled redistribution. No claims about products we can't verify.
+
+**Install policy (user, 2026-05-14):** *Guided installer with explicit user click + UAC through the quest system.* TerranSoul detects whether each tool is installed, surfaces a quest, and only runs the per-OS install command (`winget`, `dnf`, `brew`, `apt`, official `.dmg` / `.exe`) after the user clicks Install **and** the OS confirms the elevation prompt. No detection-without-consent. Never call `winget` / `dnf` / `apt` from background tasks.
+
+**Verified scope (user, 2026-05-14):**
+- **Hermes Desktop** = [`fathah/hermes-desktop`](https://github.com/fathah/hermes-desktop) (MIT, Electron, v0.3.7, `winget install NousResearch.HermesDesktop` pending winget-pkgs PR; `.exe` / `.dmg` / `.AppImage` / `.deb` / `.rpm` on the GitHub Releases page). The desktop GUI for Hermes Agent.
+- **Hermes Agent** = [`NousResearch/hermes-agent`](https://github.com/NousResearch/hermes-agent) (MIT, Python CLI). Already integrated as an MCP-config consumer — TerranSoul writes a marker-managed block into Hermes's `cli-config.yaml` via `setup_hermes_mcp` / `setup_hermes_mcp_stdio`.
+- **OpenClaw** = `openclaw/openclaw`. Already integrated as the `openclaw-bridge` plugin (`src-tauri/src/agent/openclaw_agent.rs`).
+- **Temporal.io** = workflow-engine design reference only. Not an integration. Cited in `docs/coding-workflow-design.md` and `instructions/AGENT-ROSTER.md` as the durable-history pattern TerranSoul's own runner is *inspired by*.
+- **Claude Cowork** = **deferred pending verification** — user did not confirm a product name/URL; not added to README, docs, or code until a real reference exists.
+
+| Chunk | Status | Scope |
+|---|---|---|
+| INTEGRATE-1 | not-started | **Detect-and-link registry.** New Rust module `src-tauri/src/integrations/companions.rs` with a `CompanionApp` struct (id, display name, role, official URL, per-OS install command, detect-command). Detection runs only on explicit user click of the integrations panel or quest; no background scanning. Tauri commands: `companions_list`, `companions_detect_one`, `companions_open_install_page`, `companions_run_guided_install` (always opens an OS-elevated terminal, never silent). Hermetic Rust tests for the registry shape + a UAC-required-flag test (must return `RequiresElevation` enum variant). |
+| INTEGRATE-2 | doc shipped 2026-05-14 | **README + Hermes setup doc.** README "Companion AI Ecosystem" section + `docs/integrations/hermes-setup.md` shipped. Code follow-up: ChatView dismissable suggest-hook that fires only when `turn_token_estimate ≥ TS_HERMES_HINT_TOKENS` (default 4000) **and** `intent.classification ∈ {deep_research, long_running_workflow, full_ide_coding}` **and** `app_settings.hermes_hint_enabled = true` (default `true`, user-toggleable). Vitest hermetic coverage for the gate + Hermes config wiring. |
+| INTEGRATE-3 | doc shipped 2026-05-14 | **OpenClaw status accuracy.** README "Companion AI Ecosystem" section documents OpenClaw as the existing `openclaw-bridge` plugin; CREDITS.md unchanged (already lists OpenClaw correctly). Code follow-up: surface `openclaw-bridge` install state in the same companions registry as INTEGRATE-1 — detect upstream OpenClaw CLI, offer guided install, show "active plugin" badge in BrainView. |
+| INTEGRATE-4 | doc shipped 2026-05-14 | **Temporal.io status correction.** README "Companion AI Ecosystem" section explicitly tags Temporal.io as a *design reference, not an integration*. Code follow-up: optional `temporal-bridge` plugin contract spec (deferred — only if user provides a concrete TerranSoul use case for outsourcing a workflow to a Temporal worker; no work until then). |
+| INTEGRATE-5 | not-started | **Quest-based guided installer.** New quest `companion-ecosystem` with 4 sub-quests (one per verified companion). Each sub-quest renders an Install button that triggers `companions_run_guided_install`; the OS elevation prompt is the consent gate. No background install. Test: Playwright e2e that confirms the OS-elevation step is reachable but the install command never runs without an explicit click. |
+
+> **Loop rule.** This phase intentionally stops short of "every AI in the world". Add a new INTEGRATE-N chunk only when (a) a user provides a verifiable upstream URL, (b) the upstream license permits redistribution mention, and (c) at least one TerranSoul workflow benefits from delegating to that tool. No speculative additions.
+
+---
+
+## Phase CHAT-PARITY — close design-doc subsystems left dark in the chat path
+
+Goal: close the gaps surfaced by the 2026-05-13 brain-doc audit so every documented brain subsystem is exercised by either the chat surface, the bench harness, or both. Each gap is a small, hermetic chunk: pure-logic gate + 2 unit tests + design-doc footnote, mirroring the BENCH-CHAT-PARITY-1/2 + BENCH-KG-1 pattern.
+
+_All CHAT-PARITY + BENCH-PARITY chunks shipped (see `rules/completion-log.md`). Phase complete._
 
 ---
 
 ## Phase HYBRID-DOC — Hybrid-RAG design docs + benchmark folder polish
 
-Goal: turn the 2026-05-12 "Why Hybrid RAG" rationale (vector + KG + temporal + lexical) into a coherent set of public docs, audit the codebase/docs for drift against current behaviour, and reorganise `benchmark/` to match the structure of `https://github.com/rohitg00/agentmemory/blob/main/benchmark/COMPARISON.md` (which TerranSoul currently has as a single dumped file in `benchmark/COMPARISON.md` with no surrounding harness, fixtures, or per-system results layout).
-
-| Chunk | Status | Scope |
-|---|---|---|
-| HYBRID-DOC-1 | not-started | **Codebase + docs audit pass.** Walk `docs/`, `tutorials/`, `instructions/`, `README.md`, `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, and the landing page (`BrowserLandingView.vue` + adjacent components). For each public claim, verify it against current Rust/TS source. Produce `docs/audit-2026-05-12-status.md` with: (a) verified-current rows, (b) drift rows (claim vs reality + suggested fix), (c) genuinely-missing-feature rows that should land in this phase. The 2026-05-12 landing-page intro rewrite (already shipped) is the precedent: keep the landing copy, README "Highlights", "Why Hybrid RAG", and tech-stack table in sync. |
-| HYBRID-DOC-2 | not-started | **Benchmark folder reorganisation.** Restructure `benchmark/` to mirror the layout in `https://github.com/rohitg00/agentmemory/blob/main/benchmark/COMPARISON.md`: top-level `COMPARISON.md` (results matrix + how-to-reproduce), per-system subfolders (`benchmark/terransoul/`, `benchmark/agentmemory/`, `benchmark/mempalace/`, …) containing the raw harness output + JSON for that round, a `benchmark/scripts/` runner directory, and a `benchmark/fixtures/` for the pinned LoCoMo + agentmemory + LongMemEval-S query sets. Move the existing `target-copilot-bench/bench-results/*` artefacts that should be public into `benchmark/terransoul/round-N/`. Add a top-level "How to reproduce in one command" block. Do not delete history — keep round-N folders alongside the new layout. |
-| HYBRID-DOC-3 | not-started | **Cross-link + index pass.** After HYBRID-DOC-2 lands, re-link every doc that points at benchmark results so they hit the new canonical paths (`docs/agentmemory-comparison.md`, `docs/billion-scale-retrieval-design.md`, `docs/brain-advanced-design.md` § benchmark, README "Why Hybrid RAG"). Add a `benchmark/README.md` table-of-contents that lists every round per system with date, dataset, headline metric, and link to the raw JSON. |
+_All HYBRID-DOC chunks shipped 2026-05-14 (see `rules/completion-log.md`). Audit doc: `docs/audit-2026-05-12-status.md`; new benchmark folder layout: `benchmark/<system>/<task>/`. Phase complete._
 
 ---
 
 ## Phase TOP1 — "Beat everyone" benchmark loop
 
-Goal: keep iterating on TerranSoul's retrieval/generation quality until it holds **rank 1 on every measured public memory-system benchmark** (LoCoMo, agentmemory bench, LongMemEval-S, MTEB retrieval slice, plus any new dataset that lands on the comparison table). Each round: re-run, diff vs published competition, open a fix chunk if any metric slips behind, re-run, repeat.
-
-> **Loop rule.** After each `TOP1-N` chunk completes, the next agent session must (a) re-run the full benchmark matrix, (b) diff every system on every metric against the prior round, (c) refresh `benchmark/COMPARISON.md`, and (d) promote `TOP1-(N+1)` with a concrete hypothesis if TerranSoul is not strictly ≥ every competitor on every metric. Stop only when TerranSoul is rank 1 across the entire matrix and at least one full cycle has passed without a regression.
+TOP1-1 shipped 2026-05-14 (cross-system matrix in `benchmark/COMPARISON.md` § Round TOP1-1; TerranSoul rank 1 on every directly-comparable retrieval cell vs agentmemory + MemPalace). The methodology-gap finding remains active: Mem0-paper LoCoMo Table 1 systems report end-to-end LLM-as-Judge `J`, while TerranSoul's canonical bench reports retrieval metrics (`R@10`, `NDCG@10`, `MRR`). These must stay in separate lanes.
 
 | Chunk | Status | Scope |
 |---|---|---|
-| TOP1-1 | not-started | **Establish the current matrix.** After HYBRID-DOC-2, run TerranSoul + every published competitor's numbers we already have (agentmemory v0.6, MemPalace, LangMem if available, Mem0, Letta/MemGPT) into `benchmark/COMPARISON.md`. Highlight each cell where TerranSoul is *not* strictly best. Open one fix chunk per losing cell (TOP1-2..N). |
-| TOP1-2 | not-started | First fix-cell chunk; scope auto-determined by TOP1-1's losing cells. Loop. |
+| TOP1-3 | not-started | **Methodology-normalized LoCoMo compare (same-cell rule).** Add a dedicated end-to-end `J` comparison lane in `benchmark/COMPARISON.md` populated from the Mem0 paper full Table 1 set: `Mem0`, `Mem0g`, `LangMem`, `Zep`, `A-Mem`, `MemGPT`, `ReadAgent`, `MemoryBank`, `OpenAI`. Keep TerranSoul retrieval metrics (`R@10`, `NDCG@10`, `MRR`) in a separate retrieval lane; do not place end-to-end `J` systems and retrieval systems in the same ranking cell. Add an explicit "methodology mismatch" badge and a footnote defining the two axes. Acceptance: (1) no mixed-metric cells in the matrix, (2) every Table 1 system appears in the end-to-end lane with source citation, (3) TerranSoul row is marked "retrieval-only; end-to-end J pending TOP1-2 harness" until parity harness lands. |
+
+> **Same-cell rule (mandatory).** If two systems are measured with different objectives (end-to-end judge vs retrieval relevance), they must never share a ranked cell. Show them in adjacent lanes with a methodology note.
+
+_TOP1-2 remains scoped in `benchmark/COMPARISON.md` § "TOP1-2 scope" (requires paid `gpt-4o-mini` API budget for Mem0-paper parity or an explicit local-judge variant decision). Phase loop rule remains active — re-run the matrix at the start of the next benchmarking session. See `rules/completion-log.md`._
 
 ---
 
@@ -117,7 +170,7 @@ Goal: stop treating "1M+ memories" as a latency-only claim. The current `cargo b
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-SCALE-2 | not-started | **Sharded-HNSW scale bench.** After SCALE-1 lands, enable sharded HNSW (`docs/billion-scale-retrieval-design.md` Phase 2, already shipped) and re-run the same 1M LoCoMo bench. Compare single-index vs sharded latency, recall, and memory footprint. Document the shard-count sweet spot in `docs/billion-scale-retrieval-design.md`. |
+| BENCH-SCALE-2 | harness-shipped, run-pending | **Sharded-HNSW scale bench.** Harness shipped 2026-05-14: new `MemoryStore::set_shard_mode(ShardMode)` toggle (`RouterRouted` default vs `AllShards` baseline), `longmemeval-ipc` reads `LONGMEM_SHARD_MODE`, `scripts/locomo-at-scale.mjs --shard-mode={routed,all}`, JSON report + filename now include the mode (no more SCALE-1b-style overwrite). Run-pending: execute the two-arm 1M comparison per the protocol in `docs/billion-scale-retrieval-design.md` § Phase 2 (router-routed vs all-shards probe). Report deltas on R@10 / NDCG@10 / MRR / p50 / p95 / p99 / ingest time / peak RSS. Document the shard-count sweet spot. |
 | BENCH-SCALE-3 | not-started | **IVF-PQ disk-backed bench.** Phase 3 (kickoff shipped, Chunk 49.1) targets >100M with m=96, nbits=8 PQ. Once a working IVF-PQ shard is available, re-run the LoCoMo-at-scale bench at 10M and report the PQ accuracy/latency trade against full-precision HNSW. |
 
 ---

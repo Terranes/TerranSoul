@@ -94,6 +94,54 @@ Land additive scaffolds and one user-visible win. No breaking changes.
   - cooldown-gated to avoid repeated on-query rebuild bursts,
   - forced scheduled refresh via maintenance `AnnCompact` path.
 
+#### Bench instrumentation — `ShardMode` toggle (BENCH-SCALE-2, 2026-05-14)
+
+To measure the coarse router's actual contribution to retrieval latency
+and recall at 1M+ docs (the original Phase 2 design assumption), the
+LoCoMo-at-scale bench can now force the production retrieval path
+through one of two policies via the new
+[`MemoryStore::set_shard_mode`](../src-tauri/src/memory/store.rs)
+toggle:
+
+| `ShardMode` | Behavior | Use case |
+|---|---|---|
+| `RouterRouted` (default) | Cached router → persisted router → throttled rebuild → fall back to all 15 shards. Production-equivalent. | All production calls; bench A-arm. |
+| `AllShards` | Bypass the router entirely; every query probes every shard. | Bench B-arm: "single-index-style" baseline that quantifies how much the coarse router saves. |
+
+The `longmemeval-ipc` bench binary reads `LONGMEM_SHARD_MODE` (values:
+`routed` / `router` / `default` / unset → `RouterRouted`; `all` /
+`allshards` / `all_shards` / `single` → `AllShards`; unknown → warn +
+fallback) and calls `set_shard_mode` immediately after constructing the
+in-memory store, on both `new()` and `reset()` paths.
+
+The `scripts/locomo-at-scale.mjs` harness exposes the toggle as
+`--shard-mode={routed,all}` (default `routed`), plumbs it into the
+spawned bench process via `LONGMEM_SHARD_MODE`, records `shard_mode`
+in the JSON report, and includes it in both the output filename
+(`locomo_scale_<N>_<task>_<Q>q_<mode>.json`) and the markdown report
+header — so a back-to-back router-routed vs all-shards comparison run
+does not overwrite the earlier report (the overwrite footgun BENCH-
+SCALE-1b hit in 2026-05-13).
+
+**Comparison protocol (suggested for the actual 1M run):**
+
+```pwsh
+# Arm A — router-routed (production default)
+node scripts/locomo-at-scale.mjs run --task=adversarial `
+  --systems=rrf --scale=1000000 --limit=100 --shard-mode=routed
+
+# Arm B — all-shards probe (no-router baseline)
+node scripts/locomo-at-scale.mjs run --task=adversarial `
+  --systems=rrf --scale=1000000 --limit=100 --shard-mode=all
+```
+
+Report (deltas A − B): R@10, NDCG@10, MRR, p50 / p95 / p99 retrieval
+latency, ingest time, peak RSS. The router is expected to **reduce
+latency** (fan-out to ~2–3 shards instead of 15) while keeping recall
+flat once 1% of the corpus has been ingested and the router has
+rebuilt at least once. Disagreement on recall surfaces a routing bug;
+disagreement on latency surfaces a fan-out bug.
+
 ### Phase 3 — Disk-backed ANN (PQ / IVF-PQ) (◐ Kickoff shipped — Chunk 49.1)
 
 - ✅ Kickoff planner surface (`memory/disk_backed_ann.rs` +
