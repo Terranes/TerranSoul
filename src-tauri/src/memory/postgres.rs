@@ -1262,7 +1262,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
         assert!(entry.id > 0);
@@ -1288,7 +1292,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1300,7 +1308,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1327,7 +1339,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1339,7 +1355,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1351,7 +1371,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1409,7 +1433,11 @@ mod tests {
                     memory_type: MemoryType::Fact,
                     source_url: None,
                     source_hash: None,
-                    expires_at: None,
+                    expires_at: None,`r`n                    created_at: None,
+                    created_at: None,
+                    created_at: None,
+                    created_at: None,
+                    created_at: None,
                 },
                 "This passage is from a chapter about animal intelligence.",
                 MemoryTier::Long,
@@ -1438,7 +1466,11 @@ mod tests {
                 memory_type: MemoryType::Fact,
                 source_url: None,
                 source_hash: None,
-                expires_at: None,
+                expires_at: None,`r`n                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
+                created_at: None,
             })
             .unwrap();
 
@@ -1464,3 +1496,4 @@ mod tests {
         assert!(backend.supports_native_vector_search());
     }
 }
+

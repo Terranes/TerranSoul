@@ -130,14 +130,14 @@ async function main() {
   console.log(`[capture] Injecting ${COUNT} synthetic memories + edges`);
   const memories = buildFakeMemories(COUNT);
   const edges = buildFakeEdges(memories);
-  await page.evaluate(({ memories, edges }) => {
+  await page.evaluate(({ memories: fakeMemories, edges: fakeEdges }) => {
     const app = document.querySelector('#app')?.__vue_app__;
     const pinia = app?.config?.globalProperties?.$pinia;
     const memoryStore = pinia?._s?.get('memory');
     if (!memoryStore) throw new Error('memory store not found on pinia');
-    memoryStore.memories = memories;
-    memoryStore.edges = edges;
-    memoryStore.edgeStats = { total_edges: edges.length, connected_memories: memories.length };
+    memoryStore.memories = fakeMemories;
+    memoryStore.edges = fakeEdges;
+    memoryStore.edgeStats = { total_edges: fakeEdges.length, connected_memories: fakeMemories.length };
   }, { memories, edges });
 
   // Switch to Graph sub-tab.

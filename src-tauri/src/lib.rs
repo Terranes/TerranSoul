@@ -21,6 +21,7 @@ pub mod commands;
 pub mod container;
 pub mod hive;
 pub mod identity;
+pub mod integrations;
 pub mod link;
 pub mod memory;
 pub mod messaging;
@@ -1985,6 +1986,11 @@ pub fn run() {
             remove_claude_mcp,
             remove_codex_mcp,
             list_mcp_clients,
+            // Companion AI detect-and-link registry — INTEGRATE-1
+            commands::companions::companions_list,
+            commands::companions::companions_detect_one,
+            commands::companions::companions_open_install_page,
+            commands::companions::companions_run_guided_install,
             // Consolidation (Chunk 16.7)
             run_sleep_consolidation,
             touch_activity,
