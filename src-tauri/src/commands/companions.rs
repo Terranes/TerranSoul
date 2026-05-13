@@ -49,10 +49,10 @@ pub async fn companions_open_install_page(
     let Some(app) = companions::get(&id) else {
         return Err(format!("unknown companion id: {id}"));
     };
-    use tauri_plugin_opener::OpenerExt;
+    use tauri_plugin_shell::ShellExt;
     app_handle
-        .opener()
-        .open_url(&app.official_url, None::<&str>)
+        .shell()
+        .open(&app.official_url, None)
         .map_err(|e| format!("failed to open install page: {e}"))
 }
 

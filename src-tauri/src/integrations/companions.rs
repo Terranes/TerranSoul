@@ -1,5 +1,11 @@
 //! Detect-and-link registry for verified companion AI applications.
 //!
+//! This registry is the **single source of truth** consumed by:
+//! - the Companion AI marketplace UI (browse / detect / install button), and
+//! - the chat-driven quest hook (the chat layer triggers the
+//!   `companion-ecosystem` quest, which renders an Install button that
+//!   calls [`crate::commands::companions::companions_run_guided_install`]).
+//!
 //! See `rules/milestones.md` Phase INTEGRATE for the verified scope:
 //! - **Hermes Desktop** (`fathah/hermes-desktop`) — Electron GUI for Hermes Agent.
 //! - **Hermes Agent** (`NousResearch/hermes-agent`) — Python CLI, MCP-config consumer.

@@ -1364,6 +1364,32 @@ const SKILL_NODES: SkillNode[] = [
       },
     ],
   },
+
+  // ── COMPANION ECOSYSTEM (INTEGRATE-5) ───────────────────────────────────
+  // Quest-based guided installer for the companion AI registry defined in
+  // `src-tauri/src/integrations/companions.rs`. Each sub-quest renders an
+  // Install button in the Marketplace → Companions tab; nothing runs
+  // without an explicit click and OS-level elevation prompt.
+  {
+    id: 'companion-ecosystem',
+    name: 'Companion Ecosystem',
+    tagline: 'Detect and link sibling AI tools',
+    description: 'TerranSoul plays well with other AIs. This quest walks you through detecting and (optionally) installing companion tools — each one is fetched from its official source, with the OS-level elevation prompt clearly shown before anything runs.',
+    icon: '🤝',
+    tier: 'advanced',
+    requires: [],
+    rewards: ['Companion AI detection', 'Guided OS-elevated install', 'Marketplace Companions tab'],
+    rewardIcons: ['🔍', '🛡️', '🏪'],
+    questSteps: [
+      { label: 'Open Marketplace → Companions tab', action: 'navigate', target: 'marketplace' },
+      { label: 'Sub-quest 1 — Hermes Desktop: click Detect, then Install', action: 'info' },
+      { label: 'Sub-quest 2 — Hermes Agent: click Detect, then Install', action: 'info' },
+      { label: 'Sub-quest 3 — OpenClaw CLI: click Detect, then Install', action: 'info' },
+      { label: 'Sub-quest 4 — Temporal.io: design-reference badge (no installer)', action: 'info' },
+    ],
+    category: 'utility',
+    combos: [],
+  },
 ];
 
 /** Filter skills by current platform */
@@ -1574,6 +1600,16 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         return false;
       case 'windows-startup':
         return false;
+      case 'companion-ecosystem': {
+        // Auto-active once the user has visited Marketplace → Companions
+        // tab at least once. The tab itself sets this flag on mount; no
+        // detection or install ever runs without an explicit click.
+        try {
+          return localStorage.getItem('ts-companions-tab-visited') === '1';
+        } catch {
+          return false;
+        }
+      }
       default:
         return false;
     }

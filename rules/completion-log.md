@@ -1,3 +1,106 @@
+# Chunk TOP1-3 — Methodology-normalized LoCoMo end-to-end `J` lane
+
+**Status:** Shipped 2026-05-14.
+**Date:** 2026-05-14
+
+## Goal
+
+Phase TOP1-3 from `rules/milestones.md`: prevent any future audit from treating TerranSoul's retrieval-only LoCoMo numbers (`R@10`, `NDCG@10`, `MRR`) as comparable to the Mem0-paper Table 1 end-to-end LLM-as-Judge `J` numbers. Build a separate, clearly-marked `J` lane populated from the full Mem0-paper Table 1 set, with an explicit methodology-mismatch warning so the two metric families can never accidentally share a ranked cell.
+
+## What landed
+
+Extended `benchmark/COMPARISON.md` § "Methodology-gap matrix — non-comparable cells" into a full end-to-end `J` lane:
+
+1. **Methodology-mismatch warning banner** at the top of the section — calls out the same-cell rule explicitly so any future reader hitting the section first sees the warning before any numbers.
+2. **Complete end-to-end `J` table** with every Mem0-paper Table 1 system: `Mem0`, `Mem0_g`, `Zep`, `LangMem (Hot Path)`, `OpenAI Memory`, `A-Mem*` (paper's temp-0 re-run), `A-Mem` (original), `MemGPT`, `ReadAgent`, `MemoryBank`, `LoCoMo` (baseline), `Full-context`. Baselines without a published `J` (A-Mem original, MemGPT, ReadAgent, MemoryBank, LoCoMo) appear with `–` cells in the `J` table and full F1/B1 values in a separate "F1 / BLEU-1 baselines" reference table below.
+3. **TerranSoul row marked explicitly** as `retrieval-only; end-to-end J pending TOP1-2 harness` per the milestone acceptance bar (3).
+4. **TerranSoul caveat block** restates the per-task retrieval `R@10` numbers from BENCH-LCM-8 as *upper-bound* signals only, with a hard "not the same metric" reminder.
+5. **Numbers verbatim from arXiv:2504.19413v1**, Table 1 (per-task F1 / B1 / J) and Table 2 (Overall J — the rows tagged `(T2)`), with a single license / attribution line so authorship of the reproduced numbers is clear.
+
+Source-of-truth fetch: `https://arxiv.org/html/2504.19413v1`.
+
+## Acceptance check
+
+- (1) No mixed-metric cells: ✅ — the TerranSoul retrieval matrices (LongMemEval-S, agentmemory bench, LoCoMo MTEB retrieval, LoCoMo @ 100k) and the new end-to-end `J` matrix sit in adjacent sections; TerranSoul appears only in the retrieval matrices and as `retrieval-only; pending` in the `J` lane.
+- (2) Every Table 1 system present: ✅ — 11 systems + Full-context. Systems without published `J` are still listed in the `J` table with `–` and reproduced in the F1/B1 reference table below it.
+- (3) TerranSoul row tagged "retrieval-only; end-to-end J pending TOP1-2 harness": ✅.
+
+## Durable lessons
+
+1. **`gpt-4o-mini` is the de-facto LoCoMo judge.** The Mem0 paper (Chhikara et al. 2025, Appendix A) uses `gpt-4o-mini` for both generation AND `J`-judging at temperature 0, 10 independent runs, mean ± 1σ. Any TerranSoul `J` run that does not match this configuration cannot be placed in the same ranked cell as the Mem0-paper numbers — at best it goes in an adjacent lane with an explicit "judge=X" tag.
+2. **A-Mem original has no `J`.** The original A-Mem paper only published F1 / BLEU-1. The Mem0 paper re-ran A-Mem at temp-0 to generate `J`, and they distinguish that run as `A-Mem*`. Do not conflate the two rows.
+3. **Full-context is the absolute upper bound at 72.90 `J`.** Any memory-system `J` score above ~73 % on LoCoMo with the Mem0-paper config should be treated as suspect until reproduced — the paper itself reports that even passing the entire 26k-token conversation to `gpt-4o-mini` only reaches 72.90.
+4. **Source numbers — both tables matter.** Table 1 has per-task `J`, Table 2 has Overall `J`. They are computed on the same runs but published in different tables. A complete reproduction needs both.
+
+## References
+
+- Milestone: `rules/milestones.md` Phase TOP1, TOP1-3 scope
+- Source: Chhikara, Khant, Aryan, Singh, Yadav, *Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory*, arXiv:2504.19413v1, 28 Apr 2025, Table 1 + Table 2
+- Doc: `benchmark/COMPARISON.md` § "Methodology-gap matrix — non-comparable cells"
+- Same-cell rule: `rules/milestones.md` § Phase TOP1
+
+---
+
+# Chunk INTEGRATE-1 — Detect-and-link companion AI registry
+
+**Status:** Shipped 2026-05-14.
+**Date:** 2026-05-14
+
+## Goal
+
+Phase INTEGRATE-1 from `rules/milestones.md`: ship a typed Rust registry describing the four verified companion AI tools (Hermes Desktop, Hermes Agent, OpenClaw CLI) plus Tauri commands that the future marketplace UI and chat-driven `companion-ecosystem` quest will call to (a) list companions, (b) on-demand detect whether each is installed, (c) open the official upstream URL, and (d) launch the install command through an OS elevation prompt — never silently.
+
+## What landed
+
+- **`src-tauri/src/integrations/companions.rs`** — pure-Rust registry. New public types:
+  - `CompanionOs` (Windows / MacOs / Linux + `current()`),
+  - `ShellCommand { program, args, description }` — kept as a `(program, args)` pair so the OS shell never re-parses user-provided text (no shell-injection class of bugs),
+  - `CompanionApp { id, display_name, role, official_url, windows_install, macos_install, linux_install, detect, requires_elevation }` plus `install_for(os)` helper,
+  - `DetectStatus { Installed { version }, NotInstalled, Unknown { reason } }`,
+  - `GuidedInstallOutcome { RequiresElevation, DirectInstall, NoInstallerForOs, Unknown }` — the **mandatory** `RequiresElevation` variant for every companion whose installer needs UAC / sudo,
+  - Pure functions `default_registry()`, `get(id)`, `plan_guided_install(app, os)`, `plan_guided_install_by_id(id, os)`, plus `detect_status_with(app, runner)` that takes an injectable process runner so unit tests never spawn real subprocesses,
+  - Production runner `spawn_detect_status_real` using `std::process::Command`.
+  Registry seeded with the three verified companions (Hermes Desktop, Hermes Agent, OpenClaw CLI). Temporal.io intentionally excluded — design reference, not an integration.
+- **`src-tauri/src/integrations/mod.rs`** — new top-level module documenting the install policy (no background scanning, OS-level elevation is the consent gate).
+- **`src-tauri/src/commands/companions.rs`** — 4 Tauri commands:
+  - `companions_list` — returns the static registry (no I/O),
+  - `companions_detect_one(id)` — spawns the registered detect command on demand,
+  - `companions_open_install_page(id, app_handle)` — uses `tauri_plugin_shell::ShellExt::shell().open(url, None)` to open the official upstream URL,
+  - `companions_run_guided_install(id)` — plans the install for the current OS, then spawns an **OS-elevated** terminal on Windows (`powershell Start-Process -Verb RunAs`), macOS (`osascript ... with administrator privileges`), or Linux (`pkexec`). For non-elevated companions (user-scope pip), a visible terminal is spawned instead so the user always sees the command run.
+- **`src-tauri/src/lib.rs`** — registered the four commands in `invoke_handler!`, added `pub mod integrations;`.
+- **`src-tauri/src/commands/mod.rs`** — added `pub mod companions;`.
+
+## Tests
+
+- `integrations::companions` — 7 hermetic tests: registry shape stable, UAC flag produces `RequiresElevation` variant (the milestone-required test), non-elevated companion produces `DirectInstall`, missing installer returns `NoInstallerForOs`, unknown id returns `Unknown`, injected runner exercises all three `DetectStatus` arms, missing detect command does not call the runner.
+- `commands::companions` — 2 async tests: list contains the three verified companions, unknown-id detect returns `Unknown`.
+- **Cross-platform:** ESLint clean, vue-tsc clean under WSL Linux, `cargo build --lib --tests` finished without errors on Windows MSVC. Companion tests 9/9 pass.
+
+## CI fixes shipped alongside
+
+Three unrelated CI failures were repaired in the same PR:
+
+1. **ESLint shadow** in `scripts/capture-brain-graph.mjs` — renamed destructured params in `page.evaluate(({ memories: fakeMemories, edges: fakeEdges }) => …)` to eliminate `no-shadow`.
+2. **Rust E0063** in `src-tauri/src/memory/postgres.rs` — 8 `NewMemory { … }` test literals were missing the `created_at: None,` field added by BENCH-PARITY-3. Restored from `origin/main` and reapplied via a single in-place insert.
+3. **vue-tsc / Vite build** — `forceCollide` not declared in `src/types/d3-force-3d.d.ts`. Added a typed declaration matching the runtime export (`radius` / `strength` / `iterations` setters with proper generics). Both the missing-export and the implicit-`any` errors in `MemoryGraph3D.vue` cleared.
+
+## Durable lessons
+
+1. **`tauri-plugin-opener` is not in TerranSoul's manifest.** TerranSoul carries `tauri-plugin-shell`. To open a URL from a Tauri command, use `tauri_plugin_shell::ShellExt::shell().open(url, None)`, not an `OpenerExt` import. The shell plugin is already initialised in `lib.rs::run`.
+2. **The registry is the single source of truth for the marketplace + chat-quest hook.** The future Companion AI marketplace UI and the chat-driven `companion-ecosystem` quest both consume `companions_list` + `companions_run_guided_install` — there is no second source for installable companions.
+3. **Detection is on-demand only.** No background polling, no detection without an explicit user click. The Tauri commands run the detect subprocess every call; UI must throttle / debounce, not the registry.
+4. **Subprocess runners must be injectable.** `detect_status_with(app, runner)` takes an `FnOnce(&ShellCommand) -> Result<DetectOutput, String>` so unit tests never spawn real `winget` / `pipx` / `openclaw` binaries. Production callers pass `spawn_detect_status_real`; tests pass closures that return canned `DetectOutput { exit_code, stdout_first_line }`.
+5. **`ShellCommand` keeps `program` and `args` separate.** Concatenated command strings re-parsed by a shell are the canonical shell-injection footgun; building `std::process::Command::new(&program).args(&args)` straight from the registry eliminates the class entirely.
+6. **`execution_subagent` regex-edits inside loops can over-replace.** A run that retries a multi-step PowerShell regex replace against the same file appended `created_at` 24 times before being noticed. Hard rule: when a verification count is wrong, **restore the file from `git`** and reapply, do not re-run the broken regex. The fix here was `git checkout origin/main -- path` then a single-pass `foreach line` insert.
+
+## References
+
+- Milestone: `rules/milestones.md` Phase INTEGRATE
+- Doc context: `docs/integrations/hermes-setup.md`, README "Companion AI Ecosystem" section
+- Verified upstream: `https://github.com/fathah/hermes-desktop`, `https://github.com/NousResearch/hermes-agent`, `https://github.com/openclaw/openclaw`
+
+---
+
 # Phase INTEGRATE (Chunks INTEGRATE-2 doc + INTEGRATE-3 doc + INTEGRATE-4 doc) — Companion AI ecosystem documentation
 
 **Status:** Doc-only portions shipped 2026-05-14. Code-side work (INTEGRATE-1 detect-and-link registry + chat-side suggest-hook + INTEGRATE-5 quest-based guided installer) queued in `rules/milestones.md` Phase INTEGRATE.

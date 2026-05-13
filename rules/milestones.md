@@ -32,13 +32,11 @@
 
 ## Next Chunk
 
-Next up: **INTEGRATE-1** — detect-and-link companion AI registry (Hermes Desktop, Hermes Agent CLI, OpenClaw, Temporal.io). Doc-only portions of Phase INTEGRATE (INTEGRATE-2/-3/-4) shipped 2026-05-14; the code-side work (registry + Tauri commands + chat-side suggest-hook + quest-based guided installer) is queued under the normal CI gate. See Phase INTEGRATE below.
+Next up: **INTEGRATE-5** — quest-based guided installer (Playwright e2e + new `companion-ecosystem` quest with 4 sub-quests). INTEGRATE-1 + TOP1-3 shipped 2026-05-14 (see `rules/completion-log.md`).
 
 Also queued: **BENCH-SCALE-2 run** — harness work landed 2026-05-14, actual two-arm 1M-doc run pending. **Deferred per user (2026-05-14): "Finish the entire chunks left except Phase BENCH-SCALE".**
 
 Phases **HYBRID-DOC** and **TOP1** complete (2026-05-14 — see `rules/completion-log.md`).
-
-Also queued: **TOP1-3 methodology-normalized LoCoMo compare** — ingest Mem0 paper Table 1 (Mem0, Mem0g, LangMem, Zep, A-Mem, MemGPT, ReadAgent, MemoryBank, OpenAI) into a separate end-to-end `J` lane so TerranSoul retrieval metrics are never placed in the same cell.
 
 Also queued: **Phase INFRA** — close the gap between the README "Why TerranSoul is different" pillars and what's actually measured (`RESILIENCE-1` five-nines SLO, `SCALE-INF-1` cross-instance knowledge sharing, `CAP-1` per-memory AP/CP profile selector). See Phase INFRA below.
 
@@ -76,7 +74,6 @@ Goal: TerranSoul is a personal assistant, not a walled garden. When a user's que
 
 | Chunk | Status | Scope |
 |---|---|---|
-| INTEGRATE-1 | not-started | **Detect-and-link registry.** New Rust module `src-tauri/src/integrations/companions.rs` with a `CompanionApp` struct (id, display name, role, official URL, per-OS install command, detect-command). Detection runs only on explicit user click of the integrations panel or quest; no background scanning. Tauri commands: `companions_list`, `companions_detect_one`, `companions_open_install_page`, `companions_run_guided_install` (always opens an OS-elevated terminal, never silent). Hermetic Rust tests for the registry shape + a UAC-required-flag test (must return `RequiresElevation` enum variant). |
 | INTEGRATE-2 | doc shipped 2026-05-14 | **README + Hermes setup doc.** README "Companion AI Ecosystem" section + `docs/integrations/hermes-setup.md` shipped. Code follow-up: ChatView dismissable suggest-hook that fires only when `turn_token_estimate ≥ TS_HERMES_HINT_TOKENS` (default 4000) **and** `intent.classification ∈ {deep_research, long_running_workflow, full_ide_coding}` **and** `app_settings.hermes_hint_enabled = true` (default `true`, user-toggleable). Vitest hermetic coverage for the gate + Hermes config wiring. |
 | INTEGRATE-3 | doc shipped 2026-05-14 | **OpenClaw status accuracy.** README "Companion AI Ecosystem" section documents OpenClaw as the existing `openclaw-bridge` plugin; CREDITS.md unchanged (already lists OpenClaw correctly). Code follow-up: surface `openclaw-bridge` install state in the same companions registry as INTEGRATE-1 — detect upstream OpenClaw CLI, offer guided install, show "active plugin" badge in BrainView. |
 | INTEGRATE-4 | doc shipped 2026-05-14 | **Temporal.io status correction.** README "Companion AI Ecosystem" section explicitly tags Temporal.io as a *design reference, not an integration*. Code follow-up: optional `temporal-bridge` plugin contract spec (deferred — only if user provides a concrete TerranSoul use case for outsourcing a workflow to a Temporal worker; no work until then). |
@@ -102,13 +99,7 @@ _All HYBRID-DOC chunks shipped 2026-05-14 (see `rules/completion-log.md`). Audit
 
 ## Phase TOP1 — "Beat everyone" benchmark loop
 
-TOP1-1 shipped 2026-05-14 (cross-system matrix in `benchmark/COMPARISON.md` § Round TOP1-1; TerranSoul rank 1 on every directly-comparable retrieval cell vs agentmemory + MemPalace). The methodology-gap finding remains active: Mem0-paper LoCoMo Table 1 systems report end-to-end LLM-as-Judge `J`, while TerranSoul's canonical bench reports retrieval metrics (`R@10`, `NDCG@10`, `MRR`). These must stay in separate lanes.
-
-| Chunk | Status | Scope |
-|---|---|---|
-| TOP1-3 | not-started | **Methodology-normalized LoCoMo compare (same-cell rule).** Add a dedicated end-to-end `J` comparison lane in `benchmark/COMPARISON.md` populated from the Mem0 paper full Table 1 set: `Mem0`, `Mem0g`, `LangMem`, `Zep`, `A-Mem`, `MemGPT`, `ReadAgent`, `MemoryBank`, `OpenAI`. Keep TerranSoul retrieval metrics (`R@10`, `NDCG@10`, `MRR`) in a separate retrieval lane; do not place end-to-end `J` systems and retrieval systems in the same ranking cell. Add an explicit "methodology mismatch" badge and a footnote defining the two axes. Acceptance: (1) no mixed-metric cells in the matrix, (2) every Table 1 system appears in the end-to-end lane with source citation, (3) TerranSoul row is marked "retrieval-only; end-to-end J pending TOP1-2 harness" until parity harness lands. |
-
-> **Same-cell rule (mandatory).** If two systems are measured with different objectives (end-to-end judge vs retrieval relevance), they must never share a ranked cell. Show them in adjacent lanes with a methodology note.
+TOP1-1 shipped 2026-05-14 (cross-system matrix). TOP1-3 shipped 2026-05-14 (methodology-normalized end-to-end `J` lane populated from Mem0-paper Table 1). Phase complete except TOP1-2 (paid `gpt-4o-mini` end-to-end harness, deferred budget).
 
 _TOP1-2 remains scoped in `benchmark/COMPARISON.md` § "TOP1-2 scope" (requires paid `gpt-4o-mini` API budget for Mem0-paper parity or an explicit local-judge variant decision). Phase loop rule remains active — re-run the matrix at the start of the next benchmarking session. See `rules/completion-log.md`._
 
