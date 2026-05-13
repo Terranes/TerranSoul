@@ -173,6 +173,13 @@ pub(crate) fn should_skip_rag(query: &str, memory_count: i64) -> bool {
 /// the desktop/mobile chat parity gap with `hybrid_search_rrf_with_intent`
 /// without introducing extra LLM calls, so first-token latency stays in the
 /// same class as the previous weighted-sum path.
+///
+/// This sync helper is the **VRAM-safe** retrieval path: local-Ollama
+/// streaming and the Self-RAG loop call it directly so they don't evict
+/// the chat model with a reranker pass. Cloud streaming uses the async
+/// wrapper [`retrieve_chat_rag_memories_reranked`], which layers the
+/// LCM-8 cross-encoder rerank stage on top to match
+/// `commands::chat::retrieve_prompt_memories` (BENCH-CHAT-PARITY-1).
 pub(crate) fn retrieve_chat_rag_memories(
     store: &crate::memory::MemoryStore,
     query: &str,
@@ -215,6 +222,89 @@ pub(crate) fn retrieve_chat_rag_memories(
 
     ranked.truncate(limit);
     ranked
+}
+
+/// Async wrapper that runs [`retrieve_chat_rag_memories`] for the RRF +
+/// threshold stage and then layers the LLM-as-judge cross-encoder rerank
+/// stage from `docs/brain-advanced-design.md` on top when a local Ollama
+/// brain is available.
+///
+/// This closes the streaming-chat ↔ non-streaming-chat parity gap
+/// identified in milestone BENCH-CHAT-PARITY-1: the non-streaming chat
+/// path (`commands::chat::retrieve_prompt_memories`) already runs the
+/// full LCM-8 pipeline (RRF → rerank), but the cloud streaming path
+/// historically stopped at RRF.
+///
+/// BENCH-CHAT-PARITY-2 adds the missing HyDE stage. HyDE expansion
+/// happens *upstream* in `stream_openai_api` (cloud streaming) where
+/// `brain_mode` is in scope so the hypothetical is embedded through the
+/// same cloud / Ollama embedding path that produced the raw `query_emb`.
+/// `query_embedding` arrives here already containing the hypothetical's
+/// embedding when the gate fires. Per-class gating
+/// ([`crate::memory::query_intent::should_run_hyde`]) keeps factoid /
+/// open-domain queries unaffected (BENCH-LCM-10).
+///
+/// Rerank stays opt-in via `active_brain`: callers in the local-Ollama
+/// streaming hot-path (and Self-RAG loop) still use the sync helper
+/// directly to avoid evicting the chat model from VRAM, per the comment
+/// at [`stream_ollama`].
+pub(crate) async fn retrieve_chat_rag_memories_reranked(
+    state: &AppState,
+    query: &str,
+    query_embedding: Option<&[f32]>,
+    active_brain: Option<&str>,
+    limit: usize,
+    threshold: f64,
+) -> Vec<crate::memory::MemoryEntry> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let should_rerank = active_brain.is_some();
+    // Recall a wider pool when reranking so the cross-encoder has room to
+    // reorder — mirrors `commands::chat::retrieve_prompt_memories`.
+    let recall_limit = if should_rerank {
+        limit.clamp(20, 50)
+    } else {
+        limit
+    };
+
+    let candidates: Vec<crate::memory::MemoryEntry> = match state.memory_store.lock() {
+        Ok(store) => {
+            retrieve_chat_rag_memories(&store, query, query_embedding, recall_limit, threshold)
+        }
+        Err(_) => return Vec::new(),
+    };
+
+    if candidates.is_empty() {
+        return Vec::new();
+    }
+
+    let Some(model) = active_brain else {
+        return candidates.into_iter().take(limit).collect();
+    };
+
+    let rerank_threshold = state
+        .app_settings
+        .lock()
+        .map(|s| {
+            s.relevance_threshold
+                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+        })
+        .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+
+    let agent = crate::brain::OllamaAgent::new(model);
+    let mut scores = Vec::with_capacity(candidates.len());
+    for candidate in &candidates {
+        scores.push(agent.rerank_score(query, &candidate.content).await);
+    }
+
+    crate::memory::reranker::rerank_candidates_with_threshold(
+        candidates,
+        &scores,
+        limit,
+        rerank_threshold,
+    )
 }
 
 /// A single streamed chunk emitted via Tauri events.
@@ -838,11 +928,47 @@ async fn stream_openai_api<R: tauri::Runtime>(
 
     let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
     let active_brain = state.active_brain.lock().ok().and_then(|g| g.clone());
-    let query_emb = if skip_rag {
+    let mut query_emb = if skip_rag {
         None
     } else {
         crate::brain::embed_for_mode(user_query, brain_mode.as_ref(), active_brain.as_deref()).await
     };
+
+    // BENCH-CHAT-PARITY-2: per-query-class HyDE gating for cloud streaming.
+    //
+    // BENCH-LCM-10 demonstrated that HyDE is a per-class tool — it helps
+    // multi-hop / temporal / abstract queries (cold queries where the
+    // target document's surface form differs from the question) but
+    // hurts factoid / open-domain lookups. We classify the user turn
+    // with the pure-logic `query_intent` heuristic (no extra LLM hop)
+    // and only run `OllamaAgent::hyde_complete` + re-embed when the
+    // class is in `{Semantic, Episodic}` and a brain is available.
+    //
+    // This stays VRAM-safe: only cloud streaming reaches this branch.
+    // The local-Ollama hot-path (`stream_ollama`) and the Self-RAG loop
+    // use the sync `retrieve_chat_rag_memories` helper directly, which
+    // does not run HyDE.
+    if !skip_rag
+        && crate::memory::query_intent::should_run_hyde(user_query, active_brain.is_some())
+    {
+        if let Some(model) = active_brain.as_deref() {
+            let agent = crate::brain::OllamaAgent::new(model);
+            if let Some(hypothetical) = agent.hyde_complete(user_query).await {
+                let trimmed = hypothetical.trim();
+                if !trimmed.is_empty() {
+                    if let Some(hyde_emb) = crate::brain::embed_for_mode(
+                        trimmed,
+                        brain_mode.as_ref(),
+                        active_brain.as_deref(),
+                    )
+                    .await
+                    {
+                        query_emb = Some(hyde_emb);
+                    }
+                }
+            }
+        }
+    }
 
     let threshold = state
         .app_settings
@@ -852,12 +978,19 @@ async fn stream_openai_api<R: tauri::Runtime>(
     let relevant: Vec<crate::memory::MemoryEntry> = if skip_rag {
         vec![]
     } else {
-        match state.memory_store.lock() {
-            Ok(store) => {
-                retrieve_chat_rag_memories(&store, user_query, query_emb.as_deref(), 5, threshold)
-            }
-            Err(_) => vec![],
-        }
+        // BENCH-CHAT-PARITY-1: cloud streaming runs the full LCM-8 pipeline
+        // (RRF + LLM-as-judge rerank) to match `commands::chat::retrieve_prompt_memories`.
+        // Reranking happens only when a local Ollama brain is registered;
+        // pure-cloud users without Ollama transparently fall back to RRF-only.
+        retrieve_chat_rag_memories_reranked(
+            state,
+            user_query,
+            query_emb.as_deref(),
+            active_brain.as_deref(),
+            5,
+            threshold,
+        )
+        .await
     };
 
     if !relevant.is_empty() {
@@ -1682,6 +1815,51 @@ mod tests {
         assert!(
             results[0].content.contains("brew coffee"),
             "procedural query should keep the procedural memory first"
+        );
+    }
+
+    /// BENCH-CHAT-PARITY-1: the async wrapper must transparently pass
+    /// through to the sync RRF helper when no local Ollama brain is
+    /// configured. This proves cloud-only users still get the full RRF
+    /// stage even though the cross-encoder rerank is skipped.
+    #[tokio::test]
+    async fn chat_rag_reranked_falls_back_to_rrf_without_brain() {
+        let state = crate::AppState::for_test();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "To brew coffee, grind beans, heat water, bloom, then pour slowly."
+                        .to_string(),
+                    tags: "procedure,domain:coffee".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "The user enjoys quiet cafes with window seats.".to_string(),
+                    tags: "preference,domain:coffee".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let results = retrieve_chat_rag_memories_reranked(
+            &state,
+            "How do I brew coffee step by step?",
+            None,
+            None, // no active brain → rerank stage skipped
+            2,
+            0.0,
+        )
+        .await;
+
+        assert_eq!(results.len(), 2, "RRF stage must still return candidates");
+        assert!(
+            results[0].content.contains("brew coffee"),
+            "procedural query should rank the procedural memory first via RRF"
         );
     }
 

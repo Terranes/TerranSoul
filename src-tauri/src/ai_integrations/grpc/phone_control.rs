@@ -417,27 +417,50 @@ async fn build_phone_system_prompt(
     active_brain: Option<&str>,
 ) -> String {
     let mut system_prompt = crate::commands::chat::SYSTEM_PROMPT_FOR_STREAMING.to_string();
-    let query_emb = crate::brain::embed_for_mode(user_query, brain_mode, active_brain).await;
+    let mut query_emb = crate::brain::embed_for_mode(user_query, brain_mode, active_brain).await;
+
+    // BENCH-CHAT-PARITY-3: bring phone-control chat up to design-doc
+    // parity with cloud streaming chat (BENCH-CHAT-PARITY-2). Per-class
+    // HyDE gating: only `Semantic` / `Episodic` query intents get the
+    // hypothetical-embedding sharpening, factoid / open-domain skip
+    // (BENCH-LCM-10 lesson). VRAM safety is honoured by gating on a
+    // local Ollama brain being available (Self-RAG / local streaming
+    // continue to keep the sync helper).
+    if crate::memory::query_intent::should_run_hyde(user_query, active_brain.is_some()) {
+        if let Some(model) = active_brain {
+            let agent = crate::brain::OllamaAgent::new(model);
+            if let Some(hypothetical) = agent.hyde_complete(user_query).await {
+                let trimmed = hypothetical.trim();
+                if !trimmed.is_empty() {
+                    if let Some(hyde_emb) =
+                        crate::brain::embed_for_mode(trimmed, brain_mode, active_brain).await
+                    {
+                        query_emb = Some(hyde_emb);
+                    }
+                }
+            }
+        }
+    }
+
     let threshold = state
         .app_settings
         .lock()
         .map(|s| s.relevance_threshold)
         .unwrap_or(crate::settings::DEFAULT_RELEVANCE_THRESHOLD);
 
-    let relevant = state
-        .memory_store
-        .lock()
-        .ok()
-        .map(|store| {
-            crate::commands::streaming::retrieve_chat_rag_memories(
-                &store,
-                user_query,
-                query_emb.as_deref(),
-                5,
-                threshold,
-            )
-        })
-        .unwrap_or_default();
+    // BENCH-CHAT-PARITY-3: use the reranked async wrapper so phone-control
+    // chat exercises the full 5-stage design-doc retrieval pipeline
+    // (embed → optional class-gated HyDE → RRF threshold → optional KG
+    // cascade → optional cross-encoder rerank) matching cloud streaming.
+    let relevant = crate::commands::streaming::retrieve_chat_rag_memories_reranked(
+        state,
+        user_query,
+        query_emb.as_deref(),
+        active_brain,
+        5,
+        threshold,
+    )
+    .await;
     if !relevant.is_empty() {
         let memory_block = relevant
             .iter()

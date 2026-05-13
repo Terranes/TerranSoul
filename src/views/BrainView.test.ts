@@ -20,7 +20,9 @@ vi.mock('@tauri-apps/api/event', () => ({
 }));
 
 // Cytoscape needs some DOM APIs that JSDOM only partially provides — and it's
-// orthogonal to what BrainView is testing — so stub MemoryGraph out.
+// orthogonal to what BrainView is testing — so stub MemoryGraph out. (BrainView
+// itself no longer renders MemoryGraph; the stub is kept defensively in case
+// any nested component pulls it in.)
 vi.mock('../components/MemoryGraph.vue', () => ({
   default: { name: 'MemoryGraph', template: '<div data-testid="memory-graph-stub" />' },
 }));
@@ -112,7 +114,7 @@ beforeEach(() => {
 });
 
 describe('BrainView', () => {
-  it('renders the hero, mode switcher, all data cards, stat sheet, and graph section', async () => {
+  it('renders the hero, mode switcher, all data cards, and stat sheet', async () => {
     mockInvoke.mockImplementation(makeInvokeMock());
     const w = mount(BrainView);
     await flushPromises();
@@ -127,7 +129,9 @@ describe('BrainView', () => {
     expect(w.find('[data-testid="bv-rag-capability"]').exists()).toBe(true);
     expect(w.find('[data-testid="bv-lan-share-section"]').exists()).toBe(true);
     expect(w.find('[data-testid="brain-stat-sheet"]').exists()).toBe(true);
-    expect(w.find('[data-testid="memory-graph-stub"]').exists()).toBe(true);
+    // Memory graph section has been moved to MemoryView; BrainView no longer
+    // renders MemoryGraph.
+    expect(w.find('[data-testid="memory-graph-stub"]').exists()).toBe(false);
   });
 
   it('persists the LAN brain sharing opt-in toggle', async () => {

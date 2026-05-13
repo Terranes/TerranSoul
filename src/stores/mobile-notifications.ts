@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
-import type { UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createGrpcWebRemoteHost, remoteBaseUrl } from '../transport/grpc_web';
 import type { RemoteCopilotSessionStatus, RemoteHost, RemoteWorkflowRun } from '../transport/remote-host';
 import type { TaskInfo } from './tasks';
@@ -292,7 +292,6 @@ function defaultRemoteHost(): RemoteHost | null {
 }
 
 async function defaultListenTaskProgress(callback: (task: TaskInfo) => void): Promise<UnlistenFn> {
-  const { listen } = await import('@tauri-apps/api/event');
   return listen<TaskInfo>('task-progress', (event) => callback(event.payload));
 }
 

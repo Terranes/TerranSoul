@@ -121,6 +121,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue';
 import { burstResetScroll } from '../utils/scroll-reset';
 import { usePromptCommandsStore } from '../stores/prompt-commands';
+import { useTaskStore } from '../stores/tasks';
 
 const props = defineProps<{
   disabled: boolean;
@@ -370,7 +371,6 @@ async function handleFileSelected() {
   const file = fileInputRef.value?.files?.[0];
   if (!file) return;
   try {
-    const { useTaskStore } = await import('../stores/tasks');
     const taskStore = useTaskStore();
     const name = file.name;
     await taskStore.ingestDocument(name);
@@ -392,7 +392,6 @@ async function handleDrop(e: DragEvent) {
         const file = item.getAsFile();
         if (file) {
           try {
-            const { useTaskStore } = await import('../stores/tasks');
             const taskStore = useTaskStore();
             const path = (file as unknown as { path?: string }).path ?? file.name;
             await taskStore.ingestDocument(path);

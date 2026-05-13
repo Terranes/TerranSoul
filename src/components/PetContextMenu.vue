@@ -249,6 +249,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { useCharacterStore } from '../stores/character';
 import { useWindowStore } from '../stores/window';
 import { useSelfImproveStore } from '../stores/self-improve';
@@ -438,7 +439,6 @@ function onOpenTeachableCapabilitiesPanel() {
 async function onExit() {
   close();
   try {
-    const { invoke } = await import('@tauri-apps/api/core');
     await invoke('exit_app');
   } catch {
     window.close();

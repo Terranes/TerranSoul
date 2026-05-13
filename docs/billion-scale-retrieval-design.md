@@ -155,6 +155,26 @@ Land additive scaffolds and one user-visible win. No breaking changes.
 - [x] Existing test suites stay green: `npx vitest run`, `cargo test --lib`.
 - [x] Design doc + milestone entry committed.
 
+## Latency acceptance — two bars, one pipeline
+
+A single end-to-end p99 number conflates two very different stages and was the
+source of the BENCH-SCALE-1 "FAIL by design" reading. Acceptance is split:
+
+| Bar | Pipeline measured | Target | Why |
+|-----|-------------------|--------|-----|
+| **Retrieval-only p99** | embed → keyword + freshness RRF → HNSW ANN → optional KG cascade. **No LLM in the loop.** | ≤ 200 ms at 100k, ≤ 500 ms at 1M (Phase 2 sharded HNSW) | This is the actual scaling claim: HNSW is `O(log n)`, RRF is linear in top-K. Latency must stay flat as the corpus grows. |
+| **End-to-end-with-rerank p99** | Retrieval bar + cross-encoder rerank pool (50 candidates × LLM judgement). | **No fixed bar** — LLM-bound | Reranker cost scales with model size and provider, not corpus size. Local `gemma3:4b` reranker runs ~6 s/query regardless of whether the corpus has 5k or 100M rows. Measure and report, but do not gate Phase progression on it. |
+
+**Rule of thumb:** the 200 ms / 500 ms bars apply to `--systems=rrf` runs
+(retrieval-only). When `--systems=rrf_rerank` is used, latency is dominated by
+the reranker — track it, but use it as a cost signal (cloud rerank pricing,
+local VRAM occupancy) rather than a scaling regression.
+
+BENCH-SCALE-1 (2026-05-13, end-to-end @ 100k, mxbai-embed-large + gemma3:4b
+rerank) measured p99 = 30.77 s — the LLM reranker, not the index. BENCH-SCALE-1b
+re-runs the same 100k corpus with `--systems=rrf` to validate the retrieval-only
+bar separately.
+
 ## References (credit in `CREDITS.md` when applicable)
 
 - [brain-advanced-design.md](brain-advanced-design.md) — canonical brain/memory

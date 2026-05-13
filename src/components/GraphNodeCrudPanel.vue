@@ -734,6 +734,7 @@ watch(
   width: 320px;
   max-width: 100%;
   height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 0.85rem;
@@ -745,6 +746,7 @@ watch(
   -webkit-backdrop-filter: var(--ts-glass-blur, blur(12px) saturate(140%));
   box-shadow: var(--ts-shadow-glow, 0 8px 32px rgba(0, 0, 0, 0.25));
   overflow-y: auto;
+  overscroll-behavior: contain;
   font-size: var(--ts-text-sm);
   color: var(--ts-text-primary);
 }
@@ -1241,6 +1243,44 @@ watch(
 @media (max-width: 768px) {
   .gncp {
     width: 100%;
+    height: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .gncp {
+    padding: 0.75rem;
+    gap: 0.7rem;
+  }
+  .gncp-meta,
+  .gncp-field-row,
+  .gncp-edge-edit-row {
+    grid-template-columns: 1fr;
+  }
+  .gncp-tags {
+    grid-column: span 1;
+  }
+  .gncp-edge {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .gncp-neighbour,
+  .gncp-neigh-text {
+    flex-basis: 100%;
+  }
+  .gncp-footer {
+    position: sticky;
+    bottom: -0.75rem;
+    background: var(--ts-glass-bg, var(--ts-bg-surface));
+    padding: 0.65rem 0 0;
+  }
+  .gncp-footer,
+  .gncp-actions {
+    justify-content: stretch;
+  }
+  .gncp-footer .gncp-btn,
+  .gncp-actions .gncp-btn {
+    flex: 1 1 auto;
   }
 }
 </style>

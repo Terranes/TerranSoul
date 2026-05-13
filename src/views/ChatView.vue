@@ -563,6 +563,7 @@ import { onUnmounted } from 'vue';
 import { nextTick } from 'vue';
 import { storeToRefs } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { detectSentiment, handleLearnDocsChoice, handleModelUpdateChoice } from '../stores/conversation';
 import { shouldUseRemoteChatStore, useChatConversationStore } from '../stores/chat-store-router';
 import { loadBrowserLanHost } from '../utils/browser-lan';
@@ -1735,8 +1736,6 @@ function handleKnowledgeQuestFinish() {
 async function setupTauriEventListener() {
   if (usesRemoteConversation) return;
   try {
-    const { listen } = await import('@tauri-apps/api/event');
-
     // Text stream — already clean (anim blocks stripped by Rust parser).
     // Thinking chunks (`thinking:true`) are reasoning traces and must NOT
     // be spoken or fed into TTS — only the answer chunks reach the voice

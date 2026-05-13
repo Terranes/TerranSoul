@@ -2,6 +2,8 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { tryContainerFallback } from './brain-container-fallback';
+import { useConversationStore } from './conversation';
+import { streamChatCompletion } from '../utils/free-api-client';
 import type {
   AgentRole,
   AgentRouteConfig,
@@ -978,7 +980,6 @@ export const useBrainStore = defineStore('brain', () => {
       if (dismissed.includes(info.recommended_model)) return;
 
       // 4. Push an upgrade quest message into the chat.
-      const { useConversationStore } = await import('./conversation');
       const conversation = useConversationStore();
       conversation.addMessage({
         id: crypto.randomUUID(),
@@ -1038,7 +1039,6 @@ export const useBrainStore = defineStore('brain', () => {
         return '';
       }
 
-      const { streamChatCompletion } = await import('../utils/free-api-client');
       return new Promise<string>((resolve) => {
         let text = '';
         streamChatCompletion(

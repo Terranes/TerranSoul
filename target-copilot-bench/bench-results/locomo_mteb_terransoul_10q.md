@@ -1,9 +1,9 @@
 # TerranSoul MTEB LoCoMo Retrieval Report
 
-Date: 2026-05-11T21:36:01.143Z
+Date: 2026-05-13T00:52:44.665Z
 Dataset: mteb/LoCoMo @ 02e2c3dea15d9fdfd1cd7a0f65f5f8ae2ed4c1ac
-Systems: search, rrf
-Tasks: single_hop
+Systems: rrf_ctx_rerank
+Tasks: adversarial
 Top K requested: 100
 
 This is retrieval-only MTEB qrel scoring over the LoCoMo-derived text-retrieval task. It is not end-to-end LoCoMo QA accuracy.
@@ -12,15 +12,13 @@ This is retrieval-only MTEB qrel scoring over the LoCoMo-derived text-retrieval 
 
 | Task | System | Queries | R@1 | R@5 | R@10 | R@20 | R@100 | NDCG@10 | MAP@10 | MRR@100 | Avg latency | Avg tokens |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| overall | search | 10 | 10.0% | 40.0% | 50.0% | 50.0% | 50.0% | 29.2% | 22.5% | 22.5% | 148.08ms | 6,835 |
-| overall | rrf | 10 | 10.0% | 40.0% | 50.0% | 50.0% | 50.0% | 29.2% | 22.5% | 22.5% | 203.39ms | 7,310 |
+| overall | rrf_ctx_rerank | 10 | 0.0% | 40.0% | 60.0% | 90.0% | 90.0% | 24.6% | 13.7% | 15.6% | 3410.01ms | 2,653 |
 
 ## By Task
 
 | Task | System | Queries | R@1 | R@5 | R@10 | R@20 | R@100 | NDCG@10 | MAP@10 | MRR@100 | Avg latency | Avg tokens |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| single_hop | search | 10 | 10.0% | 40.0% | 50.0% | 50.0% | 50.0% | 29.2% | 22.5% | 22.5% | 148.08ms | 6,835 |
-| single_hop | rrf | 10 | 10.0% | 40.0% | 50.0% | 50.0% | 50.0% | 29.2% | 22.5% | 22.5% | 203.39ms | 7,310 |
+| adversarial | rrf_ctx_rerank | 10 | 0.0% | 40.0% | 60.0% | 90.0% | 90.0% | 24.6% | 13.7% | 15.6% | 3410.01ms | 2,653 |
 
 ## Methodology Notes
 

@@ -56,3 +56,5 @@ scripts/*.py
 /target-test
 .vscode/.mcp-github-token
 /target-ci
+test_output.txt
+test_output_combined.txt

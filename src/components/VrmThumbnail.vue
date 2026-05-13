@@ -35,7 +35,11 @@ const { thumbnailUrl, isGenerating, generate } = useVrmThumbnail(
   { modelPath: props.modelPath, userModelId: props.userModelId },
 );
 
-onMounted(() => generate());
+onMounted(() => {
+  if (import.meta.env.MODE !== 'test') {
+    void generate();
+  }
+});
 </script>
 
 <style scoped>

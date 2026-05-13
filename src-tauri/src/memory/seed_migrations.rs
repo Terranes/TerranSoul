@@ -165,4 +165,122 @@ mod tests {
             .unwrap();
         assert_eq!(memory_count, 1);
     }
+
+    /// Validate that every INSERT column in `memory-seed.sql` actually exists
+    /// in the canonical schema.  This catches typos like `char_count` (should
+    /// be `token_count`), `last_accessed_at` (should be `last_accessed`), and
+    /// `source` on `memories` (only exists on `memory_edges`).
+    #[test]
+    fn seed_sql_columns_match_canonical_schema() {
+        let conn = mem_conn();
+
+        // Build a map of table → column set from the canonical schema.
+        let mut table_columns: std::collections::HashMap<String, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+
+        for table in &tables {
+            let cols: std::collections::HashSet<String> = conn
+                .prepare(&format!("PRAGMA table_info(\"{}\")", table))
+                .unwrap()
+                .query_map([], |row| row.get::<_, String>(1))
+                .unwrap()
+                .collect::<Result<std::collections::HashSet<_>, _>>()
+                .unwrap();
+            table_columns.insert(table.clone(), cols);
+        }
+
+        // Parse every INSERT statement in the compiled-in seed SQL.
+        // We process line-by-line and only match lines whose first
+        // non-whitespace token is INSERT (skips comments and string content).
+        let seed_sql = include_str!("../../../mcp-data/shared/memory-seed.sql");
+
+        let mut errors = Vec::new();
+
+        for line in seed_sql.lines() {
+            let trimmed = line.trim();
+            // Skip comments and blank lines
+            if trimmed.is_empty() || trimmed.starts_with("--") {
+                continue;
+            }
+            let lower = trimmed.to_lowercase();
+            // Only match lines that begin with INSERT
+            if !lower.starts_with("insert") {
+                continue;
+            }
+            // Find "into <table> (<cols>)"
+            let Some(into_pos) = lower.find("into ") else { continue };
+            let after_into = into_pos + 5;
+            let rest = &lower[after_into..];
+            let table_end = rest.find(|c: char| !c.is_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            let table = &rest[..table_end];
+            if table.is_empty() { continue; }
+
+            let Some(paren_offset) = rest[table_end..].find('(') else { continue };
+            let col_start = table_end + paren_offset + 1;
+            let Some(paren_close) = rest[col_start..].find(')') else { continue };
+            let col_list = &rest[col_start..col_start + paren_close];
+            let columns: Vec<&str> = col_list.split(',').map(|c| c.trim()).collect();
+
+            if let Some(schema_cols) = table_columns.get(table) {
+                for col in &columns {
+                    if !col.is_empty() && !schema_cols.contains(*col) {
+                        errors.push(format!(
+                            "INSERT INTO {table} references unknown column `{col}`"
+                        ));
+                    }
+                }
+            }
+        }
+
+        // De-duplicate: the same bad column may appear multiple times
+        errors.sort();
+        errors.dedup();
+
+        assert!(
+            errors.is_empty(),
+            "memory-seed.sql has column mismatches against canonical schema:\n  {}",
+            errors.join("\n  ")
+        );
+    }
+
+    /// Verify the compiled-in seed SQL applies without error on a fresh
+    /// canonical schema.  This is the compile-time guard against column
+    /// mismatches that would otherwise surface only at MCP startup.
+    #[test]
+    fn compiled_seed_applies_to_canonical_schema() {
+        let conn = mem_conn();
+        let seed_sql = include_str!("../../../mcp-data/shared/memory-seed.sql");
+        conn.execute_batch(seed_sql).unwrap_or_else(|e| {
+            panic!(
+                "memory-seed.sql failed on canonical schema — \
+                 this means the MCP tray will fail at startup.\n\
+                 SQLite error: {e}"
+            );
+        });
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(1) FROM memories", [], |row| row.get(0))
+            .unwrap();
+        assert!(
+            count > 0,
+            "seed should insert at least one memory row"
+        );
+
+        let edge_count: i64 = conn
+            .query_row("SELECT COUNT(1) FROM memory_edges", [], |row| row.get(0))
+            .unwrap();
+        assert!(
+            edge_count > 0,
+            "seed should insert at least one edge row"
+        );
+    }
 }

@@ -23,6 +23,9 @@ const idleTimeout = idleIdx >= 0 ? process.argv[idleIdx + 1] ?? '0' : '0'
 const maxLogBytes = 1024 * 1024
 const logPath = process.env.TERRANSOUL_MCP_LOG ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.log')
 const pidPath = process.env.TERRANSOUL_MCP_PID ?? path.join(repoRoot, 'mcp-data', 'self_improve_mcp_process.pid')
+const frontendStatusPath = process.env.TERRANSOUL_MCP_FRONTEND_STATUS ?? path.join(repoRoot, 'mcp-data', 'frontend-build-status.json')
+const frontendBuildLogPath = process.env.TERRANSOUL_MCP_FRONTEND_BUILD_LOG ?? path.join(repoRoot, 'mcp-data', 'frontend-build.log')
+const frontendDistIndex = process.env.TERRANSOUL_MCP_FRONTEND_DIST ?? path.join(repoRoot, 'dist', 'index.html')
 const mcpBinary = path.join(repoRoot, 'target-mcp', 'release', process.platform === 'win32' ? 'terransoul.exe' : 'terransoul')
 const sourceRootsForFreshness = [
   path.join(repoRoot, 'src-tauri', 'Cargo.toml'),
@@ -30,8 +33,36 @@ const sourceRootsForFreshness = [
   path.join(repoRoot, 'src-tauri', 'build.rs'),
   path.join(repoRoot, 'src-tauri', 'tauri.conf.json'),
   path.join(repoRoot, 'src-tauri', 'src'),
-  path.join(repoRoot, 'dist'),
 ]
+
+function writeFrontendStatus(status, message, extra = {}) {
+  fs.mkdirSync(path.dirname(frontendStatusPath), { recursive: true })
+  fs.writeFileSync(frontendStatusPath, `${JSON.stringify({
+    status,
+    message,
+    distIndex: frontendDistIndex,
+    updatedAt: new Date().toISOString(),
+    ...extra,
+  }, null, 2)}\n`)
+}
+
+function startFrontendBuild() {
+  const script = path.join(repoRoot, 'scripts', 'mcp-frontend-build.mjs')
+  writeFrontendStatus('building', 'Building frontend UI for MCP tray.')
+  const child = spawn(process.execPath, [script, '--if-needed'], {
+    cwd: repoRoot,
+    detached: true,
+    env: {
+      ...process.env,
+      TERRANSOUL_MCP_FRONTEND_STATUS: frontendStatusPath,
+      TERRANSOUL_MCP_FRONTEND_BUILD_LOG: frontendBuildLogPath,
+      TERRANSOUL_MCP_FRONTEND_DIST: frontendDistIndex,
+    },
+    stdio: 'ignore',
+  })
+  child.unref()
+  console.log(`[copilot-mcp] frontend UI build is running in the background as pid ${child.pid}; log=${frontendBuildLogPath}`)
+}
 
 function buildTargetMcp(logFd) {
   return spawnSync('cargo', ['build', '--release', '--no-default-features', '--features', 'headless-mcp', '--manifest-path', 'src-tauri/Cargo.toml', '--target-dir', 'target-mcp'], {
@@ -212,6 +243,9 @@ if (existingServer) {
   console.log(
     `[copilot-mcp] ${existingServer.label} is already serving MCP as ${existingServer.name} on ${existingServer.actualPort}; reusing it.`,
   )
+  if (existingServer.buildMode === 'mcp') {
+    startFrontendBuild()
+  }
   if (smoke) {
     console.log('[copilot-mcp] smoke mode reused the existing MCP server; nothing to stop.')
   }
@@ -225,6 +259,8 @@ if (await isHealthy(port)) {
   console.error('[copilot-mcp] leave the existing tray running; check mcp-data/mcp-token.txt or .vscode/.mcp-token, then retry.')
   process.exit(1)
 }
+
+startFrontendBuild()
 
 const targetOutdated = process.env.TERRANSOUL_MCP_SKIP_BUILD !== '1' && isTargetMcpOutdated()
 
@@ -272,6 +308,8 @@ const childEnv = {
   ...process.env,
   TERRANSOUL_MCP_PORT: String(port),
   TERRANSOUL_MCP_IDLE_TIMEOUT: idleTimeout,
+  TERRANSOUL_MCP_FRONTEND_STATUS: frontendStatusPath,
+  TERRANSOUL_MCP_FRONTEND_DIST: frontendDistIndex,
 }
 
 const child = spawn(mcpBinary, childArgs, {

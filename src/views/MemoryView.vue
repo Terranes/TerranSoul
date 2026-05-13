@@ -176,14 +176,6 @@
               <option value="both">Both</option>
             </select>
           </label>
-          <label class="mv-graph-toggle">
-            <input
-              v-model="graph3d"
-              type="checkbox"
-              data-testid="mv-graph-3d-toggle"
-            >
-            <span>3-D</span>
-          </label>
           <button
             class="btn-secondary"
             :disabled="isActing || store.memories.length < 2"
@@ -200,18 +192,12 @@
             · {{ store.edgeStats.connected_memories }} connected
           </span>
         </div>
-        <BrainGraphViewport
-          v-if="graph3d"
-          :memories="store.memories"
-          :edges="store.edges"
-          @select="onNodeSelect"
-        />
         <MemoryGraph
-          v-else
           :memories="store.memories"
           :edges="store.edges"
           :edge-mode="edgeMode"
           @select="onNodeSelect"
+          @keep-only-selection="handleKeepOnly"
         />
         <div
           v-if="store.isLoading"
@@ -220,15 +206,20 @@
           Loading {{ store.memories.length }} memories…
         </div>
       </div>
-      <GraphNodeCrudPanel
+      <div
         v-if="selectedEntry"
-        :entry="selectedEntry"
-        :edges="selectedEdges"
-        :all-memories="store.memories"
-        @close="selectedEntry = null"
-        @navigate="onNodeSelect"
-        @changed="onGraphChanged"
-      />
+        class="mv-graph-crud-shell"
+      >
+        <GraphNodeCrudPanel
+          class="mv-graph-crud"
+          :entry="selectedEntry"
+          :edges="selectedEdges"
+          :all-memories="store.memories"
+          @close="selectedEntry = null"
+          @navigate="onNodeSelect"
+          @changed="onGraphChanged"
+        />
+      </div>
     </div>
 
     <!-- ── List tab ── -->
@@ -707,7 +698,6 @@ import { ref, computed, onMounted, watchEffect } from 'vue';
 import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import MemoryGraph from '../components/MemoryGraph.vue';
-import BrainGraphViewport from '../components/BrainGraphViewport.vue';
 import GraphNodeCrudPanel from '../components/GraphNodeCrudPanel.vue';
 import type { MemoryEntry, MemoryType, MemoryTier, MemoryProvenance } from '../types';
 
@@ -865,7 +855,6 @@ async function loadShortTerm() {
 // Graph node selection
 const selectedEntry = ref<MemoryEntry | null>(null);
 const edgeMode = ref<'typed' | 'tag' | 'both'>('typed');
-const graph3d = ref(false);
 
 const selectedEdges = computed(() => {
   if (!selectedEntry.value) return [];
@@ -943,6 +932,35 @@ async function saveMemory() {
 async function confirmDelete(id: number) {
   if (confirm('Delete this memory?')) {
     await store.deleteMemory(id);
+    selectedEntry.value = null;
+  }
+}
+
+/**
+ * Destructive "Keep only" action from `SelectedNodesPanel`. Deletes every
+ * memory that is NOT in the supplied selection. Guarded by a native
+ * `confirm()` because there is no undo.
+ */
+async function handleKeepOnly(keepIds: number[]) {
+  const keepSet = new Set(keepIds);
+  const toDelete = store.memories.filter((m) => !keepSet.has(m.id));
+  if (toDelete.length === 0) {
+    alert('All memories are in your selection — nothing to delete.');
+    return;
+  }
+  const msg =
+    `Delete ${toDelete.length} memor${toDelete.length === 1 ? 'y' : 'ies'} ` +
+    `NOT in your selection of ${keepIds.length}? This cannot be undone.`;
+  if (!confirm(msg)) return;
+  for (const m of toDelete) {
+    try {
+      await store.deleteMemory(m.id);
+    } catch (err) {
+      console.error('[MemoryView] keep-only delete failed for', m.id, err);
+    }
+  }
+  // Clear inspector if the previously selected entry was just deleted.
+  if (selectedEntry.value && !keepSet.has(selectedEntry.value.id)) {
     selectedEntry.value = null;
   }
 }

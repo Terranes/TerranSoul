@@ -1,6 +1,6 @@
 #![deny(unused_must_use)]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -1387,7 +1387,73 @@ fn should_hide_mcp_close(is_mcp_tray: bool, window_label: &str) -> bool {
     is_mcp_tray && window_label == MAIN_WINDOW_LABEL
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpFrontendState {
+    Ready,
+    Building,
+    Failed,
+}
+
+fn mcp_frontend_status_path(data_dir: &Path) -> PathBuf {
+    std::env::var("TERRANSOUL_MCP_FRONTEND_STATUS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| data_dir.join("frontend-build-status.json"))
+}
+
+fn mcp_frontend_dist_index() -> PathBuf {
+    std::env::var("TERRANSOUL_MCP_FRONTEND_DIST")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            std::env::current_dir()
+                .unwrap_or_else(|_| PathBuf::from("."))
+                .join("dist")
+                .join("index.html")
+        })
+}
+
+fn mcp_frontend_state_from_dir(data_dir: &Path) -> McpFrontendState {
+    let status_path = mcp_frontend_status_path(data_dir);
+    let Ok(raw) = std::fs::read_to_string(status_path) else {
+        return McpFrontendState::Ready;
+    };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return McpFrontendState::Ready;
+    };
+    match value.get("status").and_then(serde_json::Value::as_str) {
+        Some("building") => McpFrontendState::Building,
+        Some("failed") => McpFrontendState::Failed,
+        _ => McpFrontendState::Ready,
+    }
+}
+
+fn mcp_frontend_state(app: &tauri::AppHandle) -> McpFrontendState {
+    app.try_state::<AppState>()
+        .map(|state| mcp_frontend_state_from_dir(&state.data_dir))
+        .unwrap_or(McpFrontendState::Ready)
+}
+
+fn mcp_frontend_ready(app: &tauri::AppHandle) -> bool {
+    mcp_frontend_state(app) == McpFrontendState::Ready
+}
+
+fn mcp_ui_menu_state(data_dir: &Path) -> (&'static str, bool) {
+    match mcp_frontend_state_from_dir(data_dir) {
+        McpFrontendState::Ready => ("Show UI", true),
+        McpFrontendState::Building => ("Building UI...", false),
+        McpFrontendState::Failed => ("UI build failed", false),
+    }
+}
+
 fn main_window_url() -> Result<tauri::WebviewUrl, String> {
+    if env_flag_enabled("TERRANSOUL_MCP_TRAY_MODE") {
+        let dist_index = mcp_frontend_dist_index();
+        if dist_index.exists() {
+            let url = url::Url::from_file_path(&dist_index)
+                .map_err(|_| format!("invalid MCP frontend path: {}", dist_index.display()))?;
+            return Ok(tauri::WebviewUrl::External(url));
+        }
+    }
+
     if cfg!(debug_assertions) {
         Ok(tauri::WebviewUrl::External(
             "http://localhost:1420"
@@ -1453,6 +1519,11 @@ fn show_mcp_ui(app: &tauri::AppHandle) {
 }
 
 fn toggle_mcp_ui(app: &tauri::AppHandle) {
+    if !mcp_frontend_ready(app) {
+        update_mcp_tray_labels(app, true);
+        return;
+    }
+
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         if window.is_visible().unwrap_or(false) {
             let _ = window.hide();
@@ -1540,7 +1611,11 @@ fn update_mcp_tray_labels(app: &tauri::AppHandle, running: bool) {
     else {
         return;
     };
-    let Ok(toggle_ui) = MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)
+    let (ui_text, ui_enabled) = app
+        .try_state::<AppState>()
+        .map(|state| mcp_ui_menu_state(&state.data_dir))
+        .unwrap_or(("Show UI", true));
+    let Ok(toggle_ui) = MenuItem::with_id(app, "mcp_toggle_ui", ui_text, ui_enabled, None::<&str>)
     else {
         return;
     };
@@ -2277,8 +2352,14 @@ pub fn run() {
                     true,
                     None::<&str>,
                 )?;
-                let toggle_ui =
-                    MenuItem::with_id(app, "mcp_toggle_ui", "Show UI", true, None::<&str>)?;
+                let (ui_text, ui_enabled) = mcp_ui_menu_state(&data_dir);
+                let toggle_ui = MenuItem::with_id(
+                    app,
+                    "mcp_toggle_ui",
+                    ui_text,
+                    ui_enabled,
+                    None::<&str>,
+                )?;
                 let quit = MenuItem::with_id(app, "quit", "Exit", true, None::<&str>)?;
                 let menu =
                     Menu::with_items(app, &[&status_label, &toggle_server, &toggle_ui, &quit])?;
@@ -2311,6 +2392,17 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    for _ in 0..120 {
+                        update_mcp_tray_labels(&app_handle, true);
+                        if mcp_frontend_ready(&app_handle) {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
+                });
 
                 // In MCP mode, destroy the auto-created main window. It will
                 // be recreated on demand (via `ensure_main_window`) with a

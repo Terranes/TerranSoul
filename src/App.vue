@@ -275,6 +275,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from './stores/brain';
 import { useVoiceStore } from './stores/voice';
 import { useWindowStore } from './stores/window';
@@ -566,7 +567,6 @@ onMounted(async () => {
   // Listen for the tray-driven 'window-mode-changed' event so the frontend
   // state stays in sync when the user toggles via the system-tray menu.
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     await listen<string>('window-mode-changed', (e) => {
       const m = e.payload as 'window' | 'pet';
       if (m === 'window' || m === 'pet') {

@@ -1,9 +1,9 @@
 # TerranSoul MTEB LoCoMo Retrieval Report
 
-Date: 2026-05-12T06:04:40.668Z
+Date: 2026-05-13T10:57:02.847Z
 Dataset: mteb/LoCoMo @ 02e2c3dea15d9fdfd1cd7a0f65f5f8ae2ed4c1ac
-Systems: rrf_emb, search_emb
-Tasks: single_hop, adversarial
+Systems: rrf_rerank, rrf_kg_rerank
+Tasks: adversarial
 Top K requested: 100
 
 This is retrieval-only MTEB qrel scoring over the LoCoMo-derived text-retrieval task. It is not end-to-end LoCoMo QA accuracy.
@@ -12,17 +12,15 @@ This is retrieval-only MTEB qrel scoring over the LoCoMo-derived text-retrieval 
 
 | Task | System | Queries | R@1 | R@5 | R@10 | R@20 | R@100 | NDCG@10 | MAP@10 | MRR@100 | Avg latency | Avg tokens |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| overall | rrf_emb | 100 | 35.0% | 62.5% | 68.5% | 72.5% | 83.0% | 51.1% | 45.5% | 46.1% | 433.65ms | 7,643 |
-| overall | search_emb | 100 | 36.0% | 58.5% | 69.5% | 71.5% | 79.5% | 51.8% | 46.2% | 46.6% | 392.68ms | 7,559 |
+| overall | rrf_rerank | 100 | 22.5% | 53.0% | 64.0% | 73.5% | 77.5% | 41.1% | 33.8% | 35.3% | 3440.27ms | 2,290 |
+| overall | rrf_kg_rerank | 100 | 22.5% | 54.0% | 64.0% | 73.5% | 77.5% | 41.4% | 34.2% | 35.6% | 7011.43ms | 2,290 |
 
 ## By Task
 
 | Task | System | Queries | R@1 | R@5 | R@10 | R@20 | R@100 | NDCG@10 | MAP@10 | MRR@100 | Avg latency | Avg tokens |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| single_hop | rrf_emb | 50 | 36.0% | 64.0% | 66.0% | 70.0% | 82.0% | 51.2% | 46.4% | 47.0% | 367.81ms | 7,654 |
-| single_hop | search_emb | 50 | 38.0% | 60.0% | 68.0% | 68.0% | 82.0% | 52.7% | 47.8% | 48.1% | 333.16ms | 7,577 |
-| adversarial | rrf_emb | 50 | 34.0% | 61.0% | 71.0% | 75.0% | 84.0% | 51.0% | 44.6% | 45.2% | 499.48ms | 7,633 |
-| adversarial | search_emb | 50 | 34.0% | 57.0% | 71.0% | 75.0% | 77.0% | 50.9% | 44.6% | 45.2% | 452.21ms | 7,542 |
+| adversarial | rrf_rerank | 100 | 22.5% | 53.0% | 64.0% | 73.5% | 77.5% | 41.1% | 33.8% | 35.3% | 3440.27ms | 2,290 |
+| adversarial | rrf_kg_rerank | 100 | 22.5% | 54.0% | 64.0% | 73.5% | 77.5% | 41.4% | 34.2% | 35.6% | 7011.43ms | 2,290 |
 
 ## Methodology Notes
 

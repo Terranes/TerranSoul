@@ -28,8 +28,12 @@ const DEFAULT_TASKS = [
   'adversarial',
 ];
 const DEFAULT_SYSTEMS = ['search', 'rrf'];
-const ALL_SYSTEMS = new Set(['search', 'rrf', 'emb', 'rrf_emb', 'search_emb', 'best']);
-const EMB_SYSTEMS = new Set(['emb', 'rrf_emb', 'search_emb', 'best']);
+const ALL_SYSTEMS = new Set(['search', 'rrf', 'emb', 'rrf_emb', 'search_emb', 'best', 'rrf_rerank', 'rrf_hyde', 'rrf_hyde_rerank', 'rrf_ctx', 'rrf_ctx_rerank', 'rrf_kg', 'rrf_kg_rerank']);
+const EMB_SYSTEMS = new Set(['emb', 'rrf_emb', 'search_emb', 'best', 'rrf_rerank', 'rrf_hyde', 'rrf_hyde_rerank', 'rrf_ctx', 'rrf_ctx_rerank', 'rrf_kg', 'rrf_kg_rerank']);
+const RERANK_SYSTEMS = new Set(['rrf_rerank', 'rrf_hyde_rerank', 'rrf_ctx_rerank', 'rrf_kg_rerank']);
+const HYDE_SYSTEMS = new Set(['rrf_hyde', 'rrf_hyde_rerank']);
+const CTX_SYSTEMS = new Set(['rrf_ctx', 'rrf_ctx_rerank']);
+const KG_SYSTEMS = new Set(['rrf_kg', 'rrf_kg_rerank']);
 const DATA_KINDS = ['corpus', 'queries', 'qrels'];
 const METRIC_KS = [1, 5, 10, 20, 100];
 
@@ -114,13 +118,29 @@ function assertKnownTasks(tasks) {
 function assertKnownSystems(systems) {
   for (const system of systems) {
     if (!ALL_SYSTEMS.has(system)) {
-      throw new Error(`unknown system ${system}; use search, rrf, emb, rrf_emb, search_emb, or best`);
+      throw new Error(`unknown system ${system}; use search, rrf, emb, rrf_emb, search_emb, best, rrf_rerank, rrf_hyde, rrf_hyde_rerank, rrf_ctx, or rrf_ctx_rerank`);
     }
   }
 }
 
 function needsEmbedding(systems) {
   return systems.some(s => EMB_SYSTEMS.has(s)) || hasFlag('embed');
+}
+
+function needsRerank(systems) {
+  return systems.some(s => RERANK_SYSTEMS.has(s));
+}
+
+function needsHyde(systems) {
+  return systems.some(s => HYDE_SYSTEMS.has(s));
+}
+
+function needsContextualize(systems) {
+  return systems.some(s => CTX_SYSTEMS.has(s));
+}
+
+function needsKg(systems) {
+  return systems.some(s => KG_SYSTEMS.has(s));
 }
 
 function parquetUrl(task, kind) {
@@ -370,11 +390,17 @@ function writeReports(report, options) {
 }
 
 class JsonlClient {
-  constructor({ embed = false } = {}) {
+  constructor({ embed = false, rerank = false, hyde = false, contextualize = false, kg = false } = {}) {
     this.nextId = 1;
     this.pending = new Map();
     this.buffer = '';
-    this.embedEnv = embed ? { LONGMEM_EMBED: '1' } : {};
+    this.embedEnv = {
+      ...(embed ? { LONGMEM_EMBED: '1' } : {}),
+      ...(rerank ? { LONGMEM_RERANK: '1' } : {}),
+      ...(hyde ? { LONGMEM_HYDE: '1' } : {}),
+      ...(contextualize ? { LONGMEM_CONTEXTUALIZE: '1' } : {}),
+      ...(kg ? { LONGMEM_KG_EDGES: '1' } : {}),
+    };
     this.proc = spawn('cargo', [
       'run',
       '--quiet',
@@ -516,7 +542,11 @@ async function runTask(client, task, options) {
 async function run(options) {
   await ensureParquetFiles(options.tasks, options);
   const embed = needsEmbedding(options.systems);
-  const client = new JsonlClient({ embed });
+  const rerank = needsRerank(options.systems);
+  const hyde = needsHyde(options.systems);
+  const contextualize = needsContextualize(options.systems);
+  const kg = needsKg(options.systems);
+  const client = new JsonlClient({ embed, rerank, hyde, contextualize, kg });
   try {
     const byTask = [];
     for (const task of options.tasks) {

@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue';
 import { defineStore } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
-import type { UnlistenFn } from '@tauri-apps/api/event';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export type McpActivityStatus = 'idle' | 'working' | 'success' | 'error';
 
@@ -85,7 +85,6 @@ export const useMcpActivityStore = defineStore('mcpActivity', () => {
     if (isListening.value) return;
     await loadSnapshot();
     try {
-      const { listen } = await import('@tauri-apps/api/event');
       unlisten = await listen<McpActivitySnapshot>('mcp-activity', (event) => {
         applySnapshot(event.payload);
       });

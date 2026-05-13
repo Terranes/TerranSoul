@@ -547,6 +547,7 @@
 <script setup lang="ts">
 import * as THREE from 'three';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import { useCharacterStore } from '../stores/character';
 import { useBackgroundStore } from '../stores/background';
 import { useSettingsStore } from '../stores/settings';
@@ -919,7 +920,6 @@ function disposeSittingProps() {
 
 async function subscribeToLlmPoseEvents() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await subscribeLlmPoseFrames(listen as LlmPoseListen, (frame) => {
       poseAnimator.applyFrame(frame);
     });

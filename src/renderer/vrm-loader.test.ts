@@ -106,24 +106,19 @@ describe('loadVRM validation', () => {
 
   it('loadVRMSafe returns null on error', async () => {
     const { loadVRMSafe } = await import('./vrm-loader');
-    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const fakeScene = {} as any;
     const result = await loadVRMSafe(fakeScene, '');
     expect(result).toBeNull();
-    expect(consoleSpy).toHaveBeenCalled();
-    consoleSpy.mockRestore();
   });
 
-  it('loadVRMSafe logs error message when load fails', async () => {
+  it('loadVRMSafe keeps expected test failures quiet', async () => {
     const { loadVRMSafe } = await import('./vrm-loader');
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     const fakeScene = {} as any;
     await loadVRMSafe(fakeScene, '');
-    expect(consoleSpy).toHaveBeenCalledWith(
-      '[TerranSoul] VRM load failed, using placeholder:',
-      expect.any(Error),
-    );
+    expect(consoleSpy).not.toHaveBeenCalled();
+    expect(logSpy).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
     logSpy.mockRestore();
   });

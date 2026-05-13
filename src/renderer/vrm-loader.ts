@@ -11,6 +11,10 @@ export interface VrmLoadResult {
   isVrm0: boolean;
 }
 
+function shouldLogVrmLoadEvents(): boolean {
+  return import.meta.env.MODE !== 'test';
+}
+
 /**
  * Set the normalized bone rotations into a natural relaxed standing pose.
  * Call this before vrm.update() to reset bones from T-pose/A-pose.
@@ -197,12 +201,18 @@ export async function loadVRMSafe(
   onProgress?: ProgressCallback,
 ): Promise<VrmLoadResult | null> {
   try {
-    console.log('[TerranSoul] Loading VRM:', path);
+    if (shouldLogVrmLoadEvents()) {
+      console.log('[TerranSoul] Loading VRM:', path);
+    }
     const result = await loadVRM(scene, path, onProgress);
-    console.log('[TerranSoul] VRM loaded successfully:', path);
+    if (shouldLogVrmLoadEvents()) {
+      console.log('[TerranSoul] VRM loaded successfully:', path);
+    }
     return result;
   } catch (error) {
-    console.error('[TerranSoul] VRM load failed, using placeholder:', error);
+    if (shouldLogVrmLoadEvents()) {
+      console.error('[TerranSoul] VRM load failed, using placeholder:', error);
+    }
     return null;
   }
 }

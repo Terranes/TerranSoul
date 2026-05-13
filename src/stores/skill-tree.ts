@@ -1864,7 +1864,6 @@ Respond with ONLY valid JSON (no markdown):
     }
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
       const result = await invoke<{
         memories: Array<{
           id: number;

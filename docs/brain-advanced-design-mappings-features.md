@@ -119,7 +119,7 @@ Status legend:
 | LLM edge extraction (`extract_edges_via_brain`) | ✅ / 🟢 | Best-effort auto-fires after successful chat fact extraction when `auto_extract_edges` is enabled and a local active model exists; also available from MemoryView and maintenance. | `commands/memory.rs::extract_memories_from_session`, `memory/brain_memory.rs::propose_edges`, [memory.ts](../src/stores/memory.ts) |
 | Multi-hop hybrid search (`hybrid_search_with_graph` / `multi_hop_search_memories`, ≤3 hops) | 🟡 | MemoryView *Multi-hop* search and MCP `brain_kg_neighbors`. Not on chat send. | `memory/edges.rs`, [memory.ts L373](../src/stores/memory.ts#L373) |
 | Memory-audit provenance view | 🟢 | MemoryView *Audit* panel via `get_memory_provenance`. | `memory/audit.rs` |
-| 3-D KG viewport (Three.js + d3-force-3d) | 🟢 | `BrainGraphViewport.vue` from BrainView, not chat. | `src/components/BrainGraphViewport.vue` |
+| 3-D KG viewport (Three.js + d3-force-3d) | 🟢 | `MemoryGraph3D.vue` rendered inside `MemoryGraph.vue` when mode='3d'. | `src/components/MemoryGraph3D.vue` |
 | Folder ↔ KG sync (`sync_context_folders`, `import_file_to_knowledge_graph`, `export_kg_subtree`, `convert_context_to_knowledge`) | 🟢 | BrainView *📂 Context Folders* panel + `/digest <path>` slash command in chat. | `commands/context_folder.rs` |
 | Temporal KG (`valid_from`/`valid_to`, `close_memory_edge`, `get_edges_for_at`) | 🟡 | Schema + commands shipped; no chatbox UI yet. | `memory/edges.rs` |
 | Paged graph adjacency (billion-scale Phase 5) | ✅ | `memory_graph_page` detail+focus fast path uses O(k log n) paged adjacency via covering indexes instead of full-graph load. | `memory/graph_paging.rs`, `commands/memory.rs` |

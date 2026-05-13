@@ -288,6 +288,7 @@
 <script setup lang="ts">
 /* eslint-disable max-lines */
 import { ref, computed, nextTick, onUnmounted } from 'vue';
+import { listen } from '@tauri-apps/api/event';
 import { useBrainStore } from '../stores/brain';
 import { useMemoryStore } from '../stores/memory';
 import { useVoiceStore } from '../stores/voice';
@@ -370,7 +371,6 @@ const doneMessage = computed(() => {
 /** Start listening to Ollama pull progress events from the Tauri backend. */
 async function startPullProgressListener() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{
       status: string;
       digest: string;
@@ -419,7 +419,6 @@ let installListenCleanup: (() => void) | null = null;
 /** Start listening to Ollama install progress events (download + setup phases). */
 async function startInstallProgressListener() {
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     const unlisten = await listen<{ phase: string; percent: number }>('ollama-install-progress', (event) => {
       const p = event.payload;
       setupMessage.value = p.phase;

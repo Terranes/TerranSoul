@@ -134,6 +134,17 @@ export default defineConfig({
     },
   },
   envPrefix: ["VITE_", "TAURI_ENV_*"],
+  // Pre-bundle heavy deps so Vite doesn't stall discovering their sub-modules
+  // on cold start. Three.js alone has 1000+ internal files.
+  optimizeDeps: {
+    include: [
+      "three",
+      "three/examples/jsm/loaders/GLTFLoader.js",
+      "three/examples/jsm/controls/OrbitControls.js",
+      "@pixiv/three-vrm",
+      "d3-force-3d",
+    ],
+  },
   build: {
     target:
       process.env.TAURI_ENV_PLATFORM == "windows" ? "chrome105" : "safari13",

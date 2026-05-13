@@ -136,9 +136,9 @@ async function selectTarget(maxWaitSeconds = waitSeconds) {
       if (target) return target
     }
 
-    if (Date.now() >= deadline) break
+    if (Date.now() >= deadline) return null
     await new Promise((resolve) => setTimeout(resolve, 1000))
-  } while (true)
+  } while (Date.now() < deadline)
 
   return null
 }

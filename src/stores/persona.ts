@@ -152,7 +152,7 @@ export const usePersonaStore = defineStore('persona', () => {
       // Browser-only or backend not yet ready — fine, the browser path
       // assembles the block itself from `personaBlock.value`. Logged at
       // debug level so Tauri-side troubleshooting is still possible.
-      if (typeof console !== 'undefined' && typeof console.debug === 'function') {
+      if (import.meta.env.MODE !== 'test' && typeof console !== 'undefined' && typeof console.debug === 'function') {
         console.debug('[persona] set_persona_block unavailable:', err);
       }
     }
@@ -512,7 +512,9 @@ export const usePersonaStore = defineStore('persona', () => {
       const json = await invoke<string>('export_persona_pack', { note: note ?? null });
       return typeof json === 'string' && json.length > 0 ? json : null;
     } catch (e) {
-      console.warn('[persona] export pack failed:', e);
+      if (import.meta.env.MODE !== 'test') {
+        console.warn('[persona] export pack failed:', e);
+      }
       return null;
     }
   }

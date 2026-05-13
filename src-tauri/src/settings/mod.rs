@@ -223,6 +223,24 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub auto_extract_edges: bool,
 
+    /// When `true`, chat retrieval expands the RRF top-K via 1-2 hop BFS
+    /// over `memory_edges` (`memory::cascade::cascade_expand`) before the
+    /// optional cross-encoder rerank. Neighbours arrive with decayed
+    /// scores (`seed × edge_prior × 0.7^depth`), so the prompt prefers
+    /// real seed hits but can promote a graph-adjacent fact when it
+    /// outranks weaker RRF tail entries.
+    ///
+    /// Default `false` because cascade adds an in-process BFS hop per
+    /// retrieval and only helps multi-hop questions; production users
+    /// can opt in once their `memory_edges` table is populated. The MCP
+    /// gateway (used by external AI coding assistants) already runs
+    /// cascade unconditionally — see `ai_integrations/gateway.rs`.
+    ///
+    /// Tracked under BENCH-KG-1 in `rules/milestones.md`; see
+    /// `docs/brain-advanced-design.md` § 6 "Knowledge Graph Vision".
+    #[serde(default)]
+    pub enable_kg_boost: bool,
+
     /// Opt-in per-ARKit-blendshape passthrough for advanced VRM rigs
     /// (Chunk 27.3). Default `false` — the camera mirror routes through
     /// the 6-preset baseline (`mapBlendshapesToVRM`) so every VRM works.
@@ -633,6 +651,7 @@ impl Default for AppSettings {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,
@@ -821,6 +840,7 @@ mod tests {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            enable_kg_boost: false,
             expanded_blendshapes: false,
             first_launch_complete: false,
             chatbox_mode: false,

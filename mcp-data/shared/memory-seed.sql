@@ -1107,8 +1107,8 @@ VALUES (
 -- ─ Chunk 33B.5 (2026-05-06) ─
 INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 VALUES (
-  'BRAIN 3D KG VISUALISER LESSON (chunk 33B.5, 2026-05-06): BrainGraphViewport.vue renders memories as an interactive 3D force-directed graph using Three.js InstancedMesh + d3-force-3d (npm package, no @types — use src/types/d3-force-3d.d.ts ambient declarations). Node colour comes from the shared TS/Rust cognitive-kind classifier, including episodic/semantic/procedural/judgment parity; do not duplicate classifier logic in the component. Edge colour hashes rel_type into an 8-colour design-token palette and the viewport displays both cognitive-kind and relation legends. The graph rebuilds when memory or edge semantic inputs change, uses orbit controls and InstancedMesh raycasting, and is toggled by the 3-D checkbox in MemoryView.vue Graph tab toolbar. Pre-warm the simulation 80 ticks for stable initial layout.',
-  'brain,3d,knowledge-graph,three-js,d3-force-3d,visualiser,frontend,chunk-33B.5',
+  'BRAIN 3D KG VISUALISER LESSON (chunk 33B.5, updated 2026-05-13): BrainGraphViewport.vue is the accelerated 3D/WebGL memory graph. MemoryView.vue must expose graph modes as Lite 2D (normal Canvas2D MemoryGraph.vue) and 3D; do not keep a separate GPU 2D Sigma/Graphology path because it duplicated selection state and broke node CRUD. The 3D graph should provide structural insight, not decoration: size nodes by degree+importance, colour and separate communities, emphasize cross-community gap links, preserve selectedId highlighting, and keep tap selection distinct from orbit drag for mobile. Selected node CRUD belongs in GraphNodeCrudPanel, wrapped by MemoryView.vue as a desktop side rail and mobile bottom sheet. Public graph-UX research informing this is credited in CREDITS.md; runtime labels stay neutral.',
+  'brain,3d,knowledge-graph,three-js,d3-force-3d,visualiser,frontend,graph-ui,mobile-crud,chunk-33B.5',
   8, 'procedure', 1746489600000, 'long', 1.0, 'brain', 'procedural'
 );
 -- Chunk 33B.6 (2026-05-06)
@@ -2284,8 +2284,8 @@ WHERE NOT EXISTS (
 
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 SELECT
-  'CI APT CACHE FOR TAURI WEBKIT (2026-05-12): The Rust CI job still needs Ubuntu Tauri/WebKit development packages because the crate depends on Tauri/Wry even for library clippy/tests. The slow `apt-get update && apt-get install libwebkit2gtk-4.1-dev ...` step should use `awalsh128/cache-apt-pkgs-action@v1` with the same package list and `execute_install_scripts: true`, and the Rust job should pin `runs-on: ubuntu-24.04` so the APT package set and cache stay stable. This preserves the dependency surface while letting repeat GitHub Actions runs restore the heavy GTK/WebKit package files from cache instead of spending many minutes reinstalling them.',
-  'ci,github-actions,apt,tauri,webkit,cache,workflow,performance',
+  'CI APT CACHE FOR TAURI WEBKIT (2026-05-12): Superseded cache-only guidance after cold-cache runs still took about 20 minutes. TerranSoul GitHub Actions must not use Windows runners to avoid Linux Tauri/WebKit setup because Windows Actions minutes are too expensive. Keep the Rust gate on ubuntu-24.04, but guard it with change detection so non-backend pushes skip the WebKit apt/cache step entirely; use workflow_dispatch for explicit full runs. The Rust job still needs Ubuntu Tauri/WebKit development packages when backend code changes because the crate depends on Tauri/Wry even for library clippy/tests, so keep `awalsh128/cache-apt-pkgs-action@v1` only on that guarded Linux job.',
+  'ci,github-actions,apt,tauri,webkit,cache,workflow,performance,linux-only',
   8, 'procedure', 1778544000000, 'long', 1.0, 'ci', 'procedural'
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'CI APT CACHE FOR TAURI WEBKIT (2026-05-12):%'
@@ -2323,30 +2323,113 @@ WHERE s.content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%'
 
 
 -- BENCH-LCM-6 smoke validation + BENCH-LCM-7 follow-up rule (2026-05-12)
-INSERT INTO memories (tier, kind, content, importance, source_path, source_kind)
-SELECT 'long', 'lesson',
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
   'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12): 100-query LoCoMo slice across all 5 tasks with `node scripts/locomo-mteb.mjs run --systems=rrf --limit=100 --embed` confirms the proper-noun penalty fix recovers adversarial R@10 from 61.7% (LCM-5 baseline, 250-q) to **66.5%** (+4.8pp), exceeding the >=64% target. Other-task deltas are slice-composition noise (100q != 250q). Next: BENCH-LCM-7 must confirm on a 250-query slice before promoting to a full 1655-query run that replaces the LCM-5 adversarial cell. New durable workflow rule: ALWAYS run a 100-query smoke slice first to validate the directional change; 250-query slices are too high for iteration. Output artefact: `target-copilot-bench/bench-results/locomo_mteb_terransoul_489q.{json,md}`.',
-  5, 'rules/completion-log.md', 'doc-corpus'
+  'benchmark,locomo,mteb,workflow',
+  5,
+  'procedure',
+  1778544000000,
+  'long',
+  1.0,
+  'bench',
+  'procedural'
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
 );
 
-INSERT INTO memories (tier, kind, content, importance, source_path, source_kind)
-SELECT 'long', 'principle',
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
   'BENCH SMOKE-SLICE RULE (2026-05-12, durable, per user request): For any retrieval/RAG benchmark loop (BENCH-LCM, BENCH-AM, BENCH-TOP1, future memory-quality phases), always run a **100-query** smoke slice first to validate that a fix produces the expected directional change on the affected task(s). Only promote to a 250-query confirmation run after the 100-query slice passes, and only then to a full (1655-query LoCoMo / 500-question LongMemEval-S / full agentmemory fixture) run. 250-query slices are too high for iteration — they waste 30-60min per cycle when a 100-query slice would have answered the question. Codified in `rules/milestones.md` Phase BENCH-LCM "Smoke-slice rule" block.',
-  5, 'rules/milestones.md', 'doc-corpus'
+  'benchmark,locomo,mteb,workflow',
+  5,
+  'procedure',
+  1778544000000,
+  'long',
+  1.0,
+  'bench',
+  'procedural'
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
 );
 
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, edge_kind, weight)
-SELECT s.id, d.id, 'supports', 1.0
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
   AND d.content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%';
 
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, edge_kind, weight)
-SELECT s.id, d.id, 'derived_from', 1.0
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1778544000000, 'seed'
 FROM memories s, memories d
 WHERE s.content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
   AND d.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%';
+
+-- Dev startup + seed schema guardrail (2026-05-13)
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'DEV MODE MCP-SAFE STARTUP AND SEEDING (2026-05-13): Never use broad `taskkill /IM terransoul.exe /F` in npm dev scripts because it kills the MCP tray at target-mcp/release/terransoul.exe and drops agent brain context. Use `node scripts/kill-dev-terransoul.mjs` so only regular target/debug or target/release dev builds are stopped while target-mcp stays alive. Dev debug launches intentionally wipe the app-data dev directory for a fresh-install experience, then `seed_mcp_data` must apply mcp-data/shared/memory-seed.sql into the canonical SQLite schema. Seed blocks must use current columns (`memory_type`, `cognitive_kind`, `rel_type`, `confidence`, `source`, `edge_source`) and never legacy `kind`, `source_path`, `source_kind`, `edge_kind`, or `weight` columns.',
+  'dev,mcp,process-lifecycle,seeding,sqlite,guardrail',
+  9,
+  'procedure',
+  1778620800000,
+  'long',
+  1.0,
+  'development',
+  'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'DEV MODE MCP-SAFE STARTUP AND SEEDING (2026-05-13):%'
+);
+
+-- MCP tray-first frontend build guardrail (2026-05-12)
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12): `npm run mcp` must not block MCP server availability on `vite build`. Start or reuse the release app, then MCP tray, then dev MCP in that priority before doing frontend work. For tray mode, `scripts/copilot-start-mcp.mjs` should spawn `scripts/mcp-frontend-build.mjs` in the background and write `mcp-data/frontend-build-status.json`. The tray reads that status and disables `Show UI` as `Building UI...` until ready. On Windows, do not spawn `npx.cmd` directly for this helper; run local `node_modules/vite/bin/vite.js` with `process.execPath` and pipe stdout/stderr into `mcp-data/frontend-build.log` so spawn errors update status instead of leaving stale `building`.',
+  'mcp,tray,startup,frontend-build,vite,windows,performance,guardrail',
+  9,
+  'procedure',
+  1778580000000,
+  'long',
+  1.0,
+  'development',
+  'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'extends', 1.0, 'seed', 1778580000000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12):%'
+  AND d.content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%';
+
+-- CI warning-clean gate guardrail (2026-05-13)
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'CI WARNING-CLEAN GATES (2026-05-13): TerranSoul CI should finish with zero errors and zero warnings across frontend lint/build/test and Rust clippy/test gates. Do not mute broad categories of warnings when the import graph or test harness can be fixed directly. For Vite `dynamic import will not move module into another chunk` noise, prefer making imports consistent when the module is already statically in the app bundle. For Vitest, expected fallback paths such as browser-only Tauri calls, jsdom WebGL absence, and invalid-token fallback tests must stay quiet in `import.meta.env.MODE === test` while preserving runtime diagnostics outside tests. When `mcp-data/shared/` changes, validate the Postgres CI branch against a local `pgvector/pgvector:pg16` service if available. Keep MCP running; use a separate cargo target dir for CI checks.',
+  'ci,frontend,lint,vite,vitest,rust,postgres,warning-clean,guardrail',
+  9,
+  'procedure',
+  1778620800000,
+  'long',
+  1.0,
+  'ci',
+  'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'CI WARNING-CLEAN GATES (2026-05-13):%'
+);
+
+INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
+SELECT s.id, d.id, 'extends', 1.0, 'seed', 1778620800000, 'seed'
+FROM memories s, memories d
+WHERE s.content LIKE 'CI WARNING-CLEAN GATES (2026-05-13):%'
+  AND d.content LIKE 'CI APT CACHE FOR TAURI WEBKIT (2026-05-12):%';
+
+-- 2026-05-13: BrainGraphViewport.vue renamed to MemoryGraph3D.vue and is now an internal
+-- subcomponent of MemoryGraph.vue (which exposes mode '2d' | '3d' and persists the
+-- choice to localStorage). MemoryView.vue only knows about MemoryGraph; the 3D path is
+-- private. The MemoryGraph3D internals still use the .brain-graph-viewport CSS class
+-- and data-testid="brain-graph-viewport" for backwards compatibility with capture scripts.
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
+SELECT 'MEMORY GRAPH COMPONENT TOPOLOGY (2026-05-13): MemoryGraph.vue is the single public graph component used by MemoryView.vue. It exposes mode 2d (Canvas2D + d3-force-3d 2D forces) and mode 3d, persisted in localStorage key memory-graph-mode. The 3D mode delegates to MemoryGraph3D.vue (renamed from BrainGraphViewport.vue) which contains Three.js InstancedMesh nodes, d3-force-3d 3D simulation, orbit camera, raycasting tooltip, universe planet sub-mode (click a memory_type planet to fly in, breadcrumb + Esc to exit), GraphControlPanel and SelectedNodesPanel. Do not reintroduce BrainGraphViewport.vue or a separate 3D toggle in MemoryView.', 'architecture,memory-graph,component,rename', 4, 'fact', strftime('%s','now')*1000, 'long', 1.0, 700, 'architecture', 1.0, 'session:2026-05-13-memory-graph-merge'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'MEMORY GRAPH COMPONENT TOPOLOGY (2026-05-13)%');

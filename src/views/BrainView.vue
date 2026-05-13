@@ -1052,43 +1052,6 @@
       <PersonaPanel />
     </section>
 
-    <!-- ── Mini memory graph ───────────────────────────────────────────────── -->
-    <section class="bv-graph-section">
-      <header class="bv-graph-header">
-        <h3>🌌 Memory graph</h3>
-        <span class="bv-graph-subtitle">
-          Top {{ topMemories.length }} most-connected
-          {{ topMemories.length === 1 ? 'memory' : 'memories' }} ·
-          <button
-            class="bv-link"
-            @click="$emit('navigate', 'memory')"
-          >Open full explorer →</button>
-        </span>
-      </header>
-      <div
-        v-if="topMemories.length === 0"
-        class="bv-graph-empty"
-      >
-        No memories yet — chat with your brain or
-        <button
-          class="bv-link"
-          @click="$emit('navigate', 'memory')"
-        >
-          add one
-        </button>.
-      </div>
-      <div
-        v-else
-        class="bv-graph-wrap"
-      >
-        <MemoryGraph
-          :memories="topMemories"
-          :edges="topEdges"
-          edge-mode="typed"
-        />
-      </div>
-    </section>
-
     <!-- ── Danger zone ─────────────────────────────────────────────────────── -->
     <section
       class="bv-card bv-danger-zone"
@@ -1150,12 +1113,10 @@ import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.v
 import WikiPanel from '../components/WikiPanel.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import LanSharePanel from '../components/LanSharePanel.vue';
-import MemoryGraph from '../components/MemoryGraph.vue';
 import PromptCommandsPanel from '../components/PromptCommandsPanel.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
 import AICodingIntegrationsView from './AICodingIntegrationsView.vue';
-import type { MemoryEntry } from '../types';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
 
@@ -1657,31 +1618,6 @@ watch(
   },
   { immediate: true },
 );
-
-// ── Top-N memory subgraph ──────────────────────────────────────────────────
-
-const topMemories = computed<MemoryEntry[]>(() => {
-  const memories = memory.memories ?? [];
-  if (memories.length === 0) return [];
-  // Score = edge degree + importance + decay so the mini-graph shows what
-  // matters most. Cap at 12 nodes so the viewport stays readable.
-  const degree = new Map<number, number>();
-  for (const e of memory.edges ?? []) {
-    degree.set(e.src_id, (degree.get(e.src_id) ?? 0) + 1);
-    degree.set(e.dst_id, (degree.get(e.dst_id) ?? 0) + 1);
-  }
-  const scored = [...memories].map(m => ({
-    m,
-    s: (degree.get(m.id) ?? 0) * 3 + m.importance + m.decay_score,
-  }));
-  scored.sort((a, b) => b.s - a.s);
-  return scored.slice(0, 12).map(x => x.m);
-});
-
-const topEdges = computed(() => {
-  const ids = new Set(topMemories.value.map(m => m.id));
-  return (memory.edges ?? []).filter(e => ids.has(e.src_id) && ids.has(e.dst_id));
-});
 
 // ── Refresh ────────────────────────────────────────────────────────────────
 
@@ -2756,33 +2692,6 @@ onUnmounted(() => {
 
 /* ── Stats section ─────────────────────────────────────────────────────── */
 .bv-stats-section { /* BrainStatSheet brings its own styling. */ }
-
-/* ── Mini graph ────────────────────────────────────────────────────────── */
-.bv-graph-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding: 0.85rem 1rem;
-  background: var(--ts-bg-surface);
-  border: 1px solid var(--ts-border);
-  border-radius: 10px;
-}
-.bv-graph-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-}
-.bv-graph-header h3 { margin: 0; font-size: 0.95rem; color: var(--ts-text-primary); }
-.bv-graph-subtitle { font-size: 0.8rem; color: var(--ts-text-muted); }
-.bv-graph-empty {
-  padding: 2rem;
-  text-align: center;
-  color: var(--ts-text-muted);
-}
-.bv-graph-wrap { height: 320px; }
-.bv-graph-wrap > * { height: 100%; }
 
 .bv-link {
   background: none;

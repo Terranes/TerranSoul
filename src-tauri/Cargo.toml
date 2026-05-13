@@ -120,6 +120,7 @@ bench-million = ["native-ann"]
 [profile.dev.package.scrypt]
 opt-level = 3
 
+
 [dev-dependencies]
 tempfile = "3"
 wasm-encoder = "0.244.0"

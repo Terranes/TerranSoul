@@ -956,31 +956,42 @@ impl OllamaAgent {
     /// (every 60 s in steady state), so we never want it to block longer
     /// than the chat itself takes to start.
     async fn model_exists(name: &str) -> bool {
-        let client = match Client::builder().timeout(Duration::from_secs(1)).build() {
-            Ok(c) => c,
-            Err(_) => return false,
-        };
-        let resp = client.get(ollama_api_url("/api/tags")).send().await;
-        match resp {
-            Ok(r) => {
-                if let Ok(json) = r.json::<serde_json::Value>().await {
-                    json.get("models")
-                        .and_then(|m| m.as_array())
-                        .map(|models| {
-                            models.iter().any(|m| {
-                                m.get("name")
-                                    .and_then(|n| n.as_str())
-                                    .map(|n| n.starts_with(name))
-                                    .unwrap_or(false)
-                            })
-                        })
-                        .unwrap_or(false)
-                } else {
-                    false
-                }
+        Self::installed_model_tag(name).await.is_some()
+    }
+
+    /// Return the **actual installed tag** of the first model in
+    /// `/api/tags` whose name starts with `name`, or `None` if none
+    /// match. Unlike [`model_exists`], this preserves the full
+    /// `name:tag` so callers can POST exactly what Ollama has indexed.
+    ///
+    /// Example: a user with `snowflake-arctic-embed2:latest` installed
+    /// passing the candidate prefix `"snowflake-arctic-embed"` will get
+    /// back `Some("snowflake-arctic-embed2:latest")` — POSTing that
+    /// avoids the spurious 404 that the bare prefix would trigger.
+    async fn installed_model_tag(name: &str) -> Option<String> {
+        let client = Client::builder().timeout(Duration::from_secs(1)).build().ok()?;
+        let resp = client.get(ollama_api_url("/api/tags")).send().await.ok()?;
+        let json: serde_json::Value = resp.json().await.ok()?;
+        let models = json.get("models")?.as_array()?;
+        // Prefer an exact match (`name` or `name:latest`) over any
+        // prefix match so a user with both `nomic-embed-text` and a
+        // future `nomic-embed-text-v2` gets the canonical one.
+        let mut exact: Option<String> = None;
+        let mut prefix: Option<String> = None;
+        for m in models {
+            let installed = match m.get("name").and_then(|n| n.as_str()) {
+                Some(s) => s,
+                None => continue,
+            };
+            if installed == name || installed == format!("{name}:latest") {
+                exact = Some(installed.to_string());
+                break;
             }
-            Err(_) => false,
+            if installed.starts_with(name) && prefix.is_none() {
+                prefix = Some(installed.to_string());
+            }
         }
+        exact.or(prefix)
     }
 
     /// Ask the brain which stored memories are most relevant to a query.
@@ -1139,19 +1150,27 @@ async fn resolve_embed_model(model_hint: &str) -> String {
 /// Walk the embed-model resolution chain. Pure helper so tests can drive
 /// it without mocking the cache layer.
 async fn pick_embed_model(model_hint: &str) -> String {
-    // Preferred first.
-    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await
-        && OllamaAgent::model_exists(PREFERRED_EMBED_MODEL).await
-    {
-        return PREFERRED_EMBED_MODEL.to_string();
+    // Preferred first — resolve to the actual installed tag (e.g.
+    // `nomic-embed-text:latest`) so the POST `model` field matches
+    // exactly what Ollama has registered.
+    if !is_known_unsupported(PREFERRED_EMBED_MODEL).await {
+        if let Some(installed) = OllamaAgent::installed_model_tag(PREFERRED_EMBED_MODEL).await {
+            if !is_known_unsupported(&installed).await {
+                return installed;
+            }
+        }
     }
-    // Then dedicated fallbacks.
+    // Then dedicated fallbacks. Prefix-matching here is essential
+    // because users may have e.g. `snowflake-arctic-embed2:latest` —
+    // we POST the matched tag, not the bare prefix.
     for candidate in EMBED_MODEL_FALLBACKS {
         if is_known_unsupported(candidate).await {
             continue;
         }
-        if OllamaAgent::model_exists(candidate).await {
-            return (*candidate).to_string();
+        if let Some(installed) = OllamaAgent::installed_model_tag(candidate).await {
+            if !is_known_unsupported(&installed).await {
+                return installed;
+            }
         }
     }
     // Last resort — the active chat model. Likely won't support embed,
@@ -1335,6 +1354,35 @@ async fn is_known_unsupported(model: &str) -> bool {
 }
 
 async fn mark_unsupported(model: &str, status: u16) {
+    // Only HTTP 501 from Ollama is a definitive "this model cannot
+    // produce embeddings" signal (e.g. trying to embed with a chat-only
+    // model like Gemma). Other non-success codes are usually *per-call*
+    // failures that must NOT poison the whole model:
+    //
+    // * 400 — input too long / malformed JSON for this specific call.
+    //         A 2048-token oversize chunk during periodic backfill
+    //         used to disable `nomic-embed-text` for the entire
+    //         session, cascading every embedder into the unsupported
+    //         set and stalling the embed-queue with rate-limit
+    //         pauses. We log it and let the next batch try again.
+    // * 404 — the tag we POSTed doesn't exist on the server (almost
+    //         always because the candidate prefix didn't match an
+    //         installed tag — see `installed_model_tag`). Logging is
+    //         enough; we don't want to remember a wrong tag forever.
+    // * 5xx other than 501 — transient Ollama issues, retry next call.
+    if status != 501 {
+        eprintln!(
+            "[brain] Ollama model '{model}' returned HTTP {status} from /api/embed for one \
+             request; not disabling vector embeddings (transient or per-input failure)."
+        );
+        // Force the model-choice cache to expire so the next call
+        // re-probes `/api/tags` — important for 404s caused by a
+        // stale cached tag name.
+        if status == 404 {
+            *embed_model_cache().lock().await = None;
+        }
+        return;
+    }
     let inserted = unsupported_models().lock().await.insert(model.to_string());
     if inserted {
         // Log once per model so the user can see why embeddings are off
@@ -1792,7 +1840,7 @@ mod tests {
     async fn clear_embed_caches_forgets_unsupported_models() {
         let _guard = EMBED_TEST_LOCK.lock().await;
         clear_embed_caches().await;
-        mark_unsupported("forget-me:7b", 400).await;
+        mark_unsupported("forget-me:7b", 501).await;
         assert!(is_known_unsupported("forget-me:7b").await);
 
         clear_embed_caches().await;
@@ -1801,6 +1849,44 @@ mod tests {
         let snap = embed_cache_snapshot().await;
         assert!(snap.chosen_model.is_none());
         assert!(!snap.unsupported.iter().any(|m| m == "forget-me:7b"));
+    }
+
+    /// Regression: an HTTP 400 from `/api/embed` (input too long /
+    /// malformed) used to poison the entire embed model for the
+    /// process lifetime, cascading every fallback into the
+    /// unsupported set and stalling the embed-queue. After the fix,
+    /// only 501 ("model cannot embed") poisons; 400 logs and moves on.
+    #[tokio::test]
+    async fn http_400_does_not_poison_embed_model() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        mark_unsupported("nomic-embed-text", 400).await;
+        assert!(
+            !is_known_unsupported("nomic-embed-text").await,
+            "HTTP 400 must not disable the embed model — it's a per-input failure"
+        );
+    }
+
+    /// Regression: HTTP 404 (wrong tag posted, e.g. the old
+    /// snowflake-arctic-embed-vs-snowflake-arctic-embed2 bug) also
+    /// must not permanently poison the model. It does, however,
+    /// invalidate the cached model choice so the next call re-probes
+    /// `/api/tags`.
+    #[tokio::test]
+    async fn http_404_does_not_poison_but_clears_choice_cache() {
+        let _guard = EMBED_TEST_LOCK.lock().await;
+        clear_embed_caches().await;
+        // Seed a stale model choice so we can verify it gets cleared.
+        *embed_model_cache().lock().await = Some(EmbedModelChoice {
+            model: "snowflake-arctic-embed".to_string(),
+            chosen_at: Instant::now(),
+        });
+        mark_unsupported("snowflake-arctic-embed", 404).await;
+        assert!(!is_known_unsupported("snowflake-arctic-embed").await);
+        assert!(
+            embed_model_cache().lock().await.is_none(),
+            "404 must clear the cached embed-model choice so the next call re-probes /api/tags"
+        );
     }
 
     #[tokio::test]

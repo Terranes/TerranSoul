@@ -172,6 +172,7 @@ export default [
       'src/components/CharacterViewport.vue',
       'src/components/GraphNodeCrudPanel.vue',
       'src/components/MemoryGraph.vue',
+      'src/components/MemoryGraph3D.vue',
       'src/components/ModelPanel.vue',
       'src/components/SkillConstellation.vue',
       'src/components/KnowledgeQuestDialog.vue',

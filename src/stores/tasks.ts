@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 
 export interface TaskInfo {
   id: string;
@@ -36,7 +37,6 @@ export const useTaskStore = defineStore('tasks', () => {
 
   async function init() {
     try {
-      const { listen } = await import('@tauri-apps/api/event');
       const unlisten = await listen<TaskInfo>('task-progress', (event) => {
         const t = event.payload;
         tasks.value = new Map(tasks.value).set(t.id, t);

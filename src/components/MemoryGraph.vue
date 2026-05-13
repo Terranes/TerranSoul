@@ -1,228 +1,174 @@
 <template>
   <div
-    ref="container"
-    class="memory-graph"
-    @pointerdown="onPointerDown"
-    @pointermove="onPointerMove"
-    @pointerup="onPointerUp"
-    @pointerleave="onPointerLeave"
-    @wheel.prevent="onWheel"
-    @dblclick="onDoubleClick"
+    class="memory-graph-shell"
+    :class="{ 'mode-3d': mode === '3d' }"
+    data-testid="memory-graph"
   >
     <div
-      class="mg-topbar"
-      @pointerdown.stop
-      @pointermove.stop
-      @pointerup.stop
+      class="mg-mode-toggle"
+      role="tablist"
+      aria-label="Graph renderer"
     >
-      <div class="mg-title">
-        <span
-          class="mg-title-icon"
-          aria-hidden="true"
-        >⌘</span>
-        <span>Graph view</span>
-      </div>
-      <div class="mg-top-actions">
-        <button
-          type="button"
-          class="mg-icon-button mg-mode-button"
-          :title="renderMode === 'webgl' ? 'Switch to Lite (Canvas2D)' : 'Switch to WebGL (GPU)'"
-          :aria-label="renderMode === 'webgl' ? 'Switch to Lite renderer' : 'Switch to WebGL renderer'"
-          @click="toggleRenderMode"
-        >
-          {{ renderMode === 'webgl' ? 'GPU' : 'Lite' }}
-        </button>
-        <button
-          type="button"
-          class="mg-icon-button"
-          title="Fit graph"
-          aria-label="Fit graph"
-          @click="fitToView"
-        >
-          ⌖
-        </button>
-        <button
-          type="button"
-          class="mg-icon-button"
-          title="Toggle panel"
-          aria-label="Toggle graph controls"
-          @click="panelCollapsed = !panelCollapsed"
-        >
-          ⚙
-        </button>
-      </div>
+      <button
+        type="button"
+        :class="['mg-mode-btn', { active: mode === '2d' }]"
+        data-testid="mg-mode-2d"
+        @click="mode = '2d'"
+      >
+        Lite 2D
+      </button>
+      <button
+        type="button"
+        :class="['mg-mode-btn', { active: mode === '3d' }]"
+        data-testid="mg-mode-3d"
+        @click="mode = '3d'"
+      >
+        3D
+      </button>
     </div>
 
-    <canvas
-      ref="canvasEl"
-      class="mg-canvas"
-      :class="{ 'mg-canvas-hidden': renderMode === 'webgl' && webglReady }"
-    />
-    <div
-      v-show="renderMode === 'webgl'"
-      ref="webglEl"
-      class="mg-webgl"
+    <MemoryGraph3D
+      v-if="mode === '3d'"
+      :memories="memories"
+      :edges="edges"
+      :selected-id="null"
+      :edge-mode="edgeMode"
+      @select="(id) => emit('select', id)"
+      @keep-only-selection="(ids) => emit('keep-only-selection', ids)"
     />
 
     <div
-      class="mg-panel"
-      :class="{ 'mg-panel-collapsed': panelCollapsed }"
-      @pointerdown.stop
-      @pointermove.stop
-      @pointerup.stop
+      v-else
+      ref="container"
+      class="memory-graph"
+      @pointerdown="onPointerDown"
+      @pointermove="onPointerMove"
+      @pointerup="onPointerUp"
+      @pointerleave="onPointerLeave"
+      @wheel.prevent="onWheel"
+      @dblclick="onDoubleClick"
     >
       <div
-        v-if="!panelCollapsed"
-        class="mg-panel-body"
+        class="mg-topbar"
+        @pointerdown.stop
+        @pointermove.stop
+        @pointerup.stop
       >
-        <details class="mg-section">
-          <summary>Views</summary>
-          <div class="mg-readout">
-            <span>{{ nodeCount }} nodes</span>
-            <span>{{ edgeCount }} links</span>
-          </div>
-        </details>
-        <details class="mg-section">
-          <summary>Filters</summary>
-          <label class="mg-row">
-            <input
-              v-model="showOrphans"
-              type="checkbox"
-            >
-            <span>Show orphan nodes</span>
-          </label>
-          <label class="mg-row">
-            <span>Min connections</span>
-            <input
-              v-model.number="minDegree"
-              type="range"
-              min="0"
-              max="10"
-              step="1"
-            >
-            <span class="mg-val">{{ minDegree }}</span>
-          </label>
-        </details>
-        <details class="mg-section">
-          <summary>Groups</summary>
-          <div class="mg-legend">
-            <div
-              v-for="g in legend"
-              :key="g.label"
-              class="mg-legend-item"
-            >
-              <span
-                class="mg-legend-dot"
-                :style="{ background: g.color }"
-              />
-              <span class="mg-legend-label">{{ g.label }}</span>
-              <span class="mg-legend-count">{{ g.count }}</span>
-            </div>
-          </div>
-        </details>
-        <details class="mg-section">
-          <summary>Display</summary>
-          <label class="mg-row">
-            <input
-              v-model="showLabels"
-              type="checkbox"
-            >
-            <span>Always show labels</span>
-          </label>
-          <label class="mg-row">
-            <input
-              v-model="showArrows"
-              type="checkbox"
-            >
-            <span>Show arrows</span>
-          </label>
-          <label class="mg-row">
-            <span>Text fade</span>
-            <input
-              v-model.number="textFadeThreshold"
-              type="range"
-              min="0.4"
-              max="3"
-              step="0.05"
-            >
-          </label>
-          <label class="mg-row">
-            <span>Node size</span>
-            <input
-              v-model.number="nodeSizeMul"
-              type="range"
-              min="0.4"
-              max="3"
-              step="0.05"
-            >
-          </label>
-          <label class="mg-row">
-            <span>Link thickness</span>
-            <input
-              v-model.number="linkWidthMul"
-              type="range"
-              min="0.2"
-              max="3"
-              step="0.05"
-            >
-          </label>
-        </details>
-        <details class="mg-section">
-          <summary>Forces</summary>
-          <label class="mg-row">
-            <span>Repulsion</span>
-            <input
-              v-model.number="repulsion"
-              type="range"
-              min="-400"
-              max="-20"
-              step="5"
-            >
-          </label>
-          <label class="mg-row">
-            <span>Link distance</span>
-            <input
-              v-model.number="linkDistance"
-              type="range"
-              min="20"
-              max="200"
-              step="2"
-            >
-          </label>
-          <label class="mg-row">
-            <span>Gravity</span>
-            <input
-              v-model.number="gravity"
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-            >
-          </label>
-        </details>
+        <div class="mg-title">
+          <span
+            class="mg-title-icon"
+            aria-hidden="true"
+          >⌘</span>
+          <span>Graph view</span>
+        </div>
+        <div class="mg-top-actions">
+          <button
+            type="button"
+            class="mg-icon-button"
+            title="Fit graph"
+            aria-label="Fit graph"
+            @click="fitToView"
+          >
+            ⌖
+          </button>
+          <button
+            type="button"
+            class="mg-icon-button"
+            title="Toggle panel"
+            aria-label="Toggle graph controls"
+            @click="panelCollapsed = !panelCollapsed"
+          >
+            ⚙
+          </button>
+        </div>
       </div>
-    </div>
 
-    <div
-      v-if="hoverLabel"
-      class="mg-hover-card"
-    >
-      <span
-        class="mg-hover"
-      >{{ hoverLabel }}</span>
-    </div>
+      <canvas
+        ref="canvasEl"
+        class="mg-canvas"
+      />
 
-    <div
-      v-if="isBuilding"
-      class="mg-loading"
-    >
-      Building graph…
+      <GraphControlPanel
+        title="Graph controls"
+        :collapsed="panelCollapsed"
+        :node-count="nodeCount"
+        :edge-count="edgeCount"
+        :show-views="true"
+        :show-filters="true"
+        :show-orphans="showOrphans"
+        :min-degree="minDegree"
+        :search-text="searchText"
+        :search-mode="searchMode"
+        :search-fields="searchFields"
+        :highlight-filter-active="highlightFilterActive"
+        :match-count="matchCount"
+        :selected-count="selectedCount"
+        :visible-node-count="visibleNodeCount"
+        :legend="legend"
+        :show-display="true"
+        :show-labels="showLabels"
+        :show-arrows="showArrows"
+        :text-fade-threshold="textFadeThreshold"
+        :node-size-mul="nodeSizeMul"
+        :link-width-mul="linkWidthMul"
+        :show-forces="true"
+        :repulsion="repulsion"
+        :link-distance="linkDistance"
+        :gravity="gravity"
+        @update:collapsed="panelCollapsed = $event"
+        @update:show-orphans="showOrphans = $event"
+        @update:min-degree="minDegree = $event"
+        @update:search-text="searchText = $event"
+        @update:search-mode="searchMode = $event as 'contains' | 'starts' | 'ends'"
+        @update:search-field="(p) => (searchFields[p.field] = p.value)"
+        @update:highlight-filter-active="highlightFilterActive = $event"
+        @update:show-labels="showLabels = $event"
+        @update:show-arrows="showArrows = $event"
+        @update:text-fade-threshold="textFadeThreshold = $event"
+        @update:node-size-mul="nodeSizeMul = $event"
+        @update:link-width-mul="linkWidthMul = $event"
+        @update:repulsion="repulsion = $event"
+        @update:link-distance="linkDistance = $event"
+        @update:gravity="gravity = $event"
+        @select-matches="selectMatches"
+        @add-matches="addMatches"
+        @remove-matches="removeMatches"
+        @select-all-visible="selectAllVisible"
+        @clear-selection="clearSelection"
+      />
+
+      <div
+        v-if="hoverLabel"
+        class="mg-hover-card"
+      >
+        <span
+          class="mg-hover"
+        >{{ hoverLabel }}</span>
+      </div>
+
+      <div
+        v-if="isBuilding"
+        class="mg-loading"
+      >
+        Building graph…
+      </div>
+
+      <SelectedNodesPanel
+        v-if="selectedIds.size > 0"
+        :selected-ids="selectedIds"
+        :nodes="selectionPanelNodes"
+        @toggle="toggleSelectedId"
+        @range-toggle="onRangeToggle"
+        @clear="clearSelection"
+        @keep-only="onKeepOnly"
+        @focus="(id) => emit('select', id)"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 // d3-force-3d ships no TS types and the ambient resolution picks up an
 // incomplete shape. Import as `any` so we can use the full runtime API
 // (forceCollide / forceX / forceY / distanceMax) without fighting types.
@@ -248,7 +194,46 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'select', id: number): void;
   (e: 'select-edge', id: number): void;
+  (e: 'keep-only-selection', ids: number[]): void;
 }>();
+
+import SelectedNodesPanel from './SelectedNodesPanel.vue';
+import GraphControlPanel from './GraphControlPanel.vue';
+import MemoryGraph3D from './MemoryGraph3D.vue';
+
+// ── Render mode (2D Canvas / 3D WebGL) ──────────────────────────────────────
+// The 3D path delegates to `MemoryGraph3D.vue` (formerly BrainGraphViewport).
+// User preference is persisted across sessions.
+const MODE_KEY = 'memory-graph-mode';
+function loadMode(): '2d' | '3d' {
+  try {
+    const v = localStorage.getItem(MODE_KEY);
+    return v === '3d' ? '3d' : '2d';
+  } catch {
+    return '2d';
+  }
+}
+const mode = ref<'2d' | '3d'>(loadMode());
+watch(mode, (m) => {
+  try {
+    localStorage.setItem(MODE_KEY, m);
+  } catch {
+    /* ignore quota / disabled storage */
+  }
+  // When switching back to 2D, the canvas DOM is recreated by v-if/v-else.
+  // Re-initialize the 2D rendering pipeline after Vue inserts the new DOM.
+  if (m === '2d') {
+    nextTick(() => {
+      resizeObserver?.disconnect();
+      resizeCanvas();
+      resizeObserver = new ResizeObserver(() => resizeCanvas());
+      if (container.value) resizeObserver.observe(container.value);
+      rebuildData();
+      startSim();
+      setTimeout(fitToView, 400);
+    });
+  }
+});
 
 // ── Graph data model ────────────────────────────────────────────────────────
 interface GNode {
@@ -258,6 +243,7 @@ interface GNode {
   memoryType: string;
   importance: number;
   groupKey: string;
+  tagsCsv: string;
   degree: number;
   // d3-force mutates these in place
   x?: number;
@@ -324,12 +310,151 @@ const gravity = ref(0.08);
 
 const isBuilding = ref(false);
 
+// ── Search & persistent selection ───────────────────────────────────────────
+// `searchText` + `searchMode` + `searchFields` drive a live filter. When
+// `highlightFilterActive` is true the matches glow in real time; when false
+// the filter is ignored but the persistent selection (built by Enter / "Add
+// matches" / Shift-drag) stays highlighted.
+type SearchMode = 'contains' | 'starts' | 'ends';
+const searchText = ref('');
+const searchMode = ref<SearchMode>('contains');
+const searchFields = reactive({
+  label: true,
+  tags: true,
+  body: false,
+  community: true,
+});
+const highlightFilterActive = ref(true);
+const selectedIds = ref<Set<number>>(new Set());
+
+function nodeMatchesQuery(n: GNode, q: string, mode: SearchMode): boolean {
+  if (!q) return false;
+  const needle = q.toLowerCase();
+  const candidates: string[] = [];
+  if (searchFields.label && n.label) candidates.push(n.label.toLowerCase());
+  if (searchFields.tags && n.tagsCsv) candidates.push(n.tagsCsv.toLowerCase());
+  if (searchFields.body && n.full) candidates.push(n.full.toLowerCase());
+  if (searchFields.community && n.groupKey) candidates.push(n.groupKey.toLowerCase());
+  if (candidates.length === 0) return false;
+  if (mode === 'contains') return candidates.some((c) => c.includes(needle));
+  if (mode === 'starts') return candidates.some((c) => c.startsWith(needle));
+  return candidates.some((c) => c.endsWith(needle));
+}
+
+const matchedIds = computed<Set<number>>(() => {
+  const q = searchText.value.trim();
+  if (!q) return new Set();
+  const out = new Set<number>();
+  for (const n of nodes.value) {
+    if (nodeMatchesQuery(n, q, searchMode.value)) out.add(n.id);
+  }
+  return out;
+});
+
+const matchCount = computed(() => matchedIds.value.size);
+const selectedCount = computed(() => selectedIds.value.size);
+const visibleNodeCount = computed(() => filteredNodes().length);
+
+/** Nodes that should appear "lit" in the renderer. Persistent selection
+ *  always counts; live search matches only count while the highlight toggle
+ *  is on. */
+const highlightedIds = computed<Set<number>>(() => {
+  const out = new Set<number>(selectedIds.value);
+  if (highlightFilterActive.value) {
+    for (const id of matchedIds.value) out.add(id);
+  }
+  return out;
+});
+
+function selectMatches(): void {
+  // Replace selection with current matches.
+  selectedIds.value = new Set(matchedIds.value);
+  requestRender();
+}
+
+function addMatches(): void {
+  if (matchedIds.value.size === 0) return;
+  const next = new Set(selectedIds.value);
+  for (const id of matchedIds.value) next.add(id);
+  selectedIds.value = next;
+  requestRender();
+}
+
+function removeMatches(): void {
+  if (matchedIds.value.size === 0 || selectedIds.value.size === 0) return;
+  const next = new Set(selectedIds.value);
+  for (const id of matchedIds.value) next.delete(id);
+  selectedIds.value = next;
+  requestRender();
+}
+
+function selectAllVisible(): void {
+  const next = new Set(selectedIds.value);
+  for (const n of filteredNodes()) next.add(n.id);
+  selectedIds.value = next;
+  requestRender();
+}
+
+function clearSelection(): void {
+  if (selectedIds.value.size === 0) return;
+  selectedIds.value = new Set();
+  requestRender();
+}
+
+function toggleSelectedId(id: number): void {
+  const next = new Set(selectedIds.value);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  selectedIds.value = next;
+  requestRender();
+}
+
+/**
+ * Range-toggle from `SelectedNodesPanel`: every row between the anchor and
+ * the shift-clicked row is flipped to match the anchor's *new* state. The
+ * panel only emits ids that are currently in the selection (they come from
+ * the displayed rows), so the natural semantics here is "remove all of them
+ * at once" — Shift-click on a row already in the panel removes the contiguous
+ * stretch from the persistent selection.
+ */
+function onRangeToggle(ids: readonly number[]): void {
+  if (ids.length === 0) return;
+  const next = new Set(selectedIds.value);
+  for (const id of ids) next.delete(id);
+  selectedIds.value = next;
+  requestRender();
+}
+
+function onKeepOnly(ids: readonly number[]): void {
+  // Forward to the host (MemoryView) — destruction must be confirmed there
+  // because we don't own the store.
+  emit('keep-only-selection', [...ids]);
+}
+
+// Rows for the right-side `<SelectedNodesPanel>`.
+const selectionPanelNodes = computed(() =>
+  nodes.value.map((n) => ({
+    id: n.id,
+    label: n.label,
+    full: n.full,
+    community: n.groupKey || n.memoryType,
+    colour: groupColor(n.groupKey || n.memoryType),
+  })),
+);
+
+// Box-select (rubber band). Activated by Shift-drag on empty space.
+let lassoActive = false;
+let lassoMode: 'add' | 'remove' = 'add';
+let lassoStartScreen: [number, number] | null = null;
+let lassoEndScreen: [number, number] | null = null;
+
 // ── Theme tokens (read once per init, refreshed on theme change) ────────────
 const theme = ref({
   bg: '#040a12',
   text: '#e0f0ff',
   textMuted: '#94a3b8',
   accent: '#7c6fff',
+  danger: '#ef4444',
   border: '#1e293b',
   edge: '#475569',
 });
@@ -343,6 +468,7 @@ function refreshTheme(): void {
     text: tok('--ts-text-primary', '#e0f0ff'),
     textMuted: tok('--ts-text-muted', '#94a3b8'),
     accent: tok('--ts-accent', '#7c6fff'),
+    danger: tok('--ts-danger', '#ef4444'),
     border: tok('--ts-border', '#1e293b'),
     edge: tok('--ts-text-dim', '#475569'),
   };
@@ -469,6 +595,7 @@ function rebuildData(): void {
       memoryType: m.memory_type,
       importance: m.importance,
       groupKey: group,
+      tagsCsv: m.tags ?? '',
       degree: degree.get(m.id) ?? 0,
       x: old?.x ?? Math.cos(angle) * radius,
       y: old?.y ?? Math.sin(angle) * radius,
@@ -599,6 +726,16 @@ function draw(): void {
     }
   }
 
+  // Highlight set (persistent selection ∪ optional live search matches).
+  const highlights = highlightedIds.value;
+  const hasHighlight = highlights.size > 0;
+  function isLit(id: number): boolean {
+    if (!hasHighlight && hovered === null) return true;
+    if (hasHighlight && highlights.has(id)) return true;
+    if (hovered !== null && hoverNeighbours.has(id)) return true;
+    return false;
+  }
+
   // ── Edges ──
   ctx.lineCap = 'round';
   for (const l of links.value) {
@@ -610,7 +747,7 @@ function draw(): void {
     const [sx, sy] = worldToScreen(s.x, s.y);
     const [tx, ty] = worldToScreen(tg.x, tg.y);
 
-    const focused = hovered === null || (hoverNeighbours.has(s.id) && hoverNeighbours.has(tg.id));
+    const focused = isLit(s.id) && isLit(tg.id);
     const baseAlpha = l.kind === 'typed' ? 0.32 : 0.14;
     const alpha = focused ? baseAlpha : baseAlpha * 0.14;
     const sourceColor = groupColor(s.groupKey || s.memoryType);
@@ -644,8 +781,8 @@ function draw(): void {
   // ── Nodes ──
   // Sort: hovered + neighbours last so they paint on top
   const drawOrder = visible.slice().sort((a, b) => {
-    const ah = hoverNeighbours.has(a.id) ? 1 : 0;
-    const bh = hoverNeighbours.has(b.id) ? 1 : 0;
+    const ah = (highlights.has(a.id) ? 2 : 0) + (hoverNeighbours.has(a.id) ? 1 : 0);
+    const bh = (highlights.has(b.id) ? 2 : 0) + (hoverNeighbours.has(b.id) ? 1 : 0);
     return ah - bh;
   });
 
@@ -654,16 +791,21 @@ function draw(): void {
     const [sx, sy] = worldToScreen(n.x, n.y);
     const r = nodeRadius(n) * zoom.value;
     const color = groupColor(n.groupKey || n.memoryType);
-    const focused = hovered === null || hoverNeighbours.has(n.id);
-    const alpha = focused ? 0.94 : 0.16;
+    const lit = isLit(n.id);
+    const isHighlighted = highlights.has(n.id);
+    const alpha = lit ? 0.94 : 0.16;
     ctx.globalAlpha = alpha;
 
-    // Soft halo for hovered & high-degree nodes
-    if (hovered === n.id || (n.degree >= 8 && focused)) {
-      const haloR = r * (hovered === n.id ? 4.6 : 2.6);
+    // Soft halo for hovered, highlighted, and high-degree nodes
+    if (hovered === n.id || isHighlighted || (n.degree >= 8 && lit)) {
+      const haloR = r * (hovered === n.id ? 4.6 : isHighlighted ? 3.8 : 2.6);
       const halo = ctx.createRadialGradient(sx, sy, r * 0.6, sx, sy, haloR);
-      halo.addColorStop(0, hexAlpha(color, hovered === n.id ? 0.5 : 0.2));
-      halo.addColorStop(1, hexAlpha(color, 0));
+      const haloColor = isHighlighted ? t.accent : color;
+      halo.addColorStop(
+        0,
+        hexAlpha(haloColor, hovered === n.id ? 0.5 : isHighlighted ? 0.45 : 0.2),
+      );
+      halo.addColorStop(1, hexAlpha(haloColor, 0));
       ctx.fillStyle = halo;
       ctx.beginPath();
       ctx.arc(sx, sy, haloR, 0, Math.PI * 2);
@@ -676,15 +818,23 @@ function draw(): void {
     ctx.fillStyle = color;
     ctx.fill();
 
-    if (n.degree >= 12 && focused) {
+    if (n.degree >= 12 && lit) {
       ctx.globalAlpha = Math.min(1, alpha + 0.05);
       ctx.lineWidth = 0.8;
       ctx.strokeStyle = hexAlpha('#ffffff', 0.45);
       ctx.stroke();
     }
 
-    // Selection ring on hover
+    // Selection ring — bright accent for highlighted/selected nodes
+    // (persists when the live filter is toggled off), plus the hover ring.
+    if (isHighlighted) {
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = t.accent;
+      ctx.stroke();
+    }
     if (hovered === n.id) {
+      ctx.globalAlpha = 1;
       ctx.lineWidth = 1.5;
       ctx.strokeStyle = t.accent;
       ctx.stroke();
@@ -697,7 +847,7 @@ function draw(): void {
     ? 1
     : Math.max(0, Math.min(1, (zoom.value - textFadeThreshold.value) / 0.5));
 
-  if (labelAlpha > 0.02 || hovered !== null) {
+  if (labelAlpha > 0.02 || hovered !== null || hasHighlight) {
     ctx.font = '11px var(--ts-font-sans, system-ui, sans-serif)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
@@ -705,13 +855,15 @@ function draw(): void {
       if (n.x == null || n.y == null) continue;
       const isHover = hovered === n.id;
       const isNeighbour = hovered !== null && hoverNeighbours.has(n.id);
-      // Skip dim nodes' labels unless hovered
-      if (hovered !== null && !isNeighbour) continue;
-      const showThisLabel = isHover || isNeighbour || labelAlpha > 0.02;
+      const isHighlighted = highlights.has(n.id);
+      // Skip dim (non-lit) nodes' labels unless they qualify for a label
+      // through hover/highlight membership.
+      if (!isLit(n.id)) continue;
+      const showThisLabel = isHover || isNeighbour || isHighlighted || labelAlpha > 0.02;
       if (!showThisLabel) continue;
       const [sx, sy] = worldToScreen(n.x, n.y);
       const r = nodeRadius(n) * zoom.value;
-      const a = isHover ? 1 : (isNeighbour ? 0.9 : labelAlpha);
+      const a = isHover ? 1 : (isHighlighted ? 1 : isNeighbour ? 0.9 : labelAlpha);
       ctx.globalAlpha = a;
       // Soft shadow for legibility
       ctx.fillStyle = t.bg;
@@ -723,10 +875,31 @@ function draw(): void {
       ctx.fillStyle = t.bg;
       ctx.fillRect(sx - w / 2 - 3, ty - 1, w + 6, 14);
       ctx.globalAlpha = a;
-      ctx.fillStyle = isHover ? t.accent : t.text;
+      ctx.fillStyle = (isHover || isHighlighted) ? t.accent : t.text;
       ctx.fillText(text, sx, ty);
     }
     ctx.globalAlpha = 1;
+  }
+
+  // ── Lasso rectangle (Shift-drag box-select) ──
+  if (lassoActive && lassoStartScreen && lassoEndScreen) {
+    const [x0, y0] = lassoStartScreen;
+    const [x1, y1] = lassoEndScreen;
+    const lx = Math.min(x0, x1);
+    const ly = Math.min(y0, y1);
+    const lw = Math.abs(x1 - x0);
+    const lh = Math.abs(y1 - y0);
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    const lassoColour = lassoMode === 'remove' ? t.danger : t.accent;
+    ctx.fillStyle = lassoColour;
+    ctx.fillRect(lx, ly, lw, lh);
+    ctx.globalAlpha = 0.9;
+    ctx.strokeStyle = lassoColour;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(lx, ly, lw, lh);
+    ctx.restore();
   }
 }
 
@@ -837,6 +1010,25 @@ function onPointerDown(ev: PointerEvent): void {
   pointerDownY = sy;
   pointerMoved = false;
   const n = pickNode(sx, sy);
+  // Shift + click-drag on empty space → rubber-band box-select.
+  // Shift + click on a node → toggle that node in the persistent selection.
+  // Alt + Shift + drag → subtractive rubber-band (removes intersected nodes).
+  if (ev.shiftKey) {
+    if (n) {
+      const next = new Set(selectedIds.value);
+      if (next.has(n.id)) next.delete(n.id);
+      else next.add(n.id);
+      selectedIds.value = next;
+      requestRender();
+      return;
+    }
+    lassoActive = true;
+    lassoMode = ev.altKey ? 'remove' : 'add';
+    lassoStartScreen = [sx, sy];
+    lassoEndScreen = [sx, sy];
+    requestRender();
+    return;
+  }
   if (n) {
     draggingNode.value = n;
     n.fx = n.x;
@@ -855,6 +1047,12 @@ function onPointerMove(ev: PointerEvent): void {
   const sx = ev.clientX - rect.left;
   const sy = ev.clientY - rect.top;
 
+  if (lassoActive) {
+    lassoEndScreen = [sx, sy];
+    pointerMoved = Math.hypot(sx - pointerDownX, sy - pointerDownY) > 3;
+    requestRender();
+    return;
+  }
   if (draggingNode.value) {
     const [wx, wy] = screenToWorld(sx, sy);
     draggingNode.value.fx = wx;
@@ -903,6 +1101,31 @@ const emptyConstellation = Array.from({ length: 72 }, (_, i) => {
 function onPointerUp(ev: PointerEvent): void {
   if (!container.value) return;
   container.value.releasePointerCapture?.(ev.pointerId);
+
+  if (lassoActive && lassoStartScreen && lassoEndScreen) {
+    const [x0, y0] = lassoStartScreen;
+    const [x1, y1] = lassoEndScreen;
+    if (pointerMoved) {
+      const [wx0, wy0] = screenToWorld(Math.min(x0, x1), Math.min(y0, y1));
+      const [wx1, wy1] = screenToWorld(Math.max(x0, x1), Math.max(y0, y1));
+      const next = new Set(selectedIds.value);
+      for (const n of filteredNodes()) {
+        if (n.x == null || n.y == null) continue;
+        if (n.x >= wx0 && n.x <= wx1 && n.y >= wy0 && n.y <= wy1) {
+          if (lassoMode === 'remove') next.delete(n.id);
+          else next.add(n.id);
+        }
+      }
+      selectedIds.value = next;
+    }
+    lassoActive = false;
+    lassoMode = 'add';
+    lassoStartScreen = null;
+    lassoEndScreen = null;
+    requestRender();
+    return;
+  }
+
   const wasDraggingNode = draggingNode.value;
   if (wasDraggingNode) {
     // Release pin so node returns to physics
@@ -994,158 +1217,21 @@ function scheduleRebuild(): void {
       // First load: center & light fit after a few ticks
       setTimeout(fitToView, 400);
     }
-    if (renderMode.value === 'webgl' && webglReady.value) {
-      syncWebglGraph();
-    }
   }, 120);
-}
-
-// ── Render mode (Lite Canvas2D ↔ WebGL via sigma.js) ────────────────────────
-//
-// "Lite" mode is the default and always works (Canvas2D, no GPU required).
-// "WebGL" mode lazy-loads sigma.js + graphology and uses the GPU for large
-// graphs (5k+ visible nodes). The toggle is persisted to localStorage.
-//
-// Tests run under jsdom, which has no WebGL — they always render via Lite.
-const RENDER_MODE_KEY = 'terransoul:memory-graph:render-mode';
-const initialRenderMode = (() => {
-  if (typeof window === 'undefined') return 'lite' as const;
-  try {
-    const saved = window.localStorage.getItem(RENDER_MODE_KEY);
-    return saved === 'webgl' ? ('webgl' as const) : ('lite' as const);
-  } catch {
-    return 'lite' as const;
-  }
-})();
-const renderMode = ref<'lite' | 'webgl'>(initialRenderMode);
-const webglReady = ref(false);
-const webglEl = ref<HTMLDivElement | null>(null);
-// sigma.js + graphology are lazy-loaded so jsdom tests don't import WebGL.
- 
-let sigmaInstance: any = null;
- 
-let sigmaGraph: any = null;
-
-async function enableWebgl(): Promise<void> {
-  if (sigmaInstance || !webglEl.value) return;
-  // Detect WebGL — jsdom and old hardware lack it. Fall back to lite.
-  if (typeof document !== 'undefined') {
-    const probe = document.createElement('canvas');
-    const gl =
-      (probe.getContext('webgl2') as WebGL2RenderingContext | null) ||
-      (probe.getContext('webgl') as WebGLRenderingContext | null);
-    if (!gl) {
-      renderMode.value = 'lite';
-      return;
-    }
-  }
-  try {
-    const [{ default: Graph }, sigmaModule] = await Promise.all([
-      import('graphology'),
-      import('sigma'),
-    ]);
-     
-    const Sigma = (sigmaModule as any).default ?? (sigmaModule as any).Sigma;
-    sigmaGraph = new Graph({ multi: false, type: 'directed', allowSelfLoops: false });
-    sigmaInstance = new Sigma(sigmaGraph, webglEl.value, {
-      renderEdgeLabels: false,
-      labelDensity: 0.07,
-      labelGridCellSize: 60,
-      labelRenderedSizeThreshold: 8,
-      defaultEdgeColor: theme.value.edge,
-      defaultNodeColor: theme.value.accent,
-    });
-     
-    sigmaInstance.on('clickNode', (payload: { node: string }) => {
-      const id = Number(payload.node);
-      if (!Number.isNaN(id)) emit('select', id);
-    });
-    webglReady.value = true;
-    syncWebglGraph();
-  } catch (err) {
-    // Sigma failed to load — fall back to lite gracefully.
-    console.warn('[MemoryGraph] WebGL renderer failed to load, using Lite:', err);
-    renderMode.value = 'lite';
-    teardownWebgl();
-  }
-}
-
-function teardownWebgl(): void {
-  if (sigmaInstance) {
-    try {
-      sigmaInstance.kill();
-    } catch {
-      /* ignore */
-    }
-  }
-  sigmaInstance = null;
-  sigmaGraph = null;
-  webglReady.value = false;
-}
-
-function syncWebglGraph(): void {
-  if (!sigmaInstance || !sigmaGraph) return;
-  sigmaGraph.clear();
-  for (const n of nodes.value) {
-    const color = groupColor(n.groupKey);
-    const size = Math.max(2, 2 + Math.sqrt(n.degree) * 1.4 * nodeSizeMul.value);
-    sigmaGraph.addNode(String(n.id), {
-      x: n.x ?? Math.random() * 100 - 50,
-      y: n.y ?? Math.random() * 100 - 50,
-      size,
-      label: showLabels.value ? n.label : '',
-      color,
-    });
-  }
-  for (const l of links.value) {
-    const sId = String(typeof l.source === 'object' ? l.source.id : l.source);
-    const tId = String(typeof l.target === 'object' ? l.target.id : l.target);
-    if (!sigmaGraph.hasNode(sId) || !sigmaGraph.hasNode(tId)) continue;
-    if (sigmaGraph.hasEdge(sId, tId)) continue;
-    sigmaGraph.addEdgeWithKey(`${sId}-${tId}`, sId, tId, {
-      size: Math.max(0.4, 0.6 * linkWidthMul.value),
-      color: l.color,
-    });
-  }
-}
-
-function toggleRenderMode(): void {
-  const next = renderMode.value === 'webgl' ? 'lite' : 'webgl';
-  renderMode.value = next;
-  try {
-    window.localStorage.setItem(RENDER_MODE_KEY, next);
-  } catch {
-    /* ignore */
-  }
-  if (next === 'webgl') {
-    void enableWebgl();
-  } else {
-    teardownWebgl();
-    requestRender();
-  }
 }
 
 onMounted(() => {
   refreshTheme();
   resizeCanvas();
-  const onResize: ResizeObserverCallback = (_entries, _observer) => {
+  const onResize: ResizeObserverCallback = () => {
     resizeCanvas();
-    if (renderMode.value === 'webgl' && sigmaInstance) {
-      try {
-        sigmaInstance.refresh();
-      } catch {
-        /* sigma not ready */
-      }
-    }
   };
   resizeObserver = new ResizeObserver(onResize);
   if (container.value) resizeObserver.observe(container.value);
   rebuildData();
   startSim();
   setTimeout(fitToView, 400);
-  if (renderMode.value === 'webgl') {
-    void enableWebgl();
-  }
+  window.addEventListener('keydown', onWindowKeydown);
 });
 
 onUnmounted(() => {
@@ -1154,8 +1240,24 @@ onUnmounted(() => {
   sim?.stop();
   sim = null;
   resizeObserver?.disconnect();
-  teardownWebgl();
+  window.removeEventListener('keydown', onWindowKeydown);
 });
+
+/**
+ * Global Esc handler: clear selection only when the canvas is the active
+ * surface (no input/select/textarea/contenteditable focused). Avoids
+ * stealing Esc from search inputs, modals, or other text fields.
+ */
+function onWindowKeydown(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return;
+  if (selectedIds.value.size === 0) return;
+  const target = e.target as HTMLElement | null;
+  const tag = target?.tagName ?? '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+  if (target?.isContentEditable) return;
+  selectedIds.value = new Set();
+  requestRender();
+}
 
 watch(() => props.memories, scheduleRebuild, { deep: true });
 watch(() => props.edges, scheduleRebuild, { deep: true });
@@ -1178,9 +1280,61 @@ watch([showOrphans, minDegree], () => {
 });
 
 watch([showLabels, showArrows, textFadeThreshold, nodeSizeMul, linkWidthMul], requestRender);
+watch([searchText, searchMode, highlightFilterActive], requestRender);
+watch(searchFields, requestRender, { deep: true });
+watch(selectedIds, requestRender, { deep: true });
 </script>
 
 <style scoped>
+.memory-graph-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 320px;
+}
+.memory-graph-shell > .memory-graph,
+.memory-graph-shell > .brain-graph-viewport {
+  flex: 1;
+  min-height: 0;
+}
+
+.mg-mode-toggle {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: inline-flex;
+  gap: 0;
+  padding: 2px;
+  background: color-mix(in srgb, var(--ts-bg-surface, #0b1220) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ts-text-muted, #475569) 30%, transparent);
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+}
+.mg-mode-btn {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0.25rem 0.7rem;
+  font: inherit;
+  font-size: 0.72rem;
+  color: var(--ts-text-muted, #94a3b8);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.mg-mode-btn:hover {
+  color: var(--ts-text, #e2e8f0);
+}
+.mg-mode-btn.active {
+  background: color-mix(in srgb, var(--ts-accent, #7c6fff) 30%, transparent);
+  color: var(--ts-text, #e2e8f0);
+}
+
 .memory-graph {
   width: 100%;
   height: 100%;
@@ -1199,24 +1353,6 @@ watch([showLabels, showArrows, textFadeThreshold, nodeSizeMul, linkWidthMul], re
   position: absolute;
   inset: 0;
   display: block;
-}
-.mg-canvas-hidden {
-  visibility: hidden;
-  pointer-events: none;
-}
-.mg-webgl {
-  position: absolute;
-  inset: 34px 0 0 0;
-  pointer-events: auto;
-  background: transparent;
-}
-.mg-mode-button {
-  width: auto !important;
-  min-width: 38px;
-  padding: 0 8px !important;
-  font-size: 11px !important;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 
 .mg-topbar {
@@ -1330,6 +1466,57 @@ watch([showLabels, showArrows, textFadeThreshold, nodeSizeMul, linkWidthMul], re
   padding: 3px 10px 4px 18px;
   font-size: 11px;
   color: #b6c4d7;
+}
+.mg-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+.mg-row-buttons {
+  gap: 4px;
+}
+.mg-input,
+.mg-select {
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #2a313b;
+  border-radius: 3px;
+  color: #d8e6fb;
+  font-size: 11px;
+  padding: 4px 6px;
+  outline: none;
+  box-sizing: border-box;
+}
+.mg-input:focus,
+.mg-select:focus {
+  border-color: var(--ts-accent, #7c6fff);
+}
+.mg-btn {
+  display: block;
+  width: 100%;
+  background: #0d1117;
+  border: 1px solid #2a313b;
+  border-radius: 3px;
+  color: #d8e6fb;
+  font-size: 11px;
+  padding: 4px 6px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+}
+.mg-btn:hover:not(:disabled) {
+  background: #1a212b;
+  border-color: #3a4554;
+}
+.mg-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.mg-hint {
+  padding: 4px 10px 6px 18px;
+  font-size: 10px;
+  color: #6b7a8d;
+  line-height: 1.35;
 }
 .mg-row input[type='checkbox'] {
   accent-color: var(--ts-accent, #7c6fff);

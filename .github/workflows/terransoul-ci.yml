@@ -2,6 +2,7 @@ name: TerranSoul CI
 
 on:
   push:
+  workflow_dispatch:
 
 env:
   CARGO_INCREMENTAL: '0'
@@ -10,6 +11,53 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # ── Change detection: avoid backend/WebKit work for unrelated pushes ─────
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      postgres: ${{ steps.filter.outputs.postgres }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        name: Detect Rust/Postgres changes
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            rust=true
+            postgres=true
+            : > changed-files.txt
+          elif [ -z "${{ github.event.before }}" ] || [ "${{ github.event.before }}" = "0000000000000000000000000000000000000000" ]; then
+            git diff-tree --no-commit-id --name-only -r "${{ github.sha }}" > changed-files.txt
+            rust=true
+            postgres=true
+          else
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > changed-files.txt
+            if grep -Eq '^(src-tauri/|crates/|mcp-data/shared/|Dockerfile\.mcp|docker-compose\.mcp\.yml)' changed-files.txt; then
+              rust=true
+            else
+              rust=false
+            fi
+            if grep -Eq '^(src-tauri/Cargo\.(toml|lock)|src-tauri/src/memory/|src-tauri/src/ai_integrations/gateway\.rs|mcp-data/shared/)' changed-files.txt; then
+              postgres=true
+            else
+              postgres=false
+            fi
+          fi
+
+          echo "Changed files considered by backend gates:"
+          cat changed-files.txt || true
+          echo "rust=${rust}" >> "$GITHUB_OUTPUT"
+          echo "postgres=${postgres}" >> "$GITHUB_OUTPUT"
+
   # ── Frontend: lint, build, unit tests ────────────────────────────────────
   frontend:
     runs-on: ubuntu-latest
@@ -29,8 +77,10 @@ jobs:
       - run: npm run build
       - run: npm run test
 
-  # ── Rust: clippy + lib tests + postgres tests ───────────────────────────
+  # ── Rust: clippy + lib tests, Linux-only and skipped when unrelated ──────
   rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -81,6 +131,7 @@ jobs:
         run: cargo test --lib
 
       - name: Run postgres tests
+        if: needs.changes.outputs.postgres == 'true'
         working-directory: src-tauri
         env:
           TEST_POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/terransoul_test

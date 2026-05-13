@@ -118,7 +118,23 @@ pub(super) fn build_budgeted_prompt(
     (system, trimmed_history)
 }
 
-async fn retrieve_prompt_memories(
+/// Retrieve memories for the chat prompt RAG block, exercising the full
+/// `docs/brain-advanced-design.md` retrieval pipeline:
+/// embed → `hybrid_search_rrf` (6-signal hybrid + RRF fusion) → optional
+/// 1–2 hop KG cascade expansion (`memory::cascade::cascade_expand`, gated
+/// on `AppSettings.enable_kg_boost`, BENCH-KG-1) → optional
+/// LLM-as-judge cross-encoder rerank with threshold (LCM-8) → reinforcement
+/// telemetry.
+///
+/// Test coverage: `retrieve_prompt_memories_uses_rrf_pipeline_without_brain`
+/// asserts the RRF stage runs and surfaces seeded memories when no brain is
+/// configured. `retrieve_prompt_memories_kg_boost_promotes_neighbours`
+/// asserts the cascade stage promotes a graph-adjacent memory when
+/// `enable_kg_boost` is on. The reranker stage is exercised end-to-end by
+/// the bench harness `scripts/locomo-mteb.mjs` system `rrf_rerank` (LCM-8)
+/// — that is the canonical chat-system rerank verification because mocking
+/// Ollama inside a unit test would not validate prompt-shape compatibility.
+pub(crate) async fn retrieve_prompt_memories(
     app_state: &AppState,
     query: &str,
     brain_mode: Option<&BrainMode>,
@@ -126,15 +142,18 @@ async fn retrieve_prompt_memories(
     limit: usize,
 ) -> Vec<crate::memory::MemoryEntry> {
     let query_emb = crate::brain::embed_for_mode(query, brain_mode, active_brain).await;
-    let rerank_threshold = app_state
+    let (rerank_threshold, kg_boost) = app_state
         .app_settings
         .lock()
         .map(|settings| {
-            settings
-                .relevance_threshold
-                .max(crate::settings::DEFAULT_RERANK_THRESHOLD)
+            (
+                settings
+                    .relevance_threshold
+                    .max(crate::settings::DEFAULT_RERANK_THRESHOLD),
+                settings.enable_kg_boost,
+            )
         })
-        .unwrap_or(crate::settings::DEFAULT_RERANK_THRESHOLD);
+        .unwrap_or((crate::settings::DEFAULT_RERANK_THRESHOLD, false));
     let should_rerank = active_brain.is_some();
     let recall_limit = if should_rerank {
         limit.clamp(20, 50)
@@ -144,9 +163,22 @@ async fn retrieve_prompt_memories(
 
     let candidates: Vec<crate::memory::MemoryEntry> = {
         match app_state.memory_store.lock() {
-            Ok(store) => store
-                .hybrid_search_rrf(query, query_emb.as_deref(), recall_limit)
-                .unwrap_or_default(),
+            Ok(store) => {
+                let seeds = store
+                    .hybrid_search_rrf(query, query_emb.as_deref(), recall_limit)
+                    .unwrap_or_default();
+                if seeds.is_empty() || !kg_boost {
+                    seeds
+                } else {
+                    // BENCH-KG-1: expand top-K via 1-2 hop BFS over
+                    // `memory_edges` so graph-adjacent facts can be promoted
+                    // ahead of weaker RRF tail entries. `cascade_expand`
+                    // returns (id, score) sorted descending; we materialise
+                    // the entries (skipping unknown ids gracefully) and cap
+                    // at `recall_limit` so the reranker pool stays bounded.
+                    expand_seeds_via_kg(&store, &seeds, recall_limit)
+                }
+            }
             Err(_) => Vec::new(),
         }
     };
@@ -181,6 +213,68 @@ async fn retrieve_prompt_memories(
     }
 
     reranked
+}
+
+/// BENCH-KG-1 helper: expand RRF seeds through 1-2 hop BFS over
+/// `memory_edges`, then materialise the (id, cascade_score) result back
+/// into a `Vec<MemoryEntry>` capped at `limit`. Seeds keep their original
+/// RRF order at the top; KG-promoted neighbours follow, sorted by cascade
+/// score descending. Unknown ids (edge target deleted between RRF and
+/// materialisation) are skipped gracefully.
+fn expand_seeds_via_kg(
+    store: &crate::memory::MemoryStore,
+    seeds: &[crate::memory::MemoryEntry],
+    limit: usize,
+) -> Vec<crate::memory::MemoryEntry> {
+    use std::collections::HashSet;
+
+    // Seed scores: linearly decreasing from 1.0 so cascade decay is
+    // computed relative to RRF rank (top seed = 1.0, bottom seed = ~0.0).
+    let total = seeds.len() as f64;
+    let seed_scores: Vec<(i64, f64)> = seeds
+        .iter()
+        .enumerate()
+        .map(|(i, e)| {
+            let score = if total > 0.0 {
+                1.0 - (i as f64 / total)
+            } else {
+                0.0
+            };
+            (e.id, score)
+        })
+        .collect();
+
+    let expanded = match crate::memory::cascade::cascade_expand(&store.conn, &seed_scores, None) {
+        Ok(v) => v,
+        Err(_) => return seeds.to_vec(),
+    };
+    if expanded.len() == seeds.len() {
+        // No neighbours found — return seeds unchanged.
+        return seeds.to_vec();
+    }
+
+    let seed_ids: HashSet<i64> = seeds.iter().map(|e| e.id).collect();
+    let mut out: Vec<crate::memory::MemoryEntry> = Vec::with_capacity(limit);
+    // 1. Keep all RRF seeds in their original order at the top.
+    for entry in seeds {
+        if out.len() >= limit {
+            break;
+        }
+        out.push(entry.clone());
+    }
+    // 2. Append KG-promoted neighbours by cascade score.
+    for (id, _score) in expanded.iter() {
+        if out.len() >= limit {
+            break;
+        }
+        if seed_ids.contains(id) {
+            continue;
+        }
+        if let Ok(entry) = store.get_by_id(*id) {
+            out.push(entry);
+        }
+    }
+    out
 }
 
 fn retrieve_local_ollama_keyword_memories(
@@ -644,5 +738,182 @@ mod tests {
         // User message has no sentiment, assistant does
         assert!(parsed[0].sentiment.is_none());
         assert!(parsed[1].sentiment.is_some());
+    }
+
+    /// Asserts the chat-prompt RAG path actually exercises the
+    /// `docs/brain-advanced-design.md` retrieval pipeline (RRF stage).
+    /// Without an active brain the function must return RRF top-k from
+    /// `hybrid_search_rrf` rather than falling back to lexical-only
+    /// `hybrid_search` or returning empty. This guards the chat surface
+    /// from silently regressing past LCM-8.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_uses_rrf_pipeline_without_brain() {
+        let state = make_state();
+        {
+            let store = state.memory_store.lock().unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap();
+            store
+                .add(crate::memory::NewMemory {
+                    content: "User asked for help debugging async Tokio futures last week."
+                        .to_string(),
+                    tags: "context,domain:rust".to_string(),
+                    importance: 3,
+                    ..Default::default()
+                })
+                .unwrap();
+        }
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+        assert!(
+            !results.is_empty(),
+            "RRF stage must surface seeded memories on a clear lexical+semantic match"
+        );
+        assert!(
+            results.iter().any(|m| m.content.contains("Python")),
+            "Top-k should include the Python preference memory; got {:?}",
+            results.iter().map(|m| &m.content).collect::<Vec<_>>()
+        );
+    }
+
+    /// BENCH-KG-1: when `enable_kg_boost` is on, the cascade stage must
+    /// promote a memory that is graph-adjacent to an RRF hit but does
+    /// NOT itself match the query lexically. This is the design-doc
+    /// promise of `memory_edges` traversal — a query about "Python" can
+    /// surface a related "favourite editor" memory if the user explicitly
+    /// linked them with a `related_to` edge, even though the editor
+    /// memory has no Python tokens.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kg_boost_promotes_neighbours() {
+        let state = make_state();
+        // Flip the KG-boost flag on this test's settings — production
+        // default is `false` so a chat turn with no edges configured
+        // pays no cascade cost.
+        state.app_settings.lock().unwrap().enable_kg_boost = true;
+
+        let (seed_id, neighbour_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let seed = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            // Neighbour deliberately contains NO query tokens — it must
+            // only be reachable via the graph edge.
+            let neighbour = store
+                .add(crate::memory::NewMemory {
+                    content: "Favourite editor is Helix with the catppuccin theme."
+                        .to_string(),
+                    tags: "preference,domain:tooling".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .add_edge(crate::memory::NewMemoryEdge {
+                    src_id: seed,
+                    dst_id: neighbour,
+                    rel_type: "related_to".to_string(),
+                    confidence: 0.9,
+                    source: crate::memory::EdgeSource::User,
+                    valid_from: None,
+                    valid_to: None,
+                    edge_source: None,
+                })
+                .unwrap();
+            (seed, neighbour)
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&seed_id),
+            "Seed (Python memory) must be retrieved by RRF; got {ids:?}"
+        );
+        assert!(
+            ids.contains(&neighbour_id),
+            "KG cascade must surface the related-edge neighbour even though it has no query tokens; got {ids:?}"
+        );
+    }
+
+    /// BENCH-KG-1 negative: when `enable_kg_boost` is off (production
+    /// default), an edge-only neighbour must NOT appear in the prompt.
+    /// Guards against accidentally enabling cascade for all users.
+    #[tokio::test]
+    async fn retrieve_prompt_memories_kg_boost_disabled_by_default() {
+        let state = make_state();
+        assert!(
+            !state.app_settings.lock().unwrap().enable_kg_boost,
+            "production default for enable_kg_boost must be false"
+        );
+
+        let (seed_id, neighbour_id) = {
+            let store = state.memory_store.lock().unwrap();
+            let seed = store
+                .add(crate::memory::NewMemory {
+                    content: "User prefers Python coding examples over Rust for tutorials."
+                        .to_string(),
+                    tags: "preference,domain:programming".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            let neighbour = store
+                .add(crate::memory::NewMemory {
+                    content: "Favourite editor is Helix with the catppuccin theme."
+                        .to_string(),
+                    tags: "preference,domain:tooling".to_string(),
+                    importance: 4,
+                    ..Default::default()
+                })
+                .unwrap()
+                .id;
+            store
+                .add_edge(crate::memory::NewMemoryEdge {
+                    src_id: seed,
+                    dst_id: neighbour,
+                    rel_type: "related_to".to_string(),
+                    confidence: 0.9,
+                    source: crate::memory::EdgeSource::User,
+                    valid_from: None,
+                    valid_to: None,
+                    edge_source: None,
+                })
+                .unwrap();
+            (seed, neighbour)
+        };
+
+        let results =
+            super::retrieve_prompt_memories(&state, "Show me a Python example", None, None, 5)
+                .await;
+
+        let ids: Vec<i64> = results.iter().map(|m| m.id).collect();
+        assert!(
+            ids.contains(&seed_id),
+            "Seed must still be retrieved by RRF when KG boost is off"
+        );
+        assert!(
+            !ids.contains(&neighbour_id),
+            "Edge-only neighbour must NOT appear when enable_kg_boost is off; got {ids:?}"
+        );
     }
 }

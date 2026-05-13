@@ -335,6 +335,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, type CSSProperties } from 'vue';
 import { storeToRefs } from 'pinia';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useConversationStore } from '../stores/conversation';
 import { useCharacterStore } from '../stores/character';
 import { useBrainStore } from '../stores/brain';
@@ -1488,7 +1489,6 @@ onMounted(async () => {
   // The cursor poll dynamically flips passthrough OFF only when the cursor is
   // over the character, chat panel, or bubble.
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     unlistenCursorPos = await listen<{ x: number; y: number; inside: boolean }>(
       'pet-cursor-pos',
       (event) => handleCursorPos(event.payload),
@@ -1516,7 +1516,6 @@ onMounted(async () => {
   await brain.maybeUpgradeToLocalOllama();
 
   try {
-    const { listen } = await import('@tauri-apps/api/event');
     unlistenLlmChunk = await listen<{ text: string; done: boolean; thinking?: boolean }>('llm-chunk', (event) => {
       streaming.handleChunk(event.payload);
 
