@@ -2576,3 +2576,24 @@ SELECT
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'INFRA README PILLAR HONESTY RULE (2026-05-14):%'
 );
+-- AI memory in five scenes pointer (2026-05-14) — narrative framing for the brain.
+-- Cognee's "AI memory in five scenes" article is reused as a five-scene mental
+-- model (base LLM -> classic RAG -> personal-context RAG -> GraphRAG -> hybrid
+-- memory at scale) to onboard new contributors and non-technical users to
+-- TerranSoul's brain. Mapping doc lives at docs/ai-memory-five-scenes-terransoul.md
+-- and is linked from the README right after the "Why Hybrid RAG" section.
+-- The article is credited in CREDITS.md; no prose, examples, or imagery copied.
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'AI MEMORY FIVE-SCENES MAPPING (2026-05-14): cognee.ai "AI memory in five scenes" framing is reused (not copied) as the canonical onboarding lens for TerranSoul brain architecture. Scene 1 (kid in library / three employees) -> three brain modes (Free API / Paid API / Local Ollama) with shared BrainGateway. Scene 2 (movie guru) -> persona traits + observation + cognitive_kind axis + privacy ACL. Scene 3 (exam prep) -> chunking.rs / late_chunking.rs / contextualize.rs / ann_index.rs (HNSW usearch, mxbai-embed-large default, nomic-embed-text fallback) + FTS5. Scene 4 (job hunt / GraphRAG) -> memory_edges + entity resolution (Phase 6) + multi_hop_search_memories + auto_tag.rs + graph_rag.rs + conflicts.rs + versioning.rs. Scene 5 (CTO at party / hybrid in production) -> RRF fusion.rs + 4 retrievers + per-shard HNSW (15 logical shards, persisted shard_router.json) + IVF-PQ disk_backed_ann.rs + query_intent.rs router + per-query-class HyDE + cross-encoder reranker.rs + kg_cache + search_cache + LoCoMo-MTEB / LongMemEval-S / agentmemory bench harnesses + brain_health metrics + availability SLO. Use this mapping when explaining where on the AI-memory progression curve TerranSoul sits and which subsystem owns a given memory feature.',
+  'brain,rag,graphrag,architecture,onboarding,cognee,five-scenes,mapping,credits',
+  8,
+  'note',
+  strftime('%s', 'now'),
+  'long',
+  1.0,
+  'architecture',
+  'semantic'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'AI MEMORY FIVE-SCENES MAPPING (2026-05-14):%'
+);
