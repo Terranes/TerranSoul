@@ -36,18 +36,15 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 ## AI memory in five scenes — where TerranSoul sits on the curve
 
-Cognee's primer [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes) walks an unfamiliar reader through the progression **base LLM → classic RAG → graph-aware RAG → hybrid memory at scale** by retelling it as five everyday scenes (a kid in a library, a high schooler picking a movie, a college student cramming for an exam, a junior IT engineer job hunting, an AI startup CTO at a party). It is the clearest short explanation we know of *why* "AI memory" is not one thing.
+TerranSoul is a hybrid-memory AI companion. The five-scenes lens is the fastest way to see what that means:
 
-**TerranSoul is built for the last scene** — hybrid memory in production. Concretely:
+- **Scene 1** — three "library employees": a chatbot, a search-and-quote bot, and a senior librarian who knows how everything connects. TerranSoul is the senior librarian.
+- **Scene 2** — a personal recommendation, not a catalogue dump. TerranSoul shapes every reply with persona traits, observation history, recency/decay, the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`), and a privacy ACL where the most-private rule wins.
+- **Scene 3** — vector RAG over your own corpus. TerranSoul ships per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
+- **Scene 4** — typed knowledge graph + multi-hop. `memory_edges` table, entity resolution, `multi_hop_search_memories`, conflict resolution, append-only versioning.
+- **Scene 5** — production reality: speed, quality, measurability. RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
 
-- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
-- **Personal-context construction** (Scene 2) is shipped via persona traits, observation history, decay, and the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`).
-- **Typed knowledge graph + multi-hop** (Scene 4) is shipped via the `memory_edges` table, entity resolution, and `multi_hop_search_memories`.
-- **Production discipline** (Scene 5) is shipped via RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
-
-The "Why Hybrid RAG" section above explains the technical *why*. The five-scenes lens explains the *where on the curve* — useful for new contributors picking which file to touch and for non-technical users deciding whether TerranSoul does what they actually need.
-
-> Read the full mapping: [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md). The cognee article is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
+The plain-language version of the five scenes lives at [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md).
 
 ---
 
@@ -55,7 +52,7 @@ The "Why Hybrid RAG" section above explains the technical *why*. The five-scenes
 
 Most "AI companion" apps are a chat box plus an embedding store. TerranSoul is built on the assumption that **a personal assistant must keep working over years, across devices, across teammates, and across failures** — which means treating it as distributed infrastructure from day one, not a chat UI with a database glued on.
 
-The differentiators below name what's **shipped** vs what's a **design target** (with a milestone chunk that closes the gap). No aspirational claims dressed up as facts.
+The differentiators below name what's **shipped** vs what's a **design target** (with a milestone chunk that closes the gap).
 
 | Pillar | What it means | Status |
 |---|---|---|

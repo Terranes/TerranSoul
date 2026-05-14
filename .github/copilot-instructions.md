@@ -159,6 +159,7 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - `#[derive(Debug, Serialize, Deserialize, Clone)]` on all public Rust types
 - Vue components use `<script setup lang="ts">` with scoped styles
 - Tests required for all new functionality
+- Reader-facing markdown (README, marketing/onboarding docs, intros) must talk *to the reader about the product*, not about the document/authors/process. No "we built / we believe / we borrowed", no audience-targeting paragraphs, no compliance notes. Architectural/technical/internal docs (`rules/**`, `mcp-data/shared/**`, `docs/*-design.md`/`*-spec.md`/`*-architecture.md`/`*-research.md`/`*-audit.md`/`*-evaluation.md`/`*-analysis*.md`/`*-adapter.md`, ADRs, agent instructions, `CREDITS.md`) are exempt. See `rules/coding-standards.md` § "Reader-Facing Prose — No Meta-Commentary".
 - **Use existing libraries — don't reinvent the wheel** (see below)
 
 ## Use Existing Libraries First

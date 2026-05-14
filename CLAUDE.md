@@ -63,6 +63,7 @@ When starting or resuming:
 - CSS: use `var(--ts-*)` design tokens, never hardcode hex colors
 - Tests required for all new functionality
 - Use existing libraries — don't reinvent the wheel
+- Reader-facing markdown (README, onboarding/marketing docs, intros) talks to the reader about the product — no "we built / we believe / we borrowed", no audience-targeting paragraphs, no compliance notes. Architectural/technical/internal docs are exempt. See `rules/coding-standards.md` § "Reader-Facing Prose — No Meta-Commentary".
 - Credit external influences in `CREDITS.md`
 - Reverse-engineer GitHub projects through `https://deepwiki.org/<owner>/<repo>` first when reachable, then verify against upstream and sync durable lessons into `mcp-data/shared/**`
 - Do not treat Markdown as MCP memory; sync any durable Markdown knowledge into `mcp-data/shared/memory-seed.sql` and KG edges so SQLite + `memory_edges` stays authoritative

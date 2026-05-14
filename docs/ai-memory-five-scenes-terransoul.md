@@ -1,297 +1,123 @@
-# AI Memory in Five Scenes — Where TerranSoul Sits on the Curve
+# AI Memory in Five Scenes
 
-> **Inspired by** cognee's [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes)
-> (Vasilije Markovic et al., 2025). The cognee article walks an unfamiliar
-> reader through the progression **base LLM → classic RAG → graph-aware
-> RAG → hybrid memory at scale** by retelling it as five everyday
-> scenes. This document maps each of those five scenes onto **what
-> TerranSoul actually ships today**, with citations into the codebase and
-> the architecture deep dive.
->
-> No prose, imagery, or examples from the original article are copied.
-> Credit and license context are recorded in
-> [`CREDITS.md`](../CREDITS.md) per the project's credits rule.
->
-> **Looking for the plain-English version?** Read
-> [`ai-memory-five-scenes-for-everyone.md`](ai-memory-five-scenes-for-everyone.md)
-> instead — same five scenes, no code paths, written for a non-technical
-> reader who just wants to understand what TerranSoul is.
+> Inspired by cognee's [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes). Credit in [`CREDITS.md`](../CREDITS.md).
 
-The cognee article is a great five-minute primer on *why* "AI memory"
-isn't a single thing. TerranSoul's Hybrid RAG brain was designed against
-exactly the same progression of failure modes that the article walks
-through, so the five-scenes lens is a useful way to explain — to a new
-contributor or a non-technical user — *which scene TerranSoul lives in*
-and *what infrastructure is required to live there*.
-
-**Short answer:** TerranSoul is built for **Scene 5**. The brain
-deliberately fuses vector recall (Scene 3), per-user/preference context
-(Scene 2), and a typed knowledge graph + temporal memory (Scene 4) so a
-single chat turn answers like the senior librarian from Scene 1 rather
-than the keyword-blind catalogue clerk.
+TerranSoul is an AI companion with memory. What does *memory* actually mean for an AI, and why does it matter? Five everyday scenes.
 
 ---
 
-## Quick map: the five scenes ↔ TerranSoul
+## Scene 1: A kid in a library
 
-| Scene (cognee) | What it isolates | Where TerranSoul implements it |
-|---|---|---|
-| **1. Kid in a library** — base LLM vs catalogue clerk vs senior librarian | Three kinds of "knowledge worker" the user can choose from | The three-mode brain — see [Brain Modes](#scene-1-the-three-employees--three-brain-modes) below |
-| **2. High schooler at the movies** — preference-aware context construction | Why retrieval needs *per-user* signals, not just raw catalogue dump | Persona + observation + temporal-recency layer ([Scene 2](#scene-2-the-personal-movie-guru--persona--user-context)) |
-| **3. College student preparing for an exam** — chunk → embed → semantic search | Standard "vector RAG over my notes" | HNSW vector + semantic chunking + Contextual Retrieval ([Scene 3](#scene-3-the-exam-prep-tool--vector-rag-over-your-corpus)) |
-| **4. Junior IT engineer job hunt** — entity/relation extraction → GraphRAG | Why filters / multi-hop reasoning need a **typed knowledge graph** | `memory_edges` + entity resolution + multi-hop traversal ([Scene 4](#scene-4-the-job-hunt--graphrag-over-typed-entities)) |
-| **5. AI startup CTO at a party** — hybrid memory at scale (speed, quality, measurability) | The production challenges nobody can skip | Sharded HNSW + RRF + caching + telemetry + bench harness ([Scene 5](#scene-5-the-cto-at-the-party--hybrid-memory-in-production)) |
+![Scene 1 — a small child looking up at towering bookshelves with three very different librarians at the desk](images/ai-memory-five-scenes/scene-1-library.webp)
 
----
+You are twelve years old, standing in a real library with a school project on dinosaurs. Three people are behind the desk.
 
-## Scene 1: The three employees → three brain modes
+The **first** is bright and chatty. He can talk about dinosaurs all afternoon. He just started this week, so he has no idea where anything is in *this* library. Lots of knowledge, no sense of place.
 
-The article's library scene compares three workers a 12-year-old could
-ask for help: the eloquent newcomer (a base LLM with no place-knowledge),
-the screen-bound search clerk (basic retrieval, no judgment), and the
-senior librarian who *is* the library. The point is that each one is the
-right tool for some questions and the wrong tool for others.
+The **second** stares at a computer. Tell him a book title and he will read you the back cover. He cannot tell you whether the book is any good for your project. All search, no judgment.
 
-TerranSoul exposes the same trade-off explicitly through its **three
-brain modes**, so the user can choose where they sit on the
-privacy / cost / quality / latency triangle:
+The **third** is the senior librarian. Twenty years here. She remembers that the chapter you actually need is buried inside an old history book three shelves over, and that it connects to the picture book your classmate borrowed last week. She gives you the answer, not the search results.
 
-| Brain mode | "Library employee" analog | Reality in TerranSoul |
-|---|---|---|
-| **Free API** (Pollinations / OpenRouter / Gemini free) | The eloquent newcomer — broad and free, no local context until you give it some | Zero-config first-launch path; chat works before any setup |
-| **Paid API** (OpenAI / Anthropic / Groq with your key) | The screen-bound clerk plus a smart manager — accurate, fast, costs per question | Best raw answer quality; cloud-side embeddings for RAG |
-| **Local Ollama** (`mxbai-embed-large` for vectors, your chosen chat model) | The senior librarian who *lives* in the library — fully offline, no leaks | Default for privacy-sensitive corpora and air-gapped use |
+Most AI products today are one of those three.
 
-All three modes plug into the **same** memory store, persona, and
-retrieval pipeline, so switching providers does not lose your library.
-That's the whole point of TerranSoul's `BrainGateway` abstraction
-(`src-tauri/src/ai_integrations/gateway.rs`) — provider swap, brain
-unchanged.
-
-> Code: `src-tauri/src/brain/`, `src-tauri/src/ai_integrations/gateway.rs`. Doc: [`docs/brain-advanced-design.md` § 4](brain-advanced-design.md#4-brain-modes--three-pluggable-backends-same-surface).
+TerranSoul is the third one. You can pick which "brain" it uses — a free cloud model, a paid cloud model, or one running entirely on your own computer with no internet — and all three read from the same library: the memory TerranSoul has quietly been building about you. Switch the brain, keep the librarian.
 
 ---
 
-## Scene 2: The "personal movie guru" → persona + user context
+## Scene 2: A high schooler picking a movie
 
-The article's streaming-service scene is about a bot that doesn't dump
-the whole catalogue at the LLM — it constructs a *cleaner* context using
-what it already knows about you (genres you like, what's available on
-your plan, tone preferences). The lesson: retrieval needs **personal
-signals**, not just topical similarity.
+![Scene 2 — a teenager on a couch at night with the TV glow on their face, snacks, blanket, and a sleeping kid beside them](images/ai-memory-five-scenes/scene-2-movies.webp)
 
-TerranSoul's brain composes this kind of personal context from
-**multiple first-class layers**, all of which feed every chat turn:
+Friday night. You open a streaming app and want a recommendation.
 
-- **Persona traits** (`src-tauri/src/persona/`) — long-lived facts
-  about the user and their stated preferences, with drift detection.
-- **Observation history** — what files, projects, and people the user
-  actually interacts with bias retrieval toward the active workspace.
-- **Recency / decay layer** (`src-tauri/src/memory/temporal.rs`,
-  `confidence_decay.rs`) — newer facts override older ones; decayed
-  rows fall in the score formula.
-- **Cognitive-kind axis** (`src-tauri/src/memory/cognitive_kind.rs`) —
-  the same query is reranked differently for `episodic` ("what did I
-  do") vs `semantic` ("what is true") vs `procedural` ("how do I")
-  vs `judgment` ("what did I decide") intents.
-- **Privacy ACL** (`src-tauri/src/memory/privacy.rs`) — `private` rows
-  never leave the device, `paired` rows sync to your own devices,
-  `hive` rows can be shared with a relay. The user's context is
-  always assembled with the most-private layer winning.
+A generic chatbot suggests a beloved animated film — on a service you do not subscribe to. You watched it last month anyway. There is a seven-year-old on the couch.
 
-The result is closer to the cognee article's "personal movie guru" than
-to a raw vector dump: top-k is **scored**, **diversified per session**,
-**capped on noisy clusters**, and **annotated with provenance** before
-it lands in the prompt.
+The streaming service's built-in bot dumps a wall of plot summaries, cast lists, and star ratings. The answer is in there somewhere. Good luck.
 
-> Doc: [`docs/persona-design.md`](persona-design.md), [`docs/brain-advanced-design.md` § 3.5](brain-advanced-design.md#35-cognitive-memory-axes-episodic--semantic--procedural--judgment).
+A friend who has watched movies with you for years remembers: *you like Pixar, there is a kid on the couch tonight, you fell asleep in the last quiet drama you tried, and you cannot stand sad endings on a Friday.* They give you two suggestions and one sentence each.
+
+TerranSoul is built to be that friend. Every conversation is shaped by:
+
+- What you've told it about yourself.
+- What it has watched you do — which projects you keep returning to, which suggestions you accepted, which you ignored.
+- How recent things are. A preference from an hour ago outweighs one from two years ago.
+- What kind of question you just asked. *"What did I do?"* is answered differently from *"what is true?"* or *"how do I?"*.
+- What you said is private. Some memories never leave your computer. Some sync between *your* devices. Some you choose to share. The most-private rule always wins.
+
+TerranSoul does not shout your whole memory at the AI on every message. It hands the AI a small, tidy briefing for *this* moment. That is why the answers feel personal instead of generic.
 
 ---
 
-## Scene 3: The exam-prep tool → vector RAG over your corpus
+## Scene 3: A college student cramming for an exam
 
-The article's exam scene is the textbook RAG explanation: split notes
-into chunks, embed each chunk, embed the question, return the top-k by
-semantic similarity, and append to the prompt. The article is honest
-that this works well for "what did Prof. Miller say about X" — and
-collapses for "which examples were *not* in the textbook".
+![Scene 3 — a tired college student at midnight surrounded by stacks of notes, an open laptop, half-empty coffee mug, and sticky notes everywhere](images/ai-memory-five-scenes/scene-3-exam.webp)
 
-TerranSoul ships the strong version of this baseline:
+A few days before a final. Lecture notes on the laptop, PDFs of slides, scanned chapters, your own scribbles. You ask a chatbot, *"What did Professor Miller say about entropy?"*
 
-| Capability | TerranSoul implementation |
-|---|---|
-| Semantic chunking | `src-tauri/src/memory/chunking.rs` (uses the `text-splitter` crate) |
-| Late chunking + Anthropic-style **Contextual Retrieval** | `src-tauri/src/memory/late_chunking.rs`, `contextualize.rs` (gated on `LONGMEM_CONTEXTUALIZE=1`) |
-| Vector embeddings | `mxbai-embed-large` (1024-d, default since BENCH-LCM-5) or `nomic-embed-text` (768-d, fallback) on Ollama; cloud `/v1/embeddings` for paid/free modes |
-| HNSW ANN index | `src-tauri/src/memory/ann_index.rs` (`usearch` 2.x), per-shard files at `vectors/<tier>__<kind>.usearch` |
-| Mobile / fallback search | `src-tauri/src/memory/mobile_ann.rs`, `offline_embed.rs` (deterministic 256-dim hashing for headless seeding) |
-| FTS5 lexical retriever | rare-term + acronym weighting with broad-term caps (rescues exact identifiers vector misses) |
-| Negative / "not in textbook" filter | `src-tauri/src/memory/negative.rs` |
+A plain chatbot gives you a textbook definition of entropy. Lovely. Professor Miller is not in there. You could paste your notes in one document at a time, but there are too many, and the chatbot starts forgetting the early ones.
 
-**Where TerranSoul agrees with the article:** vector RAG alone is the
-right tool for direct factual recall over a corpus you've ingested.
+The trick that actually works: a tool quietly chops your notes into bite-sized pieces, gives each piece a kind of "fingerprint" that captures its meaning, and stores them. When you ask a question, the tool fingerprints the *question* the same way and pulls back the few pieces that look most similar. Those go to the AI along with your question. Now the AI is answering from your actual notes.
 
-**Where TerranSoul goes further:** the article's "the model can't hold
-all of it in its memory anyway" failure is exactly why our RAG harness
-returns a **scored, threshold-cut, deduplicated** top-k rather than a
-greedy concatenation, and why the `[LONG-TERM MEMORY]` block has a
-strict token budget enforced by `src-tauri/src/memory/context_pack.rs`.
+TerranSoul does this for everything you let it remember: chats, documents you drop in, screenshots, voice notes, files in folders you point it at. It pulls back the right handful of pieces, ranks them, throws out the noisy ones, and only then asks the AI to answer.
 
-> Doc: [`docs/brain-advanced-design.md` § 4 RAG retrieval pipeline](brain-advanced-design.md#3-rag-retrieval-pipeline--what-happens-on-every-chat-turn).
+Two honest things about this kind of memory:
+
+1. It is genuinely good at *"what did so-and-so say about X."*
+2. It is not enough by itself. Ask *"which examples did the professor use that were not in the textbook?"* and a fingerprint match alone gets confused, because that question is about *relationships* between things, not similarity. Hold that thought for Scene 4.
+
+TerranSoul also keeps a strict budget on how much of your notes it hands to the AI in any one message. Otherwise the AI gets buried, slows down, and the answer gets worse, not better. Less is more.
 
 ---
 
-## Scene 4: The job hunt → GraphRAG over typed entities
+## Scene 4: A junior engineer hunting for a job
 
-The article's most important scene. The job-hunting candidate wants
-*"remote-first roles in Series B startups with 20–50 employees that use
-Python and React and are not in fintech"*. Plain RAG returns plausible
-text containing the keywords; **GraphRAG** extracts typed entities
-(`Company`, `Job`, `Skill`, `FundingStage`, `Industry`,
-`LocationPolicy`, `TeamSize`) and edges (`employs`, `requires`,
-`operates_in`, `is_stage`, …), then retrieves the **subgraph** that
-satisfies the constraints — with citations back to the source passages.
+![Scene 4 — a young engineer at a small apartment desk, multiple browser tabs of job postings open, a hand-written wishlist taped beside the monitor](images/ai-memory-five-scenes/scene-4-job-hunt.webp)
 
-TerranSoul's V5 schema implements exactly this layer, natively in
-SQLite, alongside the vector store:
+You want your next job. Specifically:
 
-| GraphRAG capability (cognee article) | TerranSoul implementation |
-|---|---|
-| Typed entities | `memories.cognitive_kind` (episodic / semantic / procedural / judgment) + extracted entity rows; entity resolution (Phase 6) deduplicates `Bill G.` / `William Gates` style splits |
-| Typed, directional, confidence-weighted edges | `memory_edges` table — `src_id`, `dst_id`, `rel_type`, `confidence`; see canonical schema in `src-tauri/src/memory/schema.rs` |
-| Edge extraction from text | `src-tauri/src/memory/auto_tag.rs`, `graph_rag.rs`, plus LLM-assisted "Extract from session" |
-| Subgraph retrieval / multi-hop | `multi_hop_search_memories` Tauri command; `src-tauri/src/memory/graph_rag.rs` and `graph_page.rs` |
-| KG neighbour boost on vector hits | gated `enable_kg_boost` setting, exposed via the MCP `brain_kg_neighbors` tool |
-| Conflict / contradiction resolution | `src-tauri/src/memory/conflicts.rs` — LLM-as-judge resolves *"X was deprecated"* vs *"X is recommended"* across versions |
-| Append-only versioning | `src-tauri/src/memory/versioning.rs` (V8) — every edit is a new row, prior rows kept for audit |
+- *Remote-first.*
+- *A startup with 20 to 50 people.*
+- *Already raised a Series B.*
+- *Uses Python and React.*
+- *Not in fintech.*
 
-The article's job-hunt example —
-`(Stage = Series B) ∧ (TeamSize ∈ [20,50]) ∧ (Skills ⊇ {Python, React}) ∧ (Industry ≠ Fintech) ∧ (RemoteFirst = true)` —
-maps onto a TerranSoul query that fuses:
+A chatbot hands you a friendly-looking list. Half the companies are too big. Two are in fintech. One is "remote" but actually means "two days a week from our Berlin office." Useless.
 
-1. a vector hit on the job-description chunk,
-2. one-hop traversal across `requires` / `operates_in` / `is_stage`
-   edges in `memory_edges`,
-3. a negative filter from `negative.rs` for the `Industry = Fintech`
-   exclusion,
-4. and the supporting source passage attached as the citation.
+You try the fingerprint trick from Scene 3. Better — at least the postings now mention your keywords. But "startup culture" sneaks in for a 600-person company. "Remote" sneaks in for a hybrid role. *Not in fintech* gets quietly ignored.
 
-That is what the cognee article calls a "subgraph with receipts", and
-it is the same shape the senior librarian gave the kid back in Scene 1.
+The real fix is to teach the system to *name things*. Not just "this paragraph mentions Python" but **"this is a company, that is a job, this is a skill, that is a funding stage, those are connected like this."** Once the system has named the pieces and drawn the lines between them, your messy wish list becomes a precise question:
 
-> Doc: [`docs/brain-advanced-design.md` § 6 Knowledge Graph Vision](brain-advanced-design.md#6-knowledge-graph-vision).
+> *Find me jobs whose company is at Series B, whose team size is between 20 and 50, whose required skills include Python and React, whose industry is not fintech, and whose location policy is remote-first — and show me the exact sentence you got each fact from.*
+
+That is the leap from "find similar text" to "answer the question." TerranSoul does this leap. Behind the scenes it keeps a quiet map of the people, places, projects, decisions, and preferences in your life, with little arrows showing how they connect — *you decided X on date Y because of person Z*. When a question needs *relationships* to answer, TerranSoul walks the map.
+
+Two things follow from that map being there:
+
+- **TerranSoul holds contradictions.** If something you said three months ago no longer matches what you said yesterday, both versions are kept, the older one fades, and the new one wins. Nothing is silently overwritten and nothing is silently lost.
+- **TerranSoul shows its receipts.** When it tells you something, it can point back at the original message, file, or moment it learned it from. You never have to take its word for it.
 
 ---
 
-## Scene 5: The CTO at the party → hybrid memory in production
+## Scene 5: The veteran at a party
 
-The article's final scene names the production reality nobody at a party
-wants to hear: hybrid GraphRAG is the *right* architecture, but you only
-get to keep it if you also solve **speed**, **quality**, and
-**measurability**. TerranSoul has a concrete answer for each.
+![Scene 5 — two people at a noisy rooftop party leaning in for a quieter side conversation, drinks in hand, the city lights behind them](images/ai-memory-five-scenes/scene-5-party.webp)
 
-### Speed — sub-second retrieval at scale
+A party. Someone asks what you do. You say you work on AI memory. Most people change the subject. One person leans in. They have built this stuff before. They already know that the impressive demo and the system that survives a Tuesday afternoon are two different things.
 
-| cognee challenge | TerranSoul lever |
-|---|---|
-| Combine vector + inverted index + subgraph filters in <1 s | RRF fusion at `k=60` over 4 retrievers (`vector`, `lexical FTS5`, `KG-seeded`, `freshness`) — `src-tauri/src/memory/fusion.rs` |
-| Pre-compute hot subgraphs / cache aggressively | `src-tauri/src/memory/kg_cache.rs`, `search_cache.rs`, `graph_paging.rs` |
-| Route queries (RAG vs GraphRAG) with a lightweight classifier | `src-tauri/src/memory/query_intent.rs` + the cognitive-kind classifier (`cognitive_kind.rs`) |
-| Degrade gracefully under tight budgets | `src-tauri/src/memory/shard_backpressure.rs`, mobile fallback `mobile_ann.rs`, "skip RAG for greetings" fast path |
-| Scale past in-process limits | per-shard HNSW (15 logical shards = 3 tiers × 5 cognitive_kinds) with a persisted coarse centroid router (`vectors/shard_router.json`); IVF-PQ disk-backed shards (`disk_backed_ann.rs`) for >100M |
+Three things actually decide whether an AI memory is useful in real life.
 
-### Quality — meaningful entity types and evolving schemas
+**It has to be fast.** Beautiful retrieval that takes thirty seconds is worse than a mediocre answer in one second, because nobody waits. TerranSoul stays snappy by remembering popular answers, splitting its memory into smaller pieces it can search in parallel, skipping the heavy machinery for trivial questions like *"hi,"* and falling back gracefully on slower hardware (your phone) instead of freezing.
 
-The article warns that auto-generated ontologies sound great until you
-need domain-specific relationships. TerranSoul takes the iterative
-approach the article recommends: a minimal vocabulary of edge types in
-`memory_edges`, **temporal attributes** (`decay_score`, version
-snapshots), **event-based** updates via `auto_learn.rs` /
-`reflection.rs`, and **append-only versioning** so old queries keep
-working as the schema evolves.
+**It has to be honest about quality.** A memory that confidently makes things up is worse than no memory. TerranSoul keeps every memory with a *confidence* attached, lets old facts decay if newer ones contradict them, and treats different kinds of knowledge differently — casual notes can move fast and loose; legal, financial, and shared-team facts move carefully and require agreement before they change.
 
-For knowledge that should never silently drift, the
-[`docs/cap-profile.md`](cap-profile.md) work introduces **per-memory
-CAP tags** — `personal` / `scratch` rows favour Availability (CRDT,
-write-never-blocks), while `legal` / `financial` / `shared-team` rows
-favour Consistency (consensus before commit). This is TerranSoul's
-answer to the article's "versioning thousands of entities and their
-evolving relationships without breaking existing queries".
+**It has to be measurable.** "Trust us, it's good" is not a feature. TerranSoul ships with public benchmarks against the same long-memory test sets the research community uses, and reports both wins and ties honestly. When a new trick helps on one kind of question and hurts on another, it gets turned on only for the kind it helps.
 
-### Measurability — bench, telemetry, golden sets
-
-The article's measurability point is the one most projects skip.
-TerranSoul ships:
-
-- **Retrieval-quality bench** — `scripts/locomo-mteb.mjs` runs the full
-  1976-query LoCoMo MTEB slice against four canonical pipelines
-  (`rrf`, `rrf_rerank`, `rrf_hyde`, `rrf_hyde_rerank`); see
-  [`docs/locomo-mteb-adapter.md`](locomo-mteb-adapter.md) and
-  [`docs/longmemeval-s-adapter.md`](longmemeval-s-adapter.md).
-- **Token-efficiency bench** — `BENCH-AM-4`: 91.4 % token savings
-  vs full-context paste at R@10 63.6 % on the agentmemory case set
-  (`benchmark/terransoul/agentmemory-quality/`).
-- **Operational telemetry** — `src-tauri/src/memory/metrics.rs` plus
-  `brain_health` MCP tool surfacing `router_health`, `disk_ann_health`,
-  index ages, shard staleness.
-- **Availability SLO** — five-nines target tracked in
-  [`docs/availability-slo.md`](availability-slo.md) with in-process
-  uptime telemetry and a chaos test (`RESILIENCE-1`).
-
-The published numbers are honest about wins and ties: LongMemEval-S
-retrieval-only at **R@5 99.2 %, R@10 99.6 %, NDCG@10 91.3 %, MRR 92.6 %**
-beats agentmemory and MemPalace on the comparable slice; HyDE is wired
-**per-query-class** (gated on for abstract/multi-hop/temporal,
-gated off for under-specified open-ended) because LCM-10 showed
-+2.9 pp on temporal_reasoning *and* −1.6 pp on open_domain — a
-golden example of the article's "measure, don't assume" rule.
+This is the scene TerranSoul is built for. Not the demo. The Tuesday.
 
 ---
 
-## What this means for a new contributor
+## So what is TerranSoul?
 
-If you are joining TerranSoul and trying to figure out *which file* to
-touch for a memory feature, the five-scenes lens is the fastest map:
+The senior librarian from Scene 1, who happens to be your streaming-night friend from Scene 2, who has read every note you ever gave it like the study tool from Scene 3, who keeps a quiet relationship map like the job-hunt assistant from Scene 4 — and who has been built to survive the Tuesday-afternoon problems from Scene 5.
 
-- **You're improving how chunks are split or embedded?** → Scene 3.
-  Touch `src-tauri/src/memory/chunking.rs`,
-  `late_chunking.rs`, or the embedder selection in
-  `src-tauri/src/brain/`.
-- **You're adding a new entity / relation type?** → Scene 4. Touch
-  `src-tauri/src/memory/edges.rs`, `graph_rag.rs`, and the edge-extractor
-  in `auto_tag.rs`. Add the type to the canonical schema in
-  `schema.rs` and a numbered seed migration in `mcp-data/shared/migrations/`.
-- **You're tuning per-user / per-persona retrieval?** → Scene 2. Touch
-  `src-tauri/src/persona/`, `src-tauri/src/memory/cognitive_kind.rs`,
-  `query_intent.rs`.
-- **You're shipping a new bench, cache, or SLO?** → Scene 5. Touch
-  `src-tauri/src/memory/metrics.rs`, the `BENCH-*` chunks in
-  `rules/milestones.md`, and the docs under `docs/` matching your
-  axis (speed / quality / measurability).
-- **You're working on the brain mode itself?** → Scene 1. Touch
-  `src-tauri/src/brain/` and the `BrainGateway` adapters in
-  `src-tauri/src/ai_integrations/gateway.rs`.
-
-Cross-references for full context:
-
-- Architecture deep dive: [`docs/brain-advanced-design.md`](brain-advanced-design.md)
-- Why hybrid (vs vector-only) RAG: [README "Why Hybrid RAG" section](../README.md#why-hybrid-rag-vector--knowledge-graph--temporal-memory)
-- Knowledge architecture: [`docs/project-knowledge-architecture.md`](project-knowledge-architecture.md)
-- Cross-instance / hive sharing: [`docs/hive-protocol.md`](hive-protocol.md)
-- Companion ecosystem (Hermes / OpenClaw / Temporal-style runner): [README "Companion AI Ecosystem"](../README.md#companion-ai-ecosystem)
-- Source attribution: [`CREDITS.md`](../CREDITS.md)
-
----
-
-## Why credit the article
-
-Cognee's article is a *narrative* contribution, not a code contribution.
-It does not ship runtime behaviour into TerranSoul — but it gave us a
-crisp, beginner-friendly five-scene framing that we used to write this
-README pointer and to organise the new-contributor map above. Per the
-project's credits rule, that kind of design influence is exactly what
-[`CREDITS.md`](../CREDITS.md) is for. The cognee article is
-acknowledged there alongside the QuarkAndCode "GraphRAG vs Vector RAG"
-post that informed the existing "Why Hybrid RAG" section, the agentmemory
-+ Graphify pattern, the "Stop Calling It Memory" critique, and the other
-sources whose thinking shaped the brain.
+In plainer words: **TerranSoul remembers your life the way a thoughtful friend would — privately, accurately, and with receipts — and lets you choose which AI brain gets to talk to that memory.**

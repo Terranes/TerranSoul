@@ -453,6 +453,58 @@ blocker — they break the moment a font or padding changes.
 - Architecture Decision Records (ADRs) in `docs/adr/` for significant decisions
 - Update `rules/milestones.md` after each chunk is completed
 
+### Reader-Facing Prose — No Meta-Commentary
+
+Reader-facing markdown must talk *to the reader about the product*, not
+*about the document, the authors, or the writing process*. This rule
+applies to every `.md` file **except** deep architectural / technical /
+internal-process docs (see exempt list below).
+
+**Strip on sight in non-exempt docs:**
+
+- "We borrowed / reused / were inspired by ... to tell the same story" —
+  if attribution is required, put it in a one-line citation pointing at
+  `CREDITS.md` and stop.
+- "This is the clearest explanation we have read of ..." — opinions
+  about *other* docs.
+- "We built / we believe / we think / we feel / we wrote this because ..."
+  — internal motivation.
+- "Useful for new contributors picking which file to touch and for
+  non-technical users deciding whether ..." — telling the reader who
+  the doc is for.
+- "No prose or imagery from it is reproduced" — internal compliance
+  notes.
+- "Everything else in the documentation is the craft underneath it" —
+  meta-pitch about the docs themselves.
+- Dual-audience scaffolding ("for developers, see X; for everyone
+  else, see Y") when one document already serves the audience.
+
+**Keep:**
+
+- Direct statements about what the product is and does.
+- Concrete scenes, examples, screenshots, numbers.
+- A short top-of-doc citation when borrowing a framing
+  (`> Inspired by <link>. Credit in CREDITS.md.`) — one line, no
+  paragraph of justification.
+
+**Exempt (technical / architectural / internal docs — meta is fine):**
+
+- `rules/**` — rules and standards explain *why*.
+- `mcp-data/shared/**` — MCP knowledge artefacts.
+- `docs/brain-advanced-design*.md`, `docs/*-design.md`, `docs/*-spec.md`,
+  `docs/*-architecture.md`, `docs/*-research.md`, `docs/*-audit*.md`,
+  `docs/*-evaluation.md`, `docs/*-analysis*.md`, `docs/*-adapter.md`,
+  `docs/cap-profile.md`, `docs/benchmarking.md`, `docs/licensing-audit.md`
+  and similar deep-internals docs.
+- `CREDITS.md` — by nature thanks contributors, meta is the point.
+- `.github/**`, `AGENTS.md`, `CLAUDE.md`, `.claude/**`, `promt/**` —
+  agent-facing instructions.
+- ADRs under `docs/adr/`.
+
+When in doubt: read the doc out loud as if to a stranger. Every
+sentence that explains the document instead of the product is a
+candidate for deletion.
+
 ### Correctness Confirmation -> Self-Improve Write-Back (Mandatory)
 
 - When an agent confirms a solution is correct (for example: tests pass,

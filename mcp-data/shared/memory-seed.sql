@@ -774,6 +774,13 @@ VALUES (
   10, 'procedure', 1746416974000, 'long', 1.0, 'rules', 'procedural'
 );
 
+INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+VALUES (
+  'READER-FACING PROSE RULE: Reader-facing markdown (README, onboarding/marketing/intro docs, plain-language explainers) must talk to the reader about the product, not about the document, the authors, or the writing process. Strip phrases like "we built / we believe / we borrowed / we have read / we feel", paragraphs that explain who the doc is for, and internal compliance notes ("no prose or imagery from it is reproduced"). Keep direct statements about what the product is and does, concrete scenes/examples, and at most a one-line citation pointing at CREDITS.md when borrowing a framing. Architectural and technical docs (rules/**, mcp-data/shared/**, docs/*-design.md, *-spec.md, *-architecture.md, *-research.md, *-audit.md, *-evaluation.md, *-analysis*.md, *-adapter.md, ADRs, agent instruction files, CREDITS.md) are exempt — meta-commentary is fine there. Authoritative text in rules/coding-standards.md section "Reader-Facing Prose - No Meta-Commentary".',
+  'rules,documentation,reader-facing,prose,style,non-negotiable',
+  10, 'procedure', 1747196400000, 'long', 1.0, 'rules', 'procedural'
+);
+
 INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
 SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
 FROM memories s, memories d
@@ -790,6 +797,7 @@ WHERE s.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
     OR d.content LIKE 'LLM DECISION ROUTING RULE:%'
     OR d.content LIKE 'VALIDATION AND REALITY RULE:%'
     OR d.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
+    OR d.content LIKE 'READER-FACING PROSE RULE:%'
     OR d.content LIKE 'Rules files (rules/):%'
   );
 
@@ -808,6 +816,7 @@ WHERE d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
     OR s.content LIKE 'LLM DECISION ROUTING RULE:%'
     OR s.content LIKE 'VALIDATION AND REALITY RULE:%'
     OR s.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
+    OR s.content LIKE 'READER-FACING PROSE RULE:%'
     OR s.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
   );
 
