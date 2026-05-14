@@ -17,6 +17,40 @@ If you want a personal AI that **remembers everything**, **runs on your hardware
 
 ---
 
+## Why TerranSoul?
+
+Almost every dev, technical user, and even non-technical person now stitches together a **personal AI stack** out of pieces — a chat UI here, a RAG tool there, a voice assistant on the phone, a coding agent in the IDE, a workflow runner in the cloud, and a notes app pretending to be memory. Each one is great in isolation. None of them share a brain. None of them follow you across devices.
+
+**TerranSoul is the project that puts all of these into one open, local-first, MIT-licensed companion** — a 3D VRM avatar with voice, a persistent memory + RAG brain that you own, an MCP server that lets your coding agents share that brain, cross-device sync over CRDT, a skill tree that makes the system discoverable for non-technical users, and a plugin/agent harness for power users.
+
+The pitch is simple: every dev/tech person is already building a personal assistant out of duct tape and every non tech person need one but it is very complicated to setup by their own. **Why not build one that benefits everyone?** That's what TerranSoul is.
+
+If that resonates and wanna become contributor, contact me via:
+
+- 💬 Discord: <https://discord.gg/RzXcvsabKD>
+- ✉️ Email: [darren.bui@terransoul.com](mailto:darren.bui@terransoul.com)
+
+Contributions from devs, designers, VRM artists, prompt engineers, and non-technical testers are all welcome.
+
+---
+
+## AI memory in five scenes — where TerranSoul sits on the curve
+
+Cognee's primer [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes) walks an unfamiliar reader through the progression **base LLM → classic RAG → graph-aware RAG → hybrid memory at scale** by retelling it as five everyday scenes (a kid in a library, a high schooler picking a movie, a college student cramming for an exam, a junior IT engineer job hunting, an AI startup CTO at a party). It is the clearest short explanation we know of *why* "AI memory" is not one thing.
+
+**TerranSoul is built for the last scene** — hybrid memory in production. Concretely:
+
+- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
+- **Personal-context construction** (Scene 2) is shipped via persona traits, observation history, decay, and the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`).
+- **Typed knowledge graph + multi-hop** (Scene 4) is shipped via the `memory_edges` table, entity resolution, and `multi_hop_search_memories`.
+- **Production discipline** (Scene 5) is shipped via RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
+
+The "Why Hybrid RAG" section above explains the technical *why*. The five-scenes lens explains the *where on the curve* — useful for new contributors picking which file to touch and for non-technical users deciding whether TerranSoul does what they actually need.
+
+> Read the full mapping: [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md). The cognee article is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
+
+---
+
 ## Why TerranSoul is different
 
 Most "AI companion" apps are a chat box plus an embedding store. TerranSoul is built on the assumption that **a personal assistant must keep working over years, across devices, across teammates, and across failures** — which means treating it as distributed infrastructure from day one, not a chat UI with a database glued on.
@@ -36,23 +70,6 @@ The differentiators below name what's **shipped** vs what's a **design target** 
 | **Companion ecosystem, not a walled garden** | TerranSoul detects-and-links — never silently installs — companion AI apps (Hermes Desktop GUI, Hermes Agent CLI, OpenClaw bridge) for workloads heavier than a single TerranSoul session should answer alone. Install only after an explicit click + OS UAC consent. | **Shipped** (see [Companion AI Ecosystem](#companion-ai-ecosystem) below) |
 
 > **The "and" rule.** Most projects optimise for one or two of these and let the rest rot. TerranSoul refuses to ship a feature unless it composes cleanly with the others — that's why the brain, the avatar, the agent fleet, the sync layer, and the workflow runner all share the same memory store, the same persona, and the same consent model.
-
----
-
-## Why TerranSoul?
-
-Almost every dev, technical user, and even non-technical person now stitches together a **personal AI stack** out of pieces — a chat UI here, a RAG tool there, a voice assistant on the phone, a coding agent in the IDE, a workflow runner in the cloud, and a notes app pretending to be memory. Each one is great in isolation. None of them share a brain. None of them follow you across devices.
-
-**TerranSoul is the project that puts all of these into one open, local-first, MIT-licensed companion** — a 3D VRM avatar with voice, a persistent memory + RAG brain that you own, an MCP server that lets your coding agents share that brain, cross-device sync over CRDT, a skill tree that makes the system discoverable for non-technical users, and a plugin/agent harness for power users.
-
-The pitch is simple: every dev/tech person is already building a personal assistant out of duct tape and every non tech person need one but it is very complicated to setup by their own. **Why not build one that benefits everyone?** That's what TerranSoul is.
-
-If that resonates and wanna become contributor, contact me via:
-
-- 💬 Discord: <https://discord.gg/RzXcvsabKD>
-- ✉️ Email: [darren.bui@terransoul.com](mailto:darren.bui@terransoul.com)
-
-Contributions from devs, designers, VRM artists, prompt engineers, and non-technical testers are all welcome.
 
 ---
 
@@ -189,23 +206,6 @@ TerranSoul's brain is a deliberate **Hybrid RAG**: vector for breadth, graph for
 **When this stops being academic:** the moment you start using TerranSoul daily, your brain accumulates conversations, documents, code, persona drift, and decisions. After a few weeks, a vector-only store starts surfacing "plausible-but-wrong" old notes. The hybrid design is what keeps the companion *reliable enough to trust* over months.
 
 > Deep dive: [docs/brain-advanced-design.md](docs/brain-advanced-design.md) · The GraphRAG-vs-Vector RAG comparison and the agentmemory + Graphify hybrid pattern that informed this design are credited in [CREDITS.md](CREDITS.md).
-
----
-
-## AI memory in five scenes — where TerranSoul sits on the curve
-
-Cognee's primer [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes) walks an unfamiliar reader through the progression **base LLM → classic RAG → graph-aware RAG → hybrid memory at scale** by retelling it as five everyday scenes (a kid in a library, a high schooler picking a movie, a college student cramming for an exam, a junior IT engineer job hunting, an AI startup CTO at a party). It is the clearest short explanation we know of *why* "AI memory" is not one thing.
-
-**TerranSoul is built for the last scene** — hybrid memory in production. Concretely:
-
-- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
-- **Personal-context construction** (Scene 2) is shipped via persona traits, observation history, decay, and the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`).
-- **Typed knowledge graph + multi-hop** (Scene 4) is shipped via the `memory_edges` table, entity resolution, and `multi_hop_search_memories`.
-- **Production discipline** (Scene 5) is shipped via RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
-
-The "Why Hybrid RAG" section above explains the technical *why*. The five-scenes lens explains the *where on the curve* — useful for new contributors picking which file to touch and for non-technical users deciding whether TerranSoul does what they actually need.
-
-> Read the full mapping: [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md). The cognee article is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
 
 ---
 
