@@ -2586,16 +2586,19 @@ WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'INFRA README PILLAR HONESTY RULE (2026-05-14):%'
 );
 -- AI memory in five scenes pointer (2026-05-14) — narrative framing for the brain.
--- Cognee's "AI memory in five scenes" article is reused as a five-scene mental
--- model (base LLM -> classic RAG -> personal-context RAG -> GraphRAG -> hybrid
--- memory at scale) to onboard new contributors and non-technical users to
--- TerranSoul's brain. Mapping doc lives at docs/ai-memory-five-scenes-terransoul.md
--- and is linked from the README right after the "Why Hybrid RAG" section.
--- The article is credited in CREDITS.md; no prose, examples, or imagery copied.
+-- Cognee's "AI memory in five scenes" article is reused only as a five-stage
+-- progression (base LLM -> classic RAG -> personal-context RAG -> GraphRAG ->
+-- hybrid memory at scale). The actual story is retold around TerranSoul's
+-- canonical recurring character "Alice learning Vietnamese (laws)" used in
+-- tutorials/lan-mcp-sharing-tutorial.md and the docs/screenshots/lan-mcp-*.svg
+-- mocks. Mapping doc lives at docs/ai-memory-five-scenes-terransoul.md and is
+-- linked from the README "AI memory in five scenes — Alice learns Vietnamese"
+-- section. Cognee is credited in CREDITS.md; no prose, scene settings, or
+-- imagery are copied.
 INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
 SELECT
-  'AI MEMORY FIVE-SCENES MAPPING (2026-05-14): cognee.ai "AI memory in five scenes" framing is reused (not copied) as the canonical onboarding lens for TerranSoul brain architecture. Scene 1 (kid in library / three employees) -> three brain modes (Free API / Paid API / Local Ollama) with shared BrainGateway. Scene 2 (movie guru) -> persona traits + observation + cognitive_kind axis + privacy ACL. Scene 3 (exam prep) -> chunking.rs / late_chunking.rs / contextualize.rs / ann_index.rs (HNSW usearch, mxbai-embed-large default, nomic-embed-text fallback) + FTS5. Scene 4 (job hunt / GraphRAG) -> memory_edges + entity resolution (Phase 6) + multi_hop_search_memories + auto_tag.rs + graph_rag.rs + conflicts.rs + versioning.rs. Scene 5 (CTO at party / hybrid in production) -> RRF fusion.rs + 4 retrievers + per-shard HNSW (15 logical shards, persisted shard_router.json) + IVF-PQ disk_backed_ann.rs + query_intent.rs router + per-query-class HyDE + cross-encoder reranker.rs + kg_cache + search_cache + LoCoMo-MTEB / LongMemEval-S / agentmemory bench harnesses + brain_health metrics + availability SLO. Use this mapping when explaining where on the AI-memory progression curve TerranSoul sits and which subsystem owns a given memory feature.',
-  'brain,rag,graphrag,architecture,onboarding,cognee,five-scenes,mapping,credits',
+  'AI MEMORY FIVE-SCENES MAPPING (2026-05-14, refit around Alice/Vietnamese): cognee.ai "AI memory in five scenes" stage progression is reused (not copied) and retold around TerranSoul''s canonical recurring character — Alice learning Vietnamese, then Vietnamese labour law (same Alice/Bob LAN scenario as tutorials/lan-mcp-sharing-tutorial.md). Stage 1 (base LLM) -> Alice opens a generic chatbot that knows the alphabet but never her -> three brain modes (Free API / Paid API / Local Ollama) with shared BrainGateway. Stage 2 (context construction) -> Alice picks the next study set -> persona traits + observation + recency/decay + cognitive_kind axis + privacy ACL. Stage 3 (classic vector RAG) -> Alice cramming for the labour-law exam, "what did Cô Hằng say about probationary contracts?" -> chunking.rs / late_chunking.rs / contextualize.rs / ann_index.rs (HNSW usearch, mxbai-embed-large default, nomic-embed-text fallback) + FTS5. Stage 4 (graph-aware RAG) -> "which clauses did Cô Hằng mention that the textbook does NOT cover?" -> memory_edges + entity resolution (Phase 6) + multi_hop_search_memories + auto_tag.rs + graph_rag.rs + conflicts.rs + versioning.rs + receipts. Stage 5 (hybrid memory at scale) -> Alice shares her brain with Bob over LAN MCP brain_search, ranked snippets only, never the database -> RRF fusion.rs + 4 retrievers + per-shard HNSW (15 logical shards, persisted shard_router.json) + IVF-PQ disk_backed_ann.rs + query_intent.rs router + per-query-class HyDE + cross-encoder reranker.rs + kg_cache + search_cache + LoCoMo-MTEB / LongMemEval-S / agentmemory bench harnesses + brain_health metrics + availability SLO. The Scene-5 LAN UX, screenshots, and security notes are owned by tutorials/lan-mcp-sharing-tutorial.md and docs/screenshots/lan-mcp-*.svg. Use this mapping when explaining where on the AI-memory progression curve TerranSoul sits and which subsystem owns a given memory feature; never substitute cognee''s scene settings (kid in library, high schooler at movies, exam crammer, US job hunter, AI-startup CTO at a party) in user-facing materials — those are cognee''s, not ours.',
+  'brain,rag,graphrag,architecture,onboarding,cognee,five-scenes,mapping,alice,vietnamese,lan-sharing,credits',
   8,
   'note',
   strftime('%s', 'now'),
@@ -2604,5 +2607,22 @@ SELECT
   'architecture',
   'semantic'
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'AI MEMORY FIVE-SCENES MAPPING (2026-05-14):%'
+  SELECT 1 FROM memories WHERE content LIKE 'AI MEMORY FIVE-SCENES MAPPING (2026-05-14, refit around Alice/Vietnamese):%'
+);
+
+-- Lock in the rule that user-facing five-scenes materials use the Alice/Vietnamese
+-- canonical narrative, not cognee's scene settings.
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'RULE — FIVE-SCENES NARRATIVE (2026-05-14): User-facing TerranSoul five-scenes materials (README "AI memory in five scenes" section, docs/ai-memory-five-scenes-terransoul.md, accompanying illustrations under docs/images/ai-memory-five-scenes/) MUST use the project''s canonical recurring character — Alice learning Vietnamese, then Vietnamese labour law — and the Alice/Bob LAN scenario from tutorials/lan-mcp-sharing-tutorial.md and docs/screenshots/lan-mcp-*.svg. Do NOT substitute cognee''s scene settings (kid in library, high schooler at movies, college student preparing for an exam in a generic subject, US-style job hunt, AI-startup CTO at a party) into user-facing prose or images. Reuse from cognee is limited to the five-stage progression (base LLM -> classic vector RAG -> graph-aware RAG -> hybrid memory at scale). Illustrations must be hand-authored SVGs in the project flat-color UI palette (see docs/screenshots/lan-mcp-*.svg) — not diffusion-model-generated raster images, which read as "too AI" for this audience.',
+  'rule,docs,reader-facing,five-scenes,alice,vietnamese,illustrations,svg,no-ai-imagery',
+  9,
+  'rule',
+  strftime('%s', 'now'),
+  'long',
+  1.0,
+  'documentation',
+  'procedure'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'RULE — FIVE-SCENES NARRATIVE (2026-05-14):%'
 );

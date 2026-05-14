@@ -1,0 +1,107 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="s1-title s1-desc">
+  <title id="s1-title">Scene 1 — Alice opens a generic chatbot for the first time</title>
+  <desc id="s1-desc">Flat illustration of Alice at a kitchen table, a laptop showing a generic chatbot reciting Vietnamese alphabet basics while Alice's own notebook sits closed beside her — a base LLM that knows everything except Alice.</desc>
+
+  <!-- background -->
+  <rect width="1200" height="675" fill="#0f172a"/>
+  <rect x="0" y="510" width="1200" height="165" fill="#111827"/>
+  <line x1="0" y1="510" x2="1200" y2="510" stroke="#1e293b" stroke-width="2"/>
+
+  <!-- window with morning light -->
+  <rect x="60" y="60" width="220" height="280" rx="6" fill="#1e293b" stroke="#334155" stroke-width="3"/>
+  <line x1="170" y1="60" x2="170" y2="340" stroke="#334155" stroke-width="3"/>
+  <line x1="60" y1="200" x2="280" y2="200" stroke="#334155" stroke-width="3"/>
+  <rect x="78" y="78" width="184" height="244" fill="#fbbf24" opacity="0.18"/>
+
+  <!-- wall poster: Vietnamese flag (Alice is moving to Hà Nội) -->
+  <rect x="980" y="80" width="160" height="110" rx="4" fill="#dc2626"/>
+  <polygon points="1060,98 1070,128 1102,128 1076,146 1086,176 1060,158 1034,176 1044,146 1018,128 1050,128" fill="#fbbf24"/>
+  <text x="980" y="208" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="14">Hà Nội — 3 months</text>
+
+  <!-- table -->
+  <rect x="0" y="500" width="1200" height="20" fill="#475569"/>
+  <rect x="0" y="510" width="1200" height="6" fill="#334155"/>
+
+  <!-- coffee mug -->
+  <rect x="780" y="440" width="80" height="60" rx="6" fill="#f1f5f9"/>
+  <path d="M860 455 q24 0 24 22 q0 22 -24 22" fill="none" stroke="#f1f5f9" stroke-width="6"/>
+  <ellipse cx="820" cy="442" rx="36" ry="6" fill="#7c2d12"/>
+  <path d="M812 432 q4 -10 8 -2" fill="none" stroke="#cbd5e1" stroke-width="2" opacity="0.7"/>
+  <path d="M822 432 q4 -10 8 -2" fill="none" stroke="#cbd5e1" stroke-width="2" opacity="0.7"/>
+
+  <!-- closed notebook beside laptop (Alice's actual notes — unread) -->
+  <g transform="rotate(-6 920 470)">
+    <rect x="880" y="436" width="200" height="64" rx="4" fill="#7c6fff"/>
+    <rect x="880" y="436" width="200" height="10" fill="#5a4ed1"/>
+    <rect x="892" y="450" width="40" height="6" rx="2" fill="#c7c0ff"/>
+    <text x="892" y="478" fill="#fff" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">Sổ tay của Alice</text>
+    <text x="892" y="494" fill="#c7c0ff" font-family="Inter, Segoe UI, sans-serif" font-size="11">(closed)</text>
+  </g>
+
+  <!-- laptop -->
+  <g>
+    <!-- base -->
+    <polygon points="380,500 920,500 950,520 350,520" fill="#475569"/>
+    <rect x="345" y="518" width="610" height="6" fill="#334155"/>
+    <!-- screen back -->
+    <rect x="380" y="200" width="540" height="304" rx="10" fill="#1e293b" stroke="#334155" stroke-width="3"/>
+    <!-- screen content -->
+    <rect x="396" y="216" width="508" height="272" rx="6" fill="#0f172a"/>
+
+    <!-- chatbot UI title bar -->
+    <rect x="396" y="216" width="508" height="34" fill="#111827"/>
+    <circle cx="412" cy="233" r="5" fill="#ef4444"/>
+    <circle cx="428" cy="233" r="5" fill="#fbbf24"/>
+    <circle cx="444" cy="233" r="5" fill="#34d399"/>
+    <text x="464" y="238" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="13">GenericChat — new conversation</text>
+
+    <!-- user message -->
+    <rect x="540" y="262" width="350" height="46" rx="10" fill="#1e293b"/>
+    <text x="558" y="282" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">Alice:</text>
+    <text x="558" y="300" fill="#cbd5e1" font-family="Inter, Segoe UI, sans-serif" font-size="13">teach me Vietnamese</text>
+
+    <!-- bot message: generic alphabet drill -->
+    <rect x="412" y="320" width="478" height="156" rx="10" fill="#172033" stroke="#334155"/>
+    <text x="430" y="342" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="13" font-weight="700">Bot</text>
+    <text x="430" y="362" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">Vietnamese has 6 tones. The alphabet is:</text>
+    <text x="430" y="384" fill="#cbd5e1" font-family="JetBrains Mono, Consolas, monospace" font-size="13">a ă â b c d đ e ê g h i k l m n o ô ơ p</text>
+    <text x="430" y="402" fill="#cbd5e1" font-family="JetBrains Mono, Consolas, monospace" font-size="13">q r s t u ư v x y</text>
+    <text x="430" y="428" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">Try: xin chào (hello), cảm ơn (thank you).</text>
+    <rect x="430" y="442" width="180" height="22" rx="11" fill="#42340f" stroke="#fbbf24"/>
+    <text x="442" y="458" fill="#fbbf24" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">no memory of you</text>
+  </g>
+
+  <!-- Alice (right of laptop) -->
+  <g>
+    <!-- body -->
+    <path d="M1060 498 L1070 410 Q1075 372 1110 372 Q1145 372 1150 410 L1160 498 Z" fill="#7c6fff"/>
+    <rect x="1058" y="500" width="104" height="6" fill="#5a4ed1"/>
+    <!-- neck -->
+    <rect x="1100" y="356" width="20" height="20" fill="#f5d6c0"/>
+    <!-- head -->
+    <circle cx="1110" cy="338" r="32" fill="#f5d6c0"/>
+    <!-- hair -->
+    <path d="M1078 336 Q1076 300 1110 296 Q1144 300 1142 336 L1142 318 Q1126 308 1110 312 Q1094 308 1078 318 Z" fill="#3f3a52"/>
+    <path d="M1078 336 Q1076 364 1086 372 L1086 348 Q1080 344 1078 336 Z" fill="#3f3a52"/>
+    <!-- eyes -->
+    <circle cx="1100" cy="340" r="2.4" fill="#0f172a"/>
+    <circle cx="1120" cy="340" r="2.4" fill="#0f172a"/>
+    <!-- mouth: small confused line -->
+    <path d="M1102 354 q8 -4 16 0" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+    <!-- arm typing -->
+    <path d="M1080 410 Q1020 432 970 462" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+  </g>
+
+  <!-- thought bubble: "...does it know I already know this?" -->
+  <circle cx="1014" cy="262" r="6" fill="#1e293b"/>
+  <circle cx="1024" cy="248" r="9" fill="#1e293b"/>
+  <rect x="970" y="200" width="220" height="44" rx="10" fill="#1e293b" stroke="#334155"/>
+  <text x="982" y="220" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="12">Doesn't it know I learned</text>
+  <text x="982" y="236" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="12">the alphabet yesterday…?</text>
+
+  <!-- caption strip -->
+  <rect x="60" y="560" width="1080" height="84" rx="12" fill="#111827" stroke="#1e293b"/>
+  <text x="84" y="594" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">SCENE 1 · BASE LLM</text>
+  <text x="84" y="618" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700">Articulate. Polite. Has never met Alice.</text>
+  <text x="84" y="638" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="13">Knows every dictionary; doesn't know which shelf anything is on.</text>
+</svg>

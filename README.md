@@ -34,17 +34,17 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 ---
 
-## AI memory in five scenes — where TerranSoul sits on the curve
+## AI memory in five scenes — Alice learns Vietnamese
 
-TerranSoul is a hybrid-memory AI companion. The five-scenes lens is the fastest way to see what that means:
+TerranSoul is a hybrid-memory AI companion. The fastest way to see what that means is to follow the project's recurring character — **Alice, learning Vietnamese (and Vietnamese labour law)** — across five everyday scenes:
 
-- **Scene 1** — three "library employees": a chatbot, a search-and-quote bot, and a senior librarian who knows how everything connects. TerranSoul is the senior librarian.
-- **Scene 2** — a personal recommendation, not a catalogue dump. TerranSoul shapes every reply with persona traits, observation history, recency/decay, the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`), and a privacy ACL where the most-private rule wins.
-- **Scene 3** — vector RAG over your own corpus. TerranSoul ships per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
-- **Scene 4** — typed knowledge graph + multi-hop. `memory_edges` table, entity resolution, `multi_hop_search_memories`, conflict resolution, append-only versioning.
-- **Scene 5** — production reality: speed, quality, measurability. RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
+- **Scene 1 · base LLM.** Alice opens a generic chatbot for the first time. It is articulate and knows every dictionary, but does not know Alice — it re-explains the alphabet she learned yesterday. TerranSoul keeps a memory of Alice behind the chat box; you can swap which "brain" answers (free / paid / on-device Ollama) without changing what it knows about her.
+- **Scene 2 · context construction.** Alice asks for the next thing to study. A generic suggestion ignores her exam; a frequency-list dump is a wall of text; a TerranSoul-style briefing names her Friday contract review, her weak spot (classifier nouns), and the textbook chapter open on her desk. Persona + observation history + recency/decay + cognitive kind (`episodic` / `semantic` / `procedural` / `judgment`) + a privacy ACL where the most-private rule wins.
+- **Scene 3 · classic RAG (vector).** Alice cramming for a labour-law exam. *"What did Cô Hằng say about probationary contracts?"* — answered from her own lecture transcripts, scanned chapters, and bilingual scribbles via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text`, semantic chunking, and Anthropic-style Contextual Retrieval.
+- **Scene 4 · graph-aware RAG.** Alice sharpens the question: *"Which clauses about probation did Cô Hằng raise that the textbook does **not** cover?"* — needs typed entities (Tutor, Lecture, Article, Clause, Textbook) and edges (`mentioned`, `covers`, `belongs_to`). `memory_edges` table, entity resolution, `multi_hop_search_memories`, LLM-resolved contradictions, append-only versioning, and citations back to the exact transcript line.
+- **Scene 5 · hybrid memory at scale.** Alice shares her brain with Bob over LAN — same Wi-Fi, ranked snippets only, never the database. The Tuesday-afternoon scene: speed (RRF fusion + per-query-class HyDE + cross-encoder rerank + search/KG caches + graceful degradation), honesty (per-memory confidence, decay, versioning of legal facts), and measurability (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency — wins **and** ties reported, with new tricks turned on only for the question kinds they help).
 
-The plain-language version of the five scenes lives at [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md).
+The plain-language version of all five scenes — with hand-authored illustrations of Alice's journey — lives at [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md). The Alice + Bob LAN-sharing step in Scene 5 is the same scenario walked through in [tutorials/lan-mcp-sharing-tutorial.md](tutorials/lan-mcp-sharing-tutorial.md).
 
 ---
 

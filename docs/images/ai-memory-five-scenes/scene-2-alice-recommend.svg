@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="s2-title s2-desc">
+  <title id="s2-title">Scene 2 — Alice picks her next study set</title>
+  <desc id="s2-desc">Flat illustration of Alice on a couch with a tablet; three recommendation bubbles float above it: a generic chatbot suggestion, a frequency-list dump, and a tidy briefing card naming her exam, her weak spot, and what is on her shelf.</desc>
+
+  <rect width="1200" height="675" fill="#0f172a"/>
+  <rect x="0" y="510" width="1200" height="165" fill="#111827"/>
+  <line x1="0" y1="510" x2="1200" y2="510" stroke="#1e293b" stroke-width="2"/>
+
+  <!-- bookshelf left -->
+  <rect x="40" y="100" width="180" height="240" rx="6" fill="#1e293b" stroke="#334155" stroke-width="3"/>
+  <line x1="40" y1="180" x2="220" y2="180" stroke="#334155" stroke-width="3"/>
+  <line x1="40" y1="260" x2="220" y2="260" stroke="#334155" stroke-width="3"/>
+  <!-- books -->
+  <rect x="56" y="118" width="20" height="58" fill="#dc2626"/>
+  <rect x="80" y="124" width="20" height="52" fill="#fbbf24"/>
+  <rect x="104" y="118" width="20" height="58" fill="#34d399"/>
+  <rect x="128" y="130" width="20" height="46" fill="#7c6fff"/>
+  <rect x="152" y="120" width="20" height="56" fill="#60a5fa"/>
+  <rect x="176" y="128" width="20" height="48" fill="#f472b6"/>
+  <rect x="56" y="200" width="20" height="56" fill="#fbbf24"/>
+  <rect x="80" y="208" width="20" height="48" fill="#7c6fff"/>
+  <rect x="104" y="200" width="20" height="56" fill="#dc2626"/>
+  <rect x="128" y="212" width="20" height="44" fill="#34d399"/>
+  <rect x="152" y="204" width="80" height="52" fill="#475569"/>
+  <text x="156" y="234" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">BỘ LUẬT</text>
+  <text x="156" y="248" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">LAO ĐỘNG</text>
+  <rect x="56" y="280" width="156" height="50" rx="2" fill="#172033"/>
+  <text x="68" y="300" fill="#cbd5e1" font-family="Inter, Segoe UI, sans-serif" font-size="11">Friday — labour-contract</text>
+  <text x="68" y="316" fill="#cbd5e1" font-family="Inter, Segoe UI, sans-serif" font-size="11">review with HR</text>
+
+  <!-- couch -->
+  <rect x="240" y="430" width="540" height="80" rx="14" fill="#475569"/>
+  <rect x="220" y="350" width="60" height="160" rx="14" fill="#334155"/>
+  <rect x="740" y="350" width="60" height="160" rx="14" fill="#334155"/>
+  <rect x="280" y="380" width="200" height="60" rx="10" fill="#3f4a5f"/>
+  <rect x="500" y="380" width="220" height="60" rx="10" fill="#3f4a5f"/>
+
+  <!-- Alice on couch -->
+  <g>
+    <ellipse cx="420" cy="450" rx="80" ry="20" fill="#7c6fff" opacity="0.0"/>
+    <!-- legs -->
+    <rect x="370" y="436" width="160" height="22" rx="6" fill="#1e293b"/>
+    <!-- torso -->
+    <path d="M340 440 L356 360 Q360 332 392 332 L444 332 Q476 332 480 360 L496 440 Z" fill="#7c6fff"/>
+    <!-- neck -->
+    <rect x="408" y="316" width="20" height="20" fill="#f5d6c0"/>
+    <!-- head -->
+    <circle cx="418" cy="298" r="32" fill="#f5d6c0"/>
+    <!-- hair -->
+    <path d="M386 296 Q384 260 418 256 Q452 260 450 296 L450 278 Q434 268 418 272 Q402 268 386 278 Z" fill="#3f3a52"/>
+    <path d="M386 296 Q384 324 394 332 L394 308 Q388 304 386 296 Z" fill="#3f3a52"/>
+    <!-- eyes -->
+    <circle cx="408" cy="300" r="2.4" fill="#0f172a"/>
+    <circle cx="428" cy="300" r="2.4" fill="#0f172a"/>
+    <!-- small smile -->
+    <path d="M408 314 q10 6 20 0" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+    <!-- arms holding tablet -->
+    <path d="M360 384 Q400 400 440 400" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+    <path d="M476 384 Q436 400 440 400" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+    <!-- tablet -->
+    <rect x="360" y="394" width="160" height="100" rx="6" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <rect x="368" y="402" width="144" height="84" rx="3" fill="#0f172a"/>
+    <text x="378" y="424" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">What should I study next?</text>
+    <line x1="378" y1="436" x2="500" y2="436" stroke="#1e293b" stroke-width="2"/>
+    <text x="378" y="454" fill="#cbd5e1" font-family="Inter, Segoe UI, sans-serif" font-size="10">3 suggestions →</text>
+    <text x="378" y="470" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="10">↑</text>
+  </g>
+
+  <!-- three speech bubbles above -->
+  <!-- bubble 1: generic chatbot -->
+  <g>
+    <rect x="60" y="40" width="280" height="130" rx="12" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <polygon points="120,170 138,196 156,170" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <text x="76" y="64" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700">GENERIC CHATBOT</text>
+    <text x="76" y="92" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">"Try the famous folk-tale</text>
+    <text x="76" y="110" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">audiobook 'Tấm Cám' (B2)."</text>
+    <rect x="76" y="124" width="220" height="22" rx="11" fill="#42340f" stroke="#fbbf24"/>
+    <text x="86" y="140" fill="#fbbf24" font-family="Inter, Segoe UI, sans-serif" font-size="11">2 levels above her, gave up once</text>
+  </g>
+
+  <!-- bubble 2: frequency dump -->
+  <g>
+    <rect x="380" y="20" width="280" height="160" rx="12" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <polygon points="446,180 464,206 482,180" fill="#1e293b" stroke="#334155" stroke-width="2"/>
+    <text x="396" y="44" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700">LANGUAGE-APP RECOMMENDER</text>
+    <text x="396" y="68" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="13">Top 1000 Vietnamese words:</text>
+    <text x="396" y="88" fill="#cbd5e1" font-family="JetBrains Mono, Consolas, monospace" font-size="11">là, có, không, người, một,</text>
+    <text x="396" y="104" fill="#cbd5e1" font-family="JetBrains Mono, Consolas, monospace" font-size="11">của, được, những, và, anh,</text>
+    <text x="396" y="120" fill="#cbd5e1" font-family="JetBrains Mono, Consolas, monospace" font-size="11">cho, ra, đã, sẽ, làm, đi, …</text>
+    <rect x="396" y="134" width="240" height="22" rx="11" fill="#42340f" stroke="#fbbf24"/>
+    <text x="406" y="150" fill="#fbbf24" font-family="Inter, Segoe UI, sans-serif" font-size="11">a wall of text — no order Alice can act on</text>
+  </g>
+
+  <!-- bubble 3: TerranSoul friend -->
+  <g>
+    <rect x="700" y="40" width="440" height="170" rx="12" fill="#172033" stroke="#7c6fff" stroke-width="2"/>
+    <polygon points="780,210 800,236 820,210" fill="#172033" stroke="#7c6fff" stroke-width="2"/>
+    <text x="716" y="64" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="12" font-weight="700">TERRANSOUL — TIDY BRIEFING</text>
+    <text x="716" y="88" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">"Labour-contract review on Friday.</text>
+    <text x="716" y="108" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">You keep stalling on classifier nouns</text>
+    <text x="716" y="128" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">(con / cái / chiếc). Textbook §3 on</text>
+    <text x="716" y="148" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">probationary periods is open on your desk."</text>
+    <rect x="716" y="164" width="100" height="22" rx="11" fill="#123d31" stroke="#34d399"/>
+    <text x="728" y="180" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">persona</text>
+    <rect x="822" y="164" width="118" height="22" rx="11" fill="#123d31" stroke="#34d399"/>
+    <text x="834" y="180" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">observations</text>
+    <rect x="946" y="164" width="98" height="22" rx="11" fill="#123d31" stroke="#34d399"/>
+    <text x="956" y="180" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">your shelf</text>
+  </g>
+
+  <!-- caption strip -->
+  <rect x="60" y="540" width="1080" height="100" rx="12" fill="#111827" stroke="#1e293b"/>
+  <text x="84" y="572" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">SCENE 2 · CONTEXT CONSTRUCTION</text>
+  <text x="84" y="598" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700">A friend, not a catalogue. A briefing, not a dump.</text>
+  <text x="84" y="622" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="13">Persona + observation history + recency/decay + cognitive kind + privacy ACL — shaped for this moment.</text>
+</svg>

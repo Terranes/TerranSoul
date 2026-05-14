@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675" role="img" aria-labelledby="s4-title s4-desc">
+  <title id="s4-title">Scene 4 — Alice asks the question that needs a map</title>
+  <desc id="s4-desc">Flat illustration of Alice at her desk, with a tidy graph of nodes on the wall behind her: lectures, articles, clauses, tutor, textbook. Arrows connect them and Clause 25.3 is highlighted as the answer to "what did Cô Hằng mention that the textbook does not cover?"</desc>
+
+  <rect width="1200" height="675" fill="#0f172a"/>
+  <rect x="0" y="510" width="1200" height="165" fill="#111827"/>
+  <line x1="0" y1="510" x2="1200" y2="510" stroke="#1e293b" stroke-width="2"/>
+
+  <!-- knowledge-graph board on the wall -->
+  <rect x="60" y="40" width="800" height="440" rx="12" fill="#111827" stroke="#334155" stroke-width="3"/>
+  <text x="80" y="72" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">ALICE'S KNOWLEDGE MAP — Vietnamese labour law</text>
+  <line x1="80" y1="84" x2="840" y2="84" stroke="#1e293b" stroke-width="2"/>
+
+  <!-- nodes -->
+  <!-- Cô Hằng (tutor) -->
+  <g>
+    <ellipse cx="170" cy="150" rx="76" ry="32" fill="#172033" stroke="#7c6fff" stroke-width="2"/>
+    <text x="170" y="146" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">TUTOR</text>
+    <text x="170" y="164" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">Cô Hằng</text>
+  </g>
+  <!-- Lecture 4 -->
+  <g>
+    <rect x="320" y="118" width="160" height="64" rx="8" fill="#172033" stroke="#7c6fff" stroke-width="2"/>
+    <text x="338" y="140" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">LECTURE</text>
+    <text x="338" y="160" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">Lecture 4</text>
+    <text x="338" y="174" fill="#94a3b8" font-family="JetBrains Mono, Consolas, monospace" font-size="10">2026-04-18 · transcript</text>
+  </g>
+  <!-- Textbook §6 -->
+  <g>
+    <rect x="320" y="324" width="160" height="64" rx="8" fill="#172033" stroke="#fbbf24" stroke-width="2"/>
+    <text x="338" y="346" fill="#fbbf24" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">TEXTBOOK</text>
+    <text x="338" y="366" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">Textbook §6</text>
+    <text x="338" y="380" fill="#94a3b8" font-family="JetBrains Mono, Consolas, monospace" font-size="10">probationary periods</text>
+  </g>
+  <!-- Article 25 -->
+  <g>
+    <rect x="560" y="220" width="160" height="64" rx="8" fill="#172033" stroke="#34d399" stroke-width="2"/>
+    <text x="578" y="242" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">ARTICLE</text>
+    <text x="578" y="262" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">Article 25</text>
+    <text x="578" y="276" fill="#94a3b8" font-family="JetBrains Mono, Consolas, monospace" font-size="10">Bộ luật Lao động 2019</text>
+  </g>
+  <!-- Clauses -->
+  <g>
+    <rect x="760" y="120" width="80" height="36" rx="6" fill="#172033" stroke="#cbd5e1"/>
+    <text x="800" y="143" text-anchor="middle" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="13">25.1</text>
+  </g>
+  <g>
+    <rect x="760" y="170" width="80" height="36" rx="6" fill="#172033" stroke="#cbd5e1"/>
+    <text x="800" y="193" text-anchor="middle" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="13">25.2</text>
+  </g>
+  <!-- 25.3 highlighted as the answer -->
+  <g>
+    <rect x="756" y="220" width="88" height="42" rx="7" fill="#0f3a2c" stroke="#34d399" stroke-width="3"/>
+    <text x="800" y="244" text-anchor="middle" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">25.3 ★</text>
+    <text x="800" y="258" text-anchor="middle" fill="#bfead8" font-family="Inter, Segoe UI, sans-serif" font-size="9">the answer</text>
+  </g>
+  <g>
+    <rect x="760" y="276" width="80" height="36" rx="6" fill="#172033" stroke="#cbd5e1"/>
+    <text x="800" y="299" text-anchor="middle" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="13">25.4</text>
+  </g>
+
+  <!-- edges -->
+  <!-- Cô Hằng delivered Lecture 4 -->
+  <line x1="246" y1="150" x2="320" y2="150" stroke="#7c6fff" stroke-width="2"/>
+  <polygon points="316,144 326,150 316,156" fill="#7c6fff"/>
+  <text x="252" y="142" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11">delivered</text>
+  <!-- Lecture 4 mentions 25.2 -->
+  <line x1="480" y1="160" x2="760" y2="186" stroke="#7c6fff" stroke-width="2"/>
+  <polygon points="754,180 766,188 752,192" fill="#7c6fff"/>
+  <text x="540" y="170" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11">mentions</text>
+  <!-- Lecture 4 mentions 25.3 (highlight) -->
+  <line x1="480" y1="170" x2="756" y2="232" stroke="#34d399" stroke-width="3"/>
+  <polygon points="752,224 766,234 750,238" fill="#34d399"/>
+  <text x="540" y="216" fill="#34d399" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">mentions ★</text>
+  <!-- Textbook covers 25.1 and 25.2 -->
+  <line x1="480" y1="346" x2="760" y2="148" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 3"/>
+  <polygon points="754,142 766,148 754,156" fill="#fbbf24"/>
+  <text x="540" y="252" fill="#fbbf24" font-family="Inter, Segoe UI, sans-serif" font-size="11">covers</text>
+  <line x1="480" y1="354" x2="760" y2="190" stroke="#fbbf24" stroke-width="2" stroke-dasharray="4 3"/>
+  <polygon points="754,184 766,190 754,198" fill="#fbbf24"/>
+  <!-- Textbook does NOT cover 25.3 -->
+  <line x1="480" y1="362" x2="756" y2="240" stroke="#ef4444" stroke-width="2" stroke-dasharray="2 4"/>
+  <text x="556" y="296" fill="#ef4444" font-family="Inter, Segoe UI, sans-serif" font-size="11">NOT covered</text>
+  <!-- Clauses belong to Article 25 -->
+  <line x1="720" y1="252" x2="760" y2="240" stroke="#cbd5e1" stroke-width="2"/>
+  <line x1="720" y1="252" x2="760" y2="190" stroke="#cbd5e1" stroke-width="2"/>
+  <line x1="720" y1="252" x2="760" y2="140" stroke="#cbd5e1" stroke-width="2"/>
+  <line x1="720" y1="252" x2="760" y2="294" stroke="#cbd5e1" stroke-width="2"/>
+
+  <!-- query box at bottom of board -->
+  <rect x="80" y="404" width="760" height="60" rx="8" fill="#172033" stroke="#7c6fff" stroke-width="2"/>
+  <text x="98" y="426" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="11" font-weight="700">ALICE'S QUESTION</text>
+  <text x="98" y="450" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="14">Clauses mentioned by Cô Hằng in Lecture 4 — but NOT covered by any textbook section.</text>
+
+  <!-- Alice on the right -->
+  <g transform="translate(960 280)">
+    <path d="M-50 220 L-40 100 Q-36 64 0 64 L60 64 Q96 64 100 100 L110 220 Z" fill="#7c6fff"/>
+    <rect x="20" y="40" width="20" height="24" fill="#f5d6c0"/>
+    <circle cx="30" cy="22" r="36" fill="#f5d6c0"/>
+    <path d="M-6 22 Q-8 -22 30 -26 Q68 -22 66 22 L66 0 Q48 -10 30 -6 Q12 -10 -6 0 Z" fill="#3f3a52"/>
+    <path d="M-6 22 Q-8 56 4 64 L4 38 Q-2 32 -6 22 Z" fill="#3f3a52"/>
+    <circle cx="20" cy="22" r="2.6" fill="#0f172a"/>
+    <circle cx="40" cy="22" r="2.6" fill="#0f172a"/>
+    <!-- determined smile + raised brow -->
+    <path d="M22 36 q8 6 18 0" fill="none" stroke="#0f172a" stroke-width="2.4" stroke-linecap="round"/>
+    <line x1="14" y1="14" x2="26" y2="12" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="34" y1="12" x2="46" y2="14" stroke="#0f172a" stroke-width="2.2" stroke-linecap="round"/>
+    <!-- arm pointing at the highlighted node -->
+    <path d="M-30 110 Q-90 100 -150 80" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="-156" cy="78" r="6" fill="#f5d6c0"/>
+  </g>
+
+  <!-- caption strip -->
+  <rect x="60" y="540" width="1080" height="100" rx="12" fill="#111827" stroke="#1e293b"/>
+  <text x="84" y="572" fill="#7c6fff" font-family="Inter, Segoe UI, sans-serif" font-size="14" font-weight="700">SCENE 4 · GRAPH-AWARE RAG</text>
+  <text x="84" y="598" fill="#f1f5f9" font-family="Inter, Segoe UI, sans-serif" font-size="18" font-weight="700">From "find similar text" to "answer the question."</text>
+  <text x="84" y="622" fill="#94a3b8" font-family="Inter, Segoe UI, sans-serif" font-size="13">Named entities + typed edges + multi-hop walk + receipts. Holds contradictions; never overwrites silently.</text>
+</svg>
