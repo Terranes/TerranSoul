@@ -23,7 +23,7 @@ Almost every dev, technical user, and even non-technical person now stitches tog
 
 **TerranSoul is the project that puts all of these into one open, local-first, MIT-licensed companion** — a 3D VRM avatar with voice, a persistent memory + RAG brain that you own, an MCP server that lets your coding agents share that brain, cross-device sync over CRDT, a skill tree that makes the system discoverable for non-technical users, and a plugin/agent harness for power users.
 
-The pitch is simple: every dev/tech person is already building a personal assistant out of duct tape and every non tech person need one but it is very complicated to setup by their own. **Why not build one that benefits everyone?** That's what TerranSoul is.
+The pitch is simple: every dev/tech person is already building a personal assistant, aka J.A.R.V.I.S or 3D companion or RAG/knowledge graph, out of duct tape and every non tech person need one but it is very complicated to setup by their own. **Why not build one that benefits everyone?** That's what TerranSoul is.
 
 If that resonates and wanna become contributor, contact me via:
 
