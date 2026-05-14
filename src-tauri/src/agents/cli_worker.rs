@@ -182,7 +182,13 @@ pub async fn spawn(spec: CliSpawnSpec) -> Result<CliWorker, String> {
 
     let (tx, rx) = unbounded_channel::<CliEvent>();
 
-    let mut cmd = Command::new(&spec.binary);
+    // Resolve the binary path. For most kinds this just passes the
+    // name through and relies on $PATH. Hermes Desktop's NSIS installer
+    // drops `hermes-agent.exe` into `%LOCALAPPDATA%\Programs\hermes-desktop\`
+    // without touching PATH, so we fall back to that known location.
+    let executable = spec.kind.resolve_executable(&spec.binary);
+
+    let mut cmd = Command::new(&executable);
     // Pass the prompt as the LAST argument so that CLI tools which accept
     // `cli [flags] <prompt>` work out of the box. Tools that need a
     // different positional order can rewire via `extra_args`.
@@ -207,7 +213,11 @@ pub async fn spawn(spec: CliSpawnSpec) -> Result<CliWorker, String> {
     let mut child = match cmd.spawn() {
         Ok(c) => c,
         Err(e) => {
-            let msg = format!("failed to spawn '{}': {e}", spec.binary);
+            let msg = format!(
+                "failed to spawn '{}' (resolved to {}): {e}",
+                spec.binary,
+                executable.display()
+            );
             let _ = tx.send(CliEvent::SpawnError {
                 message: msg.clone(),
             });

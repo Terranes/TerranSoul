@@ -259,6 +259,72 @@ pub fn plan_from_counts(
     }
 }
 
+/// Build an IVF-PQ index for a shard that has a `planned` sidecar.
+///
+/// This is the Phase 3 execution step: consumes the sidecar metadata,
+/// reads all embeddings for the shard, trains coarse + PQ codebooks,
+/// encodes all vectors, and writes the binary index file.
+///
+/// Returns build statistics on success and updates the sidecar status to `"built"`.
+pub fn build_ivf_pq_for_shard(
+    vectors_dir: &Path,
+    shard: &str,
+    embeddings: Vec<(i64, Vec<f32>)>,
+    dim: usize,
+) -> Result<super::ivf_pq::IvfPqBuildStats, String> {
+    // Read sidecar to get params
+    let sidecar = read_sidecar(vectors_dir, shard)?
+        .ok_or_else(|| format!("No sidecar found for shard {shard}"))?;
+
+    if sidecar.status != "planned" && sidecar.status != "stale" {
+        return Err(format!(
+            "Sidecar for {shard} has status '{}'; expected 'planned' or 'stale'",
+            sidecar.status
+        ));
+    }
+
+    if embeddings.is_empty() {
+        return Err(format!("No embeddings provided for shard {shard}"));
+    }
+
+    // Build the IVF-PQ index
+    let (index, stats) =
+        super::ivf_pq::IvfPqIndex::build(&sidecar.ivf_pq, dim, embeddings)?;
+
+    // Save the index to disk
+    let index_path = super::ivf_pq::IvfPqIndex::index_path(vectors_dir, shard);
+    index.save_to_file(&index_path)?;
+
+    // Update sidecar status to "built"
+    let updated_sidecar = DiskAnnSidecar {
+        status: "built".to_string(),
+        generated_at: now_ms(),
+        entry_count: stats.total_vectors,
+        ..sidecar
+    };
+    write_sidecar(vectors_dir, &updated_sidecar)?;
+
+    Ok(stats)
+}
+
+/// Check if an IVF-PQ index is available for a shard.
+pub fn ivf_pq_index_exists(vectors_dir: &Path, shard: &str) -> bool {
+    super::ivf_pq::IvfPqIndex::exists(vectors_dir, shard)
+}
+
+/// Load an IVF-PQ index for a shard. Returns None if it doesn't exist.
+pub fn load_ivf_pq_index(
+    vectors_dir: &Path,
+    shard: &str,
+) -> Result<Option<super::ivf_pq::IvfPqIndex>, String> {
+    let path = super::ivf_pq::IvfPqIndex::index_path(vectors_dir, shard);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let index = super::ivf_pq::IvfPqIndex::load_from_file(&path)?;
+    Ok(Some(index))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,6 +403,67 @@ mod tests {
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].shard, "long__procedural");
         assert_eq!(all[1].shard, "long__semantic");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn build_ivf_pq_for_shard_creates_index_and_updates_status() {
+        let dir = std::env::temp_dir().join("ts_ivfpq_build_test");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        // Write a planned sidecar
+        let sidecar = DiskAnnSidecar {
+            version: DISK_ANN_SIDECAR_VERSION,
+            shard: "long__semantic".to_string(),
+            entry_count: 200,
+            threshold: 100,
+            source_ann_index: "long__semantic.usearch".to_string(),
+            generated_at: now_ms(),
+            ivf_pq: IvfPqParams {
+                nlist: 4,
+                pq_m: 4,
+                pq_nbits: 8,
+            },
+            status: "planned".to_string(),
+        };
+        write_sidecar(&dir, &sidecar).unwrap();
+
+        // Generate test embeddings (dim=16, pq_m=4 → subspace_dim=4)
+        let dim = 16;
+        let mut embeddings = Vec::new();
+        for i in 0..200 {
+            let v: Vec<f32> = (0..dim)
+                .map(|d| ((i * 7 + d * 13) as f32 * 0.01).sin())
+                .collect();
+            embeddings.push((i as i64, v));
+        }
+
+        // Build the index
+        let stats = build_ivf_pq_for_shard(&dir, "long__semantic", embeddings, dim).unwrap();
+        assert_eq!(stats.total_vectors, 200);
+        assert_eq!(stats.nlist, 4);
+        assert_eq!(stats.pq_m, 4);
+
+        // Verify index file was created
+        assert!(ivf_pq_index_exists(&dir, "long__semantic"));
+
+        // Verify sidecar was updated
+        let updated = read_sidecar(&dir, "long__semantic").unwrap().unwrap();
+        assert_eq!(updated.status, "built");
+        assert_eq!(updated.entry_count, 200);
+
+        // Verify index can be loaded and searched
+        let index = load_ivf_pq_index(&dir, "long__semantic").unwrap().unwrap();
+        assert_eq!(index.len(), 200);
+
+        let query: Vec<f32> = (0..dim)
+            .map(|d| ((d * 13) as f32 * 0.01).sin())
+            .collect();
+        let results = index.search(&query, 5, 2);
+        assert!(!results.is_empty());
+        assert!(results.iter().any(|r| r.id == 0));
 
         let _ = fs::remove_dir_all(&dir);
     }

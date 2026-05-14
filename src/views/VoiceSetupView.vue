@@ -1,5 +1,17 @@
 <template>
-  <div class="voice-setup">
+  <div
+    class="bp-shell voice-setup"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>COMPANION</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">VOICE SETUP</span>
+    </div>
+
     <!-- Step indicator -->
     <div class="vs-steps">
       <div
@@ -13,11 +25,18 @@
     </div>
 
     <!-- ── Step 0: Choose voice mode ── -->
-    <div
+    <section
       v-if="step === 0"
-      class="vs-card"
+      class="bp-module vs-card"
     >
-      <h2>🎤 Voice Setup</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Voice Mode
+          </div>
+          <h2 class="bp-module-title">🎤 Voice Setup</h2>
+        </div>
+      </header>
       <p class="vs-desc">
         Add voice input/output to TerranSoul. Choose how you'd like to handle speech.
       </p>
@@ -65,20 +84,27 @@
         </div>
       </div>
       <button
-        class="btn-primary"
+        class="bp-btn bp-btn--primary"
         :disabled="!selectedMode"
         @click="goToConfig"
       >
         Next →
       </button>
-    </div>
+    </section>
 
     <!-- ── Step 1A: Browser voice ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedMode === 'browser'"
-      class="vs-card"
+      class="bp-module vs-card"
     >
-      <h2>🖥 Browser Voice</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Configure
+          </div>
+          <h2 class="bp-module-title">🖥 Browser Voice</h2>
+        </div>
+      </header>
       <p class="vs-desc">
         Uses the Web Speech API for speech input and Edge TTS for high-quality voice output.
         No downloads or API keys needed.
@@ -97,26 +123,33 @@
       </p>
       <div class="vs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           @click="activateBrowser"
         >
           Activate →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 1B: Cloud API ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedMode === 'cloud'"
-      class="vs-card"
+      class="bp-module vs-card"
     >
-      <h2>☁️ Cloud Voice API</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Configure
+          </div>
+          <h2 class="bp-module-title">☁️ Cloud Voice API</h2>
+        </div>
+      </header>
       <p class="vs-desc">
         Use OpenAI's voice APIs. Requires an API key.
       </p>
@@ -148,27 +181,34 @@
       </div>
       <div class="vs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!cloudApiKey || (!cloudEnableAsr && !cloudEnableTts)"
           @click="activateCloud"
         >
           Activate →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 1C: Groq ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedMode === 'groq'"
-      class="vs-card"
+      class="bp-module vs-card"
     >
-      <h2>⚡ Groq Voice</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Configure
+          </div>
+          <h2 class="bp-module-title">⚡ Groq Voice</h2>
+        </div>
+      </header>
       <p class="vs-desc">
         Groq provides ultra-fast Whisper transcription with a generous free tier.
         Requires a Groq API key (free at console.groq.com).
@@ -194,30 +234,37 @@
       </div>
       <div class="vs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!groqApiKey"
           @click="activateGroq"
         >
           Activate →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Done ── -->
-    <div
+    <section
       v-else-if="step === 99"
-      class="vs-card vs-done"
+      class="bp-module vs-card vs-done"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">03</span> Complete
+          </div>
+          <h2 class="bp-module-title">Voice configured!</h2>
+        </div>
+      </header>
       <div class="vs-done-icon">
         🎉
       </div>
-      <h2>Voice configured!</h2>
       <p v-if="selectedMode === 'browser'">
         Using <strong>Web Speech API</strong> for speech input and
         <strong>Edge TTS</strong> for voice output.
@@ -233,12 +280,12 @@
         Voice is <strong>disabled</strong>. You can enable it anytime from settings.
       </p>
       <button
-        class="btn-primary"
+        class="bp-btn bp-btn--primary"
         @click="emit('done')"
       >
         Continue →
       </button>
-    </div>
+    </section>
   </div>
 </template>
 

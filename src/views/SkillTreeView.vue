@@ -1,5 +1,14 @@
 <template>
-  <div class="skill-tree-view">
+  <div class="bp-shell skill-tree-view" data-density="cozy">
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>COMPANION</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">QUESTS</span>
+    </div>
+
     <!-- ── Progress Header ── -->
     <header class="st-header">
       <div class="st-title-row">

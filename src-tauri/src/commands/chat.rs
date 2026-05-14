@@ -1068,8 +1068,11 @@ mod tests {
 
         let now = crate::memory::store::now_ms();
         let one_day_ms: i64 = 24 * 60 * 60 * 1000;
-        let recent_ts = now - 6 * 60 * 60 * 1000; // ~6h ago (yesterday-window UTC)
-        let stale_ts = now - 30 * one_day_ms; // 30 days ago — outside "yesterday"
+        // Anchor "recent" to 1h after today's midnight UTC so the test
+        // passes regardless of what time-of-day (UTC) it runs.
+        let today_midnight = now - now.rem_euclid(one_day_ms);
+        let recent_ts = today_midnight + 60 * 60 * 1000; // 01:00 UTC today — always "today"
+        let stale_ts = now - 30 * one_day_ms; // 30 days ago — outside "today"
 
         let (recent_id, stale_id) = {
             let store = state.memory_store.lock().unwrap();

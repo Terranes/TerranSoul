@@ -11,9 +11,9 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Runtime, State};
 
 use crate::agents::cli_worker::{spawn, CliEvent, CliSpawnSpec, CliStream};
-use crate::agents::{default_agent, fresh_id, AgentProfile, AgentRoster, BrainBackend};
+use crate::agents::{default_agent, fresh_id, AgentProfile, AgentRoster, BrainBackend, CliKind};
 #[cfg(test)]
-use crate::agents::{AgentBackendKind, CliKind};
+use crate::agents::AgentBackendKind;
 use crate::brain::ram_budget::{
     compute_max_concurrent_agents, estimate_agent_mb, free_ram_mb, AgentFootprint, RamCap,
 };
@@ -330,24 +330,47 @@ async fn drive_cli_workflow<R: Runtime>(
     }
 
     // Channel closed — reap the child and finalise the workflow.
-    match child_exit_code {
+    let (final_status, final_message): (&str, Option<String>) = match child_exit_code {
         Some(0) => {
             let _ = engine
                 .complete(&workflow_id, serde_json::json!({"exit_code": 0}))
                 .await;
+            ("completed", None)
         }
         Some(code) => {
-            let _ = engine
-                .fail(&workflow_id, &format!("CLI exited with status {code}"))
-                .await;
+            let msg = format!("CLI exited with status {code}");
+            let _ = engine.fail(&workflow_id, &msg).await;
+            ("failed", Some(msg))
         }
         None => {
             // Process ended without a status — could be signal-killed.
-            let _ = engine
-                .fail(&workflow_id, "CLI exited without status code")
-                .await;
+            let msg = "CLI exited without status code".to_string();
+            let _ = engine.fail(&workflow_id, &msg).await;
+            ("failed", Some(msg))
         }
-    }
+    };
+
+    // Emit a single terminal-state event so the frontend's notification
+    // store can flip the job badge to ✓/✗ and pop a toast without polling.
+    let _ = app.emit(
+        "workflow-completed",
+        WorkflowCompletedEvent {
+            workflow_id: workflow_id.clone(),
+            status: final_status.to_string(),
+            message: final_message,
+        },
+    );
+}
+
+/// Emitted to the frontend exactly once per workflow when it transitions
+/// to a terminal state (completed / failed / cancelled-by-exit).
+#[derive(Debug, Clone, Serialize)]
+pub struct WorkflowCompletedEvent {
+    pub workflow_id: String,
+    /// "completed", "failed", or "cancelled".
+    pub status: String,
+    /// Optional human-readable error / detail message.
+    pub message: Option<String>,
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -387,15 +410,26 @@ pub struct WorkflowStatusReport {
 
 /// Cancel a workflow — appends a `Cancelled` event. Idempotent.
 #[tauri::command]
-pub async fn roster_cancel_workflow(
+pub async fn roster_cancel_workflow<R: Runtime>(
     workflow_id: String,
     reason: Option<String>,
+    app: AppHandle<R>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let engine = state.workflow_engine.lock().await;
-    engine
-        .cancel(&workflow_id, reason.as_deref().unwrap_or("user cancelled"))
-        .await
+    let reason_str = reason.unwrap_or_else(|| "user cancelled".to_string());
+    {
+        let engine = state.workflow_engine.lock().await;
+        engine.cancel(&workflow_id, &reason_str).await?;
+    }
+    let _ = app.emit(
+        "workflow-completed",
+        WorkflowCompletedEvent {
+            workflow_id,
+            status: "cancelled".to_string(),
+            message: Some(reason_str),
+        },
+    );
+    Ok(())
 }
 
 /// List recent workflows (terminal + pending) across all agents.
@@ -415,6 +449,240 @@ pub async fn roster_list_pending_workflows(
 ) -> Result<Vec<WorkflowSummary>, String> {
     let engine = state.workflow_engine.lock().await;
     engine.list_pending().await
+}
+
+// ── Hermes Desktop convenience dispatch ──────────────────────────────────
+
+/// Default agent id used by [`dispatch_hermes_job`] when the roster has
+/// no Hermes-backed agent yet. Kept stable so repeated dispatches reuse
+/// the same agent row (and its `last_active_at` timestamp).
+pub const HERMES_DEFAULT_AGENT_ID: &str = "hermes-staff";
+
+/// Frontend request to dispatch a job to Hermes Desktop. Each dispatch
+/// becomes one Hermes "staff" — Hermes Desktop is responsible for
+/// rendering its own worker UI; TerranSoul tracks the workflow id so the
+/// notification panel can flip to ✓/✗ when Hermes finishes.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DispatchHermesJobRequest {
+    pub prompt: String,
+    /// Working folder Hermes should run in. Must exist.
+    pub working_folder: PathBuf,
+    /// Optional human-readable label for the notification panel.
+    /// Defaults to the first 80 chars of the prompt.
+    #[serde(default)]
+    pub label: Option<String>,
+    /// Override the binary name. Defaults to `hermes-agent`.
+    #[serde(default)]
+    pub binary: Option<String>,
+    /// Extra arguments passed to Hermes after the prompt.
+    #[serde(default)]
+    pub extra_args: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DispatchHermesJobResult {
+    pub workflow_id: String,
+    pub agent_id: String,
+    pub label: String,
+}
+
+/// Dispatch a job to Hermes Desktop. Auto-creates a `hermes-staff` agent
+/// in the roster on first use, updates its working folder if the user
+/// picked a new one, then routes through the existing CLI workflow
+/// pipeline so the notification store and durable event log work
+/// unchanged.
+#[tauri::command]
+pub async fn dispatch_hermes_job<R: Runtime>(
+    request: DispatchHermesJobRequest,
+    app: AppHandle<R>,
+    state: State<'_, AppState>,
+) -> Result<DispatchHermesJobResult, String> {
+    if request.prompt.trim().is_empty() {
+        return Err("prompt must not be empty".to_string());
+    }
+    if !request.working_folder.exists() {
+        return Err(format!(
+            "working folder does not exist: {}",
+            request.working_folder.display()
+        ));
+    }
+    if !request.working_folder.is_dir() {
+        return Err(format!(
+            "working folder is not a directory: {}",
+            request.working_folder.display()
+        ));
+    }
+
+    let binary = request
+        .binary
+        .clone()
+        .unwrap_or_else(|| crate::agents::CliKind::Hermes.default_binary().to_string());
+    let backend = BrainBackend::ExternalCli {
+        kind: crate::agents::CliKind::Hermes,
+        binary,
+        extra_args: request.extra_args.clone(),
+    };
+
+    let roster = AgentRoster::open(&state.data_dir);
+    let now = crate::agents::roster::now_secs();
+    let agent_id = HERMES_DEFAULT_AGENT_ID.to_string();
+    let profile = match roster.get(&agent_id) {
+        Ok(mut existing) => {
+            // Keep the agent in sync with the latest dispatch settings —
+            // working folder and binary may change between calls.
+            existing.brain_backend = backend.clone();
+            existing.working_folder = Some(request.working_folder.clone());
+            existing.last_active_at = now;
+            roster.update(&existing)?;
+            existing
+        }
+        Err(_) => {
+            let default_vrm = state
+                .app_settings
+                .lock()
+                .map_err(|e| e.to_string())?
+                .selected_model_id
+                .clone();
+            let vrm = if default_vrm.trim().is_empty() {
+                "shinra".to_string()
+            } else {
+                default_vrm
+            };
+            let profile = AgentProfile {
+                id: agent_id.clone(),
+                display_name: "Hermes Staff".to_string(),
+                vrm_model_id: vrm,
+                brain_backend: backend,
+                working_folder: Some(request.working_folder.clone()),
+                capabilities: vec!["code".into(), "delegate".into()],
+                created_at: now,
+                last_active_at: now,
+            };
+            roster.create(profile.clone())?;
+            profile
+        }
+    };
+
+    let label = request
+        .label
+        .clone()
+        .unwrap_or_else(|| {
+            let trimmed = request.prompt.trim();
+            if trimmed.chars().count() <= 80 {
+                trimmed.to_string()
+            } else {
+                let prefix: String = trimmed.chars().take(80).collect();
+                format!("{prefix}…")
+            }
+        });
+
+    let result = roster_start_cli_workflow(
+        StartCliWorkflowRequest {
+            agent_id: profile.id.clone(),
+            prompt: request.prompt,
+        },
+        app,
+        state,
+    )
+    .await?;
+
+    Ok(DispatchHermesJobResult {
+        workflow_id: result.workflow_id,
+        agent_id: profile.id,
+        label,
+    })
+}
+
+// ── Hermes Office (Claw3D) health probe ──────────────────────────────────
+
+/// Snapshot of the Hermes Desktop install + Office gateway health.
+///
+/// Hermes Desktop's "Office (Claw3D)" screen is an Electron `<webview>`
+/// driven by the Hermes Agent HTTP API on `127.0.0.1:8642` (Server-Sent
+/// Events streaming chat → tool calls → adapter → 3D scene). External
+/// callers cannot drive the Office UI directly, but they CAN:
+///   1. Launch Hermes Desktop via [`dispatch_hermes_job`], and
+///   2. Send work to the agent over its HTTP gateway, which the Office
+///      adapter then visualizes.
+///
+/// This command is the read-only sibling that TerranSoul's notification
+/// panel uses to surface "Hermes installed? Gateway up?" so the user
+/// knows whether a dispatched job will reach the 3D office.
+#[derive(Debug, Clone, Serialize)]
+pub struct HermesOfficeStatus {
+    /// `hermes-agent` binary present on disk (PATH or known install).
+    pub installed: bool,
+    /// Absolute path to the resolved binary, if found.
+    pub install_path: Option<String>,
+    /// Hermes Agent HTTP gateway reachable on `127.0.0.1:8642`.
+    pub gateway_running: bool,
+    /// Gateway base URL the probe used.
+    pub gateway_url: String,
+    /// Optional human-readable diagnostic / blocker message.
+    pub message: Option<String>,
+}
+
+/// Probe Hermes Desktop install + Office gateway. Read-only — never
+/// launches a process, never blocks the UI for more than ~2s.
+#[tauri::command]
+pub async fn hermes_office_status() -> Result<HermesOfficeStatus, String> {
+    let gateway_url = "http://127.0.0.1:8642".to_string();
+
+    // Step 1: resolve the Hermes binary path (covers $PATH and the
+    // %LOCALAPPDATA%\Programs\hermes-desktop fallback).
+    let resolved = CliKind::Hermes.resolve_executable("hermes-agent");
+    let installed = resolved.is_absolute() && resolved.exists();
+    let install_path = if installed {
+        Some(resolved.display().to_string())
+    } else {
+        None
+    };
+
+    // Step 2: probe the Hermes Agent /health endpoint (Hermes Desktop's
+    // gateway lifecycle uses 1500ms; we go 2s to tolerate slow boots).
+    // Use a fresh client per call so callers don't have to wire shared
+    // state through state.app_handle().
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(2))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            return Ok(HermesOfficeStatus {
+                installed,
+                install_path,
+                gateway_running: false,
+                gateway_url,
+                message: Some(format!("http client build failed: {e}")),
+            });
+        }
+    };
+    let gateway_running = matches!(
+        client.get(format!("{gateway_url}/health")).send().await,
+        Ok(r) if r.status().is_success()
+    );
+
+    let message = match (installed, gateway_running) {
+        (true, true) => None,
+        (true, false) => Some(
+            "Hermes Desktop is installed but its Agent gateway is not running on \
+             127.0.0.1:8642. Launch Hermes Desktop or dispatch a job to start it."
+                .into(),
+        ),
+        (false, _) => Some(
+            "Hermes Desktop is not installed. Run the companion installer or grab \
+             the latest release from https://github.com/fathah/hermes-desktop/releases."
+                .into(),
+        ),
+    };
+
+    Ok(HermesOfficeStatus {
+        installed,
+        install_path,
+        gateway_running,
+        gateway_url,
+        message,
+    })
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────
@@ -458,6 +726,46 @@ mod tests {
     fn truncate_handles_short_and_long() {
         assert_eq!(truncate("abc", 10), "abc");
         assert_eq!(truncate(&"x".repeat(20), 5), "xxxxx…");
+    }
+
+    #[test]
+    fn dispatch_hermes_request_deserializes_minimal() {
+        let j = serde_json::json!({
+            "prompt": "do the thing",
+            "working_folder": "/tmp",
+        });
+        let req: DispatchHermesJobRequest = serde_json::from_value(j).unwrap();
+        assert_eq!(req.prompt, "do the thing");
+        assert!(req.label.is_none());
+        assert!(req.binary.is_none());
+        assert!(req.extra_args.is_empty());
+    }
+
+    #[test]
+    fn dispatch_hermes_request_deserializes_full() {
+        let j = serde_json::json!({
+            "prompt": "refactor",
+            "working_folder": "/tmp/repo",
+            "label": "Refactor auth flow",
+            "binary": "hermes-agent",
+            "extra_args": ["--json", "--no-prompt"],
+        });
+        let req: DispatchHermesJobRequest = serde_json::from_value(j).unwrap();
+        assert_eq!(req.label.as_deref(), Some("Refactor auth flow"));
+        assert_eq!(req.extra_args.len(), 2);
+    }
+
+    #[test]
+    fn workflow_completed_event_serializes() {
+        let ev = WorkflowCompletedEvent {
+            workflow_id: "wf-1".into(),
+            status: "completed".into(),
+            message: None,
+        };
+        let j = serde_json::to_value(&ev).unwrap();
+        assert_eq!(j["status"], "completed");
+        assert_eq!(j["workflow_id"], "wf-1");
+        assert!(j["message"].is_null());
     }
 
     #[test]

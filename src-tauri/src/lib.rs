@@ -45,9 +45,10 @@ pub mod workflows;
 use commands::{
     agent::list_agents,
     agents_roster::{
-        roster_cancel_workflow, roster_create, roster_delete, roster_get_current,
-        roster_get_ram_cap, roster_list, roster_list_pending_workflows, roster_list_workflows,
-        roster_query_workflow, roster_set_working_folder, roster_start_cli_workflow, roster_switch,
+        dispatch_hermes_job, hermes_office_status, roster_cancel_workflow, roster_create,
+        roster_delete, roster_get_current, roster_get_ram_cap, roster_list,
+        roster_list_pending_workflows, roster_list_workflows, roster_query_workflow,
+        roster_set_working_folder, roster_start_cli_workflow, roster_switch,
     },
     auto_setup::{
         list_mcp_clients, remove_claude_mcp, remove_codex_mcp, remove_hermes_mcp,
@@ -158,7 +159,7 @@ use commands::{
         obsidian_sync_start, obsidian_sync_stop, progressive_search_memories, promote_memory,
         rebalance_ann_shards, rebuild_shard_router, reflect_on_session, refresh_graph_clusters,
         rerank_search_memories, resolve_memory_conflict, router_health, run_disk_ann_migration,
-        scan_edge_conflicts, search_memories, semantic_search_memories, set_ann_quantization,
+        build_ivf_pq_indexes, scan_edge_conflicts, search_memories, semantic_search_memories, set_ann_quantization,
         set_auto_learn_policy, shard_health, summarize_session, temporal_query, update_memory,
         update_memory_edge,
     },
@@ -1752,6 +1753,7 @@ pub fn run() {
             disk_ann_plan_preview,
             disk_ann_migration_status,
             run_disk_ann_migration,
+            build_ivf_pq_indexes,
             // Shard health, router health, graph observability (Chunk 50.1)
             shard_health,
             router_health,
@@ -1848,6 +1850,8 @@ pub fn run() {
             roster_cancel_workflow,
             roster_list_workflows,
             roster_list_pending_workflows,
+            dispatch_hermes_job,
+            hermes_office_status,
             health_check_providers,
             get_next_provider,
             get_failover_summary,
@@ -2000,6 +2004,7 @@ pub fn run() {
             commands::companions::companions_detect_one,
             commands::companions::companions_open_install_page,
             commands::companions::companions_run_guided_install,
+            commands::companions::companions_check_update,
             // Consolidation (Chunk 16.7)
             run_sleep_consolidation,
             touch_activity,

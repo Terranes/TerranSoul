@@ -140,6 +140,16 @@ describe('CompanionsPanel', () => {
         expect(args).toEqual({ id: 'openclaw-cli' });
         return { Installed: { version: '1.2.3' } };
       }
+      if (cmd === 'companions_check_update') {
+        // Piggy-backed by detect — return "up to date" so no update badge appears.
+        return {
+          id: 'openclaw-cli',
+          installed_version: '1.2.3',
+          latest: { version: '1.2.3', tag: 'v1.2.3', html_url: 'https://example/' },
+          update_available: false,
+          note: null,
+        };
+      }
       throw new Error(`Unmocked command: ${cmd}`);
     });
 
@@ -155,6 +165,62 @@ describe('CompanionsPanel', () => {
     const status = wrapper.find('[data-testid="companion-status-openclaw-cli"]');
     expect(status.text()).toContain('Installed');
     expect(status.text()).toContain('1.2.3');
+
+    // No update available \u2192 update badge MUST NOT render.
+    expect(wrapper.find('[data-testid="companion-update-badge-openclaw-cli"]').exists()).toBe(false);
+    expect(wrapper.find('[data-testid="companion-update-openclaw-cli"]').exists()).toBe(false);
+  });
+
+  it('shows "Update available" badge + Update button when latest > installed', async () => {
+    mockInvoke.mockImplementation(async (cmd: string, args?: Record<string, unknown>) => {
+      if (cmd === 'companions_list') return sampleCompanions;
+      if (cmd === 'companions_detect_one') {
+        expect(args).toEqual({ id: 'hermes-desktop' });
+        return { Installed: { version: '0.3.6' } };
+      }
+      if (cmd === 'companions_check_update') {
+        expect(args).toEqual({ id: 'hermes-desktop' });
+        return {
+          id: 'hermes-desktop',
+          installed_version: '0.3.6',
+          latest: {
+            version: '0.3.7',
+            tag: 'v0.3.7',
+            html_url: 'https://github.com/fathah/hermes-desktop/releases/tag/v0.3.7',
+          },
+          update_available: true,
+          note: null,
+        };
+      }
+      throw new Error(`Unmocked command: ${cmd}`);
+    });
+
+    const wrapper = mount(CompanionsPanel);
+    await flushPromises();
+
+    await wrapper.find('[data-testid="companion-detect-hermes-desktop"]').trigger('click');
+    await flushPromises();
+
+    // Badge renders with the latest version.
+    const badge = wrapper.find('[data-testid="companion-update-badge-hermes-desktop"]');
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toContain('0.3.7');
+
+    // Update button replaces Install when an update is available.
+    expect(wrapper.find('[data-testid="companion-install-hermes-desktop"]').exists()).toBe(false);
+    const updateBtn = wrapper.find('[data-testid="companion-update-hermes-desktop"]');
+    expect(updateBtn.exists()).toBe(true);
+    expect(updateBtn.text()).toContain('0.3.7');
+
+    // Clicking Update invokes the same companions_run_guided_install command \u2014
+    // installers are idempotent and serve as updaters too.
+    mockInvoke.mockImplementationOnce(async (cmd: string, callArgs?: Record<string, unknown>) => {
+      expect(cmd).toBe('companions_run_guided_install');
+      expect(callArgs).toEqual({ id: 'hermes-desktop' });
+      return { DirectInstall: {} };
+    });
+    await updateBtn.trigger('click');
+    await flushPromises();
   });
 
   it('Temporal design-reference card has NO Install button', async () => {

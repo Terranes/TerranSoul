@@ -30,6 +30,7 @@ pub mod graph_paging;
 pub mod graph_rag;
 pub mod hyde;
 pub mod instruction_slices;
+pub mod ivf_pq;
 pub mod judgment;
 pub mod kg_cache;
 pub mod late_chunking;

@@ -1,19 +1,35 @@
 <template>
   <section
-    class="ai-integrations-view"
+    class="bp-shell ai-integrations-view"
+    data-density="cozy"
     data-testid="ai-integrations-view"
   >
-    <header class="aiv-header">
-      <h3>🔌 AI Coding Integrations</h3>
-      <button
-        class="aiv-link"
-        data-testid="aiv-refresh"
-        :disabled="store.loading"
-        @click="onRefreshAll"
-      >
-        {{ store.loading ? 'Refreshing…' : 'Refresh' }}
-      </button>
-    </header>
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────────────── -->
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>BRAIN</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">AI CODING</span>
+    </div>
+
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> AI Coding Integrations
+          </div>
+          <h2 class="bp-module-title">🔌 MCP Server</h2>
+        </div>
+        <button
+          class="bp-btn bp-btn--ghost bp-btn--sm"
+          data-testid="aiv-refresh"
+          :disabled="store.loading"
+          @click="onRefreshAll"
+        >
+          {{ store.loading ? 'Refreshing…' : 'Refresh' }}
+        </button>
+      </header>
 
     <p class="aiv-help">
       Expose TerranSoul's brain to external AI coding assistants
@@ -262,6 +278,7 @@
     >
       {{ store.error }}
     </p>
+    </section>
   </section>
 </template>
 

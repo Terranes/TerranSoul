@@ -2367,6 +2367,23 @@ pub async fn run_disk_ann_migration(
         .map_err(|e| e.to_string())
 }
 
+/// Build IVF-PQ indexes for shards that have planned sidecars.
+/// This is the Phase 3 execution step: trains coarse + PQ codebooks,
+/// encodes all shard vectors, and writes binary IVF-PQ index files.
+#[tauri::command]
+pub async fn build_ivf_pq_indexes(
+    max_shards: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::ivf_pq::IvfPqBuildStats>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .build_ivf_pq_indexes(
+            max_shards
+                .unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN),
+        )
+        .map_err(|e| e.to_string())
+}
+
 // ── Chunk 50.1 — Shard health, router health, and graph observability ─────────
 
 /// Per-shard capacity and index health summary (shard backpressure, Chunk 48.7).

@@ -264,6 +264,10 @@
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
 
+        <!-- Hermes job tracking + general notifications -->
+        <NotificationBubble />
+        <NotificationPanel />
+
         <!-- Quest reward ceremony overlay (Chunk 132) -->
         <QuestRewardCeremony />
       </template>
@@ -283,6 +287,7 @@ import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
 import { useSettingsStore } from './stores/settings';
 import { useMobileNotificationsStore } from './stores/mobile-notifications';
+import { useNotificationsStore } from './stores/notifications';
 import { useTheme } from './composables/useTheme';
 import ChatView from './views/ChatView.vue';
 import BrowserLandingView from './views/BrowserLandingView.vue';
@@ -296,6 +301,8 @@ import SkillTreeView from './views/SkillTreeView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
+import NotificationBubble from './components/NotificationBubble.vue';
+import NotificationPanel from './components/NotificationPanel.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
@@ -311,6 +318,7 @@ const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
 const settingsStore = useSettingsStore();
 const mobileNotifications = useMobileNotificationsStore();
+const notifications = useNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
 const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
 const appLoading = ref(true);
@@ -563,6 +571,7 @@ onMounted(async () => {
   await skillTree.initialise();
 
   await mobileNotifications.start();
+  await notifications.initialize();
 
   // Listen for the tray-driven 'window-mode-changed' event so the frontend
   // state stays in sync when the user toggles via the system-tray menu.
@@ -583,6 +592,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
   mobileNotifications.stop();
+  void notifications.teardown();
 });
 
 

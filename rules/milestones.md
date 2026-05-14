@@ -32,30 +32,20 @@
 
 ## Next Chunk
 
-All active phases complete. Remaining chunks are deferred (user-gated on budget/priority):
-
-- **BENCH-SCALE-2 run** — harness shipped, actual two-arm 1M-doc run pending. Deferred: "Finish the entire chunks left except Phase BENCH-SCALE."
-- **BENCH-SCALE-3** — IVF-PQ disk-backed bench (Phase BENCH-SCALE, deferred).
-- **TOP1-2** — paid gpt-4o-mini end-to-end harness (requires API budget).
-- **INTEGRATE-2/3/4 code follow-ups** — doc-shipped; code follow-ups remain scoped but not user-prioritised.
+All active phases complete. Three full bench runs were launched 2026-05-14 19:50 local
+(see in-progress entries below). When they finish, archive the chunks per the enforcement
+rule above.
 
 ---
 
-## Phase INTEGRATE — remaining code follow-ups
+## In-Progress Runs (launched 2026-05-14)
 
-| Chunk | Status | Scope |
-|---|---|---|
-| INTEGRATE-2 | code-follow-up pending | **Hermes suggest-hook in ChatView.** Dismissable hint fires when `turn_token_estimate ≥ 4000` AND `intent ∈ {deep_research, long_running_workflow, full_ide_coding}` AND `hermes_hint_enabled = true`. |
-| INTEGRATE-3 | code-follow-up pending | **OpenClaw status in companions registry.** Detect upstream OpenClaw CLI, offer guided install, show "active plugin" badge in BrainView. |
-| INTEGRATE-4 | code-follow-up pending | **Temporal.io optional bridge spec.** Only if user provides a concrete use case for outsourcing a workflow to a Temporal worker. |
+| Chunk | Terminal | Log | Status |
+|---|---|---|---|
+| BENCH-SCALE-2 routed @ 1M | `c1e09715` | `target-copilot-bench/scale-1m-routed-20260514-195000.log` | Router-routed shard policy, 100 adversarial queries vs 1M-doc corpus. |
+| BENCH-SCALE-2 all-shards @ 1M | `52321122` | `target-copilot-bench/scale-1m-allshards-20260514-195015.log` | All-shards baseline arm; same corpus, no router. |
 
----
-
-## Phase TOP1 — remaining
-
-| Chunk | Status | Scope |
-|---|---|---|
-| TOP1-2 | not-started | **Paid gpt-4o-mini end-to-end harness.** Requires paid API budget for Mem0-paper parity or explicit local-judge variant decision. Scoped in `benchmark/COMPARISON.md` § "TOP1-2 scope". |
+Live monitor: `Get-Content target-copilot-bench\scale-1m-*.log -Wait -Tail 5`
 
 ---
 
@@ -65,6 +55,6 @@ Goal: validate that LoCoMo R@10 survives when relevant docs are buried in a 1M-d
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-SCALE-2 | harness-shipped, run-pending | **Sharded-HNSW scale bench.** Execute the two-arm 1M comparison per `docs/billion-scale-retrieval-design.md` § Phase 2 (router-routed vs all-shards). Report deltas on R@10 / NDCG@10 / MRR / p50 / p95 / p99 / ingest time / peak RSS. |
-| BENCH-SCALE-3 | not-started | **IVF-PQ disk-backed bench.** Phase 3 targets >100M with m=96, nbits=8 PQ. Re-run LoCoMo-at-scale bench at 10M and report the PQ accuracy/latency trade against full-precision HNSW. |
+| BENCH-SCALE-2 | run-in-progress (1M, both arms) | **Sharded-HNSW scale bench.** Two-arm 100k done previously (R@10 58.5% vs 59.5%). 1M routed + all-shards launched 2026-05-14 19:50. Each arm: 1M-doc corpus, 100 adversarial queries, mxbai-embed-large via Ollama. Expected ~6 h ingest per arm (sequential due to single Ollama instance). |
+| BENCH-SCALE-3 | code-done, run-deferred | **IVF-PQ disk-backed bench.** Phase 3 code complete (codebook training + IVF-PQ build + ADC search path + `build_ivf_pq_indexes` Tauri command). Remaining: write a 10M-doc bench runner (none exists yet — `locomo-at-scale.mjs` uses HNSW via `longmemeval-ipc`, not IVF-PQ) and run it (~40h+ wall clock). |
 

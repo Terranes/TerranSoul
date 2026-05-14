@@ -78,7 +78,7 @@ Frontend (WebView — Vue 3 + TS)
   └── Design system: CSS custom properties (--ts-* tokens in style.css)
       ↕ Tauri IPC (invoke / emit)
 Rust Core Engine (src-tauri/src/)
-  ├── commands/ — 349 Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
+  ├── commands/ — 354 Tauri commands (chat, streaming, memory, brain, voice, window, mcp, etc.)
   ├── brain/ — LLM providers: OllamaAgent, OpenAiClient, FreeProvider, ProviderRotator
   │   ├── model_recommender.rs — RAM-based model catalogue (Gemma 4, Phi-4, Kimi K2.6 cloud)
   │   ├── ollama_agent.rs — embed_text(), hyde_complete(), rerank_score()
@@ -144,7 +144,7 @@ Gamified feature discovery with 30+ skills across 5 categories (brain, voice, av
 - **State**: `AppState(Arc<AppStateInner>)` — cheaply clonable Arc newtype; all fields accessed via auto-`Deref`. Enables background servers (MCP, gRPC) to hold references without lifetime issues.
 - **Streaming**: SSE via Tauri events (`llm-chunk`), parsed by `StreamTagParser` state machine
 - **Error handling**: `?` operator, `thiserror` for typed errors, never `.unwrap()` in library code
-- **Testing**: Vitest for frontend (1738+ tests), `cargo test` for Rust (2836+ tests)
+- **Testing**: Vitest for frontend (1872+ tests), `cargo test` for Rust (2871+ tests)
 - **CSS**: Use `var(--ts-*)` design tokens from `src/style.css`, never hardcode hex colors
 
 ## Coding Standards

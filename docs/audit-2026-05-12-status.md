@@ -1,9 +1,12 @@
 # Docs / source-drift audit — HYBRID-DOC-1
 
-> **Status:** Audit pass complete (2026-05-14). This document is the structured
-> input for the rest of Phase HYBRID-DOC. Drift rows feed HYBRID-DOC-3 (cross-link
-> + correctness pass); missing-feature rows feed HYBRID-DOC backlog rotation.
-> Verified-current rows are the load-bearing claims we DO ship; do not regress them.
+> **Status:** Audit pass complete (2026-05-14). HYBRID-DOC-3 correctness pass
+> executed 2026-05-14 — D1/D2/D3 number drift fixed across README, copilot-instructions,
+> AGENTS.md, CLAUDE.md. D4–D10/D12 were already correct from prior sessions.
+> This document is the structured input for the rest of Phase HYBRID-DOC.
+> Drift rows feed HYBRID-DOC-3 (cross-link + correctness pass); missing-feature
+> rows feed HYBRID-DOC backlog rotation. Verified-current rows are the
+> load-bearing claims we DO ship; do not regress them.
 
 **Scope walked:** `README.md`, `AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `docs/brain-advanced-design.md` (top sections), `docs/billion-scale-retrieval-design.md`, `docs/DESIGN.md`, `src/views/BrowserLandingView.vue`, `tutorials/` directory listing, `instructions/` directory listing, `src-tauri/src/{memory,brain,commands,ai_integrations/mcp}/**`, `src/stores/`.
 
@@ -50,9 +53,9 @@
 
 | # | Claim | Reality | Fix |
 |---|---|---|---|
-| D1 | [README.md](../README.md) L286 "cargo test (**2383 passing**)" and the same number in [.github/copilot-instructions.md](../.github/copilot-instructions.md) "1075+ Rust tests" | Current count is **2836** (BENCH-SCALE-2 2026-05-14: 2833 baseline + 3 new shard-mode tests). The README and copilot-instructions are both stale. | Update README "Development" block to `cargo test                     # Backend tests (2836 passing)`. Update [.github/copilot-instructions.md](../.github/copilot-instructions.md) "Testing" line to `2836+`. Apply same edit to [AGENTS.md](../AGENTS.md), [CLAUDE.md](../CLAUDE.md) "CI Gate" reference if any. |
-| D2 | [README.md](../README.md) L284 "vitest run (**1738 passing**)" and [.github/copilot-instructions.md](../.github/copilot-instructions.md) "1164 tests" | Latest completion-log entries reference 1738+ — copilot-instructions says 1164 (massively stale). | Sync both to `1738+`. |
-| D3 | [README.md](../README.md) "Rust Core (**150+ commands**)" and [.github/copilot-instructions.md](../.github/copilot-instructions.md) "150+ Tauri commands" | Actual count is **349** `#[tauri::command]` annotations. | Sync both to `Rust Core (**349 commands**)` or the conservative `300+`. |
+| D1 | [README.md](../README.md) L286 "cargo test (**2836+ passing**)" and the same number in [.github/copilot-instructions.md](../.github/copilot-instructions.md) "2836+ Rust tests" | Current count is **2871** (BENCH-SCALE-2 2026-05-14: 2833 baseline + 38 new tests across sessions). | ✅ Fixed 2026-05-14: README → `2871+`, copilot-instructions → `2871+`. |
+| D2 | [README.md](../README.md) L284 "vitest run (**1738+ passing**)" and [.github/copilot-instructions.md](../.github/copilot-instructions.md) "1738+ tests" | Latest count is **1872**. | ✅ Fixed 2026-05-14: README → `1872+`, copilot-instructions → `1872+`. |
+| D3 | [README.md](../README.md) "Rust Core (**349 commands**)" and [.github/copilot-instructions.md](../.github/copilot-instructions.md) "349 Tauri commands" | Actual count is **354** `#[tauri::command]` annotations. | ✅ Fixed 2026-05-14: README → `354`, copilot-instructions → `354`, AGENTS.md → `354`, CLAUDE.md → `354`. |
 | D4 | [README.md](../README.md) MCP tools table claims "21 tools" with 9 brain + 12 code | Actual count is **35** registered MCP tool names in [src-tauri/src/ai_integrations/mcp/tools.rs](../src-tauri/src/ai_integrations/mcp/tools.rs). Missing from the README table: `brain_append`, `brain_ingest_lesson`, `brain_failover_status`, `brain_wiki_audit`, `brain_wiki_spotlight`, `brain_wiki_serendipity`, `brain_wiki_revisit`, `brain_wiki_digest_text`, `brain_review_gaps`, `brain_session_checklist`, plus extra `code_*` entries (`code_extract_negatives`, `code_branch_diff`, `code_branch_sync`, `code_group_drift`, `code_index_commit`). | Rewrite the MCP table to count **35** and add the missing brain + code rows. Cross-check against `brain_*` / `code_*` listings in `availableDeferredTools` (this session sees `brain_append`, `brain_ingest_lesson`, `brain_review_gaps`, `brain_session_checklist`, `brain_wiki_*`, plus extra `code_*` tools). |
 | D5 | [README.md](../README.md) "Local Ollama hardware recommendations favor responsive interactive models by default" + Brain Modes table mentioning `nomic-embed-text` | Bench / production default is now `mxbai-embed-large` (1024-dim) per BENCH-LCM-5 (2026-05-12) — the catalogue still lists `nomic-embed-text` as the lightweight fallback, but the lead embedding model has been promoted. | Add a "Default embedding model: `mxbai-embed-large` (1024-dim, ~660 MB)" line under Brain Modes. Keep `nomic-embed-text` mentioned as the lightweight fallback. Update [.github/copilot-instructions.md](../.github/copilot-instructions.md) "Vector support: Ollama `nomic-embed-text` (768-dim) locally" to mention the upgrade. |
 | D6 | [docs/brain-advanced-design.md](brain-advanced-design.md) L138 still lists `nomic-embed-text` first in the Vector subsystem description | Same as D5 — `mxbai-embed-large` is the bench/production default. | List `mxbai-embed-large` first, `nomic-embed-text` as the smaller fallback. Note the 1024 vs 768 dimension difference (already mentioned). |

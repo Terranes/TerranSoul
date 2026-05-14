@@ -1,112 +1,198 @@
 <template>
   <div
-    class="brain-view"
+    class="bp-shell"
+    data-density="cozy"
     data-testid="brain-view"
   >
-    <!-- ── Hero ────────────────────────────────────────────────────────────── -->
-    <section class="bv-hero">
-      <div class="bv-hero-avatar">
-        <BrainAvatar
-          :mode="brain.brainMode"
-          :memory-count="memoryCount"
-          :expression="heroExpression"
-          :size="180"
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>COMPANION</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">BRAIN PANEL</span>
+    </div>
+
+    <!-- ── Cockpit hero (neon brain orb + status + ACTIVE BRAIN card) ──── -->
+    <section class="bp-cockpit">
+      <div
+        class="bp-hero-avatar"
+        data-testid="brain-avatar"
+        :class="`mood-${moodKey}`"
+      >
+        <BrainOrb
+          :lighting="brain.brainMode ? 'bright' : 'dim'"
+          :state="brain.brainMode ? 'healthy' : 'offline'"
         />
       </div>
-      <div class="bv-hero-text">
-        <h1 class="bv-hero-title">
+      <div class="bp-hero-body">
+        <div class="bp-hero-eyebrow">
+          COMPANION COCKPIT · <span>{{ moodPillLabel }}</span>
+        </div>
+        <h1 class="bp-hero-name">
           {{ heroTitle }}
         </h1>
-        <p class="bv-hero-subtitle">
+        <p class="bp-hero-sub">
           {{ heroSubtitle }}
         </p>
-        <div class="bv-hero-pills">
+        <div class="bp-hero-pills">
           <span
-            class="bv-pill bv-pill-mood"
-            :class="`bv-pill-${moodKey}`"
+            class="bp-pill"
+            data-tone="ok"
           >
-            {{ moodPillLabel }}
-          </span>
-          <span
-            v-if="memoryCount > 0"
-            class="bv-pill bv-pill-memory"
-          >
-            🧠 {{ memoryCount }} memories
+            <span class="dot" />
+            <strong>{{ memoryCount.toLocaleString() }}</strong> memories
           </span>
           <span
             v-if="edgeCount > 0"
-            class="bv-pill bv-pill-edges"
+            class="bp-pill"
+            data-tone="violet"
           >
-            🔗 {{ edgeCount }} connections
+            <span class="dot" />
+            <strong>{{ edgeCount.toLocaleString() }}</strong> connections
           </span>
           <span
             v-if="brain.ollamaStatus.running || brain.lmStudioStatus?.running"
-            class="bv-pill bv-pill-ollama"
+            class="bp-pill"
+            data-tone="pink"
           >
-            🖥 {{ brain.ollamaStatus.running && brain.lmStudioStatus?.running ? 'Ollama + LM Studio' : brain.ollamaStatus.running ? 'Ollama running' : 'LM Studio running' }}
+            <span class="dot" />
+            {{ brain.ollamaStatus.running && brain.lmStudioStatus?.running ? 'Ollama + LM Studio' : brain.ollamaStatus.running ? 'Ollama running' : 'LM Studio running' }}
+          </span>
+          <span
+            v-if="!brain.brainMode"
+            class="bp-pill"
+            data-tone="warn"
+          >
+            <span class="dot" />
+            Setup required
           </span>
         </div>
       </div>
-      <div class="bv-hero-actions">
-        <button
-          class="btn-primary"
-          @click="$emit('navigate', 'brain-setup')"
+      <aside class="bp-now">
+        <div class="bp-now-head">
+          <span class="bp-now-eyebrow">ACTIVE BRAIN</span>
+          <span
+            class="bp-now-badge"
+            :data-tone="brain.brainMode ? 'ok' : 'warn'"
+          >{{ brain.brainMode ? 'ONLINE' : 'OFFLINE' }}</span>
+        </div>
+        <div class="bp-now-model">
+          <strong>{{ configRows.model || 'No model' }}</strong>
+        </div>
+        <div class="bp-now-meta">
+          <span>provider</span>
+          <b>{{ configRows.provider }}</b>
+        </div>
+        <div
+          v-if="configRows.endpoint"
+          class="bp-now-meta"
         >
-          ⚙ Brain setup
-        </button>
-        <button
-          class="btn-secondary"
-          @click="$emit('navigate', 'marketplace')"
-        >
-          🏪 Switch model
-        </button>
-        <button
-          class="btn-secondary"
-          :disabled="isRefreshing"
-          @click="refresh"
-        >
-          {{ isRefreshing ? '⟳ Refreshing…' : '↻ Refresh' }}
-        </button>
-      </div>
+          <span>endpoint</span>
+          <b>{{ shortUrl(configRows.endpoint) }}</b>
+        </div>
+        <div class="bp-now-meta">
+          <span>mode</span>
+          <b>{{ configRows.mode }}</b>
+        </div>
+        <div class="bp-now-actions">
+          <button
+            class="bp-btn bp-btn--primary bp-btn--sm"
+            @click="$emit('navigate', 'brain-setup')"
+          >
+            Brain setup
+          </button>
+          <button
+            class="bp-btn bp-btn--ghost bp-btn--sm"
+            :disabled="isRefreshing"
+            @click="refresh"
+          >
+            {{ isRefreshing ? '⟳' : '↻' }} Refresh
+          </button>
+        </div>
+      </aside>
     </section>
 
-    <!-- ── Quick mode switcher ─────────────────────────────────────────────── -->
+    <!-- ── 01 · Provider & Model ───────────────────────────────────────── -->
     <section
-      class="bv-mode-switcher"
+      class="bp-module bp-module--feature"
       data-testid="bv-mode-switcher"
     >
-      <div class="bv-section-title">
-        ⚡ Quick mode
-      </div>
-      <div class="bv-mode-grid">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Provider & Model
+          </div>
+          <h2 class="bp-module-title">
+            Where your brain thinks
+          </h2>
+          <p class="bp-module-sub">
+            Pick a cloud or local LLM. Local Ollama is required for vector
+            search (40 % of retrieval quality).
+          </p>
+        </div>
+        <div class="bp-module-head-right">
+          <button
+            class="bp-btn bp-btn--ghost bp-btn--sm"
+            @click="$emit('navigate', 'marketplace')"
+          >
+            Switch model
+          </button>
+        </div>
+      </header>
+      <div class="bp-providers">
         <button
           v-for="opt in modeOptions"
           :key="opt.key"
-          :class="['bv-mode-card', `bv-mode-${opt.key}`, { active: opt.key === moodKey }]"
+          type="button"
+          class="bp-prov bv-mode-card"
+          :class="{ active: opt.key === moodKey }"
+          :data-active="opt.key === moodKey ? 'true' : 'false'"
           :disabled="opt.disabled"
           :title="opt.disabled ? opt.disabledReason : opt.description"
           @click="opt.disabled ? null : opt.action()"
         >
-          <span class="bv-mode-emoji">{{ opt.emoji }}</span>
-          <span class="bv-mode-label">{{ opt.label }}</span>
-          <span class="bv-mode-detail">{{ opt.detail }}</span>
+          <div class="bp-prov-head">
+            <div class="bp-prov-icon">
+              <span style="font-size: 18px;">{{ opt.emoji }}</span>
+            </div>
+            <span class="bp-prov-radio" />
+          </div>
+          <div class="bp-prov-name">
+            {{ opt.label }}
+          </div>
+          <p class="bp-prov-desc">
+            {{ opt.detail }}
+          </p>
+          <div class="bp-prov-foot">
+            <span
+              class="bp-prov-tag"
+              :data-tone="opt.key === 'free' ? 'ok' : opt.key === 'paid' ? 'violet' : 'pink'"
+            >{{ opt.key === 'free' ? 'FREE' : opt.key === 'paid' ? 'PAID' : 'LOCAL' }}</span>
+            <span class="price">{{ opt.description }}</span>
+          </div>
         </button>
       </div>
     </section>
 
-    <!-- ── Coding LLM (Phase 25 — Self-Improve) ──────────────────────────── -->
+    <!-- ── 02 · Coding LLM (Phase 25 — Self-Improve) ─────────────────────── -->
     <section
-      class="bv-coding-llm"
+      class="bp-module"
       data-testid="bv-coding-llm"
     >
-      <div class="bv-section-title">
-        🛠️ Coding LLM
-        <span class="bv-section-sub">(used by Self-Improve)</span>
-      </div>
-      <p class="bv-coding-llm-desc">
-        Pick a dedicated provider for autonomous coding. This is separate
-        from the chat brain above — Claude is recommended for self-improve.
-      </p>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Coding LLM
+          </div>
+          <h2 class="bp-module-title">
+            Self-Improve engine
+          </h2>
+          <p class="bp-module-sub">
+            Pick a dedicated provider for autonomous coding. Separate from the chat brain above.
+          </p>
+        </div>
+      </header>
 
       <div class="bv-coding-llm-grid">
         <button
@@ -261,11 +347,21 @@
       </div>
     </section>
 
-    <!-- ── Coding Workflow Context (Chunk 25.16) ───────────────────────────── -->
+    <!-- ── 03 · Coding Workflow Context (Chunk 25.16) ─────────────────────── -->
     <section
-      class="bv-coding-workflow"
+      class="bp-module"
       data-testid="bv-coding-workflow"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">03</span> Coding Workflow
+          </div>
+          <h2 class="bp-module-title">
+            Context & integration
+          </h2>
+        </div>
+      </header>
       <CodingWorkflowConfigPanel />
     </section>
 
@@ -294,21 +390,47 @@
       <span class="bv-embed-queue__hint">Auto-retries every 10 s — no action needed.</span>
     </section>
 
-    <!-- ── Brain Capacity & Storage (Chunk 38.5 — unified config) ──────────── -->
-    <section class="bv-capacity-section">
+    <!-- ── 04 · Brain Capacity & Storage (Chunk 38.5) ─────────────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">04</span> Brain Capacity
+          </div>
+          <h2 class="bp-module-title">
+            Storage & embeddings
+          </h2>
+        </div>
+      </header>
       <BrainCapacityPanel />
     </section>
 
-    <!-- ── Context Folders — user-defined knowledge directories ────────────── -->
-    <section class="bv-context-folders-section">
-      <h3 class="bv-section-title">
-        📂 Context Folders
-      </h3>
-      <p class="bv-context-warning">
-        ⚠️ Not recommended for large directories. Scanning is brute-force
-        (like Copilot / Claude workspace indexing) and can be slow for folders
-        with thousands of files.
-      </p>
+    <!-- ── 05 · Context Folders — user-defined knowledge directories ─────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">05</span> Knowledge Sources
+          </div>
+          <h2 class="bp-module-title">
+            Context folders
+          </h2>
+          <p class="bp-module-sub">
+            ⚠️ Not recommended for large directories. Scanning is brute-force
+            and can be slow for folders with thousands of files.
+          </p>
+        </div>
+        <div class="bp-module-head-right">
+          <button
+            class="bp-btn bp-btn--ghost bp-btn--sm"
+            data-testid="bv-context-folder-sync"
+            :disabled="(contextFolders?.length ?? 0) === 0 || isSyncing"
+            @click="syncAllContextFolders"
+          >
+            {{ isSyncing ? 'Syncing…' : '↻ Sync All' }}
+          </button>
+        </div>
+      </header>
 
       <div class="bv-context-add">
         <input
@@ -531,13 +653,34 @@
       </div>
     </section>
 
-    <!-- ── Knowledge Wiki operations (graph + LLM-wiki pattern) ────────────── -->
-    <section class="bv-wiki-section">
+    <!-- ── 06 · Knowledge Wiki (graph + LLM-wiki pattern) ──────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">06</span> Knowledge Wiki
+          </div>
+          <h2 class="bp-module-title">
+            Graph & LLM-wiki patterns
+          </h2>
+        </div>
+      </header>
       <WikiPanel />
     </section>
 
-    <!-- ── 3-column data grid ──────────────────────────────────────────────── -->
-    <section class="bv-grid">
+    <!-- ── 07 · System Overview ───────────────────────────────────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">07</span> System Overview
+          </div>
+          <h2 class="bp-module-title">
+            Configuration · Hardware · Memory health
+          </h2>
+        </div>
+      </header>
+      <div class="bp-grid bp-grid-3">
       <!-- Brain config card -->
       <article
         class="bv-card"
@@ -686,16 +829,26 @@
           </div>
         </dl>
       </article>
+      </div>
     </section>
 
-    <!-- ── Cognitive-kind breakdown (docs §3.5) ───────────────────────────── -->
+    <!-- ── 08 · Retrieval Quality ─────────────────────────────────────────── -->
     <section
-      class="bv-card bv-cognitive"
+      class="bp-module"
       data-testid="bv-cognitive-breakdown"
     >
-      <header class="bv-card-header">
-        <h3>🧩 Cognitive kinds</h3>
-        <span class="bv-card-subtle">Episodic / Semantic / Procedural — derived from tags + content</span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">08</span> Retrieval Quality
+          </div>
+          <h2 class="bp-module-title">
+            Cognitive kinds & RAG signals
+          </h2>
+          <p class="bp-module-sub">
+            Episodic / Semantic / Procedural — derived from tags + content
+          </p>
+        </div>
       </header>
       <div
         v-if="cognitiveKinds.total === 0"
@@ -734,50 +887,77 @@
 
     <!-- ── RAG capability strip (docs §4 / §10) ────────────────────────────── -->
     <section
-      class="bv-card bv-rag"
+      class="bp-module"
       data-testid="bv-rag-capability"
     >
-      <header class="bv-card-header">
-        <h3>📡 RAG capability</h3>
-        <span class="bv-card-subtle">6-signal hybrid scoring — vector search needs a local embedding model</span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">09</span> RAG Signals
+          </div>
+          <h2 class="bp-module-title">
+            6-signal hybrid scoring
+          </h2>
+          <p class="bp-module-sub">
+            Vector search needs a local embedding model
+          </p>
+        </div>
       </header>
-      <div class="bv-rag-grid">
+      <div class="bp-rag-grid">
         <div
           v-for="sig in ragSignals"
           :key="sig.key"
-          class="bv-rag-cell"
+          class="bp-rag-cell bv-rag-cell"
           :class="{ 'is-on': sig.available, 'is-off': !sig.available }"
+          :data-on="sig.available ? 'true' : 'false'"
           :title="sig.available ? `${sig.label} active` : sig.unavailableReason"
         >
-          <span class="bv-rag-icon">{{ sig.available ? '✓' : '✗' }}</span>
-          <span class="bv-rag-label">{{ sig.label }}</span>
-          <span class="bv-rag-weight">{{ sig.weight }}</span>
+          <span class="bp-rag-check">{{ sig.available ? '✓' : '✗' }}</span>
+          <span class="bp-rag-name">{{ sig.label }}</span>
+          <span class="bp-rag-weight">{{ sig.weight }}</span>
         </div>
       </div>
-      <p class="bv-rag-summary">
-        <strong>Effective quality:</strong> {{ ragQuality.effective }}% —
-        {{ ragQuality.note }}
-      </p>
+      <div class="bp-rag-quality">
+        <div class="bp-quality-ring">
+          <svg viewBox="0 0 64 64">
+            <circle
+              class="bg"
+              cx="32"
+              cy="32"
+              r="28"
+            />
+            <circle
+              class="fg"
+              cx="32"
+              cy="32"
+              r="28"
+              :stroke-dasharray="`${(ragQuality.effective / 100) * 175.9} 175.9`"
+            />
+          </svg>
+          <span class="bp-quality-num">{{ ragQuality.effective }}<small>%</small></span>
+        </div>
+        <div class="bp-quality-text">
+          <strong>Effective quality</strong>
+          <small>{{ ragQuality.note }}</small>
+        </div>
+      </div>
     </section>
 
 
     <!-- ── Active selection (docs §20) ─────────────────────────────────────── -->
     <section
-      class="bv-card"
+      class="bp-module"
       data-testid="bv-active-selection"
     >
-      <header class="bv-card-header">
-        <h3>🎯 Active selection</h3>
-        <span class="bv-card-subtle">
-          <a
-            class="bv-link"
-            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#brain-component-selection--routing--how-the-llm-knows-what-to-use"
-            target="_blank"
-            rel="noopener"
-          >
-            How the brain picks each component →
-          </a>
-        </span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">10</span> Active Selection
+          </div>
+          <h2 class="bp-module-title">
+            How the brain picks each component
+          </h2>
+        </div>
       </header>
       <div
         v-if="!brainSelection"
@@ -800,21 +980,18 @@
 
     <!-- ── Daily learning (docs §21) ───────────────────────────────────────── -->
     <section
-      class="bv-card"
+      class="bp-module"
       data-testid="bv-daily-learning"
     >
-      <header class="bv-card-header">
-        <h3>📚 Daily learning</h3>
-        <span class="bv-card-subtle">
-          <a
-            class="bv-link"
-            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#how-daily-conversation-updates-the-brain--write-back--learning-loop"
-            target="_blank"
-            rel="noopener"
-          >
-            How conversation becomes long-term memory →
-          </a>
-        </span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">11</span> Daily Learning
+          </div>
+          <h2 class="bp-module-title">
+            Conversation → long-term memory
+          </h2>
+        </div>
       </header>
       <div
         v-if="!autoLearnPolicy"
@@ -875,26 +1052,22 @@
 
     <!-- ── AI decision-making toggles ──────────────────────────────────────── -->
     <section
-      class="bv-card"
+      class="bp-module"
       data-testid="bv-ai-decisions"
     >
-      <header class="bv-card-header">
-        <h3>🧭 AI decision-making</h3>
-        <span class="bv-card-subtle">
-          <a
-            class="bv-link"
-            href="https://github.com/Terranes/TerranSoul/blob/main/docs/brain-advanced-design.md#25-intent-classification"
-            target="_blank"
-            rel="noopener"
-          >
-            How TerranSoul decides what to do →
-          </a>
-        </span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">12</span> Automation
+          </div>
+          <h2 class="bp-module-title">
+            AI decision-making
+          </h2>
+          <p class="bp-module-sub">
+            Toggle opinionated routing decisions. Settings persist locally.
+          </p>
+        </div>
       </header>
-      <p class="bv-cog-desc">
-        TerranSoul makes a few opinionated routing decisions on your behalf — classifying intent, offering follow-up gates,
-        and suggesting quests. Toggle any of them off for a strictly-pass-through experience. Settings persist locally.
-      </p>
       <div
         class="bv-config-list"
         data-testid="bv-ai-decisions-list"
@@ -932,162 +1105,218 @@
       </div>
     </section>
 
-    <!-- ── Local-First Brain Policy (rules/local-first-brain.md) ──────────── -->
-    <section class="bv-autolearn-section">
-      <header class="bv-autolearn-header">
-        <span class="bv-section-title">🏠 First-Launch Brain Policy</span>
+    <!-- ── 13 · Preferences ───────────────────────────────────────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">13</span> Preferences
+          </div>
+          <h2 class="bp-module-title">
+            Brain policies & auto-tag
+          </h2>
+        </div>
       </header>
-      <label
-        class="bv-config-list"
-        style="display:flex;align-items:center;gap:8px;"
-      >
-        <input
-          type="checkbox"
-          :checked="appSettings.settings?.prefer_local_brain !== false"
+      <div class="bp-row">
+        <div class="bp-row-text">
+          <span class="bp-row-label">First-Launch Brain Policy</span>
+          <span class="bp-row-desc">
+            Auto-configure a local Ollama model from the §26 catalogue at first launch.
+            Falls back to free cloud if Ollama is unreachable.
+          </span>
+        </div>
+        <button
+          type="button"
+          class="bp-switch"
+          :data-on="(appSettings.settings?.prefer_local_brain !== false) ? 'true' : 'false'"
           data-testid="bv-prefer-local-toggle"
-          @change="onTogglePreferLocal(($event.target as HTMLInputElement).checked)"
-        >
-        <span>Prefer local LLM on first launch</span>
-      </label>
-      <p class="bv-cog-desc">
-        When enabled (default), the first-launch wizard detects Ollama and
-        auto-configures a local model from the
-        <strong>§26 catalogue</strong> (Gemma 4 / Gemma 3 family, picked
-        by your RAM). Falls back to free cloud only if Ollama is unreachable.
-        Disable to default to Pollinations cloud AI instead.
-      </p>
-    </section>
-
-    <!-- ── Auto-tag toggle (Chunk 18.1) ────────────────────────────────────── -->
-    <section class="bv-autolearn-section">
-      <header class="bv-autolearn-header">
-        <span class="bv-section-title">🏷 Auto-Tag</span>
-      </header>
-      <label
-        class="bv-config-list"
-        style="display:flex;align-items:center;gap:8px;"
-      >
-        <input
-          type="checkbox"
-          :checked="appSettings.settings?.auto_tag ?? false"
+          @click="onTogglePreferLocal(appSettings.settings?.prefer_local_brain === false)"
+        />
+      </div>
+      <div class="bp-row">
+        <div class="bp-row-text">
+          <span class="bp-row-label">Auto-Tag</span>
+          <span class="bp-row-desc">
+            Classify new memories with LLM tags (<code>personal:*</code>, <code>domain:*</code>, <code>code:*</code>).
+          </span>
+        </div>
+        <button
+          type="button"
+          class="bp-switch"
+          :data-on="(appSettings.settings?.auto_tag ?? false) ? 'true' : 'false'"
           data-testid="bv-autotag-toggle"
-          @change="onToggleAutoTag(($event.target as HTMLInputElement).checked)"
-        >
-        <span>Auto-classify new memories with LLM tags</span>
-      </label>
-      <p class="bv-cog-desc">
-        When enabled, each new memory is classified into curated prefix tags
-        (<code>personal:*</code>, <code>domain:*</code>, <code>code:*</code>, …)
-        via one LLM call. Tags are merged with any user-supplied tags.
-      </p>
+          @click="onToggleAutoTag(!(appSettings.settings?.auto_tag ?? false))"
+        />
+      </div>
     </section>
 
-
-    <!-- ── RPG stat sheet ──────────────────────────────────────────────────── -->
-    <section class="bv-stats-section">
+    <!-- ── 14 · RPG stat sheet ─────────────────────────────────────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">14</span> Stat Sheet
+          </div>
+          <h2 class="bp-module-title">
+            Brain RPG stats
+          </h2>
+        </div>
+      </header>
       <BrainStatSheet />
     </section>
 
-    <!-- ── Plugins — Phase 22 ─────────────────────────────────────────────── -->
+    <!-- ── 15 · Plugins — Phase 22 ────────────────────────────────────────── -->
     <section
-      class="bv-plugins-section"
+      class="bp-module"
       data-testid="bv-plugins-section"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">15</span> Plugins
+          </div>
+          <h2 class="bp-module-title">
+            Installed extensions
+            <span
+              v-if="openclawActive"
+              class="bp-badge bp-badge--active"
+              data-testid="bv-openclaw-active-badge"
+            >OpenClaw active</span>
+          </h2>
+        </div>
+      </header>
       <PluginsView />
     </section>
 
-    <!-- ── Prompt Commands ─────────────────────────────────────────────────── -->
+    <!-- ── 16 · Prompt Commands ────────────────────────────────────────────── -->
     <section
-      class="bv-autolearn-section"
+      class="bp-module"
       data-testid="bv-prompt-commands-section"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">16</span> Prompt Commands
+          </div>
+          <h2 class="bp-module-title">
+            Custom shortcuts
+          </h2>
+        </div>
+      </header>
       <PromptCommandsPanel />
     </section>
 
-    <!-- ── AI Coding Integrations — Phase 15.4 ────────────────────────────── -->
+    <!-- ── 17 · AI Coding Integrations ─────────────────────────────────────── -->
     <section
-      class="bv-aiv-section"
+      class="bp-module"
       data-testid="bv-aiv-section"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">17</span> AI Coding
+          </div>
+          <h2 class="bp-module-title">
+            External integrations
+          </h2>
+        </div>
+      </header>
       <AICodingIntegrationsView />
     </section>
 
-    <!-- ── LAN Brain Sharing — remote MCP retrieval over local network ─────── -->
+    <!-- ── 18 · LAN Brain Sharing ──────────────────────────────────────────── -->
     <section
-      class="bv-aiv-section"
+      class="bp-module"
       data-testid="bv-lan-share-section"
     >
-      <header class="bv-autolearn-header">
-        <span class="bv-section-title">🖧 LAN Brain Sharing</span>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">18</span> LAN Sharing
+          </div>
+          <h2 class="bp-module-title">
+            Remote MCP retrieval
+          </h2>
+          <p class="bp-module-sub">
+            Expose brain to your local network. Discovery on UDP 7424;
+            retrieval requires MCP bearer token.
+          </p>
+        </div>
+        <div class="bp-module-head-right">
+          <button
+            type="button"
+            class="bp-switch"
+            :data-on="(appSettings.settings?.lan_enabled ?? false) ? 'true' : 'false'"
+            data-testid="bv-lan-enabled-toggle"
+            @click="onToggleLanEnabled(!(appSettings.settings?.lan_enabled ?? false))"
+          />
+        </div>
       </header>
-      <label
-        class="bv-config-list"
-        style="display:flex;align-items:center;gap:8px;"
-      >
-        <input
-          type="checkbox"
-          :checked="appSettings.settings?.lan_enabled ?? false"
-          data-testid="bv-lan-enabled-toggle"
-          @change="onToggleLanEnabled(($event.target as HTMLInputElement).checked)"
-        >
-        <span>Enable LAN brain sharing and discovery on this device</span>
-      </label>
-      <p class="bv-cog-desc">
-        LAN sharing exposes only to your local network after you opt in. Discovery
-        broadcasts metadata on UDP <code>7424</code>; actual memory retrieval still
-        requires the MCP bearer token shown below.
-      </p>
       <LanSharePanel v-if="appSettings.settings?.lan_enabled ?? false" />
       <p
         v-else
-        class="bv-cog-desc"
+        class="bp-module-sub"
       >
         Enable LAN sharing, start the MCP server in the integrations panel, then
         use this panel to share or connect to another TerranSoul brain.
       </p>
     </section>
 
-    <!-- ── Persona panel (data storage & management) ──────────────────────── -->
-    <section class="bv-persona-section">
+    <!-- ── 19 · Persona ────────────────────────────────────────────────────── -->
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">19</span> Persona
+          </div>
+          <h2 class="bp-module-title">
+            Data storage & management
+          </h2>
+        </div>
+      </header>
       <PersonaPanel />
     </section>
 
-    <!-- ── Danger zone ─────────────────────────────────────────────────────── -->
+    <!-- ── DANGER ZONE ─────────────────────────────────────────────────────── -->
     <section
-      class="bv-card bv-danger-zone"
+      class="bp-module bp-danger"
       data-testid="bv-danger-zone"
     >
-      <header class="bv-card-header">
-        <h3>⚠️ Danger zone</h3>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            ⚠️ Danger Zone
+          </div>
+          <h2 class="bp-module-title">
+            Irreversible actions
+          </h2>
+        </div>
       </header>
-      <p class="bv-cog-desc">
-        These actions are irreversible. Proceed with caution.
-      </p>
-      <div class="bv-danger-actions">
-        <div class="bv-danger-row">
-          <div class="bv-danger-info">
-            <span class="bv-danger-label">Factory reset</span>
-            <span class="bv-cog-desc">Remove all auto-configured components (brain, voice, quests), clear all memories and conversation history. Reverts to first-launch state.</span>
+      <div class="bp-danger-list">
+        <div class="bp-row">
+          <div class="bp-row-text">
+            <span class="bp-row-label">Factory reset</span>
+            <span class="bp-row-desc">Remove all auto-configured components, clear memories and history. Reverts to first-launch state.</span>
           </div>
           <button
-            class="btn-danger"
+            class="bp-btn bp-btn--danger bp-btn--sm"
             data-testid="bv-factory-reset"
             @click="confirmFactoryReset"
           >
-            🔄 Factory reset
+            Factory reset
           </button>
         </div>
-        <div class="bv-danger-row">
-          <div class="bv-danger-info">
-            <span class="bv-danger-label">Clean all data</span>
-            <span class="bv-cog-desc">Permanently erase everything: memories, brain config, voice settings, persona, quests, app preferences. Returns to a fresh install.</span>
+        <div class="bp-row">
+          <div class="bp-row-text">
+            <span class="bp-row-label">Clean all data</span>
+            <span class="bp-row-desc">Permanently erase everything: memories, brain config, voice, persona, quests, preferences.</span>
           </div>
           <button
-            class="btn-danger"
+            class="bp-btn bp-btn--danger bp-btn--sm"
             data-testid="bv-clear-all-data"
             @click="confirmClearAllData"
           >
-            🗑 Clean all data
+            Clean all data
           </button>
         </div>
       </div>
@@ -1106,7 +1335,8 @@ import { useAiDecisionPolicyStore, type AiDecisionPolicy } from '../stores/ai-de
 import { useSettingsStore } from '../stores/settings';
 import { useSelfImproveStore } from '../stores/self-improve';
 import { useTaskStore } from '../stores/tasks';
-import BrainAvatar from '../components/BrainAvatar.vue';
+import { usePluginStore } from '../stores/plugins';
+import BrainOrb from '../components/BrainOrb.vue';
 import BrainCapacityPanel from '../components/BrainCapacityPanel.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
 import CodingWorkflowConfigPanel from '../components/CodingWorkflowConfigPanel.vue';
@@ -1133,6 +1363,11 @@ const memory = useMemoryStore();
 const appSettings = useSettingsStore();
 const taskStore = useTaskStore();
 taskStore.init();
+const pluginStore = usePluginStore();
+
+const openclawActive = computed(() =>
+  pluginStore.plugins.some(p => p.manifest.id === 'openclaw-bridge' && typeof p.state === 'string' && p.state.toLowerCase() === 'active'),
+);
 
 const isRefreshing = ref(false);
 
@@ -1197,12 +1432,8 @@ const moodPillLabel = computed(() => ({
   local: '🖥 Local LLM',
 }[moodKey.value]));
 
-const heroExpression = computed<'idle' | 'thinking' | 'happy' | 'sad' | 'sleepy'>(() => {
-  if (!brain.brainMode) return 'sleepy';
-  if (memoryCount.value === 0) return 'idle';
-  if (memoryCount.value >= 10) return 'happy';
-  return 'idle';
-});
+// heroExpression was used by the legacy BrainAvatar; the new BrainOrb derives
+// its state directly from brain.brainMode so we no longer compute it.
 
 // ── Cognitive kind breakdown (docs §3.5) ───────────────────────────────────
 

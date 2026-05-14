@@ -360,8 +360,8 @@ TerranSoul is a personal assistant, not a walled garden. For tasks that are heav
 ```bash
 npm run dev                    # Kill all + start full Tauri app (Vite + Rust)
 npm run dev:vite               # Vite-only dev server (:1420)
-npx vitest run                 # Frontend tests (1738+ passing)
-cargo test                     # Backend tests (2836+ passing)
+npx vitest run                 # Frontend tests (1872+ passing)
+cargo test                     # Backend tests (2871+ passing)
 cargo clippy -- -D warnings    # Lint
 npm run mcp                    # Start MCP brain tray (:7423)
 npm run mcp:container          # Start isolated MCP container (:7423)
@@ -378,7 +378,7 @@ See [rules/milestones.md](rules/milestones.md) for active work and [rules/comple
 ```
 Frontend (Vue 3 + Three.js/VRM + Pinia)
     ↕ Tauri IPC
-Rust Core (349 commands)
+Rust Core (354 commands)
   ├── brain/         — LLM providers, model recommender, embeddings
   ├── memory/        — SQLite store, lexical/vector RAG, gated KG boosts, wiki, eviction
   ├── hive/          — Federation protocol, signing, jobs, privacy

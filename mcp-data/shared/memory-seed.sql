@@ -2576,3 +2576,43 @@ SELECT
 WHERE NOT EXISTS (
   SELECT 1 FROM memories WHERE content LIKE 'INFRA README PILLAR HONESTY RULE (2026-05-14):%'
 );
+-- Companion Marketplace update-check (NuGet-style) — 2026-05-14.
+-- Adds GitHub-Releases-driven "update available" badges to the
+-- companion-AI marketplace.
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'COMPANION MARKETPLACE UPDATE CHECK (2026-05-14): CompanionApp now carries github_repo: Option<String> ("owner/repo"). Tauri command companions_check_update(id) polls https://api.github.com/repos/{repo}/releases/latest, extracts version with parse_version (first dotted numeric token), and compares to installed version with is_newer (segment-wise numeric, NOT lexicographic — so 0.10.0 > 0.9.0). UI: CompanionsPanel.vue auto-runs the update check after Detect; renders companion-update-badge-{id} pill and a companion-update-{id} button when update_available. Re-running the install command IS the update flow — installers must be idempotent (NSIS /S, official Hermes installer, etc.). Hermes Desktop: install path corrected to GitHub Releases .exe + /S (winget manifest NousResearch.HermesDesktop is NOT yet accepted upstream — never returns Installed). Detect via PowerShell ProductVersion of %LOCALAPPDATA%\Programs\hermes-desktop\hermes-agent.exe; user-scope so requires_elevation=false. Hermes Agent: official installer script at NousResearch/hermes-agent (NOT on PyPI); binary is `hermes` not `hermes-agent`; latest release tag is CalVer (e.g. v2026.5.7). Live network smoke test: src-tauri/tests/companions_live.rs (ignored by default).',
+  'companion,marketplace,update-check,github-releases,hermes-desktop,hermes-agent,integrate,nuget-style',
+  8,
+  'rule',
+  strftime('%s', 'now'),
+  'core',
+  1.0,
+  'integration',
+  'principle'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'COMPANION MARKETPLACE UPDATE CHECK (2026-05-14):%'
+);
+
+-- Hermes job delegation + in-app notification panel (Chunk HERMES-DELEGATE-1) — 2026-05-14.
+-- TerranSoul now dispatches jobs to Hermes Desktop (each = one "staff") and
+-- tracks them via a unified notification store + bubble + slide-out panel.
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+SELECT
+  'HERMES DELEGATE + NOTIFICATIONS (2026-05-14): CliKind::Hermes added (default_binary = "hermes-agent"). Tauri command dispatch_hermes_job auto-creates/updates a stable "hermes-staff" AgentProfile in the roster, validates the working folder, then routes through the existing roster_start_cli_workflow + WorkflowEngine pipeline (no new transport). Each dispatch becomes one Hermes staff worker; multiple parallel dispatches = multiple staffs (subject to RAM cap via roster_get_ram_cap). drive_cli_workflow and roster_cancel_workflow now emit a single workflow-completed Tauri event { workflow_id, status: completed|failed|cancelled, message: Option<String> } so the frontend stops polling. Frontend: useNotificationsStore (src/stores/notifications.ts) listens to agent-cli-output + workflow-completed, derives activeJobs/recentJobs/unreadCount, fires @tauri-apps/plugin-notification toasts when document is unfocused, and exposes dispatchHermesJob(req). UI: NotificationBubble (floating bell top-right with pulse ring when active jobs > 0 + pink unread badge) + NotificationPanel (slide-in drawer, "Active staff" with spinner/lastLine/Cancel + "Recent activity" log) + HermesDispatchDialog (modal: working folder + prompt + optional label). Mounted in App.vue. Tests: 9 vitest in notifications.test.ts + 4 cargo (hermes_kind_has_known_binary, dispatch_hermes_request_*, workflow_completed_event_serializes). Important: @tauri-apps/plugin-dialog is NOT installed in TerranSoul; do not import it without adding to package.json + Cargo.toml + capabilities config first. Hermes Desktop binary on Windows is hermes-agent.exe at %LOCALAPPDATA%\Programs\hermes-desktop\ — must be on PATH for spawn to succeed; the dispatch_hermes_job command validates the working folder up front but PATH resolution is a user concern.',
+  'hermes,delegation,notifications,agent-roster,workflow,multi-agent,ui,tauri-event,workflow-completed,cli-worker',
+  8,
+  'rule',
+  strftime('%s', 'now'),
+  'core',
+  1.0,
+  'integration',
+  'procedural'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE content LIKE 'HERMES DELEGATE + NOTIFICATIONS (2026-05-14):%'
+);
+
+-- TOP1-2 (2026-05-14): LoCoMo QA harness finalized with 40% validation scope
+INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
+SELECT 'TOP1-2 LoCoMo QA bench (2026-05-14, rrf_rerank canonical default): single_hop R@10=74.8% J=73.8 across 300/840 queries with Claude Code CLI judge — beats design-doc target 68.3% by +6.5pp. multi_hop R@10=47.4% at 100/280 partial with gemma3:4b judge — CONFIRMS the known retrieval gap on multi-document chains (existing seed records 46.2 baseline). Design-doc fix: gate rrf_hyde_rerank on for multi_hop/temporal queries. Harness contract: `scripts/locomo-mteb.mjs run --qa-eval=mem0-paper`. The `--judge` flag controls only QA J-scoring; rerank LLM lives in the Rust JsonlClient via LONGMEM_RERANK=1, so R@10 is judge-independent.', 'bench,locomo,top1-2,rrf_rerank,multi_hop,validation', 5, 'fact', 1747252800000, 'long', 1.0, 220, 'bench'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'TOP1-2 LoCoMo QA bench (2026-05-14%');

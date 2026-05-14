@@ -1,17 +1,34 @@
 <template>
-  <div class="marketplace-view">
-    <header class="mp-header">
-      <h2>🏪 Agent Marketplace</h2>
-      <div class="mp-header-actions">
-        <button
-          class="btn-secondary"
-          :disabled="isLoading || !tauriAvailable"
-          @click="refreshAll"
-        >
-          {{ isLoading ? 'Loading…' : '🔄 Refresh' }}
-        </button>
-      </div>
-    </header>
+  <div
+    class="bp-shell marketplace-view"
+    data-density="cozy"
+  >
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>COMPANION</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">MARKETPLACE</span>
+    </div>
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Marketplace
+          </div>
+          <h2 class="bp-module-title">🏪 Agent Marketplace</h2>
+        </div>
+        <div class="mp-header-actions">
+          <button
+            class="bp-btn bp-btn--ghost bp-btn--sm"
+            :disabled="isLoading || !tauriAvailable"
+            @click="refreshAll"
+          >
+            {{ isLoading ? 'Loading…' : '🔄 Refresh' }}
+          </button>
+        </div>
+      </header>
+    </section>
 
     <p
       v-if="packageStore.error && tauriAvailable"
@@ -379,6 +396,14 @@
       <!-- Desktop mode: full marketplace -->
       <template v-else>
         <!-- LLM Configuration section (also available on desktop) -->
+        <section class="bp-module">
+        <header class="bp-module-head">
+          <div class="bp-module-head-left">
+            <div class="bp-module-eyebrow">
+              <span class="ix">01</span> LLM Configuration
+            </div>
+          </div>
+        </header>
         <div class="llm-config llm-config-desktop">
           <div
             class="llm-config-header"
@@ -773,10 +798,16 @@
             </p>
           </div>
         </div>
+        </section>
 
-        <h3 class="mp-section-title">
-          🤖 Agents
-        </h3>
+        <section class="bp-module">
+        <header class="bp-module-head">
+          <div class="bp-module-head-left">
+            <div class="bp-module-eyebrow">
+              <span class="ix">02</span> Agent Catalogue
+            </div>
+          </div>
+        </header>
         <div class="mp-search-row">
           <input
             v-model="searchQuery"
@@ -912,6 +943,7 @@
             </div>
           </div>
         </div>
+        </section>
       </template>
     </div>
 

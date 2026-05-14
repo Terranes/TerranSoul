@@ -1,24 +1,36 @@
 <template>
-  <div class="memory-view">
+  <div
+    class="bp-shell memory-view"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <div class="bp-crumb">
+      <span>TERRANSOUL</span>
+      <span class="bp-crumb-sep">›</span>
+      <span>COMPANION</span>
+      <span class="bp-crumb-sep">›</span>
+      <span class="bp-crumb-now">MEMORY EXPLORER</span>
+    </div>
+
     <header class="mv-header">
       <h2>🧠 Memory</h2>
       <div class="mv-header-actions">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           @click="handleExtract"
         >
           {{ isActing ? 'Working…' : '⬇ Extract from session' }}
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           @click="handleSummarize"
         >
           📄 Summarize session
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           title="Apply time-decay to all memories"
           @click="handleDecay"
@@ -26,7 +38,7 @@
           ⏳ Decay
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           title="Remove fully decayed memories"
           @click="handleGC"
@@ -34,13 +46,13 @@
           🧹 GC
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary bp-btn--sm"
           @click="showAdd = true"
         >
           ＋ Add memory
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           data-testid="mv-obsidian-export"
           :disabled="isActing"
           @click="showObsidianExport = true"
@@ -58,10 +70,18 @@
     </p>
 
     <!-- Stats dashboard -->
-    <div
-      v-if="store.stats"
-      class="mv-stats"
-    >
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Memory Health
+          </div>
+        </div>
+      </header>
+      <div
+        v-if="store.stats"
+        class="mv-stats"
+      >
       <div class="mv-stat">
         <span class="mv-stat-value">{{ store.stats.total }}</span>
         <span class="mv-stat-label">Total</span>
@@ -86,8 +106,20 @@
         <span class="mv-stat-value">{{ (store.stats.avg_decay ?? 0).toFixed(2) }}</span>
         <span class="mv-stat-label">Avg Decay</span>
       </div>
-    </div>
+      </div>
+    </section>
 
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Storage
+          </div>
+          <h2 class="bp-module-title">
+            Cache & persistence
+          </h2>
+        </div>
+      </header>
     <section class="mv-rag-config">
       <div class="mv-storage-summary">
         <strong>Memory configuration</strong>
@@ -144,6 +176,7 @@
         >
         <span>GB</span>
       </label>
+    </section>
     </section>
 
     <!-- Tabs -->

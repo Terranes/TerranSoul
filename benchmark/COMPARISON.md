@@ -535,7 +535,7 @@ Per the Phase TOP1 loop rule, TOP1-2's scope is *auto-determined by TOP1-1's los
 
 **TOP1-2 scope (proposed):** *Build an end-to-end LoCoMo QA harness that mirrors the Mem0 paper's `gpt-4o-mini` generator + `gpt-4o-mini` `J`-judge methodology (Chhikara et al. 2025, Appendix A), then publish TerranSoul's per-task `J` row against the Mem0-paper baselines. Reuse the existing `scripts/locomo-mteb.mjs` harness ingestion path; add a `--qa-eval=mem0-paper` mode that, per query, retrieves top-K, prompts the configured chat brain (cloud or local) for a concise answer, then prompts the judge model (defaults to the active brain so local-only runs work; explicit `--judge=gpt-4o-mini` for parity with the paper). Add `J`-score reporting to the JSON/Markdown output. Acceptance bar: TerranSoul `J` strictly ≥ every Mem0-paper baseline on at least 3 of 4 task categories.*
 
-**TOP1-2 status:** scoped + queued. Not started in this chunk. The actual run requires either paid `gpt-4o-mini` API access (Mem0-paper-parity) or a documented local-judge variant (`gemma3:4b` / `qwen2.5:14b`) with the caveat that local-judge numbers are not strictly comparable to the paper. Owner sign-off needed before spending paid API budget.
+**TOP1-2 status:** harness shipped. The `--qa-eval=mem0-paper` mode is implemented in `scripts/locomo-mteb.mjs`. The actual run requires either paid `gpt-4o-mini` API access (Mem0-paper-parity) or a documented local-judge variant (`gemma3:4b` / `qwen2.5:14b`) with the caveat that local-judge numbers are not strictly comparable to the paper. Owner sign-off needed before spending paid API budget.
 
 ### Durable lessons (synced to MCP seed)
 
