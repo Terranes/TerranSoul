@@ -8,7 +8,7 @@ TerranSoul is an AI companion with memory. What does *memory* actually mean for 
 
 ## Scene 1: A kid in a library
 
-![Scene 1 — a small child looking up at towering bookshelves with three very different librarians at the desk](images/ai-memory-five-scenes/scene-1-library.webp)
+![Scene 1 — a small child looking up at towering bookshelves with three very different librarians at the desk](images/ai-memory-five-scenes/scene-1-library.jpg)
 
 You are twelve years old, standing in a real library with a school project on dinosaurs. Three people are behind the desk.
 
@@ -26,7 +26,7 @@ TerranSoul is the third one. You can pick which "brain" it uses — a free cloud
 
 ## Scene 2: A high schooler picking a movie
 
-![Scene 2 — a teenager on a couch at night with the TV glow on their face, snacks, blanket, and a sleeping kid beside them](images/ai-memory-five-scenes/scene-2-movies.webp)
+![Scene 2 — a teenager on a couch at night with the TV glow on their face, snacks, blanket, and a sleeping kid beside them](images/ai-memory-five-scenes/scene-2-movies.jpg)
 
 Friday night. You open a streaming app and want a recommendation.
 
@@ -50,7 +50,7 @@ TerranSoul does not shout your whole memory at the AI on every message. It hands
 
 ## Scene 3: A college student cramming for an exam
 
-![Scene 3 — a tired college student at midnight surrounded by stacks of notes, an open laptop, half-empty coffee mug, and sticky notes everywhere](images/ai-memory-five-scenes/scene-3-exam.webp)
+![Scene 3 — a tired college student at midnight surrounded by stacks of notes, an open laptop, half-empty coffee mug, and sticky notes everywhere](images/ai-memory-five-scenes/scene-3-exam.jpg)
 
 A few days before a final. Lecture notes on the laptop, PDFs of slides, scanned chapters, your own scribbles. You ask a chatbot, *"What did Professor Miller say about entropy?"*
 
@@ -71,7 +71,7 @@ TerranSoul also keeps a strict budget on how much of your notes it hands to the 
 
 ## Scene 4: A junior engineer hunting for a job
 
-![Scene 4 — a young engineer at a small apartment desk, multiple browser tabs of job postings open, a hand-written wishlist taped beside the monitor](images/ai-memory-five-scenes/scene-4-job-hunt.webp)
+![Scene 4 — a young engineer at a small apartment desk, multiple browser tabs of job postings open, a hand-written wishlist taped beside the monitor](images/ai-memory-five-scenes/scene-4-job-hunt.jpg)
 
 You want your next job. Specifically:
 
@@ -100,7 +100,7 @@ Two things follow from that map being there:
 
 ## Scene 5: The veteran at a party
 
-![Scene 5 — two people at a noisy rooftop party leaning in for a quieter side conversation, drinks in hand, the city lights behind them](images/ai-memory-five-scenes/scene-5-party.webp)
+![Scene 5 — two people at a noisy rooftop party leaning in for a quieter side conversation, drinks in hand, the city lights behind them](images/ai-memory-five-scenes/scene-5-party.jpg)
 
 A party. Someone asks what you do. You say you work on AI memory. Most people change the subject. One person leans in. They have built this stuff before. They already know that the impressive demo and the system that survives a Tuesday afternoon are two different things.
 
