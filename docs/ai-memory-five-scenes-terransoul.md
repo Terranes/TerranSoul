@@ -11,6 +11,11 @@
 > No prose, imagery, or examples from the original article are copied.
 > Credit and license context are recorded in
 > [`CREDITS.md`](../CREDITS.md) per the project's credits rule.
+>
+> **Looking for the plain-English version?** Read
+> [`ai-memory-five-scenes-for-everyone.md`](ai-memory-five-scenes-for-everyone.md)
+> instead — same five scenes, no code paths, written for a non-technical
+> reader who just wants to understand what TerranSoul is.
 
 The cognee article is a great five-minute primer on *why* "AI memory"
 isn't a single thing. TerranSoul's Hybrid RAG brain was designed against
