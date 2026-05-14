@@ -67,30 +67,43 @@
   </g>
 
   <!-- Alice character -->
-  <g transform="translate(110 290)">
-    <path d="M-26 130 L-20 60 Q-16 32 12 32 L40 32 Q68 32 72 60 L78 130 Z" fill="#7c6fff"/>
-    <rect x="14" y="16" width="20" height="20" fill="#f5d6c0"/>
-    <circle cx="24" cy="-2" r="28" fill="#f5d6c0"/>
-    <path d="M-4 -4 Q-6 -34 24 -38 Q54 -34 52 -4 L52 -22 Q38 -30 24 -26 Q10 -30 -4 -22 Z" fill="#3f3a52"/>
-    <path d="M-4 -4 Q-6 22 4 30 L4 8 Q-2 4 -4 -4 Z" fill="#3f3a52"/>
-    <circle cx="14" cy="-2" r="2.2" fill="#0f172a"/>
-    <circle cx="34" cy="-2" r="2.2" fill="#0f172a"/>
-    <path d="M14 12 q10 6 20 0" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+  <g class="cartoon-alice-small" transform="translate(110 290)" aria-label="Alice, friendly cartoon host">
+    <ellipse cx="28" cy="132" rx="54" ry="9" fill="#020617" opacity="0.24"/>
+    <path d="M-30 132 Q-24 70 -6 46 Q8 28 28 28 Q48 28 62 46 Q80 70 86 132 Z" fill="#7c6fff" stroke="#4f46e5" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="18" y="12" width="20" height="22" rx="9" fill="#f5d6c0" stroke="#e2b99a" stroke-width="2.5"/>
+    <circle cx="28" cy="-7" r="35" fill="#f5d6c0" stroke="#e2b99a" stroke-width="3.5"/>
+    <path d="M-7 -8 Q-4 -49 28 -53 Q63 -49 65 -8 Q52 -31 33 -31 Q8 -30 -7 -8 Z" fill="#3f3a52"/>
+    <path d="M-4 -12 Q-6 18 6 34 Q5 6 16 -22 Z" fill="#3f3a52"/>
+    <path d="M62 -12 Q63 18 50 34 Q52 6 40 -22 Z" fill="#3f3a52"/>
+    <ellipse cx="17" cy="-5" rx="4.4" ry="6.2" fill="#0f172a"/>
+    <ellipse cx="40" cy="-5" rx="4.4" ry="6.2" fill="#0f172a"/>
+    <circle cx="18.5" cy="-8" r="1.5" fill="#fff"/>
+    <circle cx="41.5" cy="-8" r="1.5" fill="#fff"/>
+    <circle cx="8" cy="9" r="4" fill="#f9a8d4" opacity="0.58"/>
+    <circle cx="49" cy="9" r="4" fill="#f9a8d4" opacity="0.58"/>
+    <path d="M17 15 q12 8 23 0" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M68 68 q16 8 32 4" fill="none" stroke="#7c6fff" stroke-width="9" stroke-linecap="round"/>
   </g>
 
   <!-- Bob character -->
-  <g transform="translate(1080 290)">
-    <path d="M-26 130 L-20 60 Q-16 32 12 32 L40 32 Q68 32 72 60 L78 130 Z" fill="#60a5fa"/>
-    <rect x="14" y="16" width="20" height="20" fill="#f5d6c0"/>
-    <circle cx="24" cy="-2" r="28" fill="#f5d6c0"/>
-    <path d="M-4 -8 Q-6 -34 24 -38 Q54 -34 52 -8 L52 -10 Q38 -20 24 -16 Q10 -20 -4 -10 Z" fill="#5b4636"/>
-    <circle cx="14" cy="-2" r="2.2" fill="#0f172a"/>
-    <circle cx="34" cy="-2" r="2.2" fill="#0f172a"/>
-    <path d="M14 12 q10 4 20 0" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
-    <!-- glasses -->
-    <circle cx="14" cy="-2" r="6" fill="none" stroke="#0f172a" stroke-width="1.5"/>
-    <circle cx="34" cy="-2" r="6" fill="none" stroke="#0f172a" stroke-width="1.5"/>
-    <line x1="20" y1="-2" x2="28" y2="-2" stroke="#0f172a" stroke-width="1.5"/>
+  <g class="cartoon-bob-small" transform="translate(1080 290)" aria-label="Bob, curious cartoon coworker">
+    <ellipse cx="28" cy="132" rx="54" ry="9" fill="#020617" opacity="0.24"/>
+    <path d="M-30 132 Q-24 70 -6 46 Q8 28 28 28 Q48 28 62 46 Q80 70 86 132 Z" fill="#60a5fa" stroke="#2563eb" stroke-width="3.5" stroke-linejoin="round"/>
+    <rect x="18" y="12" width="20" height="22" rx="9" fill="#f5d6c0" stroke="#e2b99a" stroke-width="2.5"/>
+    <circle cx="28" cy="-7" r="35" fill="#f5d6c0" stroke="#e2b99a" stroke-width="3.5"/>
+    <path d="M-5 -11 Q-2 -45 28 -50 Q59 -45 62 -11 Q49 -28 31 -28 Q10 -28 -5 -11 Z" fill="#5b4636"/>
+    <path d="M2 -34 Q28 -49 56 -24" fill="none" stroke="#7a5d48" stroke-width="4" stroke-linecap="round" opacity="0.55"/>
+    <ellipse cx="17" cy="-5" rx="4.4" ry="6.2" fill="#0f172a"/>
+    <ellipse cx="40" cy="-5" rx="4.4" ry="6.2" fill="#0f172a"/>
+    <circle cx="18.5" cy="-8" r="1.5" fill="#fff"/>
+    <circle cx="41.5" cy="-8" r="1.5" fill="#fff"/>
+    <circle cx="8" cy="9" r="4" fill="#f9a8d4" opacity="0.5"/>
+    <circle cx="49" cy="9" r="4" fill="#f9a8d4" opacity="0.5"/>
+    <circle cx="17" cy="-4" r="8" fill="none" stroke="#0f172a" stroke-width="2"/>
+    <circle cx="40" cy="-4" r="8" fill="none" stroke="#0f172a" stroke-width="2"/>
+    <line x1="25" y1="-4" x2="32" y2="-4" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
+    <path d="M17 15 q12 7 23 0" fill="none" stroke="#0f172a" stroke-width="2.6" stroke-linecap="round"/>
+    <path d="M-12 68 q-16 8 -32 4" fill="none" stroke="#60a5fa" stroke-width="9" stroke-linecap="round"/>
   </g>
 
   <!-- top: SLO chips -->

@@ -72,24 +72,28 @@
   </g>
 
   <!-- Alice (right of laptop) -->
-  <g>
-    <!-- body -->
-    <path d="M1060 498 L1070 410 Q1075 372 1110 372 Q1145 372 1150 410 L1160 498 Z" fill="#7c6fff"/>
-    <rect x="1058" y="500" width="104" height="6" fill="#5a4ed1"/>
-    <!-- neck -->
-    <rect x="1100" y="356" width="20" height="20" fill="#f5d6c0"/>
-    <!-- head -->
-    <circle cx="1110" cy="338" r="32" fill="#f5d6c0"/>
-    <!-- hair -->
-    <path d="M1078 336 Q1076 300 1110 296 Q1144 300 1142 336 L1142 318 Q1126 308 1110 312 Q1094 308 1078 318 Z" fill="#3f3a52"/>
-    <path d="M1078 336 Q1076 364 1086 372 L1086 348 Q1080 344 1078 336 Z" fill="#3f3a52"/>
-    <!-- eyes -->
-    <circle cx="1100" cy="340" r="2.4" fill="#0f172a"/>
-    <circle cx="1120" cy="340" r="2.4" fill="#0f172a"/>
-    <!-- mouth: small confused line -->
-    <path d="M1102 354 q8 -4 16 0" fill="none" stroke="#0f172a" stroke-width="2" stroke-linecap="round"/>
-    <!-- arm typing -->
-    <path d="M1080 410 Q1020 432 970 462" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+  <g class="cartoon-alice" aria-label="Alice, friendly cartoon student">
+    <ellipse cx="1110" cy="504" rx="58" ry="10" fill="#020617" opacity="0.28"/>
+    <!-- compact seated body -->
+    <path d="M1058 500 Q1064 432 1082 406 Q1094 390 1110 390 Q1126 390 1138 406 Q1156 432 1162 500 Z" fill="#7c6fff" stroke="#4f46e5" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M1085 414 Q1110 436 1135 414" fill="none" stroke="#c7c0ff" stroke-width="4" stroke-linecap="round" opacity="0.85"/>
+    <path d="M1083 438 q-18 14 -32 34" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+    <path d="M1137 438 q18 14 26 36" fill="none" stroke="#7c6fff" stroke-width="14" stroke-linecap="round"/>
+    <circle cx="1050" cy="474" r="7" fill="#f5d6c0" stroke="#e2b99a" stroke-width="2"/>
+    <circle cx="1163" cy="474" r="7" fill="#f5d6c0" stroke="#e2b99a" stroke-width="2"/>
+    <rect x="1099" y="360" width="24" height="32" rx="11" fill="#f5d6c0" stroke="#e2b99a" stroke-width="3"/>
+    <circle cx="1111" cy="336" r="44" fill="#f5d6c0" stroke="#e2b99a" stroke-width="4"/>
+    <path d="M1067 338 Q1068 292 1110 284 Q1151 292 1155 338 Q1146 312 1125 305 Q1104 296 1084 312 Q1073 320 1067 338 Z" fill="#3f3a52"/>
+    <path d="M1070 331 Q1071 362 1087 379 Q1082 349 1093 318 Z" fill="#3f3a52"/>
+    <path d="M1152 331 Q1151 362 1135 379 Q1140 349 1129 318 Z" fill="#3f3a52"/>
+    <path d="M1085 301 Q1112 287 1140 306" fill="none" stroke="#766b8a" stroke-width="4" stroke-linecap="round" opacity="0.6"/>
+    <ellipse cx="1097" cy="339" rx="5.4" ry="7.4" fill="#0f172a"/>
+    <ellipse cx="1125" cy="339" rx="5.4" ry="7.4" fill="#0f172a"/>
+    <circle cx="1099" cy="336" r="2" fill="#fff"/>
+    <circle cx="1127" cy="336" r="2" fill="#fff"/>
+    <circle cx="1086" cy="353" r="5.5" fill="#f9a8d4" opacity="0.64"/>
+    <circle cx="1137" cy="353" r="5.5" fill="#f9a8d4" opacity="0.64"/>
+    <path d="M1100 358 q11 9 23 0" fill="none" stroke="#0f172a" stroke-width="3" stroke-linecap="round"/>
   </g>
 
   <!-- thought bubble: "...does it know I already know this?" -->
