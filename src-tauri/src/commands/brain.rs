@@ -192,10 +192,12 @@ pub async fn warmup_local_ollama(
     let url = format!("{}/api/chat", brain::ollama_agent::OLLAMA_BASE_URL);
     // 1-token streamed chat forces Ollama to load the weights and warm
     // the same streaming endpoint used by the first real user reply.
+    // num_ctx MUST match the real chat path (streaming.rs ~line 1217)
+    // — a mismatch forces Ollama to reload the model on first chat.
     let body = serde_json::json!({
         "model": resolved,
         "messages": [{ "role": "user", "content": "Hi" }],
-        "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+        "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
         "stream": true,
         "think": false,
         "keep_alive": "30m",
@@ -252,6 +254,7 @@ pub async fn pull_ollama_model(
             processed_items: 0,
             total_items: 1,
             error: None,
+            log_line: None,
         },
     );
 
@@ -278,6 +281,7 @@ pub async fn pull_ollama_model(
                     processed_items: 0,
                     total_items: 1,
                     error: None,
+                    log_line: None,
                 },
             );
         },
@@ -300,6 +304,7 @@ pub async fn pull_ollama_model(
             processed_items: if result.is_ok() { 1 } else { 0 },
             total_items: 1,
             error: result.as_ref().err().cloned(),
+            log_line: None,
         },
     );
 
@@ -651,7 +656,7 @@ pub async fn get_brain_selection(
     let embedding_preferred_model = embed_snapshot
         .chosen_model
         .clone()
-        .unwrap_or_else(|| "nomic-embed-text".to_string());
+        .unwrap_or_else(|| "mxbai-embed-large".to_string());
 
     // (3) Memory — read live SQLite stats.
     let memory_snapshot = {
@@ -1108,6 +1113,141 @@ pub async fn embedding_queue_status(
 ) -> Result<crate::memory::embedding_queue::EmbeddingQueueStatus, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     crate::memory::embedding_queue::queue_status(store.conn()).map_err(|e| e.to_string())
+}
+
+/// Aggregated diagnostics for the self-healing embedding retry queue.
+/// Surfaces *why* the worker may not be draining (e.g. no brain configured,
+/// rate-limited pause, VRAM-protection chat-activity skip) plus a sample of
+/// the worst-failing rows with their `last_error`.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingQueueDiagnostics {
+    pub status: crate::memory::embedding_queue::EmbeddingQueueStatus,
+    pub worker: crate::memory::embedding_queue::WorkerStatus,
+    /// Most-recently-failing rows (attempts > 0), worst offenders first.
+    pub recent_failures: Vec<crate::memory::embedding_queue::PendingEmbeddingDebugRow>,
+    /// True if either `brain_mode` or `active_brain` is set on AppState.
+    pub brain_configured: bool,
+    /// Human-readable label like "LocalOllama: gemma3:4b" or "PaidApi: openai".
+    pub brain_mode_label: Option<String>,
+    /// True iff brain mode is LocalOllama AND last chat activity was within
+    /// the last 5 minutes (worker skips ticks to avoid VRAM thrash).
+    pub ollama_chat_skip_active: bool,
+    /// Last user chat activity (ms since epoch). 0 = never since boot.
+    pub last_chat_at_ms: u64,
+    /// Short human-readable explanation of the worker's current state.
+    pub reason: String,
+    /// Current server time (ms since epoch). Frontend uses this to render
+    /// "retry in Ns" labels without trusting local clock skew.
+    pub now_ms: u64,
+}
+
+/// Get diagnostics for the self-healing embedding retry queue. Read-only.
+/// Used by the BrainView debug-log dropdown to explain why the queue may
+/// not be draining.
+#[tauri::command]
+pub async fn embedding_queue_diagnostics(
+    state: State<'_, AppState>,
+) -> Result<EmbeddingQueueDiagnostics, String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis() as u64;
+
+    let (status, recent_failures) = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let conn = store.conn();
+        let status =
+            crate::memory::embedding_queue::queue_status(conn).map_err(|e| e.to_string())?;
+        let recent_failures = crate::memory::embedding_queue::recent_failures(conn, 10)
+            .map_err(|e| e.to_string())?;
+        (status, recent_failures)
+    };
+
+    let worker = state.embed_worker_metrics.snapshot();
+
+    let (brain_mode_opt, brain_mode_label) = {
+        let guard = state.brain_mode.lock().map_err(|e| e.to_string())?;
+        let label = guard.as_ref().map(|m| match m {
+            crate::brain::BrainMode::LocalOllama { model } => {
+                format!("LocalOllama: {model}")
+            }
+            crate::brain::BrainMode::LocalLmStudio { model, .. } => {
+                format!("LocalLmStudio: {model}")
+            }
+            crate::brain::BrainMode::PaidApi {
+                provider, model, ..
+            } => format!("PaidApi: {provider} ({model})"),
+            crate::brain::BrainMode::FreeApi {
+                provider_id, model, ..
+            } => match model {
+                Some(m) => format!("FreeApi: {provider_id} ({m})"),
+                None => format!("FreeApi: {provider_id}"),
+            },
+        });
+        let mode_clone = guard.clone();
+        (mode_clone, label)
+    };
+
+    let active_brain_set = state
+        .active_brain
+        .lock()
+        .map(|m| m.is_some())
+        .unwrap_or(false);
+    let brain_configured = brain_mode_opt.is_some() || active_brain_set;
+
+    let last_chat_at_ms = state
+        .last_chat_at_ms
+        .load(std::sync::atomic::Ordering::Relaxed);
+    let is_ollama_mode = matches!(
+        brain_mode_opt.as_ref(),
+        Some(crate::brain::BrainMode::LocalOllama { .. })
+    );
+    let ollama_chat_skip_active = is_ollama_mode
+        && last_chat_at_ms > 0
+        && now_ms.saturating_sub(last_chat_at_ms) < 5 * 60 * 1000;
+
+    let reason = if status.pending == 0 {
+        "Queue empty — all embeddings up to date.".to_string()
+    } else if !brain_configured {
+        "Blocked: no embedding-capable brain configured. Select a brain mode \
+         (LocalOllama, PaidApi, or FreeApi) so the worker can resume."
+            .to_string()
+    } else if worker.rate_limited {
+        format!(
+            "Paused: provider rate-limited. Resuming in {}s.",
+            worker.pause_remaining_secs
+        )
+    } else if ollama_chat_skip_active {
+        let elapsed = (now_ms - last_chat_at_ms) / 1000;
+        let remaining = 300u64.saturating_sub(elapsed);
+        format!(
+            "Throttled: chat activity {}s ago. Worker skips Ollama ticks for 5m \
+             to avoid evicting the chat model from VRAM. Resumes in {}s.",
+            elapsed, remaining
+        )
+    } else if status.failing > 0 {
+        format!(
+            "Retrying {} failing rows with exponential backoff (10s \u{2192} 1h). \
+             Latest errors shown below.",
+            status.failing
+        )
+    } else {
+        "Healthy: worker drains every 10s in batches.".to_string()
+    };
+
+    Ok(EmbeddingQueueDiagnostics {
+        status,
+        worker,
+        recent_failures,
+        brain_configured,
+        brain_mode_label,
+        ollama_chat_skip_active,
+        last_chat_at_ms,
+        reason,
+        now_ms,
+    })
 }
 
 /// Get the most recent eviction log entries (newest first).

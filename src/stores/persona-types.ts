@@ -18,7 +18,6 @@ export type PersonaVoiceAge = 'child' | 'teen' | 'young_adult' | 'adult' | 'midd
 export type PersonaVoicePitch = 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
 export type PersonaVoiceStyle = 'natural' | 'whisper';
 export type PersonaEnglishAccent = 'american' | 'british' | 'australian' | 'canadian' | 'indian' | 'irish' | 'scottish' | 'south_african';
-export type PersonaChineseDialect = 'mandarin' | 'sichuanese' | 'shaanxi' | 'cantonese' | 'taiwanese' | 'shanghainese' | 'hunanese' | 'none';
 
 export interface PersonaVoiceProfile {
   /** Voice gender presented to the TTS engine or voice-design prompt. */
@@ -31,8 +30,6 @@ export interface PersonaVoiceProfile {
   style: PersonaVoiceStyle;
   /** English accent target for multilingual engines. */
   englishAccent: PersonaEnglishAccent;
-  /** Chinese dialect target for multilingual engines. */
-  chineseDialect: PersonaChineseDialect;
   /** Provider-specific voice id/name, e.g. a Web Speech voice or Edge-style neural voice name. */
   voiceName: string;
 }
@@ -78,17 +75,6 @@ export const PERSONA_ENGLISH_ACCENT_OPTIONS: PersonaOption<PersonaEnglishAccent>
   { value: 'irish', label: 'Irish' },
   { value: 'scottish', label: 'Scottish' },
   { value: 'south_african', label: 'South African' },
-];
-
-export const PERSONA_CHINESE_DIALECT_OPTIONS: PersonaOption<PersonaChineseDialect>[] = [
-  { value: 'mandarin', label: '普通话' },
-  { value: 'sichuanese', label: '四川话' },
-  { value: 'shaanxi', label: '陕西话' },
-  { value: 'cantonese', label: '粤语' },
-  { value: 'taiwanese', label: '台湾腔' },
-  { value: 'shanghainese', label: '上海话' },
-  { value: 'hunanese', label: '湖南话' },
-  { value: 'none', label: 'None' },
 ];
 
 /** The single active persona's editable traits (see persona-design.md § 2). */
@@ -243,7 +229,6 @@ export function defaultPersonaVoiceProfile(): PersonaVoiceProfile {
     pitch: 'medium',
     style: 'natural',
     englishAccent: 'american',
-    chineseDialect: 'mandarin',
     voiceName: 'en-US-AnaNeural',
   };
 }
@@ -281,7 +266,6 @@ export function migratePersonaVoiceProfile(raw: unknown): PersonaVoiceProfile {
     pitch: optionOrDefault(r.pitch, PERSONA_VOICE_PITCH_OPTIONS, fresh.pitch),
     style: optionOrDefault(r.style, PERSONA_VOICE_STYLE_OPTIONS, fresh.style),
     englishAccent: optionOrDefault(r.englishAccent, PERSONA_ENGLISH_ACCENT_OPTIONS, fresh.englishAccent),
-    chineseDialect: optionOrDefault(r.chineseDialect, PERSONA_CHINESE_DIALECT_OPTIONS, fresh.chineseDialect),
     voiceName: typeof r.voiceName === 'string' ? r.voiceName.trim().slice(0, 120) : fresh.voiceName,
   };
 }

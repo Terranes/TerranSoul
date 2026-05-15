@@ -250,16 +250,56 @@ const STATE_LABEL = {
         stroke="none"
         filter="url(#bpDotGlow)"
       >
-        <circle cx="98" cy="96" r="1.8" />
-        <circle cx="128" cy="84" r="1.5" />
-        <circle cx="158" cy="96" r="1.8" />
-        <circle cx="112" cy="118" r="1.5" />
-        <circle cx="148" cy="118" r="1.8" />
-        <circle cx="120" cy="138" r="1.5" />
-        <circle cx="86" cy="124" r="1.5" />
-        <circle cx="172" cy="124" r="1.5" />
-        <circle cx="106" cy="156" r="1.4" />
-        <circle cx="138" cy="156" r="1.4" />
+        <circle
+          cx="98"
+          cy="96"
+          r="1.8"
+        />
+        <circle
+          cx="128"
+          cy="84"
+          r="1.5"
+        />
+        <circle
+          cx="158"
+          cy="96"
+          r="1.8"
+        />
+        <circle
+          cx="112"
+          cy="118"
+          r="1.5"
+        />
+        <circle
+          cx="148"
+          cy="118"
+          r="1.8"
+        />
+        <circle
+          cx="120"
+          cy="138"
+          r="1.5"
+        />
+        <circle
+          cx="86"
+          cy="124"
+          r="1.5"
+        />
+        <circle
+          cx="172"
+          cy="124"
+          r="1.5"
+        />
+        <circle
+          cx="106"
+          cy="156"
+          r="1.4"
+        />
+        <circle
+          cx="138"
+          cy="156"
+          r="1.4"
+        />
       </g>
     </svg>
 

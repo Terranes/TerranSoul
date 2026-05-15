@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 21;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 22;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -177,6 +177,22 @@ CREATE TABLE IF NOT EXISTS safety_decisions (
     decided_via TEXT    NOT NULL DEFAULT 'auto'
 );
 CREATE INDEX IF NOT EXISTS idx_safety_decided_at ON safety_decisions(decided_at);
+
+-- V22 (BRAIN-REPO-RAG-1a): registry of memory sources. Each row is one
+-- logical "brain origin" the user can flip between in the Memory panel
+-- and in MCP queries. `'self'` is the always-present TerranSoul brain;
+-- `'repo'` rows point at a per-source `mcp-data/repos/<id>/` directory
+-- holding its own checkout + SQLite + ANN sidecars (populated by 1b/1c).
+CREATE TABLE IF NOT EXISTS memory_sources (
+    id             TEXT    PRIMARY KEY,
+    kind           TEXT    NOT NULL CHECK(kind IN ('self','repo','topic')),
+    label          TEXT    NOT NULL,
+    repo_url       TEXT,
+    repo_ref       TEXT,
+    created_at     INTEGER NOT NULL,
+    last_synced_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind);
 "#;
 
 /// Create the final memory schema directly and record its canonical version.
@@ -191,6 +207,7 @@ pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     ensure_share_scope(conn)?;
     ensure_cap_profile(conn)?;
     ensure_v20_tables(conn)?;
+    ensure_v22_memory_sources(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
 }
@@ -504,6 +521,42 @@ fn ensure_v21_graph_indexes(conn: &Connection) -> SqlResult<()> {
     Ok(())
 }
 
+/// V22 (BRAIN-REPO-RAG-1a): `memory_sources` registry. Idempotent — the
+/// `CREATE TABLE IF NOT EXISTS` is also in `CANONICAL_SCHEMA_SQL`, but
+/// existing v21 databases (created before this migration) need this hook
+/// to materialize the table without a destructive reset. Seeds the
+/// always-present `'self'` row when the table is empty.
+fn ensure_v22_memory_sources(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_sources (
+            id             TEXT    PRIMARY KEY,
+            kind           TEXT    NOT NULL CHECK(kind IN ('self','repo','topic')),
+            label          TEXT    NOT NULL,
+            repo_url       TEXT,
+            repo_ref       TEXT,
+            created_at     INTEGER NOT NULL,
+            last_synced_at INTEGER
+        );
+        CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind);",
+    )?;
+
+    let count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM memory_sources WHERE id = 'self'", [], |row| row.get(0))
+        .unwrap_or(0);
+    if count == 0 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as i64;
+        conn.execute(
+            "INSERT INTO memory_sources (id, kind, label, repo_url, repo_ref, created_at, last_synced_at)
+             VALUES ('self', 'self', 'TerranSoul', NULL, NULL, ?1, NULL)",
+            rusqlite::params![now],
+        )?;
+    }
+    Ok(())
+}
+
 /// Return the recorded canonical schema version, or 0 before initialization.
 pub fn schema_version(conn: &Connection) -> SqlResult<i64> {
     conn.query_row(
@@ -586,6 +639,10 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
     conn.prepare(
         "SELECT id, action, decision, decided_at, decided_via
          FROM safety_decisions LIMIT 0",
+    )?;
+    conn.prepare(
+        "SELECT id, kind, label, repo_url, repo_ref, created_at, last_synced_at
+         FROM memory_sources LIMIT 0",
     )?;
     Ok(())
 }

@@ -2479,7 +2479,9 @@ mod tests {
             "messages": [{ "role": "user", "content": "Hi" }],
             "stream": true,
             "think": false,
-            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            // num_ctx must match the real chat path (~line 1217) so the
+            // warmup actually warms the cache the chat handler will use.
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "keep_alive": "30m",
         });
         let state_ref: tauri::State<'_, AppState> = handle.state();

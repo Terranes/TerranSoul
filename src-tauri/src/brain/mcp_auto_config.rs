@@ -15,7 +15,9 @@ use super::ollama_lifecycle;
 use super::system_info;
 
 /// The embedding model used for vector search in local Ollama mode.
-const EMBEDDING_MODEL: &str = "nomic-embed-text";
+/// Promoted from `nomic-embed-text` to `mxbai-embed-large` by
+/// BENCH-LCM-5 (2026-05-12, +3.7pp R@10 overall on LoCoMo).
+const EMBEDDING_MODEL: &str = "mxbai-embed-large";
 
 /// Auto-configure the brain for MCP mode if no config exists yet.
 ///
@@ -25,7 +27,7 @@ const EMBEDDING_MODEL: &str = "nomic-embed-text";
 /// 3. If Ollama is running:
 ///    a. List local models → pick the best one already pulled.
 ///    b. If no suitable model, pull the top recommendation for this hardware.
-///    c. Ensure the embedding model (`nomic-embed-text`) is available; pull if missing.
+///    c. Ensure the embedding model (`mxbai-embed-large`) is available; pull if missing.
 ///    d. Save `BrainMode::LocalOllama { model }` to disk.
 /// 4. If Ollama is NOT available (not installed, can't start):
 ///    a. Fall back to Pollinations free API (no key needed, always available).

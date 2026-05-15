@@ -17,6 +17,7 @@
         @overlay-open="handleViewportOverlayOpen"
         @set-display-mode="(mode: 'desktop' | 'chatbox') => $emit('set-display-mode', mode)"
         @toggle-pet-mode="$emit('toggle-pet-mode')"
+        @navigate="(target: string) => $emit('navigate', target)"
       />
     </div>
 

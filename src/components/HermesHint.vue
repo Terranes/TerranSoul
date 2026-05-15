@@ -53,7 +53,10 @@ function navigateToCompanions(): void {
       aria-live="polite"
       data-testid="hermes-hint-banner"
     >
-      <span class="hermes-hint__icon" aria-hidden="true">💡</span>
+      <span
+        class="hermes-hint__icon"
+        aria-hidden="true"
+      >💡</span>
       <span class="hermes-hint__text">{{ hintText }}</span>
       <button
         class="hermes-hint__action"

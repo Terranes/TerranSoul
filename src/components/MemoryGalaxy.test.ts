@@ -1,5 +1,5 @@
 /**
- * Tests for MemoryGraph3D (formerly BrainGraphViewport, chunk 33B.5).
+ * Tests for MemoryGalaxy (the 3D Memory view).
  *
  * We test the pure utility functions used by the component:
  * - classifyMemoryKind (via the shared TS/Rust cognitive-kind mirror)
@@ -139,7 +139,7 @@ describe('relTypeColour', () => {
   });
 });
 
-describe('truncate (MemoryGraph3D)', () => {
+describe('truncate (MemoryGalaxy)', () => {
   it('returns empty string for falsy input', () => {
     expect(truncate('', 10)).toBe('');
   });

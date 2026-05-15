@@ -87,6 +87,52 @@
           class="bubble"
           :text="item.msg!.content"
         />
+        <!--
+          RAG citation footer (BRAIN-REPO-RAG-1c-b-ii-b).
+          Renders the grouped sources that contributed to the
+          `[LONG-TERM MEMORY]` block for this turn. Each badge is
+          per-source (`🧠 TerranSoul` or `📦 owner/repo`) with the
+          number of contributing rows. Expanding the `<details>` shows
+          file paths / parent symbols for repo hits and tier for brain
+          hits so the user can audit the retrieval.
+        -->
+        <details
+          v-if="item.msg!.role === 'assistant' && groupedSources(item.msg!).length > 0"
+          class="sources-footer"
+        >
+          <summary class="sources-summary">
+            <span class="sources-summary-label">📚 Sources</span>
+            <span
+              v-for="g in groupedSources(item.msg!)"
+              :key="g.source_id"
+              class="source-badge"
+              :class="{ 'source-badge-self': g.source_id === 'self' }"
+            >
+              {{ g.source_id === 'self' ? '🧠' : '📦' }} {{ g.source_label }}
+              <span class="source-badge-count">{{ g.hits.length }}</span>
+            </span>
+          </summary>
+          <ol class="sources-list">
+            <li
+              v-for="(hit, idx) in item.msg!.sources"
+              :key="`${hit.source_id}-${hit.local_id}-${idx}`"
+              class="source-item"
+            >
+              <span class="source-item-badge">
+                {{ hit.source_id === 'self' ? '🧠' : '📦' }} {{ hit.source_label }}
+              </span>
+              <code
+                v-if="hit.file_path"
+                class="source-item-path"
+              >{{ hit.file_path }}{{ hit.parent_symbol ? `::${hit.parent_symbol}` : '' }}</code>
+              <span
+                v-else-if="hit.tier"
+                class="source-item-tier"
+              >{{ hit.tier }}</span>
+              <span class="source-item-preview">{{ truncate(hit.content, 160) }}</span>
+            </li>
+          </ol>
+        </details>
         <span class="timestamp">{{ formatTime(item.msg!.timestamp) }}</span>
         <div
           v-if="canRateCharismaTurn(item.msg!)"
@@ -294,6 +340,37 @@ async function scrollToBottom() {
 watch(() => props.messages.length, scrollToBottom);
 watch(() => props.isThinking, scrollToBottom);
 watch(() => props.streamingText, scrollToBottom);
+
+/**
+ * Group an assistant message's RAG `sources` by `source_id` for the
+ * citation footer (BRAIN-REPO-RAG-1c-b-ii-b). Order of first appearance
+ * is preserved (which the backend RRF ranking implies is most-relevant
+ * first per source).
+ */
+function groupedSources(
+  message: Message,
+): Array<{ source_id: string; source_label: string; hits: NonNullable<Message['sources']> }> {
+  const hits = message.sources ?? [];
+  if (hits.length === 0) return [];
+  const order: string[] = [];
+  const byId = new Map<string, { source_id: string; source_label: string; hits: NonNullable<Message['sources']> }>();
+  for (const hit of hits) {
+    let entry = byId.get(hit.source_id);
+    if (!entry) {
+      entry = { source_id: hit.source_id, source_label: hit.source_label, hits: [] };
+      byId.set(hit.source_id, entry);
+      order.push(hit.source_id);
+    }
+    entry.hits.push(hit);
+  }
+  return order.map((id) => byId.get(id)!);
+}
+
+function truncate(text: string, max: number): string {
+  if (!text) return '';
+  if (text.length <= max) return text;
+  return text.slice(0, max - 1).trimEnd() + '…';
+}
 </script>
 
 <style scoped>
@@ -757,5 +834,83 @@ watch(() => props.streamingText, scrollToBottom);
   background: rgba(239, 68, 68, 0.12);
   border-color: rgba(239, 68, 68, 0.5);
   box-shadow: 0 4px 14px rgba(239, 68, 68, 0.18);
+}
+
+/* ── RAG citation footer (BRAIN-REPO-RAG-1c-b-ii-b) ───────────────── */
+.sources-footer {
+  margin-top: 6px;
+  font-size: 0.78em;
+  color: var(--ts-text-secondary, rgba(226, 232, 240, 0.72));
+}
+.sources-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  list-style: none;
+  cursor: pointer;
+  padding: 4px 0;
+  user-select: none;
+}
+.sources-summary::marker,
+.sources-summary::-webkit-details-marker {
+  display: none;
+}
+.sources-summary-label {
+  font-weight: 600;
+  opacity: 0.85;
+}
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ts-glass-bg, rgba(15, 23, 42, 0.55));
+  border: 1px solid var(--ts-border, rgba(148, 163, 184, 0.25));
+  font-size: 0.95em;
+}
+.source-badge-self {
+  border-color: var(--ts-accent, rgba(56, 189, 248, 0.45));
+}
+.source-badge-count {
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+.sources-list {
+  margin: 6px 0 2px 0;
+  padding-left: 1.5em;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.source-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: baseline;
+}
+.source-item-badge {
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0.85;
+}
+.source-item-path {
+  grid-column: 2;
+  font-family: var(--ts-font-mono, ui-monospace, monospace);
+  font-size: 0.9em;
+  opacity: 0.85;
+}
+.source-item-tier {
+  grid-column: 2;
+  font-size: 0.85em;
+  opacity: 0.7;
+  font-style: italic;
+}
+.source-item-preview {
+  grid-column: 2;
+  opacity: 0.75;
+  line-height: 1.35;
 }
 </style>

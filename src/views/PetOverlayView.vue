@@ -821,30 +821,22 @@ function isPointOverInteractive(x: number, y: number): boolean {
     }
   }
 
-  // Not over a UI overlay — check if over the bounding rect at all
+  // Not over a UI overlay — check if over the bounding rect at all.
+  // The .pet-character box (350×500 by default) is the model's reserved
+  // hit-area: clicks anywhere inside it are accepted, clicks outside pass
+  // through to the desktop. We previously tried to refine this with a
+  // gl.readPixels() alpha check so the transparent corners of the box would
+  // also fall through, but that hit-test silently returned alpha=0 in real
+  // WebView2 + transparent-layered-window builds (premultiplied alpha and
+  // back-buffer timing quirks), which permanently kept set_ignore_cursor_events
+  // ON and made every click on the model fall through to the desktop. The
+  // bounding rect is reliable and matches how every other VRM desktop pet
+  // does hit-testing — see also: the resize handle in the bottom-right
+  // corner extends the interactive surface a few pixels past the rect.
   if (x < charRect.left || x > charRect.right || y < charRect.top || y > charRect.bottom) {
     return false;
   }
-
-  // Inside the bounding rect — read the canvas pixel alpha to see if the
-  // cursor is over a visible part of the 3D model (not transparent background).
-  const canvas = el.querySelector('canvas');
-  if (!canvas) return true; // fallback: treat entire rect as interactive
-  const canvasRect = canvas.getBoundingClientRect();
-  const cx = x - canvasRect.left;
-  const cy = y - canvasRect.top;
-  if (cx < 0 || cy < 0 || cx >= canvasRect.width || cy >= canvasRect.height) {
-    return false;
-  }
-
-  const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
-  if (!gl) return true; // fallback
-  const dpr = window.devicePixelRatio || 1;
-  const px = Math.round(cx * dpr);
-  const py = Math.round((canvasRect.height - cy) * dpr); // WebGL y is flipped
-  const pixel = new Uint8Array(4);
-  gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);
-  return pixel[3] > 10; // alpha > threshold → over the model
+  return true;
 }
 
 function handleCursorPos(payload: { x: number; y: number; inside: boolean }) {

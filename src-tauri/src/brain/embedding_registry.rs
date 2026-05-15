@@ -86,7 +86,7 @@ pub fn catalogue() -> Vec<EmbeddingModelEntry> {
             dimensions: 768,
             provider: EmbedProvider::Ollama,
             max_tokens: 8192,
-            description: "Fast 768d general-purpose. Recommended for local use.".to_string(),
+            description: "Fast 768d general-purpose, 8192-token context. Lightweight fallback for long-doc ingest.".to_string(),
         },
         EmbeddingModelEntry {
             id: "mxbai-embed-large".to_string(),
@@ -94,7 +94,7 @@ pub fn catalogue() -> Vec<EmbeddingModelEntry> {
             dimensions: 1024,
             provider: EmbedProvider::Ollama,
             max_tokens: 512,
-            description: "Strong 1024d, sentence-level. Good for short texts.".to_string(),
+            description: "Strong 1024d, sentence-level. Recommended default (promoted by BENCH-LCM-5: +3.7pp R@10 on LoCoMo vs nomic).".to_string(),
         },
         EmbeddingModelEntry {
             id: "snowflake-arctic-embed".to_string(),

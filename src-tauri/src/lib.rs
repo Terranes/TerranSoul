@@ -58,7 +58,8 @@ use commands::{
     },
     brain::{
         brain_eviction_log, check_lm_studio_status, check_ollama_status, classify_intent,
-        clear_active_brain, download_lm_studio_model, embedding_queue_status, factory_reset_brain,
+        clear_active_brain, download_lm_studio_model, embedding_queue_diagnostics,
+        embedding_queue_status, factory_reset_brain,
         get_active_brain, get_agent_routing, get_brain_mode, get_brain_selection,
         get_embed_cache_status, get_embedding_registry_state, get_failover_policy,
         get_failover_summary, get_lm_studio_download_status, get_lm_studio_models,
@@ -163,6 +164,9 @@ use commands::{
         set_auto_learn_policy, shard_health, summarize_session, temporal_query, update_memory,
         update_memory_edge,
     },
+    memory_sources::{
+        create_memory_source, delete_memory_source, get_memory_source, list_memory_sources,
+    },
     messaging::{
         get_agent_messages, list_agent_subscriptions, publish_agent_message, subscribe_agent_topic,
         unsubscribe_agent_topic,
@@ -218,7 +222,8 @@ use commands::{
         add_hotword, clear_hotwords, clear_voice_config, diarize_audio, get_hotwords,
         get_voice_config, list_asr_providers, list_tts_providers, remove_hotword, set_asr_provider,
         set_tts_prosody, set_tts_provider, set_tts_voice, set_voice_api_key, set_voice_endpoint,
-        synthesize_tts, transcribe_audio,
+        supertonic_download_model, supertonic_install_path, supertonic_is_installed,
+        supertonic_remove, supertonic_status, synthesize_tts, test_tts_provider, transcribe_audio,
     },
     vscode::{vscode_forget_window, vscode_list_known_windows, vscode_open_project},
     wiki::{
@@ -359,6 +364,13 @@ pub struct AppStateInner {
     /// hive relay, MCP server). Auto-clears after 10 min or manual user
     /// exit. See `docs/availability-slo.md`.
     pub safe_mode: Arc<AtomicBool>,
+    /// Lazily-loaded on-device Supertonic TTS engine (chunk TTS-SUPERTONIC-1b).
+    /// `get_or_init` runs the heavy 4-session ONNX load exactly once per
+    /// process — the second call to `synthesize_tts` reuses the cached
+    /// instance. Only present when the `tts-supertonic` feature is enabled
+    /// (default on desktop builds; absent on mobile / headless-mcp).
+    #[cfg(feature = "tts-supertonic")]
+    pub supertonic: tokio::sync::OnceCell<Arc<voice::supertonic_tts::SupertonicTts>>,
 }
 
 /// Cheaply clonable handle to the shared application state. Wraps
@@ -462,6 +474,8 @@ impl AppState {
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
             last_chat_at_ms: AtomicU64::new(Self::now_ms_u64()),
             safe_mode: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "tts-supertonic")]
+            supertonic: tokio::sync::OnceCell::new(),
         }))
     }
 
@@ -531,6 +545,8 @@ impl AppState {
             kg_cache: memory::kg_cache::KgCache::new(memory::kg_cache::DEFAULT_CACHE_CAPACITY),
             last_chat_at_ms: AtomicU64::new(0),
             safe_mode: Arc::new(AtomicBool::new(false)),
+            #[cfg(feature = "tts-supertonic")]
+            supertonic: tokio::sync::OnceCell::new(),
         }))
     }
 }
@@ -1204,7 +1220,10 @@ pub(crate) fn spawn_local_ollama_warmup(state: &AppState, label: &str) {
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": "Hi" }],
-            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            // Must match the real chat path's num_ctx (see streaming.rs
+            // line ~1217) — any mismatch forces Ollama to reload the
+            // model weights on the first user reply, defeating the warmup.
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "keep_alive": "30m",
             "stream": true,
             "think": false,
@@ -1749,6 +1768,44 @@ pub fn run() {
             update_memory_edge,
             detach_memory_node,
             list_memory_edges,
+            // BRAIN-REPO-RAG-1a: memory-sources registry
+            list_memory_sources,
+            get_memory_source,
+            create_memory_source,
+            delete_memory_source,
+            // BRAIN-REPO-RAG-1b-i: per-repo ingest backend (feature `repo-rag`)
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_add_source,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_sync,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_remove_source,
+            // BRAIN-REPO-RAG-1c-a: source-scoped retrieval
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_search,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_list_files,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_read_file,
+            // BRAIN-REPO-RAG-1d: Aider-style map + signature compression
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_map,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_signatures,
+            // BRAIN-REPO-RAG-1e: OAuth device flow for private repos
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_oauth_github_start,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_oauth_github_poll,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_oauth_github_status,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::repo_oauth_github_clear,
+            // BRAIN-REPO-RAG-2a: cross-source knowledge-graph projection
+            #[cfg(feature = "repo-rag")]
+            crate::commands::repos::cross_source_graph_nodes,
+            // BRAIN-REPO-RAG-1c-b-ii-a: cross-source All-mode fan-out
+            crate::commands::cross_source::cross_source_search,
             memory_graph_page,
             disk_ann_plan_preview,
             disk_ann_migration_status,
@@ -1865,6 +1922,7 @@ pub fn run() {
             remove_provider_task_override,
             resolve_provider_for_task,
             embedding_queue_status,
+            embedding_queue_diagnostics,
             brain_eviction_log,
             get_agent_routing,
             set_agent_route,
@@ -1881,6 +1939,12 @@ pub fn run() {
             set_voice_endpoint,
             clear_voice_config,
             synthesize_tts,
+            test_tts_provider,
+            supertonic_install_path,
+            supertonic_is_installed,
+            supertonic_status,
+            supertonic_remove,
+            supertonic_download_model,
             transcribe_audio,
             diarize_audio,
             get_hotwords,

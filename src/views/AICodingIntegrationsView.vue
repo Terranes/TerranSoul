@@ -4,22 +4,15 @@
     data-density="cozy"
     data-testid="ai-integrations-view"
   >
-    <!-- ── Breadcrumb ──────────────────────────────────────────────────────────────── -->
-    <div class="bp-crumb">
-      <span>TERRANSOUL</span>
-      <span class="bp-crumb-sep">›</span>
-      <span>BRAIN</span>
-      <span class="bp-crumb-sep">›</span>
-      <span class="bp-crumb-now">AI CODING</span>
-    </div>
-
     <section class="bp-module">
       <header class="bp-module-head">
         <div class="bp-module-head-left">
           <div class="bp-module-eyebrow">
             <span class="ix">01</span> AI Coding Integrations
           </div>
-          <h2 class="bp-module-title">🔌 MCP Server</h2>
+          <h2 class="bp-module-title">
+            🔌 MCP Server
+          </h2>
         </div>
         <button
           class="bp-btn bp-btn--ghost bp-btn--sm"
@@ -31,253 +24,253 @@
         </button>
       </header>
 
-    <p class="aiv-help">
-      Expose TerranSoul's brain to external AI coding assistants
-      (VS Code Copilot, Claude Desktop, Codex CLI, Hermes Agent) over the
-      <a
-        href="https://modelcontextprotocol.io"
-        target="_blank"
-        rel="noopener"
-      >Model Context Protocol</a>.
-      The MCP server runs on <code>127.0.0.1</code> only — never exposed to LAN.
-    </p>
+      <p class="aiv-help">
+        Expose TerranSoul's brain to external AI coding assistants
+        (VS Code Copilot, Claude Desktop, Codex CLI, Hermes Agent) over the
+        <a
+          href="https://modelcontextprotocol.io"
+          target="_blank"
+          rel="noopener"
+        >Model Context Protocol</a>.
+        The MCP server runs on <code>127.0.0.1</code> only — never exposed to LAN.
+      </p>
 
-    <!-- ── Server status ─────────────────────────────────────────────── -->
-    <div
-      class="aiv-card"
-      data-testid="aiv-server-card"
-    >
-      <h4>Server status</h4>
-      <p class="aiv-row">
-        <span
-          :class="['aiv-pill', store.isRunning ? 'aiv-pill-on' : 'aiv-pill-off']"
-          data-testid="aiv-server-pill"
-        >{{ store.isRunning ? 'Running' : 'Stopped' }}</span>
-        <span
-          v-if="store.port"
-          class="aiv-meta"
-          data-testid="aiv-server-port"
-        >port <code>{{ store.port }}</code></span>
-        <span
-          v-if="store.serverStatus?.is_dev"
-          class="aiv-meta aiv-meta-dev"
-        >dev build</span>
-      </p>
-      <p
-        v-if="store.tokenPreview"
-        class="aiv-row aiv-token-row"
+      <!-- ── Server status ─────────────────────────────────────────────── -->
+      <div
+        class="aiv-card"
+        data-testid="aiv-server-card"
       >
-        <span>token:</span>
-        <code data-testid="aiv-token-preview">{{ store.tokenPreview }}</code>
-        <button
-          class="aiv-link"
-          data-testid="aiv-copy-token"
-          @click="onCopyToken"
-        >
-          Copy full
-        </button>
-        <span
-          v-if="copyMessage"
-          class="aiv-meta aiv-meta-ok"
-          data-testid="aiv-copy-msg"
-        >{{ copyMessage }}</span>
-      </p>
-      <div class="aiv-actions">
-        <button
-          v-if="!store.isRunning"
-          class="aiv-btn aiv-btn-primary"
-          :disabled="store.loading"
-          data-testid="aiv-start"
-          @click="store.startServer()"
-        >
-          Start server
-        </button>
-        <button
-          v-else
-          class="aiv-btn"
-          :disabled="store.loading"
-          data-testid="aiv-stop"
-          @click="store.stopServer()"
-        >
-          Stop server
-        </button>
-        <button
-          class="aiv-btn"
-          :disabled="store.loading"
-          data-testid="aiv-regen-token"
-          @click="onRegenToken"
-        >
-          Regenerate token
-        </button>
-      </div>
-    </div>
-
-    <!-- ── Auto-setup writers ────────────────────────────────────────── -->
-    <div
-      class="aiv-card"
-      data-testid="aiv-clients-card"
-    >
-      <h4>External clients</h4>
-      <p class="aiv-help-small">
-        TerranSoul writes the integration config for each editor.
-        Restart the editor after setup. Workspace path:
-        <code>{{ workspaceRoot }}</code>.
-      </p>
-      <div class="aiv-row aiv-transport-row">
-        <span>Transport:</span>
-        <label>
-          <input
-            type="radio"
-            :checked="store.preferredTransport === 'stdio'"
-            data-testid="aiv-transport-stdio"
-            @change="store.setTransport('stdio')"
-          >
-          stdio (recommended)
-        </label>
-        <label>
-          <input
-            type="radio"
-            :checked="store.preferredTransport === 'http'"
-            data-testid="aiv-transport-http"
-            @change="store.setTransport('http')"
-          >
-          http
-        </label>
-      </div>
-      <ul
-        v-if="store.clientStatuses.length > 0"
-        class="aiv-client-list"
-        data-testid="aiv-client-list"
-      >
-        <li
-          v-for="c in store.clientStatuses"
-          :key="c.client"
-          class="aiv-client-item"
-          :data-testid="`aiv-client-${clientKey(c.client)}`"
-        >
-          <div class="aiv-client-head">
-            <strong>{{ c.client }}</strong>
-            <span
-              :class="['aiv-pill', c.configured ? 'aiv-pill-on' : 'aiv-pill-off']"
-              :data-testid="`aiv-client-status-${clientKey(c.client)}`"
-            >
-              {{ c.configured ? 'Configured' : 'Not configured' }}
-            </span>
-          </div>
-          <p
-            v-if="c.config_path"
+        <h4>Server status</h4>
+        <p class="aiv-row">
+          <span
+            :class="['aiv-pill', store.isRunning ? 'aiv-pill-on' : 'aiv-pill-off']"
+            data-testid="aiv-server-pill"
+          >{{ store.isRunning ? 'Running' : 'Stopped' }}</span>
+          <span
+            v-if="store.port"
             class="aiv-meta"
-          >
-            <code>{{ c.config_path }}</code>
-          </p>
-          <div class="aiv-actions">
-            <button
-              v-if="!c.configured"
-              class="aiv-btn aiv-btn-primary"
-              :data-testid="`aiv-setup-${clientKey(c.client)}`"
-              @click="onSetup(clientKey(c.client))"
-            >
-              Set up via {{ store.preferredTransport }}
-            </button>
-            <button
-              v-else
-              class="aiv-btn aiv-btn-danger"
-              :data-testid="`aiv-remove-${clientKey(c.client)}`"
-              @click="onRemove(clientKey(c.client))"
-            >
-              Remove
-            </button>
-          </div>
-        </li>
-      </ul>
-      <p
-        v-if="lastSetupMessage"
-        class="aiv-row aiv-meta-ok"
-        data-testid="aiv-setup-msg"
-      >
-        ✓ {{ lastSetupMessage }}
-      </p>
-    </div>
-
-    <!-- ── VS Code workspaces ────────────────────────────────────────── -->
-    <div
-      v-if="store.vscodeWindows.length > 0"
-      class="aiv-card"
-      data-testid="aiv-windows-card"
-    >
-      <h4>Known VS Code windows</h4>
-      <ul class="aiv-window-list">
-        <li
-          v-for="w in store.vscodeWindows"
-          :key="w.pid"
-          class="aiv-window-item"
+            data-testid="aiv-server-port"
+          >port <code>{{ store.port }}</code></span>
+          <span
+            v-if="store.serverStatus?.is_dev"
+            class="aiv-meta aiv-meta-dev"
+          >dev build</span>
+        </p>
+        <p
+          v-if="store.tokenPreview"
+          class="aiv-row aiv-token-row"
         >
-          <span><code>{{ w.root }}</code></span>
-          <span class="aiv-meta">pid {{ w.pid }}</span>
+          <span>token:</span>
+          <code data-testid="aiv-token-preview">{{ store.tokenPreview }}</code>
           <button
             class="aiv-link"
-            :data-testid="`aiv-forget-${w.pid}`"
-            @click="store.forgetWindow(w.pid)"
+            data-testid="aiv-copy-token"
+            @click="onCopyToken"
           >
-            Forget
+            Copy full
           </button>
-        </li>
-      </ul>
-    </div>
-
-    <!-- ── LAN exposure (locked) ─────────────────────────────────────── -->
-    <div
-      class="aiv-card aiv-card-warn"
-      data-testid="aiv-lan-card"
-    >
-      <h4>Network exposure</h4>
-      <p>
-        <strong>LAN exposure is disabled.</strong>
-        TerranSoul binds the MCP server to <code>127.0.0.1</code> only.
-        Allowing LAN access would let any device on your network read your
-        memories — a future release may add an opt-in toggle with a TLS
-        certificate, but it is intentionally not available today.
-      </p>
-    </div>
-
-    <div
-      class="aiv-card aiv-card-accent"
-      data-testid="aiv-workbench-card"
-    >
-      <h4>Native code workbench</h4>
-      <p class="aiv-help-small">
-        TerranSoul keeps code intelligence clean-room and local-first. The target
-        UX is a dense coding cockpit: graph canvas, grounded citations, visible
-        tool activity, repo status, and blast-radius awareness inside the app.
-      </p>
-      <div class="aiv-workbench-grid">
-        <div class="aiv-workbench-item">
-          <strong>Graph-first navigation</strong>
-          <span>Browse structure before grepping files.</span>
-        </div>
-        <div class="aiv-workbench-item">
-          <strong>Grounded context</strong>
-          <span>Tool cards, code citations, and symbol context in one place.</span>
-        </div>
-        <div class="aiv-workbench-item">
-          <strong>Risk visibility</strong>
-          <span>Impact probes and rename planning before edits land.</span>
+          <span
+            v-if="copyMessage"
+            class="aiv-meta aiv-meta-ok"
+            data-testid="aiv-copy-msg"
+          >{{ copyMessage }}</span>
+        </p>
+        <div class="aiv-actions">
+          <button
+            v-if="!store.isRunning"
+            class="aiv-btn aiv-btn-primary"
+            :disabled="store.loading"
+            data-testid="aiv-start"
+            @click="store.startServer()"
+          >
+            Start server
+          </button>
+          <button
+            v-else
+            class="aiv-btn"
+            :disabled="store.loading"
+            data-testid="aiv-stop"
+            @click="store.stopServer()"
+          >
+            Stop server
+          </button>
+          <button
+            class="aiv-btn"
+            :disabled="store.loading"
+            data-testid="aiv-regen-token"
+            @click="onRegenToken"
+          >
+            Regenerate token
+          </button>
         </div>
       </div>
-      <p class="aiv-meta">
-        License boundary: public GitNexus behavior can inspire UX direction, but
-        TerranSoul ships only native Rust/Vue implementation and does not bundle
-        external GitNexus binaries or assets.
-      </p>
-    </div>
 
-    <p
-      v-if="store.error"
-      class="aiv-error"
-      data-testid="aiv-error"
-    >
-      {{ store.error }}
-    </p>
+      <!-- ── Auto-setup writers ────────────────────────────────────────── -->
+      <div
+        class="aiv-card"
+        data-testid="aiv-clients-card"
+      >
+        <h4>External clients</h4>
+        <p class="aiv-help-small">
+          TerranSoul writes the integration config for each editor.
+          Restart the editor after setup. Workspace path:
+          <code>{{ workspaceRoot }}</code>.
+        </p>
+        <div class="aiv-row aiv-transport-row">
+          <span>Transport:</span>
+          <label>
+            <input
+              type="radio"
+              :checked="store.preferredTransport === 'stdio'"
+              data-testid="aiv-transport-stdio"
+              @change="store.setTransport('stdio')"
+            >
+            stdio (recommended)
+          </label>
+          <label>
+            <input
+              type="radio"
+              :checked="store.preferredTransport === 'http'"
+              data-testid="aiv-transport-http"
+              @change="store.setTransport('http')"
+            >
+            http
+          </label>
+        </div>
+        <ul
+          v-if="store.clientStatuses.length > 0"
+          class="aiv-client-list"
+          data-testid="aiv-client-list"
+        >
+          <li
+            v-for="c in store.clientStatuses"
+            :key="c.client"
+            class="aiv-client-item"
+            :data-testid="`aiv-client-${clientKey(c.client)}`"
+          >
+            <div class="aiv-client-head">
+              <strong>{{ c.client }}</strong>
+              <span
+                :class="['aiv-pill', c.configured ? 'aiv-pill-on' : 'aiv-pill-off']"
+                :data-testid="`aiv-client-status-${clientKey(c.client)}`"
+              >
+                {{ c.configured ? 'Configured' : 'Not configured' }}
+              </span>
+            </div>
+            <p
+              v-if="c.config_path"
+              class="aiv-meta"
+            >
+              <code>{{ c.config_path }}</code>
+            </p>
+            <div class="aiv-actions">
+              <button
+                v-if="!c.configured"
+                class="aiv-btn aiv-btn-primary"
+                :data-testid="`aiv-setup-${clientKey(c.client)}`"
+                @click="onSetup(clientKey(c.client))"
+              >
+                Set up via {{ store.preferredTransport }}
+              </button>
+              <button
+                v-else
+                class="aiv-btn aiv-btn-danger"
+                :data-testid="`aiv-remove-${clientKey(c.client)}`"
+                @click="onRemove(clientKey(c.client))"
+              >
+                Remove
+              </button>
+            </div>
+          </li>
+        </ul>
+        <p
+          v-if="lastSetupMessage"
+          class="aiv-row aiv-meta-ok"
+          data-testid="aiv-setup-msg"
+        >
+          ✓ {{ lastSetupMessage }}
+        </p>
+      </div>
+
+      <!-- ── VS Code workspaces ────────────────────────────────────────── -->
+      <div
+        v-if="store.vscodeWindows.length > 0"
+        class="aiv-card"
+        data-testid="aiv-windows-card"
+      >
+        <h4>Known VS Code windows</h4>
+        <ul class="aiv-window-list">
+          <li
+            v-for="w in store.vscodeWindows"
+            :key="w.pid"
+            class="aiv-window-item"
+          >
+            <span><code>{{ w.root }}</code></span>
+            <span class="aiv-meta">pid {{ w.pid }}</span>
+            <button
+              class="aiv-link"
+              :data-testid="`aiv-forget-${w.pid}`"
+              @click="store.forgetWindow(w.pid)"
+            >
+              Forget
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- ── LAN exposure (locked) ─────────────────────────────────────── -->
+      <div
+        class="aiv-card aiv-card-warn"
+        data-testid="aiv-lan-card"
+      >
+        <h4>Network exposure</h4>
+        <p>
+          <strong>LAN exposure is disabled.</strong>
+          TerranSoul binds the MCP server to <code>127.0.0.1</code> only.
+          Allowing LAN access would let any device on your network read your
+          memories — a future release may add an opt-in toggle with a TLS
+          certificate, but it is intentionally not available today.
+        </p>
+      </div>
+
+      <div
+        class="aiv-card aiv-card-accent"
+        data-testid="aiv-workbench-card"
+      >
+        <h4>Native code workbench</h4>
+        <p class="aiv-help-small">
+          TerranSoul keeps code intelligence clean-room and local-first. The target
+          UX is a dense coding cockpit: graph canvas, grounded citations, visible
+          tool activity, repo status, and blast-radius awareness inside the app.
+        </p>
+        <div class="aiv-workbench-grid">
+          <div class="aiv-workbench-item">
+            <strong>Graph-first navigation</strong>
+            <span>Browse structure before grepping files.</span>
+          </div>
+          <div class="aiv-workbench-item">
+            <strong>Grounded context</strong>
+            <span>Tool cards, code citations, and symbol context in one place.</span>
+          </div>
+          <div class="aiv-workbench-item">
+            <strong>Risk visibility</strong>
+            <span>Impact probes and rename planning before edits land.</span>
+          </div>
+        </div>
+        <p class="aiv-meta">
+          License boundary: public GitNexus behavior can inspire UX direction, but
+          TerranSoul ships only native Rust/Vue implementation and does not bundle
+          external GitNexus binaries or assets.
+        </p>
+      </div>
+
+      <p
+        v-if="store.error"
+        class="aiv-error"
+        data-testid="aiv-error"
+      >
+        {{ store.error }}
+      </p>
     </section>
   </section>
 </template>

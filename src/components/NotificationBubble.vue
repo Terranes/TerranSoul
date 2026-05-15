@@ -46,11 +46,17 @@ const ariaLabel = computed(() => {
 <style scoped>
 .ts-notif-bubble {
   position: fixed;
-  top: 16px;
+  /* Match the Settings gear in CharacterViewport so the two buttons sit
+     side-by-side on the same row at the same size.
+     Default (>640px): .ts-floating-chip is 36px tall, .corner-cluster at
+       top:18px right:72px → bell at top:18px right:16px, 36×36.
+     Mobile (≤640px): .settings-toggle becomes 32×32 at top:6px right:62px
+       → bell tracks the same dimensions and offset. */
+  top: 18px;
   right: 16px;
   z-index: 1500;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 1px solid var(--ts-border);
   background: var(--ts-bg-card);
@@ -59,10 +65,19 @@ const ariaLabel = computed(() => {
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  font-size: 1.2rem;
+  font-size: 1rem;
   transition: transform 0.15s ease, border-color 0.15s ease,
     box-shadow 0.15s ease;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+@media (max-width: 640px) {
+  .ts-notif-bubble {
+    top: 6px;
+    width: 32px;
+    height: 32px;
+    font-size: 0.9rem;
+  }
 }
 
 .ts-notif-bubble:hover {

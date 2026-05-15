@@ -86,10 +86,12 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
         };
         // 1-token streamed chat forces Ollama to load the weights and warm
         // the same streaming endpoint used by the first real user reply.
+        // num_ctx MUST match the real chat path (streaming.rs ~line 1217)
+        // — a mismatch forces Ollama to reload the model on first chat.
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": "Hi" }],
-            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "stream": true,
             "think": false,
             "keep_alive": "30m",
@@ -1123,7 +1125,12 @@ struct EmbedModelChoice {
 }
 
 const EMBED_MODEL_TTL: Duration = Duration::from_secs(60);
-const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
+/// Default Ollama embedding model. Promoted from `nomic-embed-text` to
+/// `mxbai-embed-large` by BENCH-LCM-5 (2026-05-12, +3.7pp R@10 overall
+/// on LoCoMo). 1024d, sentence-level, max 512 tokens. Users can switch
+/// back via the embedding-model picker; the fallback chain still
+/// includes `nomic-embed-text` as a lightweight 768d alternative.
+const PREFERRED_EMBED_MODEL: &str = "mxbai-embed-large";
 
 /// Ordered fallback chain of dedicated embedding models, tried in this order
 /// when [`PREFERRED_EMBED_MODEL`] is unavailable. Per
@@ -1131,12 +1138,12 @@ const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
 ///
 /// Each entry must be the **bare model name** as published in the Ollama
 /// library (no `:tag` suffix) — `model_exists` matches by name prefix.
-/// Order is from most-recommended (768d, fast, well-tested) → larger /
-/// alternative (1024d, slower) → tiny last-resort.
+/// Order is from preferred-similar (1024d alternatives) → lightweight
+/// long-context fallback (768d, 8192 tokens) → tiny last-resort.
 const EMBED_MODEL_FALLBACKS: &[&str] = &[
-    "mxbai-embed-large",      // 1024d, strong general-purpose
     "snowflake-arctic-embed", // 1024d / 768d depending on tag
     "bge-m3",                 // 1024d, multilingual
+    "nomic-embed-text",       // 768d, fast, 8192 tokens long-context
     "all-minilm",             // 384d, tiny last-resort
 ];
 
@@ -1146,7 +1153,7 @@ const EMBED_MODEL_FALLBACKS: &[&str] = &[
 const LATE_CHUNK_MODEL_FALLBACKS: &[&str] = &[
     "jina-embeddings-v3",
     "bge-m3",
-    "mxbai-embed-large",
+    "nomic-embed-text",
     PREFERRED_EMBED_MODEL,
 ];
 
@@ -1165,11 +1172,12 @@ fn unsupported_models() -> &'static Mutex<HashSet<String>> {
 ///
 /// Resolution chain (Chunk 16.9b — embedding-model fallback):
 ///
-/// 1. **`nomic-embed-text`** — preferred (768d, fast, well-tested).
-/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order — `mxbai`,
-///    `snowflake-arctic`, `bge-m3`, `all-minilm`. The first one present
-///    in `/api/tags` wins. Models already in the unsupported set are
-///    skipped.
+/// 1. **`mxbai-embed-large`** — preferred (1024d, sentence-level,
+///    promoted by BENCH-LCM-5 2026-05-12).
+/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order —
+///    `snowflake-arctic`, `bge-m3`, `nomic-embed-text`, `all-minilm`.
+///    The first one present in `/api/tags` wins. Models already in the
+///    unsupported set are skipped.
 /// 3. **`model_hint`** — the active chat model (probably non-embedding;
 ///    `embed_text` will mark it unsupported on the first call).
 ///

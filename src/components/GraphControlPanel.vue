@@ -424,7 +424,10 @@ defineEmits<{
 <style scoped>
 .gcp-panel {
   position: absolute;
-  top: 4.8rem;
+  /* Sit clear of the 34px topbar AND the centered mode-toggle pill below
+     it, so the legend (incl. the Procedural count chip) no longer crowds
+     either of them on narrow viewports. */
+  top: 6.5rem;
   left: 1.2rem;
   z-index: 5;
   width: min(260px, calc(100% - 2.4rem));

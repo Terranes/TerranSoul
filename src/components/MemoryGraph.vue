@@ -1,7 +1,7 @@
 <template>
   <div
     class="memory-graph-shell"
-    :class="{ 'mode-3d': mode === '3d' }"
+    :class="{ 'mode-3d': mode === '3d', 'memory-graph-shell--fullscreen': fullscreen }"
     data-testid="memory-graph"
   >
     <div
@@ -27,13 +27,70 @@
       </button>
     </div>
 
-    <MemoryGraph3D
+    <div
+      class="mg-topbar"
+      @pointerdown.stop
+      @pointermove.stop
+      @pointerup.stop
+    >
+      <div class="mg-title">
+        <span
+          class="mg-title-icon"
+          aria-hidden="true"
+        >⌘</span>
+        <span>Graph view</span>
+      </div>
+      <div class="mg-top-actions">
+        <button
+          type="button"
+          class="mg-icon-button"
+          title="Fit graph"
+          aria-label="Fit graph"
+          @click="onFitClick"
+        >
+          ⌖
+        </button>
+        <button
+          type="button"
+          class="mg-icon-button"
+          :title="fullscreen ? 'Exit fullscreen (Esc)' : 'Fullscreen'"
+          :aria-label="fullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+          data-testid="mg-fullscreen"
+          @click="toggleFullscreen"
+        >
+          {{ fullscreen ? '⊠' : '⛶' }}
+        </button>
+        <button
+          type="button"
+          class="mg-icon-button"
+          title="Toggle panel"
+          aria-label="Toggle graph controls"
+          @click="panelCollapsed = !panelCollapsed"
+        >
+          ⚙
+        </button>
+      </div>
+    </div>
+
+    <MemoryGalaxy
       v-if="mode === '3d'"
       :memories="memories"
       :edges="edges"
-      :selected-id="null"
       :edge-mode="edgeMode"
-      @select="(id) => emit('select', id)"
+      :selected-ids="selectedIds"
+      :search-text="searchText"
+      :search-mode="searchMode"
+      :search-fields="searchFields"
+      :highlight-filter-active="highlightFilterActive"
+      :show-orphans="showOrphans"
+      :min-degree="minDegree"
+      :show-labels="showLabels"
+      :show-arrows="showArrows"
+      :node-size-mul="nodeSizeMul"
+      :link-width-mul="linkWidthMul"
+      :fit-trigger="fitTrigger"
+      @select="on3DSelect"
+      @toggle-selected="toggleSelectedId"
       @keep-only-selection="(ids) => emit('keep-only-selection', ids)"
     />
 
@@ -48,127 +105,92 @@
       @wheel.prevent="onWheel"
       @dblclick="onDoubleClick"
     >
-      <div
-        class="mg-topbar"
-        @pointerdown.stop
-        @pointermove.stop
-        @pointerup.stop
-      >
-        <div class="mg-title">
-          <span
-            class="mg-title-icon"
-            aria-hidden="true"
-          >⌘</span>
-          <span>Graph view</span>
-        </div>
-        <div class="mg-top-actions">
-          <button
-            type="button"
-            class="mg-icon-button"
-            title="Fit graph"
-            aria-label="Fit graph"
-            @click="fitToView"
-          >
-            ⌖
-          </button>
-          <button
-            type="button"
-            class="mg-icon-button"
-            title="Toggle panel"
-            aria-label="Toggle graph controls"
-            @click="panelCollapsed = !panelCollapsed"
-          >
-            ⚙
-          </button>
-        </div>
-      </div>
-
       <canvas
         ref="canvasEl"
         class="mg-canvas"
       />
-
-      <GraphControlPanel
-        title="Graph controls"
-        :collapsed="panelCollapsed"
-        :node-count="nodeCount"
-        :edge-count="edgeCount"
-        :show-views="true"
-        :show-filters="true"
-        :show-orphans="showOrphans"
-        :min-degree="minDegree"
-        :search-text="searchText"
-        :search-mode="searchMode"
-        :search-fields="searchFields"
-        :highlight-filter-active="highlightFilterActive"
-        :match-count="matchCount"
-        :selected-count="selectedCount"
-        :visible-node-count="visibleNodeCount"
-        :legend="legend"
-        :show-display="true"
-        :show-labels="showLabels"
-        :show-arrows="showArrows"
-        :text-fade-threshold="textFadeThreshold"
-        :node-size-mul="nodeSizeMul"
-        :link-width-mul="linkWidthMul"
-        :show-forces="true"
-        :repulsion="repulsion"
-        :link-distance="linkDistance"
-        :gravity="gravity"
-        @update:collapsed="panelCollapsed = $event"
-        @update:show-orphans="showOrphans = $event"
-        @update:min-degree="minDegree = $event"
-        @update:search-text="searchText = $event"
-        @update:search-mode="searchMode = $event as 'contains' | 'starts' | 'ends'"
-        @update:search-field="(p) => (searchFields[p.field] = p.value)"
-        @update:highlight-filter-active="highlightFilterActive = $event"
-        @update:show-labels="showLabels = $event"
-        @update:show-arrows="showArrows = $event"
-        @update:text-fade-threshold="textFadeThreshold = $event"
-        @update:node-size-mul="nodeSizeMul = $event"
-        @update:link-width-mul="linkWidthMul = $event"
-        @update:repulsion="repulsion = $event"
-        @update:link-distance="linkDistance = $event"
-        @update:gravity="gravity = $event"
-        @select-matches="selectMatches"
-        @add-matches="addMatches"
-        @remove-matches="removeMatches"
-        @select-all-visible="selectAllVisible"
-        @clear-selection="clearSelection"
-      />
-
-      <div
-        v-if="hoverLabel"
-        class="mg-hover-card"
-      >
-        <span
-          class="mg-hover"
-        >{{ hoverLabel }}</span>
-      </div>
-
-      <div
-        v-if="isBuilding"
-        class="mg-loading"
-      >
-        Building graph…
-      </div>
-
-      <SelectedNodesPanel
-        v-if="selectedIds.size > 0"
-        :selected-ids="selectedIds"
-        :nodes="selectionPanelNodes"
-        @toggle="toggleSelectedId"
-        @range-toggle="onRangeToggle"
-        @clear="clearSelection"
-        @keep-only="onKeepOnly"
-        @focus="(id) => emit('select', id)"
-      />
     </div>
+
+    <GraphControlPanel
+      title="Graph controls"
+      :collapsed="panelCollapsed"
+      :node-count="nodeCount"
+      :edge-count="edgeCount"
+      :show-views="true"
+      :show-filters="true"
+      :show-orphans="showOrphans"
+      :min-degree="minDegree"
+      :search-text="searchText"
+      :search-mode="searchMode"
+      :search-fields="searchFields"
+      :highlight-filter-active="highlightFilterActive"
+      :match-count="effectiveMatchCount"
+      :selected-count="selectedCount"
+      :visible-node-count="effectiveVisibleCount"
+      :legend="legend"
+      :show-display="true"
+      :show-labels="showLabels"
+      :show-arrows="showArrows"
+      :text-fade-threshold="textFadeThreshold"
+      :node-size-mul="nodeSizeMul"
+      :link-width-mul="linkWidthMul"
+      :show-forces="mode === '2d'"
+      :repulsion="repulsion"
+      :link-distance="linkDistance"
+      :gravity="gravity"
+      @update:collapsed="panelCollapsed = $event"
+      @update:show-orphans="showOrphans = $event"
+      @update:min-degree="minDegree = $event"
+      @update:search-text="searchText = $event"
+      @update:search-mode="searchMode = $event as 'contains' | 'starts' | 'ends'"
+      @update:search-field="(p) => (searchFields[p.field] = p.value)"
+      @update:highlight-filter-active="highlightFilterActive = $event"
+      @update:show-labels="showLabels = $event"
+      @update:show-arrows="showArrows = $event"
+      @update:text-fade-threshold="textFadeThreshold = $event"
+      @update:node-size-mul="nodeSizeMul = $event"
+      @update:link-width-mul="linkWidthMul = $event"
+      @update:repulsion="repulsion = $event"
+      @update:link-distance="linkDistance = $event"
+      @update:gravity="gravity = $event"
+      @select-matches="selectMatches"
+      @add-matches="addMatches"
+      @remove-matches="removeMatches"
+      @select-all-visible="selectAllVisible"
+      @clear-selection="clearSelection"
+    />
+
+    <div
+      v-if="hoverLabel && mode === '2d'"
+      class="mg-hover-card"
+    >
+      <span
+        class="mg-hover"
+      >{{ hoverLabel }}</span>
+    </div>
+
+    <div
+      v-if="isBuilding && mode === '2d'"
+      class="mg-loading"
+    >
+      Building graph…
+    </div>
+
+    <SelectedNodesPanel
+      v-if="selectedIds.size > 0"
+      :selected-ids="selectedIds"
+      :nodes="selectionPanelNodes"
+      @toggle="toggleSelectedId"
+      @range-toggle="onRangeToggle"
+      @clear="clearSelection"
+      @keep-only="onKeepOnly"
+      @focus="(id) => emit('select', id)"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, reactive, computed, onMounted, onUnmounted, onBeforeUnmount, watch, nextTick } from 'vue';
 // d3-force-3d ships no TS types and the ambient resolution picks up an
 // incomplete shape. Import as `any` so we can use the full runtime API
 // (forceCollide / forceX / forceY / distanceMax) without fighting types.
@@ -199,14 +221,23 @@ const emit = defineEmits<{
 
 import SelectedNodesPanel from './SelectedNodesPanel.vue';
 import GraphControlPanel from './GraphControlPanel.vue';
-import MemoryGraph3D from './MemoryGraph3D.vue';
+import MemoryGalaxy from './MemoryGalaxy.vue';
 
 // ── Render mode (2D Canvas / 3D WebGL) ──────────────────────────────────────
-// The 3D path delegates to `MemoryGraph3D.vue` (formerly BrainGraphViewport).
-// User preference is persisted across sessions; default is 3D.
-const MODE_KEY = 'memory-graph-mode';
+// The 3D path delegates to `MemoryGalaxy.vue`.
+// User preference is persisted across sessions; default is 3D. We bumped the
+// storage key once we replaced the old viewport with the Knowledge-Galaxy
+// renderer so any legacy `'2d'` preference no longer pins users to the
+// lite Canvas path on first launch after upgrade.
+const MODE_KEY = 'memory-graph-mode-v2';
+const LEGACY_MODE_KEY = 'memory-graph-mode';
 function loadMode(): '2d' | '3d' {
   try {
+    // One-time migration: drop the legacy key so an old `'2d'` value can't
+    // override the new 3D-by-default behaviour.
+    if (localStorage.getItem(LEGACY_MODE_KEY) !== null) {
+      localStorage.removeItem(LEGACY_MODE_KEY);
+    }
     const v = localStorage.getItem(MODE_KEY);
     return v === '2d' ? '2d' : '3d';
   } catch {
@@ -245,6 +276,11 @@ interface GNode {
   groupKey: string;
   tagsCsv: string;
   degree: number;
+  /** BRAIN-REPO-RAG-2a: optional source provenance for repo-sourced chunks. */
+  sourceId?: string;
+  sourceLabel?: string;
+  filePath?: string;
+  parentSymbol?: string;
   // d3-force mutates these in place
   x?: number;
   y?: number;
@@ -355,6 +391,92 @@ const matchCount = computed(() => matchedIds.value.size);
 const selectedCount = computed(() => selectedIds.value.size);
 const visibleNodeCount = computed(() => filteredNodes().length);
 
+// ── Memory-level search (mirrors `nodeMatchesQuery` for the 3D galaxy) ─────
+// In 3D mode there are no GNodes, so we match directly on `MemoryEntry` so
+// that the same Search box / filter toggles drive both renderers.
+function memoryMatchesQuery(m: MemoryEntry, q: string, mode: SearchMode): boolean {
+  if (!q) return false;
+  const needle = q.toLowerCase();
+  const candidates: string[] = [];
+  const label = (m.content.split(/\r?\n/)[0] ?? '').toLowerCase();
+  if (searchFields.label && label) candidates.push(label);
+  if (searchFields.tags && m.tags) candidates.push(m.tags.toLowerCase());
+  if (searchFields.body && m.content) candidates.push(m.content.toLowerCase());
+  if (searchFields.community && m.memory_type) candidates.push(m.memory_type.toLowerCase());
+  if (candidates.length === 0) return false;
+  if (mode === 'contains') return candidates.some((c) => c.includes(needle));
+  if (mode === 'starts') return candidates.some((c) => c.startsWith(needle));
+  return candidates.some((c) => c.endsWith(needle));
+}
+
+const matchedMemoryIds = computed<Set<number>>(() => {
+  const q = searchText.value.trim();
+  if (!q) return new Set();
+  const out = new Set<number>();
+  for (const m of props.memories) {
+    if (memoryMatchesQuery(m, q, searchMode.value)) out.add(m.id);
+  }
+  return out;
+});
+
+// In 3D mode the canvas GNode list is empty, so report counts derived from
+// the underlying memory list instead so the control-panel chips stay
+// meaningful when the user is in galaxy view.
+const effectiveMatchCount = computed(() =>
+  mode.value === '3d' ? matchedMemoryIds.value.size : matchCount.value,
+);
+const effectiveVisibleCount = computed(() => {
+  if (mode.value === '2d') return visibleNodeCount.value;
+  // For 3D, "visible" means memories that pass the orphan/min-degree gates.
+  // Degrees in 3D come from `edges` referencing memory ids.
+  const deg = new Map<number, number>();
+  for (const e of (props.edges ?? [])) {
+    deg.set(e.src_id, (deg.get(e.src_id) ?? 0) + 1);
+    deg.set(e.dst_id, (deg.get(e.dst_id) ?? 0) + 1);
+  }
+  let n = 0;
+  for (const m of props.memories) {
+    const d = deg.get(m.id) ?? 0;
+    if (!showOrphans.value && d === 0) continue;
+    if (d < minDegree.value) continue;
+    n++;
+  }
+  return n;
+});
+
+// Fit-to-view bridge — the toolbar button toggles `fitTrigger`, MemoryGalaxy
+// watches it and resets its camera. In 2D we just call `fitToView()` directly.
+const fitTrigger = ref(0);
+function onFitClick(): void {
+  if (mode.value === '2d') fitToView();
+  else fitTrigger.value++;
+}
+
+// Fullscreen toggle — works for both 2D canvas and 3D galaxy. Pins the shell
+// to viewport via fixed positioning; ESC exits. Both renderers re-render when
+// their parent box resizes (canvas RAF + Three.js renderer.setSize watcher).
+const fullscreen = ref(false);
+function toggleFullscreen(): void {
+  fullscreen.value = !fullscreen.value;
+}
+function onFullscreenKey(e: KeyboardEvent): void {
+  if (e.key === 'Escape' && fullscreen.value) {
+    fullscreen.value = false;
+  }
+}
+onMounted(() => window.addEventListener('keydown', onFullscreenKey));
+onBeforeUnmount(() => window.removeEventListener('keydown', onFullscreenKey));
+
+// 3D click → select. Shift-click toggles the persistent selection just like
+// the 2D canvas does, otherwise it focuses/replaces selection with that id.
+function on3DSelect(id: number, shift: boolean): void {
+  if (shift) {
+    toggleSelectedId(id);
+  } else {
+    emit('select', id);
+  }
+}
+
 /** Nodes that should appear "lit" in the renderer. Persistent selection
  *  always counts; live search matches only count while the highlight toggle
  *  is on. */
@@ -437,8 +559,12 @@ const selectionPanelNodes = computed(() =>
     id: n.id,
     label: n.label,
     full: n.full,
-    community: n.groupKey || n.memoryType,
-    colour: groupColor(n.groupKey || n.memoryType),
+    community: n.sourceLabel
+      ? `📦 ${n.sourceLabel}${n.filePath ? ' · ' + n.filePath : ''}${n.parentSymbol ? '::' + n.parentSymbol : ''}`
+      : n.groupKey || n.memoryType,
+    colour: n.sourceId
+      ? theme.value.repo
+      : groupColor(n.groupKey || n.memoryType),
   })),
 );
 
@@ -457,6 +583,7 @@ const theme = ref({
   danger: '#ef4444',
   border: '#1e293b',
   edge: '#475569',
+  repo: '#d4a14a',
 });
 
 function refreshTheme(): void {
@@ -471,6 +598,7 @@ function refreshTheme(): void {
     danger: tok('--ts-danger', '#ef4444'),
     border: tok('--ts-border', '#1e293b'),
     edge: tok('--ts-text-dim', '#475569'),
+    repo: tok('--ts-warning', '#d4a14a'),
   };
 }
 
@@ -597,6 +725,10 @@ function rebuildData(): void {
       groupKey: group,
       tagsCsv: m.tags ?? '',
       degree: degree.get(m.id) ?? 0,
+      sourceId: m.source_id,
+      sourceLabel: m.source_label,
+      filePath: m.file_path,
+      parentSymbol: m.parent_symbol,
       x: old?.x ?? Math.cos(angle) * radius,
       y: old?.y ?? Math.sin(angle) * radius,
       vx: old?.vx ?? 0,
@@ -790,7 +922,11 @@ function draw(): void {
     if (n.x == null || n.y == null) continue;
     const [sx, sy] = worldToScreen(n.x, n.y);
     const r = nodeRadius(n) * zoom.value;
-    const color = groupColor(n.groupKey || n.memoryType);
+    // BRAIN-REPO-RAG-2a: repo-sourced chunks render in the warning hue so
+    // they're visually distinct from personal memories.
+    const color = n.sourceId
+      ? theme.value.repo
+      : groupColor(n.groupKey || n.memoryType);
     const lit = isLit(n.id);
     const isHighlighted = highlights.has(n.id);
     const alpha = lit ? 0.94 : 0.16;
@@ -1301,9 +1437,24 @@ watch(selectedIds, requestRender, { deep: true });
   min-height: 0;
 }
 
+/* Fullscreen: pin shell to viewport so both 2D canvas and 3D galaxy
+   take the full screen. ESC exits. */
+.memory-graph-shell--fullscreen {
+  position: fixed !important;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 9000;
+  background: var(--ts-bg-app, #0a0a0f);
+  border-radius: 0;
+}
+
 .mg-mode-toggle {
   position: absolute;
-  top: 10px;
+  /* Sit well below the 34px topbar so the pill no longer crowds the back
+     button, breadcrumb title, or top-right action icons. */
+  top: calc(34px + 24px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 30;

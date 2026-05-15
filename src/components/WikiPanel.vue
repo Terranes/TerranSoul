@@ -403,7 +403,7 @@ defineExpose({ refresh, activeTab });
   background: var(--ts-error-bg, rgba(248, 113, 113, 0.12));
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .wiki-panel__header {
     align-items: stretch;
     flex-direction: column;

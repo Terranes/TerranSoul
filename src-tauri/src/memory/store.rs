@@ -4341,6 +4341,105 @@ impl MemoryStore {
         ))
     }
 
+    /// BENCH-SCALE-3 (2026-05-15): vector-only search routed through
+    /// disk-backed IVF-PQ indexes instead of in-memory HNSW. Mirrors
+    /// [`vector_search`] but swaps the ANN backend: for each
+    /// router-selected shard (or every shard in
+    /// [`ShardMode::AllShards`]), call [`search_ivf_pq`] and fuse the
+    /// per-shard rankings via the same `merge_shard_rankings` step the
+    /// HNSW path uses, then hydrate to `MemoryEntry` for the bench
+    /// harness. Falls back to an empty vec if no IVF-PQ index has been
+    /// built yet (instead of brute-force scanning the SQLite blob — at
+    /// 10M docs that would be a multi-minute path even on warm cache).
+    pub fn vector_search_ivf_pq(
+        &self,
+        query_embedding: &[f32],
+        limit: usize,
+        nprobe: usize,
+    ) -> SqlResult<Vec<MemoryEntry>> {
+        let mut per_shard_rankings: Vec<Vec<i64>> = Vec::new();
+        let shards_to_probe = self.select_shards_for_query(query_embedding);
+        for shard in shards_to_probe {
+            let token = shard.as_path_token();
+            match self.search_ivf_pq(&token, query_embedding, limit.max(1), nprobe) {
+                Ok(Some(hits)) if !hits.is_empty() => {
+                    per_shard_rankings.push(hits.into_iter().map(|(id, _)| id).collect());
+                }
+                _ => {}
+            }
+        }
+        if per_shard_rankings.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ranking_slices: Vec<&[i64]> =
+            per_shard_rankings.iter().map(|r| r.as_slice()).collect();
+        let merged = merge_shard_rankings(&ranking_slices, limit.max(1));
+        let mut results = Vec::with_capacity(merged.len());
+        let now = now_ms();
+        for (id, _score) in &merged {
+            if let Ok(entry) = self.get_by_id(*id) {
+                let _ = self.conn.execute(
+                    "UPDATE memories SET last_accessed = ?1, access_count = access_count + 1 WHERE id = ?2",
+                    params![now, entry.id],
+                );
+                results.push(entry);
+            }
+        }
+        Ok(results)
+    }
+
+    /// BENCH-SCALE-3 (2026-05-15): build IVF-PQ indexes for every
+    /// populated shard above `threshold`, overriding the default
+    /// [`IvfPqParams`] (which hard-codes `pq_m = 96`, incompatible with
+    /// 1024-dim mxbai-embed-large embeddings — 1024 % 96 ≠ 0).
+    ///
+    /// Performs the full prepare→build sequence in one call:
+    /// 1. Save all live HNSW indexes to disk (sidecars require their
+    ///    source ANN file to exist).
+    /// 2. Plan candidate shards from per-shard cardinality vs threshold.
+    /// 3. Write `planned` sidecars carrying the custom `params`
+    ///    (overriding any prior sidecar with `pq_m=96` defaults).
+    /// 4. Call [`build_ivf_pq_indexes`] to consume those sidecars.
+    pub fn build_ivf_pq_indexes_with_params(
+        &self,
+        params: super::disk_backed_ann::IvfPqParams,
+        threshold: usize,
+        max_shards: usize,
+    ) -> Result<Vec<super::ivf_pq::IvfPqBuildStats>, String> {
+        let Some(data_dir) = self.data_dir() else {
+            return Ok(Vec::new());
+        };
+
+        // Persist HNSW indexes so sidecar `source_ann_index` paths exist.
+        let _ = self.ann_save_all();
+
+        let threshold = if threshold == 0 { 1 } else { threshold };
+        let max_shards = if max_shards == 0 {
+            ShardKey::all().len()
+        } else {
+            max_shards
+        };
+        let plan = self.disk_ann_plan(threshold)?;
+        let vectors_dir = data_dir.join("vectors");
+        std::fs::create_dir_all(&vectors_dir)
+            .map_err(|e| format!("create vectors dir: {e}"))?;
+
+        for candidate in plan.candidates.iter().take(max_shards) {
+            let ann_path = super::ann_index::index_path_for_token(data_dir, &candidate.shard);
+            let mut sidecar = super::disk_backed_ann::DiskAnnSidecar::new(
+                candidate.shard.clone(),
+                candidate.entry_count,
+                threshold,
+                ann_path.to_string_lossy().to_string(),
+            );
+            sidecar.ivf_pq = params.clone();
+            sidecar.status = "planned".to_string();
+            super::disk_backed_ann::write_sidecar(&vectors_dir, &sidecar)?;
+        }
+
+        self.build_ivf_pq_indexes(max_shards)
+    }
+
     /// Disk-backed ANN migration health summary for `brain_health`.
     pub fn disk_ann_health_summary(
         &self,
@@ -6722,9 +6821,12 @@ mod tests {
     }
 
     #[test]
-    fn schema_version_is_21() {
+    fn schema_version_matches_canonical() {
         let store = MemoryStore::in_memory();
-        assert_eq!(store.schema_version(), 21);
+        assert_eq!(
+            store.schema_version(),
+            crate::memory::schema::CANONICAL_SCHEMA_VERSION,
+        );
     }
 
     #[test]

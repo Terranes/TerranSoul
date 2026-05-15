@@ -153,7 +153,6 @@ interface PersonaVoiceProfile {
   pitch: 'very_low' | 'low' | 'medium' | 'high' | 'very_high';
   style: 'natural' | 'whisper';
   englishAccent: 'american' | 'british' | 'australian' | 'canadian' | 'indian' | 'irish' | 'scottish' | 'south_african';
-  chineseDialect: 'mandarin' | 'sichuanese' | 'shaanxi' | 'cantonese' | 'taiwanese' | 'shanghainese' | 'hunanese' | 'none';
   voiceName: string;
 }
 ```
@@ -185,7 +184,6 @@ A fresh install ships with `default-persona.json`:
     "pitch": "medium",
     "style": "natural",
     "englishAccent": "american",
-    "chineseDialect": "mandarin",
     "voiceName": "en-US-AnaNeural"
   }
 }

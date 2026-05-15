@@ -240,6 +240,7 @@ async fn start_ingest(
         processed_items: 0,
         total_items: 0,
         error: None,
+        log_line: None,
     });
 
     let cancel_flag = {
@@ -284,6 +285,7 @@ async fn start_ingest(
                     processed_items: chunks,
                     total_items: chunks,
                     error: None,
+                    log_line: None,
                 });
             }
             Err(e) => {
@@ -304,6 +306,7 @@ async fn start_ingest(
                         processed_items: 0,
                         total_items: 0,
                         error: Some(e),
+                        log_line: None,
                     });
                 } else {
                     mgr.fail_task(&task_id_clone, &e);
@@ -316,6 +319,7 @@ async fn start_ingest(
                         processed_items: 0,
                         total_items: 0,
                         error: Some(e),
+                        log_line: None,
                     });
                 }
             }
@@ -397,6 +401,7 @@ pub async fn resume_ingest_task(
                     processed_items: chunks,
                     total_items: chunks,
                     error: None,
+                    log_line: None,
                 });
             }
             Err(e) => {
@@ -411,6 +416,7 @@ pub async fn resume_ingest_task(
                         processed_items: 0,
                         total_items: 0,
                         error: Some(e),
+                        log_line: None,
                     });
                 }
             }
@@ -1140,6 +1146,7 @@ fn emit_progress(
         processed_items: processed,
         total_items: total,
         error: None,
+        log_line: None,
     });
 }
 
@@ -1376,6 +1383,7 @@ async fn crawl_website_with_progress(
             processed_items: visited.len(),
             total_items: max_pages,
             error: None,
+            log_line: None,
         });
 
         let response = match state

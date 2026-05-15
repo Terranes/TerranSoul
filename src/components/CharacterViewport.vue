@@ -44,436 +44,32 @@
         </button>
       </div>
     </Transition>
-    <!-- ── Top bubble strip — Settings (left), Model (middle), Status (right) ── -->
+    <!-- ── Quest progress portal & on-demand Settings modal ─────────────────
+         The visible Settings gear/chip was removed in favour of the global
+         AppChromeActions cluster (top-right of every panel). This cluster
+         is now only the quest-progress portal anchor + a v-modeled
+         SettingsPanel modal that the parent can toggle. -->
     <div
       v-if="!isPetMode"
       ref="settingsRef"
       class="corner-cluster"
     >
-      <!-- Settings host: own positioned wrapper so the dropdown anchors to
-           the trigger, not to the whole cluster. -->
       <div class="settings-host">
-        <FloatingChip
-          as="button"
-          class="settings-toggle"
-          interactive
-          type="button"
-          aria-label="Settings"
-          @click.stop="toggleSettingsDialog"
-        >
-          <svg
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="currentColor"
-          >
-            <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z" />
-          </svg>
-          <span class="settings-label">Settings</span>
-        </FloatingChip>
         <Transition name="dropdown">
-          <FloatingMenu
+          <SettingsPanel
             v-if="settingsOpen && !props.hideSettingsDialog"
-            class="settings-dropdown"
-            @click.stop
-          >
-            <div class="settings-header">
-              <span class="settings-header-title">Settings</span>
-              <button
-                class="settings-close-btn"
-                aria-label="Close settings"
-                @click="settingsOpen = false"
-              >
-                &times;
-              </button>
-            </div>
-            <!-- View mode selector — 3D / Chat / Pet -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">View Mode</label>
-              <div class="settings-mode-row">
-                <button
-                  class="settings-mode-btn"
-                  :class="{ active: !isPetMode }"
-                  @click="emit('set-display-mode', 'desktop'); settingsOpen = false"
-                >
-                  🖥 3D
-                </button>
-                <button
-                  class="settings-mode-btn"
-                  @click="emit('set-display-mode', 'chatbox'); settingsOpen = false"
-                >
-                  💬 Chat
-                </button>
-                <button
-                  class="settings-mode-btn"
-                  @click="emit('toggle-pet-mode'); settingsOpen = false"
-                >
-                  🐾 Pet
-                </button>
-              </div>
-            </div>
-            <!-- Quest progress — inline inside settings -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">Quests</label>
-              <div
-                id="corner-cluster-portal"
-                class="settings-quest-portal"
-              />
-            </div>
-            <!-- Model selector -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">Character</label>
-              <select
-                class="model-selector"
-                :value="characterStore.selectedModelId"
-                @change="handleModelChange"
-              >
-                <optgroup label="Bundled">
-                  <option
-                    v-for="model in characterStore.defaultModels"
-                    :key="model.id"
-                    :value="model.id"
-                  >
-                    {{ characterStore.resolveModelProfile(model).name }}
-                  </option>
-                </optgroup>
-                <optgroup
-                  v-if="characterStore.userModels.length > 0"
-                  label="Imported"
-                >
-                  <option
-                    v-for="model in characterStore.userModels"
-                    :key="model.id"
-                    :value="model.id"
-                  >
-                    {{ characterStore.resolveModelProfile(model).name }}
-                  </option>
-                </optgroup>
-              </select>
-              <button
-                class="dropdown-btn"
-                @click="openVrmPicker"
-              >
-                📁 Import VRM
-              </button>
-              <input
-                ref="vrmInputRef"
-                class="hidden-file-input"
-                type="file"
-                accept=".vrm"
-                @change="handleVrmImport"
-              >
-              <div class="character-profile-editor">
-                <label class="profile-field">
-                  <span>Name</span>
-                  <input
-                    v-model="profileDraftName"
-                    type="text"
-                    maxlength="60"
-                    placeholder="Character name"
-                  >
-                </label>
-                <label class="profile-field">
-                  <span>Gender</span>
-                  <select
-                    v-model="profileDraftGender"
-                    @change="handleProfileGenderChange"
-                  >
-                    <option
-                      v-for="option in genderOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <label class="profile-field profile-field-full">
-                  <span>Persona / role</span>
-                  <input
-                    v-model="profileDraftPersona"
-                    type="text"
-                    maxlength="80"
-                    placeholder="e.g. field researcher"
-                  >
-                </label>
-                <label class="profile-field profile-field-full">
-                  <span>Voice</span>
-                  <input
-                    v-model="profileDraftVoiceName"
-                    type="text"
-                    maxlength="120"
-                    placeholder="e.g. en-US-AnaNeural"
-                  >
-                </label>
-                <div class="profile-grid">
-                  <label class="profile-field">
-                    <span>Age</span>
-                    <select v-model="profileDraftAge">
-                      <option
-                        v-for="option in ageOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="profile-field">
-                    <span>Pitch</span>
-                    <select v-model="profileDraftPitch">
-                      <option
-                        v-for="option in pitchOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="profile-field">
-                    <span>Style</span>
-                    <select v-model="profileDraftStyle">
-                      <option
-                        v-for="option in styleOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                  <label class="profile-field">
-                    <span>Accent</span>
-                    <select v-model="profileDraftEnglishAccent">
-                      <option
-                        v-for="option in englishAccentOptions"
-                        :key="option.value"
-                        :value="option.value"
-                      >
-                        {{ option.label }}
-                      </option>
-                    </select>
-                  </label>
-                </div>
-                <label class="profile-field profile-field-full">
-                  <span>Chinese dialect</span>
-                  <select v-model="profileDraftChineseDialect">
-                    <option
-                      v-for="option in chineseDialectOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <div class="profile-actions">
-                  <button
-                    class="profile-save-btn"
-                    :disabled="profileSaving"
-                    @click="saveCurrentCharacterProfile"
-                  >
-                    {{ profileSaving ? 'Saving…' : 'Save profile' }}
-                  </button>
-                  <button
-                    class="profile-reset-btn"
-                    :disabled="profileSaving"
-                    @click="resetProfileDraft"
-                  >
-                    Discard
-                  </button>
-                </div>
-                <p
-                  v-if="profileStatus"
-                  class="profile-status"
-                >
-                  {{ profileStatus }}
-                </p>
-                <p
-                  v-if="profileError"
-                  class="profile-error"
-                >
-                  {{ profileError }}
-                </p>
-              </div>
-            </div>
-            <!-- Mood / pose selector — matches the Mood submenu in PetContextMenu
-               so desktop and pet modes offer the same configurable states. -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">Mood / Pose</label>
-              <div
-                class="mood-grid"
-                role="radiogroup"
-                aria-label="Character mood"
-              >
-                <button
-                  v-for="mood in MOOD_ENTRIES"
-                  :key="mood.key"
-                  class="mood-chip"
-                  :class="{ active: isMoodActive(mood, characterStore) }"
-                  role="radio"
-                  :aria-checked="isMoodActive(mood, characterStore)"
-                  :title="mood.label"
-                  @click="handleMoodPick(mood)"
-                >
-                  <span class="mood-chip-emoji">{{ mood.emoji }}</span>
-                  <span class="mood-chip-label">{{ mood.label }}</span>
-                </button>
-              </div>
-            </div>
-            <!-- Background selector -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">Background</label>
-              <div class="bg-chips">
-                <button
-                  v-for="background in backgroundStore.allBackgrounds"
-                  :key="background.id"
-                  class="background-chip"
-                  :class="{ active: backgroundStore.selectedBackgroundId === background.id }"
-                  @click="backgroundStore.selectBackground(background.id)"
-                >
-                  {{ background.name }}
-                </button>
-              </div>
-              <button
-                class="dropdown-btn"
-                @click="openBackgroundPicker"
-              >
-                🖼 Import BG
-              </button>
-              <input
-                ref="backgroundInputRef"
-                class="hidden-file-input"
-                type="file"
-                accept="image/*"
-                @change="handleBackgroundImport"
-              >
-            </div>
-            <!-- Background music -->
-            <div class="dropdown-section">
-              <label class="dropdown-label">Music</label>
-              <div class="bgm-toggle-row">
-                <label class="bgm-switch">
-                  <input
-                    type="checkbox"
-                    :checked="bgmEnabled"
-                    @change="handleBgmToggle"
-                  >
-                  <span class="bgm-slider" />
-                </label>
-                <span class="bgm-status">{{ bgmEnabled ? 'On' : 'Off' }}</span>
-              </div>
-              <select
-                v-show="bgmEnabled"
-                class="model-selector"
-                :value="bgmTrackId"
-                @change="handleBgmTrackChange"
-              >
-                <option
-                  v-for="track in bgm.allTracks.value"
-                  :key="track.id"
-                  :value="track.id"
-                >
-                  {{ track.name }}
-                </option>
-              </select>
-              <div
-                v-if="bgmEnabled"
-                class="bgm-track-actions"
-              >
-                <button
-                  class="dropdown-btn"
-                  @click="requestAddMusic"
-                >
-                  🎵 Add File
-                </button>
-                <button
-                  class="dropdown-btn"
-                  @click="openUrlDialog"
-                >
-                  🔗 Add URL
-                </button>
-                <input
-                  ref="bgmFileInputRef"
-                  class="hidden-file-input"
-                  type="file"
-                  accept="audio/*,video/*"
-                  @change="handleBgmFileImport"
-                >
-              </div>
-              <!-- Custom track list with delete -->
-              <div
-                v-if="bgmEnabled && bgm.customTracks.value.length"
-                class="bgm-custom-list"
-              >
-                <div
-                  v-for="track in bgm.customTracks.value"
-                  :key="track.id"
-                  class="bgm-custom-item"
-                >
-                  <span class="bgm-custom-name">{{ track.name }}</span>
-                  <button
-                    class="bgm-remove-btn"
-                    title="Remove track"
-                    @click="handleRemoveTrack(track.id)"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-              <div
-                class="bgm-volume-row"
-              >
-                <span class="bgm-vol-icon">🔈</span>
-                <input
-                  type="range"
-                  class="bgm-volume-slider"
-                  min="0"
-                  max="100"
-                  :value="Math.round(bgmVolume * 100)"
-                  @input="handleBgmVolumeChange"
-                >
-                <span class="bgm-vol-icon">🔊</span>
-              </div>
-            </div>
-
-            <div class="dropdown-section">
-              <label class="dropdown-label">Karaoke Dialog</label>
-              <div class="bgm-toggle-row">
-                <label class="bgm-switch">
-                  <input
-                    type="checkbox"
-                    :checked="karaokeDialogEnabled"
-                    @change="handleKaraokeToggle"
-                  >
-                  <span class="bgm-slider" />
-                </label>
-                <span class="bgm-status">{{ karaokeDialogEnabled ? 'On' : 'Off' }}</span>
-              </div>
-            </div>
-          
-            <!-- Appearance / Theme picker -->
-            <div class="dropdown-section">
-              <ThemePicker />
-            </div>
-
-            <!-- Toggle buttons for full-screen panels -->
-            <div class="dropdown-section">
-              <button
-                class="dropdown-btn"
-                @click="showSystemInfo = !showSystemInfo"
-              >
-                📊 System Information
-              </button>
-              <button
-                class="dropdown-btn"
-                @click="showAudioControls = !showAudioControls"
-              >
-                🎛️ Audio Controls
-              </button>
-            </div>
-          </FloatingMenu>
+            :is-pet-mode="isPetMode"
+            :bgm="bgm"
+            v-model:bgm-enabled="bgmEnabled"
+            v-model:bgm-volume="bgmVolume"
+            v-model:bgm-track-id="bgmTrackId"
+            @close="settingsOpen = false"
+            @request-set-display-mode="(mode) => emit('set-display-mode', mode)"
+            @request-toggle-pet-mode="emit('toggle-pet-mode')"
+            @toggle-system-info="showSystemInfo = !showSystemInfo"
+            @toggle-audio-controls="showAudioControls = !showAudioControls"
+            @url-dialog-toggle="(open: boolean) => { showUrlDialog = open; }"
+          />
         </Transition>
 
         <!-- Full-screen overlays (rendered outside the dropdown to avoid z-index issues) -->
@@ -484,6 +80,7 @@
         <AudioControlsPanel
           v-if="showAudioControls"
           @close="showAudioControls = false"
+          @navigate="(target: string) => { showAudioControls = false; emit('navigate', target); }"
           @update:bgm-volume="handleAudioBgmVolumeChange"
           @update:bgm-track-id="handleAudioBgmTrackChange"
         />
@@ -496,41 +93,6 @@
     >
       {{ backgroundStore.importError }}
     </div>
-    <!-- ── Add URL Dialog ── -->
-    <Transition name="fade">
-      <div
-        v-if="showUrlDialog"
-        class="url-dialog-backdrop"
-        @click.self="cancelUrlDialog"
-      >
-        <div class="url-dialog">
-          <label class="url-dialog-label">Add music from URL</label>
-          <input
-            v-model="urlInput"
-            class="url-dialog-input"
-            type="url"
-            placeholder="https://example.com/music.mp3"
-            @keydown.enter="confirmUrlAdd"
-            @keydown.escape="cancelUrlDialog"
-          >
-          <div class="url-dialog-actions">
-            <button
-              class="url-dialog-btn cancel"
-              @click="cancelUrlDialog"
-            >
-              Cancel
-            </button>
-            <button
-              class="url-dialog-btn confirm"
-              :disabled="!urlInput.trim()"
-              @click="confirmUrlAdd"
-            >
-              Add
-            </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
 
     <div
       v-if="showDebug"
@@ -554,20 +116,7 @@ import { useSettingsStore } from '../stores/settings';
 import { useAudioStore } from '../stores/audio';
 import { useWindowStore } from '../stores/window';
 import { usePersonaStore } from '../stores/persona';
-import { DEFAULT_MODELS, GENDER_VOICES, type ModelGender } from '../config/default-models';
-import {
-  PERSONA_CHINESE_DIALECT_OPTIONS,
-  PERSONA_ENGLISH_ACCENT_OPTIONS,
-  PERSONA_VOICE_AGE_OPTIONS,
-  PERSONA_VOICE_GENDER_OPTIONS,
-  PERSONA_VOICE_PITCH_OPTIONS,
-  PERSONA_VOICE_STYLE_OPTIONS,
-  type PersonaChineseDialect,
-  type PersonaEnglishAccent,
-  type PersonaVoiceAge,
-  type PersonaVoicePitch,
-  type PersonaVoiceStyle,
-} from '../stores/persona-types';
+import { DEFAULT_MODELS } from '../config/default-models';
 import { initScene, type RendererInfo, type SceneContext } from '../renderer/scene';
 import { loadVRMSafe, createPlaceholderCharacter } from '../renderer/vrm-loader';
 import { CharacterAnimator } from '../renderer/character-animator';
@@ -576,20 +125,18 @@ import { LearnedMotionPlayer, applyLearnedExpression, clearExpressionPreview } f
 import { PoseAnimator, type LlmPoseFrame } from '../renderer/pose-animator';
 import { EmotionPoseBias, type BiasEmotion } from '../renderer/emotion-pose-bias';
 import { SittingPropController } from '../renderer/sitting-props-controller';
-import { useBgmPlayer, BGM_TRACKS, type BgmTrack } from '../composables/useBgmPlayer';
-import { MOOD_ENTRIES, isMoodActive, applyMood, type MoodEntry } from '../config/moods';
+import { getSharedBgmPlayer } from '../composables/useBgmPlayer';
 import { subscribeLlmPoseFrames, type LlmPoseListen } from '../utils/llm-pose-events';
 import SystemInfoPanel from './SystemInfoPanel.vue';
 import AudioControlsPanel from './AudioControlsPanel.vue';
-import FloatingChip from './ui/FloatingChip.vue';
-import FloatingMenu from './ui/FloatingMenu.vue';
-import ThemePicker from './ThemePicker.vue';
+import SettingsPanel from './SettingsPanel.vue';
 
 const emit = defineEmits<{
   'request-add-music': [];
   'overlay-open': [open: boolean];
   'set-display-mode': [mode: 'desktop' | 'chatbox'];
   'toggle-pet-mode': [];
+  navigate: [target: string];
 }>();
 
 const props = withDefaults(defineProps<{
@@ -615,135 +162,23 @@ const isPetMode = computed(() => props.forcePet || windowStoreLocal.mode === 'pe
 
 const showDebug = ref(false);
 const debugInfo = ref<RendererInfo>({ triangles: 0, calls: 0, programs: 0 });
-const backgroundInputRef = ref<HTMLInputElement | null>(null);
-const vrmInputRef = ref<HTMLInputElement | null>(null);
-const localVrmObjectUrl = ref<string | null>(null);
 const settingsOpen = ref(false);
 const settingsRef = ref<HTMLElement | null>(null);
 const showSystemInfo = ref(false);
 const showAudioControls = ref(false);
 
 // ── BGM player ────────────────────────────────────────────────────────────────
-const bgm = useBgmPlayer();
+// State stays here because it is consumed by multiple systems beyond the
+// settings dropdown: AudioControlsPanel, ChatView (via defineExpose's
+// enableBgm), and the audio-store mute watcher. SettingsPanel binds to it
+// via v-model:bgm-* props.
+// Use the app-wide shared instance so the global SettingsModal and any
+// other BGM surfaces drive the same audio element.
+const bgm = getSharedBgmPlayer();
 const bgmEnabled = ref(false);
 const bgmVolume = ref(0.15);
 const bgmTrackId = ref('prelude');
-const bgmFileInputRef = ref<HTMLInputElement | null>(null);
 const showUrlDialog = ref(false);
-const urlInput = ref('');
-const karaokeDialogEnabled = computed(() => settingsStore.settings.karaoke_dialog_enabled !== false);
-
-// ── Current character profile editor ────────────────────────────────────────
-const genderOptions = PERSONA_VOICE_GENDER_OPTIONS;
-const ageOptions = PERSONA_VOICE_AGE_OPTIONS;
-const pitchOptions = PERSONA_VOICE_PITCH_OPTIONS;
-const styleOptions = PERSONA_VOICE_STYLE_OPTIONS;
-const englishAccentOptions = PERSONA_ENGLISH_ACCENT_OPTIONS;
-const chineseDialectOptions = PERSONA_CHINESE_DIALECT_OPTIONS;
-const profileDraftName = ref('');
-const profileDraftGender = ref<ModelGender>('female');
-const profileDraftPersona = ref('');
-const profileDraftVoiceName = ref('');
-const profileDraftAge = ref<PersonaVoiceAge>('adult');
-const profileDraftPitch = ref<PersonaVoicePitch>('medium');
-const profileDraftStyle = ref<PersonaVoiceStyle>('natural');
-const profileDraftEnglishAccent = ref<PersonaEnglishAccent>('american');
-const profileDraftChineseDialect = ref<PersonaChineseDialect>('mandarin');
-const profileSaving = ref(false);
-const profileStatus = ref('');
-const profileError = ref('');
-
-function resetProfileDraft() {
-  const profile = characterStore.currentModelProfile();
-  profileDraftName.value = profile.name;
-  profileDraftGender.value = profile.gender;
-  profileDraftPersona.value = profile.persona;
-  profileDraftVoiceName.value = profile.voiceProfile.voiceName;
-  profileDraftAge.value = profile.voiceProfile.age;
-  profileDraftPitch.value = profile.voiceProfile.pitch;
-  profileDraftStyle.value = profile.voiceProfile.style;
-  profileDraftEnglishAccent.value = profile.voiceProfile.englishAccent;
-  profileDraftChineseDialect.value = profile.voiceProfile.chineseDialect;
-  profileStatus.value = '';
-  profileError.value = '';
-}
-
-function usesDefaultVoice(voiceName: string): boolean {
-  const trimmed = voiceName.trim();
-  return !trimmed || Object.values(GENDER_VOICES).some(voice => voice.edgeVoice === trimmed);
-}
-
-function handleProfileGenderChange() {
-  if (usesDefaultVoice(profileDraftVoiceName.value)) {
-    profileDraftVoiceName.value = GENDER_VOICES[profileDraftGender.value].edgeVoice;
-  }
-}
-
-async function saveCurrentCharacterProfile() {
-  profileSaving.value = true;
-  profileStatus.value = '';
-  profileError.value = '';
-  try {
-    await characterStore.updateModelProfile(characterStore.selectedModelId, {
-      name: profileDraftName.value || undefined,
-      gender: profileDraftGender.value,
-      persona: profileDraftPersona.value,
-      voiceProfile: {
-        gender: profileDraftGender.value,
-        age: profileDraftAge.value,
-        pitch: profileDraftPitch.value,
-        style: profileDraftStyle.value,
-        englishAccent: profileDraftEnglishAccent.value,
-        chineseDialect: profileDraftChineseDialect.value,
-        voiceName: profileDraftVoiceName.value,
-      },
-    });
-    profileStatus.value = 'Saved for this character.';
-  } catch (err) {
-    profileError.value = `Profile save failed: ${err}`;
-  } finally {
-    profileSaving.value = false;
-  }
-}
-
-watch(
-  () => [characterStore.selectedModelId, characterStore.modelProfiles] as const,
-  () => resetProfileDraft(),
-  { immediate: true, deep: true },
-);
-
-function handleKaraokeToggle(e: Event) {
-  const checked = (e.target as HTMLInputElement).checked;
-  void settingsStore.setKaraokeDialogEnabled(checked);
-}
-
-function handleBgmToggle(e: Event) {
-  const checked = (e.target as HTMLInputElement).checked;
-  bgmEnabled.value = checked;
-  if (checked) {
-    bgm.setVolume(bgmVolume.value);
-    bgm.play(bgmTrackId.value);
-  } else {
-    bgm.stop();
-  }
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
-
-function handleBgmTrackChange(e: Event) {
-  const id = (e.target as HTMLSelectElement).value;
-  bgmTrackId.value = id;
-  if (bgmEnabled.value) {
-    bgm.play(id);
-  }
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
-
-function handleBgmVolumeChange(e: Event) {
-  const v = parseInt((e.target as HTMLInputElement).value, 10) / 100;
-  bgmVolume.value = v;
-  bgm.setVolume(v);
-  settingsStore.saveBgmState(bgmEnabled.value, bgmVolume.value, bgmTrackId.value);
-}
 
 /** Restore BGM state from persisted settings. */
 function restoreBgmFromSettings() {
@@ -804,74 +239,6 @@ watch(
     bgm.setVolume(isMuted ? 0 : bgmVolume.value);
   },
 );
-
-function requestAddMusic() {
-  bgmFileInputRef.value?.click();
-}
-
-function handleBgmFileImport(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) return;
-  const objectUrl = URL.createObjectURL(file);
-  const name = file.name.replace(/\.[^.]+$/, '');
-  const id = bgm.addCustomTrack(name, objectUrl);
-  bgmTrackId.value = id;
-  if (bgmEnabled.value) {
-    bgm.play(id);
-  }
-  persistCustomTracks();
-  input.value = '';
-}
-
-function openUrlDialog() {
-  urlInput.value = '';
-  showUrlDialog.value = true;
-}
-
-function confirmUrlAdd() {
-  const url = urlInput.value.trim();
-  if (!url) return;
-  // Derive a name from the URL (last path segment or hostname)
-  let name = 'Custom Track';
-  try {
-    const parsed = new URL(url);
-    const seg = parsed.pathname.split('/').filter(Boolean).pop();
-    if (seg) name = decodeURIComponent(seg).replace(/\.[^.]+$/, '');
-  } catch { /* keep default name */ }
-  const id = bgm.addCustomTrack(name, url);
-  bgmTrackId.value = id;
-  if (bgmEnabled.value) {
-    bgm.play(id);
-  }
-  persistCustomTracks();
-  showUrlDialog.value = false;
-}
-
-function cancelUrlDialog() {
-  showUrlDialog.value = false;
-}
-
-function handleRemoveTrack(trackId: string) {
-  const wasPlaying = bgmTrackId.value === trackId;
-  bgm.removeTrack(trackId);
-  if (wasPlaying) {
-    bgmTrackId.value = BGM_TRACKS[0].id;
-    if (bgmEnabled.value) {
-      bgm.play(bgmTrackId.value);
-    }
-  }
-  persistCustomTracks();
-}
-
-function persistCustomTracks() {
-  // Save custom tracks (with src URLs) to settings.
-  // Only persist tracks that have non-blob URLs (blob URLs don't survive restart).
-  const persistable = bgm.customTracks.value
-    .filter(t => t.src && !t.src.startsWith('blob:'))
-    .map(({ id, name, src }) => ({ id, name, src }));
-  settingsStore.saveSettings({ bgm_custom_tracks: persistable as BgmTrack[] });
-}
 
 function handleAudioBgmTrackChange(trackId: string) {
   bgmTrackId.value = trackId;
@@ -971,6 +338,9 @@ defineExpose({
       settingsStore.saveBgmState(true, bgmVolume.value, bgmTrackId.value);
     }
   },
+  /** Toggle the quick-settings modal — called by the global AppChromeActions
+   *  gear so the chat tab has a single settings entry point. */
+  toggleSettingsDialog,
   /** Scene context — used by PetOverlayView to project 3D positions and rotate. */
   get sceneContext() {
     return sceneCtx;
@@ -1031,59 +401,8 @@ defineExpose({
   },
 });
 
-function handleModelChange(e: Event) {
-  const select = e.target as HTMLSelectElement;
-  characterStore.selectModel(select.value);
-}
-
-function handleMoodPick(mood: MoodEntry) {
-  applyMood(mood, characterStore);
-}
-
 function retryModelLoad() {
   characterStore.selectModel(characterStore.selectedModelId);
-}
-
-function openVrmPicker() {
-  vrmInputRef.value?.click();
-}
-
-async function handleVrmImport(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (!file) {
-    return;
-  }
-
-  if (!file.name.toLowerCase().endsWith('.vrm')) {
-    characterStore.setLoadError('Please choose a .vrm file.');
-    input.value = '';
-    return;
-  }
-
-  characterStore.setLoadError(undefined);
-
-  if (localVrmObjectUrl.value) {
-    URL.revokeObjectURL(localVrmObjectUrl.value);
-  }
-
-  const objectUrl = URL.createObjectURL(file);
-  localVrmObjectUrl.value = objectUrl;
-  await characterStore.loadVrm(objectUrl);
-  input.value = '';
-}
-
-function openBackgroundPicker() {
-  backgroundInputRef.value?.click();
-}
-
-async function handleBackgroundImport(event: Event) {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  if (file) {
-    await backgroundStore.importLocalBackground(file);
-  }
-  input.value = '';
 }
 
 function handleKeyDown(e: KeyboardEvent) {
@@ -1306,9 +625,6 @@ onUnmounted(() => {
     canvas.removeEventListener('webglcontextrestored', handleContextRestored);
   }
   vrmaManager.dispose();
-  if (localVrmObjectUrl.value) {
-    URL.revokeObjectURL(localVrmObjectUrl.value);
-  }
 });
 
 // Track last mood animation to prevent re-triggering the same one
@@ -1579,11 +895,13 @@ async function loadModelIntoScene(newPath: string | undefined) {
   display: block;
 }
 
-/* ── Top bubble strip: single Settings button ── */
+/* ── Top bubble strip: single Settings button ──
+   The global NotificationBubble lives at top:16px / right:16px (z-index 1500).
+   Offset this cluster leftwards so the gear and the bell never overlap. */
 .corner-cluster {
   position: absolute;
   top: 18px;
-  right: 16px;
+  right: 72px;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -1597,44 +915,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
   justify-self: start;
 }
 
-/* Quest portal inside settings dropdown — no absolute positioning needed. */
-.settings-quest-portal {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-/* View mode selector row inside settings dropdown */
-.settings-mode-row {
-  display: flex;
-  gap: 4px;
-}
-.settings-mode-btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 6px 10px;
-  border: 1px solid var(--ts-glass-border, rgba(255, 255, 255, 0.08));
-  border-radius: var(--ts-radius-pill, 999px);
-  background: transparent;
-  color: var(--ts-text-dim);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s ease, color 0.2s ease;
-  white-space: nowrap;
-}
-.settings-mode-btn:hover {
-  background: var(--ts-bg-hover);
-  color: var(--ts-text-bright, var(--ts-text-primary));
-}
-.settings-mode-btn.active {
-  background: var(--ts-accent, #7c6fff);
-  color: var(--ts-text-on-accent, #fff);
-}
-
 .settings-toggle {
   appearance: none;
 }
@@ -1644,152 +924,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
   letter-spacing: 0.03em;
 }
 
-.settings-dropdown {
-  position: absolute;
-  top: 44px;
-  right: 0;
-  width: 260px;
-  max-width: min(260px, 90vw);
-  max-height: min(500px, 70vh);
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--ts-accent, #7c6fff) transparent;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 50;
-}
-.settings-dropdown::-webkit-scrollbar { width: 5px; }
-.settings-dropdown::-webkit-scrollbar-track { background: transparent; }
-.settings-dropdown::-webkit-scrollbar-thumb {
-  background: var(--ts-accent, #7c6fff);
-  border-radius: 4px;
-}
-.settings-state-badge.talking { background: rgba(34, 197, 94, 0.15); color: var(--ts-success); }
-.settings-state-badge.talking .ai-state-dot { background: #22c55e; }
-.settings-state-badge.happy { background: rgba(6, 182, 212, 0.15); color: var(--ts-info); }
-.settings-state-badge.happy .ai-state-dot { background: #06b6d4; }
-.settings-state-badge.sad { background: rgba(168, 85, 247, 0.15); color: var(--ts-accent-violet); }
-.settings-state-badge.sad .ai-state-dot { background: #a855f7; }
-.settings-state-badge.angry { background: rgba(239, 68, 68, 0.15); color: var(--ts-error); }
-.settings-state-badge.angry .ai-state-dot { background: #ef4444; }
-.settings-state-badge.relaxed { background: rgba(20, 184, 166, 0.15); color: var(--ts-success-dim); }
-.settings-state-badge.relaxed .ai-state-dot { background: #14b8a6; }
-.settings-state-badge.surprised { background: rgba(245, 158, 11, 0.15); color: var(--ts-warning); }
-.settings-state-badge.surprised .ai-state-dot { background: #f59e0b; }
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.85); }
-}
-
-.settings-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.settings-header-title {
-  font-size: var(--ts-text-sm);
-  font-weight: 700;
-  color: var(--ts-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-.settings-close-btn {
-  background: none;
-  border: none;
-  color: var(--ts-text-dim);
-  font-size: 1.4rem;
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-  border-radius: var(--ts-radius-sm);
-  transition: color 0.15s, background 0.15s;
-}
-.settings-close-btn:hover {
-  color: var(--ts-text-primary);
-  background: var(--ts-bg-hover);
-}
-
-.dropdown-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.dropdown-label {
-  font-size: var(--ts-text-xs);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--ts-text-dim);
-}
-
-.dropdown-btn {
-  padding: 6px 10px;
-  border-radius: var(--ts-radius-sm);
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-secondary);
-  font-size: var(--ts-text-sm);
-  cursor: pointer;
-  transition: background var(--ts-transition-fast);
-  text-align: left;
-}
-.dropdown-btn:hover {
-  background: var(--ts-bg-hover);
-}
-
-.bg-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-/* ── Mood grid ── */
-.mood-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-}
-.mood-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 6px 4px;
-  border-radius: var(--ts-radius-sm);
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-secondary);
-  font-size: 0.66rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
-}
-.mood-chip:hover {
-  background: var(--ts-bg-hover);
-  transform: translateY(-1px);
-}
-.mood-chip.active {
-  background: var(--ts-accent, #7c6fff);
-  border-color: var(--ts-accent, #7c6fff);
-  color: var(--ts-text-on-accent, #fff);
-}
-.mood-chip-emoji {
-  font-size: 1.05rem;
-  line-height: 1;
-}
-.mood-chip-label {
-  font-size: 0.62rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
 /* Dropdown transition */
 .dropdown-enter-active, .dropdown-leave-active {
   transition: opacity 0.18s ease, transform 0.18s ease;
@@ -1797,144 +931,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .dropdown-enter-from, .dropdown-leave-to {
   opacity: 0;
   transform: translateY(-6px) scale(0.96);
-}
-
-.model-selector {
-  width: 100%;
-  padding: 7px 28px 7px 10px;
-  border-radius: var(--ts-radius-md);
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-primary);
-  font-size: 0.82rem;
-  cursor: pointer;
-  outline: none;
-  appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%239ca3af'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  transition: border-color var(--ts-transition-fast), background var(--ts-transition-fast);
-}
-.model-selector:hover {
-  border-color: var(--ts-accent);
-  background: var(--ts-bg-hover);
-}
-.model-selector:focus-visible {
-  border-color: var(--ts-accent);
-  box-shadow: 0 0 0 2px rgba(108, 99, 255, 0.3);
-}
-.model-selector option {
-  background: var(--ts-bg-surface);
-  color: var(--ts-text-primary);
-}
-
-.character-profile-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-md);
-  background: var(--ts-bg-surface);
-}
-.profile-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-.profile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-.profile-field-full {
-  width: 100%;
-}
-.profile-field span {
-  font-size: 0.66rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--ts-text-muted);
-  text-transform: uppercase;
-}
-.profile-field input,
-.profile-field select {
-  width: 100%;
-  min-width: 0;
-  padding: 7px 9px;
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-sm);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-primary);
-  font-size: 0.78rem;
-  outline: none;
-}
-.profile-field input:focus,
-.profile-field select:focus {
-  border-color: var(--ts-accent);
-  box-shadow: 0 0 0 2px var(--ts-accent-glow);
-}
-.profile-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.profile-save-btn,
-.profile-reset-btn {
-  flex: 1 1 90px;
-  padding: 7px 10px;
-  border-radius: var(--ts-radius-sm);
-  font-size: 0.76rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-.profile-save-btn {
-  border: 1px solid var(--ts-accent);
-  background: var(--ts-accent);
-  color: var(--ts-text-on-accent);
-}
-.profile-reset-btn {
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-secondary);
-}
-.profile-save-btn:disabled,
-.profile-reset-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.profile-status,
-.profile-error {
-  margin: 0;
-  font-size: 0.72rem;
-}
-.profile-status { color: var(--ts-success); }
-.profile-error { color: var(--ts-error); }
-
-.hidden-file-input {
-  display: none;
-}
-
-.background-chip {
-  padding: 5px 10px;
-  border-radius: var(--ts-radius-pill);
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-primary);
-  font-size: 0.72rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast), transform var(--ts-transition-fast);
-}
-.background-chip:hover {
-  background: var(--ts-bg-hover);
-  transform: translateY(-1px);
-}
-.background-chip.active {
-  background: var(--ts-accent, #7c6fff);
-  border-color: var(--ts-accent, #7c6fff);
-  color: var(--ts-text-on-accent, #fff);
 }
 
 .background-error-banner {
@@ -1992,13 +988,7 @@ async function loadModelIntoScene(newPath: string | undefined) {
   .settings-label { display: none; }
   .corner-cluster {
     top: 6px;
-    right: 10px;
-  }
-  /* Dropdown: narrower on mobile, already right-aligned */
-  .settings-dropdown {
-    width: min(280px, calc(100vw - 20px));
-    padding: 10px;
-    gap: 10px;
+    right: 62px;
   }
 }
 .loading-overlay {
@@ -2066,233 +1056,6 @@ async function loadModelIntoScene(newPath: string | undefined) {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-
-/* ── BGM Controls (settings dropdown) ── */
-.bgm-toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.bgm-status {
-  font-size: 0.75rem;
-  color: var(--ts-text-secondary);
-  font-weight: 600;
-}
-
-.bgm-switch {
-  position: relative;
-  width: 36px;
-  height: 20px;
-  cursor: pointer;
-}
-
-.bgm-switch input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-
-.bgm-slider {
-  position: absolute;
-  inset: 0;
-  background: var(--ts-border, rgba(255, 255, 255, 0.22));
-  border-radius: 10px;
-  transition: background 0.3s;
-}
-
-.bgm-slider::before {
-  content: '';
-  position: absolute;
-  width: 16px;
-  height: 16px;
-  left: 2px;
-  bottom: 2px;
-  background: #fff;
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  transition: transform 0.3s;
-}
-
-.bgm-switch input:checked + .bgm-slider {
-  background: rgba(56, 189, 248, 0.85);
-}
-
-.bgm-switch input:checked + .bgm-slider::before {
-  transform: translateX(16px);
-}
-
-.bgm-volume-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 4px;
-}
-
-.bgm-vol-icon {
-  font-size: 0.7rem;
-  opacity: 1;
-  filter: contrast(1.2);
-}
-
-.bgm-volume-slider {
-  flex: 1;
-  height: 4px;
-  -webkit-appearance: none;
-  appearance: none;
-  background: var(--ts-border, rgba(255, 255, 255, 0.25));
-  border-radius: 2px;
-  outline: none;
-  cursor: pointer;
-}
-
-.bgm-volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  background: rgba(56, 189, 248, 0.95);
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.bgm-volume-slider::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  background: rgba(56, 189, 248, 0.95);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-}
-
-/* ── BGM custom track controls ── */
-.bgm-track-actions {
-  display: flex;
-  gap: 6px;
-  margin-top: 4px;
-}
-.bgm-track-actions .dropdown-btn {
-  flex: 1;
-  font-size: 0.7rem;
-  padding: 4px 6px;
-}
-
-.bgm-custom-list {
-  margin-top: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.bgm-custom-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 3px 6px;
-  border-radius: 6px;
-  background: var(--ts-bg-hover, rgba(255, 255, 255, 0.05));
-}
-.bgm-custom-name {
-  font-size: 0.68rem;
-  color: var(--ts-text-secondary, var(--ts-viewport-text-med));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-  flex: 1;
-}
-.bgm-remove-btn {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  border: none;
-  background: rgba(239, 68, 68, 0.25);
-  color: rgba(239, 68, 68, 0.9);
-  font-size: 0.65rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-left: 6px;
-  transition: background 0.15s;
-}
-.bgm-remove-btn:hover {
-  background: rgba(239, 68, 68, 0.5);
-}
-
-/* ── URL dialog ── */
-.url-dialog-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 50;
-  background: var(--ts-bg-backdrop, rgba(0, 0, 0, 0.5));
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(4px);
-}
-.url-dialog {
-  background: var(--ts-bg-overlay);
-  border: 1px solid var(--ts-border);
-  border-radius: 12px;
-  padding: 20px;
-  min-width: 320px;
-  max-width: 90%;
-  box-shadow: var(--ts-shadow-lg);
-}
-.url-dialog-label {
-  display: block;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--ts-text-primary);
-  margin-bottom: 10px;
-}
-.url-dialog-input {
-  width: 100%;
-  padding: 8px 10px;
-  border-radius: 8px;
-  border: 1px solid var(--ts-border);
-  background: var(--ts-bg-input);
-  color: var(--ts-text-primary);
-  font-size: 0.8rem;
-  outline: none;
-  box-sizing: border-box;
-}
-.url-dialog-input:focus {
-  border-color: var(--ts-accent);
-}
-.url-dialog-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 12px;
-  justify-content: flex-end;
-}
-.url-dialog-btn {
-  padding: 6px 16px;
-  border-radius: 8px;
-  border: none;
-  font-size: 0.78rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-.url-dialog-btn.cancel {
-  background: var(--ts-bg-hover);
-  color: var(--ts-text-muted);
-}
-.url-dialog-btn.cancel:hover {
-  background: var(--ts-bg-input);
-}
-.url-dialog-btn.confirm {
-  background: var(--ts-accent);
-  color: var(--ts-text-on-accent);
-}
-.url-dialog-btn.confirm:hover {
-  opacity: 0.85;
-}
-.url-dialog-btn.confirm:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 </style>

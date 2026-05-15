@@ -21,8 +21,8 @@ const maxLongTermEntries = computed(() => appSettings.settings?.max_long_term_en
 const maxMemoryGb = computed(() => appSettings.settings?.max_memory_gb ?? 10);
 const maxMemoryMb = computed(() => appSettings.settings?.max_memory_mb ?? 10);
 const relevanceThreshold = computed(() => appSettings.settings?.relevance_threshold ?? DEFAULT_RELEVANCE_THRESHOLD);
-const contextualRetrieval = computed(() => appSettings.settings?.contextual_retrieval ?? false);
-const lateChunking = computed(() => appSettings.settings?.late_chunking ?? false);
+const contextualRetrieval = computed(() => appSettings.settings?.contextual_retrieval ?? true);
+const lateChunking = computed(() => appSettings.settings?.late_chunking ?? true);
 const webSearchEnabled = computed(() => appSettings.settings?.web_search_enabled ?? false);
 const backgroundMaintenance = computed(() => appSettings.settings?.background_maintenance_enabled ?? true);
 const debugLogging = computed(() => appSettings.settings?.debug_logging ?? false);
@@ -32,10 +32,25 @@ const dataRoot = computed(() => appSettings.settings?.data_root ?? '');
 
 // ── SQLite tuning computeds ──────────────────────────────────────────────────
 
-const sqliteCacheMb = computed(() => appSettings.settings?.sqlite_cache_mb ?? DEFAULT_SQLITE_CACHE_MB);
-const sqliteMmapMb = computed(() => appSettings.settings?.sqlite_mmap_mb ?? DEFAULT_SQLITE_MMAP_MB);
-const codeIndexCacheMb = computed(() => appSettings.settings?.code_index_cache_mb ?? DEFAULT_CODE_INDEX_CACHE_MB);
-const codeIndexMmapMb = computed(() => appSettings.settings?.code_index_mmap_mb ?? DEFAULT_CODE_INDEX_MMAP_MB);
+// SQLite tuning values must always be >= MIN (page cache >= 2, mmap >= 0).
+// Treat 0/null/undefined for page-cache as 'use default' so a stale or
+// empty backend row never produces a blank input or unusable value.
+const sqliteCacheMb = computed(() => {
+  const v = appSettings.settings?.sqlite_cache_mb;
+  return typeof v === 'number' && v > 0 ? v : DEFAULT_SQLITE_CACHE_MB;
+});
+const sqliteMmapMb = computed(() => {
+  const v = appSettings.settings?.sqlite_mmap_mb;
+  return typeof v === 'number' && v >= 0 ? v : DEFAULT_SQLITE_MMAP_MB;
+});
+const codeIndexCacheMb = computed(() => {
+  const v = appSettings.settings?.code_index_cache_mb;
+  return typeof v === 'number' && v > 0 ? v : DEFAULT_CODE_INDEX_CACHE_MB;
+});
+const codeIndexMmapMb = computed(() => {
+  const v = appSettings.settings?.code_index_mmap_mb;
+  return typeof v === 'number' && v >= 0 ? v : DEFAULT_CODE_INDEX_MMAP_MB;
+});
 
 // ── Memory stats ─────────────────────────────────────────────────────────────
 
@@ -542,12 +557,12 @@ function onCodeIndexMmapMbChange(e: Event) {
   margin: 0;
   font-size: 1.25rem;
   font-weight: 700;
-  color: var(--ts-text, #f0f0f0);
+  color: var(--ts-text-primary);
 }
 
 .bcp-subtitle {
   font-size: 0.85rem;
-  color: var(--ts-text-muted, #aaa);
+  color: var(--ts-text-secondary);
 }
 
 /* ── Sections ─────────────────────────────────────────────────────────────── */
@@ -557,36 +572,36 @@ function onCodeIndexMmapMbChange(e: Event) {
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--ts-bg-card);
+  border: 1px solid var(--ts-border);
   border-radius: 10px;
 }
 
 .bcp-section-title {
   margin: 0;
   font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--ts-text, #f0f0f0);
+  font-weight: 700;
+  color: var(--ts-text-primary);
 }
 
 .bcp-subsection-title {
   margin: 6px 0 0;
   font-size: 0.84rem;
   font-weight: 600;
-  color: var(--ts-text-muted, #ccc);
+  color: var(--ts-text-secondary);
 }
 
 .bcp-desc {
   margin: 0;
   font-size: 0.82rem;
-  color: var(--ts-text-muted, #aaa);
+  color: var(--ts-text-secondary);
   line-height: 1.4;
 }
 
 .bcp-hint {
   margin: 0;
   font-size: 0.78rem;
-  color: var(--ts-text-muted, #888);
+  color: var(--ts-text-muted);
   font-style: italic;
 }
 
@@ -605,31 +620,31 @@ function onCodeIndexMmapMbChange(e: Event) {
   gap: 2px;
   padding: 12px 8px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
   text-align: center;
 }
 
-.bcp-tier--short { border-color: rgba(255, 200, 80, 0.25); }
-.bcp-tier--working { border-color: rgba(80, 180, 255, 0.25); }
-.bcp-tier--long { border-color: rgba(120, 255, 160, 0.25); }
-.bcp-tier--total { border-color: rgba(200, 140, 255, 0.25); }
+.bcp-tier--short { border-color: rgba(255, 170, 50, 0.55); }
+.bcp-tier--working { border-color: rgba(50, 150, 240, 0.55); }
+.bcp-tier--long { border-color: rgba(60, 200, 130, 0.55); }
+.bcp-tier--total { border-color: rgba(170, 110, 240, 0.55); }
 
 .bcp-tier-num {
   font-size: 1.4rem;
   font-weight: 700;
-  color: var(--ts-text, #f0f0f0);
+  color: var(--ts-text-primary);
 }
 
 .bcp-tier-label {
   font-size: 0.82rem;
   font-weight: 600;
-  color: var(--ts-text, #ddd);
+  color: var(--ts-text-primary);
 }
 
 .bcp-tier-desc {
   font-size: 0.72rem;
-  color: var(--ts-text-muted, #888);
+  color: var(--ts-text-muted);
 }
 
 /* ── Capacity bar ─────────────────────────────────────────────────────────── */
@@ -642,7 +657,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-capacity-bar {
   height: 10px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-border);
   border-radius: 5px;
   overflow: hidden;
 }
@@ -664,7 +679,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-capacity-label {
   font-size: 0.78rem;
-  color: var(--ts-text-muted, #aaa);
+  color: var(--ts-text-secondary);
 }
 
 /* ── Storage cards ────────────────────────────────────────────────────────── */
@@ -681,8 +696,8 @@ function onCodeIndexMmapMbChange(e: Event) {
   gap: 10px;
   padding: 12px;
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
 }
 
 .bcp-storage-icon {
@@ -697,19 +712,19 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-storage-metric {
   font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--ts-text, #f0f0f0);
+  font-weight: 700;
+  color: var(--ts-text-primary);
 }
 
 .bcp-storage-cap {
   font-size: 0.75rem;
-  color: var(--ts-text-muted, #888);
+  color: var(--ts-text-muted);
 }
 
 .bcp-mini-bar {
   width: 80px;
   height: 4px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--ts-border);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -733,7 +748,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 .bcp-label {
   min-width: 140px;
   font-size: 0.82rem;
-  color: var(--ts-text-muted, #bbb);
+  color: var(--ts-text-secondary);
   white-space: nowrap;
 }
 
@@ -746,8 +761,8 @@ function onCodeIndexMmapMbChange(e: Event) {
 .bcp-value {
   min-width: 60px;
   font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--ts-text, #f0f0f0);
+  font-weight: 700;
+  color: var(--ts-text-primary);
   text-align: right;
 }
 
@@ -756,10 +771,10 @@ function onCodeIndexMmapMbChange(e: Event) {
   min-width: 0;
   padding: 6px 10px;
   font-size: 0.82rem;
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
   border-radius: 6px;
-  color: var(--ts-text, #f0f0f0);
+  color: var(--ts-text-primary);
   outline: none;
   transition: border-color 0.2s;
 }
@@ -793,7 +808,7 @@ function onCodeIndexMmapMbChange(e: Event) {
 }
 
 .bcp-toggle:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--ts-bg-input);
 }
 
 .bcp-toggle input[type="checkbox"] {
@@ -810,15 +825,15 @@ function onCodeIndexMmapMbChange(e: Event) {
 
 .bcp-toggle-text strong {
   font-size: 0.85rem;
-  color: var(--ts-text, #f0f0f0);
+  color: var(--ts-text-primary);
 }
 
 .bcp-toggle-text small {
   font-size: 0.75rem;
-  color: var(--ts-text-muted, #888);
+  color: var(--ts-text-muted);
 }
 
-@media (max-width: 480px) {
+@media (max-width: 640px) {
   .bcp {
     gap: 14px;
     padding: 14px;

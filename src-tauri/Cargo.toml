@@ -97,9 +97,29 @@ prost = "0.14.3"
 tonic-web = "0.14.5"
 mdns-sd = { version = "0.19", optional = true }
 
+# Supertonic on-device TTS (desktop only, feature `tts-supertonic`).
+# Pulled via `desktop` default feature; mobile/headless-mcp builds omit them.
+# `ort` downloads ONNX Runtime native binaries (~50 MB) at first build via its
+# `download-binaries` feature — acceptable for desktop, would block mobile.
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["download-binaries", "std"], optional = true }
+ndarray = { version = "0.16", optional = true }
+hound = { version = "3.5", optional = true }
+unicode-normalization = { version = "0.1", optional = true }
+regex = { version = "1", optional = true }
+rand_distr = { version = "0.5", optional = true }
+
+# ── BRAIN-REPO-RAG: per-repo ingest (feature `repo-rag`, desktop default) ─────
+# `gix` (gitoxide) — pure-Rust Git client; used here for anonymous shallow
+# clone of public GitHub/GitLab repos (no libgit2/system git required).
+# Minimal feature set: blocking HTTP transport via reqwest (already a dep),
+# enough for `gix::prepare_clone` + shallow `depth=1` fetch.
+# `ignore` — battle-tested gitignore walker (powers ripgrep/fd).
+gix = { version = "0.66", default-features = false, features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls", "worktree-mutation", "max-performance-safe"], optional = true }
+ignore = { version = "0.4", optional = true }
+
 [features]
 default = ["desktop"]
-desktop = ["native-ann"]
+desktop = ["native-ann", "tts-supertonic", "repo-rag"]
 mobile = []
 headless-mcp = []
 wasm-sandbox = ["dep:wasmtime"]
@@ -116,6 +136,11 @@ parser-java = ["dep:tree-sitter-java"]
 parser-c = ["dep:tree-sitter-c", "dep:tree-sitter-cpp"]
 all-parsers = ["parser-python", "parser-go", "parser-java", "parser-c"]
 bench-million = ["native-ann"]
+# On-device neural TTS via Supertonic (ONNX Runtime). Desktop default.
+tts-supertonic = ["dep:ort", "dep:ndarray", "dep:hound", "dep:unicode-normalization", "dep:regex", "dep:rand", "dep:rand_distr"]
+# Per-repo ingest backend (BRAIN-REPO-RAG-1b). Desktop default; opt-in on
+# mobile / headless-mcp builds that don't need to clone repos.
+repo-rag = ["dep:gix", "dep:ignore", "dep:regex"]
 
 [profile.dev.package.scrypt]
 opt-level = 3

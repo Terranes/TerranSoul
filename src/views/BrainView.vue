@@ -1,17 +1,14 @@
 <template>
   <div
-    class="bp-shell"
+    class="bp-shell brain-view"
     data-density="cozy"
     data-testid="brain-view"
   >
     <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
-    <div class="bp-crumb">
-      <span>TERRANSOUL</span>
-      <span class="bp-crumb-sep">›</span>
-      <span>COMPANION</span>
-      <span class="bp-crumb-sep">›</span>
-      <span class="bp-crumb-now">BRAIN PANEL</span>
-    </div>
+    <AppBreadcrumb
+      here="BRAIN PANEL"
+      @navigate="emit('navigate', $event)"
+    />
 
     <!-- ── Cockpit hero (neon brain orb + status + ACTIVE BRAIN card) ──── -->
     <section class="bp-cockpit">
@@ -375,19 +372,121 @@
       data-testid="bv-embed-queue"
       role="status"
       aria-live="polite"
+      :class="{ 'bv-embed-queue--open': embedQueueDebugOpen }"
     >
-      <span
-        class="bv-embed-queue__icon"
-        aria-hidden="true"
-      >🔄</span>
-      <span class="bv-embed-queue__text">
-        Self-healing embeddings:
-        <strong>{{ embedQueueStatus.pending }}</strong> pending
-        <template v-if="embedQueueStatus.failing > 0">
-          (<span class="bv-embed-queue__warn">{{ embedQueueStatus.failing }}</span> retrying)
-        </template>
-      </span>
-      <span class="bv-embed-queue__hint">Auto-retries every 10 s — no action needed.</span>
+      <div class="bv-embed-queue__row">
+        <span
+          class="bv-embed-queue__icon"
+          aria-hidden="true"
+        >🔄</span>
+        <span class="bv-embed-queue__text">
+          Self-healing embeddings:
+          <strong>{{ embedQueueStatus.pending }}</strong> pending
+          <template v-if="embedQueueStatus.failing > 0">
+            (<span class="bv-embed-queue__warn">{{ embedQueueStatus.failing }}</span> retrying)
+          </template>
+        </span>
+        <span class="bv-embed-queue__hint">Auto-retries every 10 s — no action needed.</span>
+        <button
+          type="button"
+          class="bv-embed-queue__toggle"
+          data-testid="bv-embed-queue-toggle"
+          :aria-expanded="embedQueueDebugOpen"
+          aria-controls="bv-embed-queue-debug"
+          @click="toggleEmbedQueueDebug"
+        >
+          <span aria-hidden="true">{{ embedQueueDebugOpen ? '▾' : '▸' }}</span>
+          {{ embedQueueDebugOpen ? 'Hide debug log' : 'Show debug log' }}
+        </button>
+      </div>
+
+      <div
+        v-if="embedQueueDebugOpen"
+        id="bv-embed-queue-debug"
+        class="bv-embed-queue__debug"
+        data-testid="bv-embed-queue-debug"
+      >
+        <p class="bv-embed-queue__reason">
+          {{ embedQueueDiagnostics?.reason ?? 'Loading diagnostics…' }}
+        </p>
+
+        <dl
+          v-if="embedQueueDiagnostics"
+          class="bv-embed-queue__facts"
+        >
+          <div>
+            <dt>Brain</dt>
+            <dd>{{ embedQueueDiagnostics.brain_mode_label ?? 'Not configured' }}</dd>
+          </div>
+          <div>
+            <dt>Worker</dt>
+            <dd>
+              <template v-if="embedQueueDiagnostics.worker.rate_limited">
+                Paused ({{ embedQueueDiagnostics.worker.pause_remaining_secs }}s left)
+              </template>
+              <template v-else-if="embedQueueDiagnostics.ollama_chat_skip_active">
+                Throttled by chat activity
+              </template>
+              <template v-else>
+                Active
+              </template>
+            </dd>
+          </div>
+          <div>
+            <dt>Embedded</dt>
+            <dd>{{ embedQueueDiagnostics.worker.total_embedded }} since boot</dd>
+          </div>
+          <div>
+            <dt>Hard failures</dt>
+            <dd>{{ embedQueueDiagnostics.worker.hard_failures }}</dd>
+          </div>
+          <div>
+            <dt>Rate-limit pauses</dt>
+            <dd>{{ embedQueueDiagnostics.worker.rate_limit_pauses }}</dd>
+          </div>
+          <div v-if="embedQueueDiagnostics.status.next_retry_at">
+            <dt>Next retry</dt>
+            <dd>{{ formatRetryEta(embedQueueDiagnostics.status.next_retry_at, embedQueueDiagnostics.now_ms) }}</dd>
+          </div>
+        </dl>
+
+        <div
+          v-if="embedQueueDiagnostics && embedQueueDiagnostics.recent_failures.length > 0"
+          class="bv-embed-queue__failures"
+        >
+          <h4 class="bv-embed-queue__failures-title">
+            Recent failures ({{ embedQueueDiagnostics.recent_failures.length }})
+          </h4>
+          <ul class="bv-embed-queue__failure-list">
+            <li
+              v-for="row in embedQueueDiagnostics.recent_failures"
+              :key="row.memory_id"
+              class="bv-embed-queue__failure"
+            >
+              <div class="bv-embed-queue__failure-head">
+                <span class="bv-embed-queue__failure-id">#{{ row.memory_id }}</span>
+                <span class="bv-embed-queue__failure-attempts">{{ row.attempts }} attempts</span>
+                <span class="bv-embed-queue__failure-eta">{{ formatRetryEta(row.next_retry_at, embedQueueDiagnostics?.now_ms ?? Date.now()) }}</span>
+              </div>
+              <div
+                v-if="row.last_error"
+                class="bv-embed-queue__failure-error"
+              >
+                {{ row.last_error }}
+              </div>
+              <div class="bv-embed-queue__failure-preview">
+                {{ row.content_preview }}
+              </div>
+            </li>
+          </ul>
+        </div>
+        <p
+          v-else-if="embedQueueDiagnostics"
+          class="bv-embed-queue__no-failures"
+        >
+          No per-row failures recorded yet — entries are waiting for the next worker tick.
+        </p>
+      </div>
     </section>
 
     <!-- ── 04 · Brain Capacity & Storage (Chunk 38.5) ─────────────────────── -->
@@ -681,154 +780,154 @@
         </div>
       </header>
       <div class="bp-grid bp-grid-3">
-      <!-- Brain config card -->
-      <article
-        class="bv-card"
-        data-testid="bv-card-config"
-      >
-        <header class="bv-card-header">
-          <h3>🧬 Configuration</h3>
-        </header>
-        <dl class="bv-dl">
-          <div class="bv-dl-row">
-            <dt>Mode</dt>
-            <dd>{{ configRows.mode }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>Provider</dt>
-            <dd>{{ configRows.provider }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>Model</dt>
-            <dd class="bv-model">
-              <code>{{ configRows.model }}</code>
-            </dd>
-          </div>
-          <div
-            v-if="configRows.endpoint"
-            class="bv-dl-row"
-          >
-            <dt>Endpoint</dt>
-            <dd
-              class="bv-endpoint"
-              :title="configRows.endpoint"
-            >
-              {{ shortUrl(configRows.endpoint) }}
-            </dd>
-          </div>
-          <div
-            v-if="configRows.embeddingModel"
-            class="bv-dl-row"
-          >
-            <dt>Embedding</dt>
-            <dd class="bv-model">
-              <code>{{ configRows.embeddingModel }}</code>
-            </dd>
-          </div>
-        </dl>
-      </article>
-
-      <!-- Hardware card -->
-      <article
-        class="bv-card"
-        data-testid="bv-card-hardware"
-      >
-        <header class="bv-card-header">
-          <h3>💻 Hardware</h3>
-        </header>
-        <dl class="bv-dl">
-          <div class="bv-dl-row">
-            <dt>OS</dt>
-            <dd>{{ hardwareRows.os }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>CPU</dt>
-            <dd>{{ hardwareRows.cpu }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>RAM</dt>
-            <dd>{{ hardwareRows.ram }}</dd>
-          </div>
-          <div
-            v-if="hardwareRows.gpu"
-            class="bv-dl-row"
-          >
-            <dt>GPU</dt>
-            <dd>{{ hardwareRows.gpu }}</dd>
-          </div>
-        </dl>
-        <div
-          v-if="ramTier"
-          class="bv-ram-bar"
-          :title="`RAM tier: ${ramTier.label}`"
+        <!-- Brain config card -->
+        <article
+          class="bv-card"
+          data-testid="bv-card-config"
         >
-          <div
-            class="bv-ram-fill"
-            :style="{ width: ramTier.percent + '%', background: ramTier.color }"
-          />
-        </div>
-      </article>
+          <header class="bv-card-header">
+            <h3>🧬 Configuration</h3>
+          </header>
+          <dl class="bv-dl">
+            <div class="bv-dl-row">
+              <dt>Mode</dt>
+              <dd>{{ configRows.mode }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>Provider</dt>
+              <dd>{{ configRows.provider }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>Model</dt>
+              <dd class="bv-model">
+                <code>{{ configRows.model }}</code>
+              </dd>
+            </div>
+            <div
+              v-if="configRows.endpoint"
+              class="bv-dl-row"
+            >
+              <dt>Endpoint</dt>
+              <dd
+                class="bv-endpoint"
+                :title="configRows.endpoint"
+              >
+                {{ shortUrl(configRows.endpoint) }}
+              </dd>
+            </div>
+            <div
+              v-if="configRows.embeddingModel"
+              class="bv-dl-row"
+            >
+              <dt>Embedding</dt>
+              <dd class="bv-model">
+                <code>{{ configRows.embeddingModel }}</code>
+              </dd>
+            </div>
+          </dl>
+        </article>
 
-      <!-- Memory health card -->
-      <article
-        class="bv-card"
-        data-testid="bv-card-memory"
-      >
-        <header class="bv-card-header">
-          <h3>🧠 Memory health</h3>
-          <button
-            class="bv-card-link"
-            @click="emitNavigate('memory')"
-          >
-            Open explorer →
-          </button>
-        </header>
-        <div class="bv-memory-tiers">
+        <!-- Hardware card -->
+        <article
+          class="bv-card"
+          data-testid="bv-card-hardware"
+        >
+          <header class="bv-card-header">
+            <h3>💻 Hardware</h3>
+          </header>
+          <dl class="bv-dl">
+            <div class="bv-dl-row">
+              <dt>OS</dt>
+              <dd>{{ hardwareRows.os }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>CPU</dt>
+              <dd>{{ hardwareRows.cpu }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>RAM</dt>
+              <dd>{{ hardwareRows.ram }}</dd>
+            </div>
+            <div
+              v-if="hardwareRows.gpu"
+              class="bv-dl-row"
+            >
+              <dt>GPU</dt>
+              <dd>{{ hardwareRows.gpu }}</dd>
+            </div>
+          </dl>
           <div
-            class="bv-mem-tier tier-short"
-            :title="`Short-term: ${memoryStats.short_count}`"
+            v-if="ramTier"
+            class="bv-ram-bar"
+            :title="`RAM tier: ${ramTier.label}`"
           >
-            <span class="bv-mem-num">{{ memoryStats.short_count }}</span>
-            <span class="bv-mem-label">short</span>
+            <div
+              class="bv-ram-fill"
+              :style="{ width: ramTier.percent + '%', background: ramTier.color }"
+            />
           </div>
-          <div
-            class="bv-mem-tier tier-working"
-            :title="`Working: ${memoryStats.working_count}`"
-          >
-            <span class="bv-mem-num">{{ memoryStats.working_count }}</span>
-            <span class="bv-mem-label">working</span>
+        </article>
+
+        <!-- Memory health card -->
+        <article
+          class="bv-card"
+          data-testid="bv-card-memory"
+        >
+          <header class="bv-card-header">
+            <h3>🧠 Memory health</h3>
+            <button
+              class="bv-card-link"
+              @click="emitNavigate('memory')"
+            >
+              Open explorer →
+            </button>
+          </header>
+          <div class="bv-memory-tiers">
+            <div
+              class="bv-mem-tier tier-short"
+              :title="`Short-term: ${memoryStats.short_count}`"
+            >
+              <span class="bv-mem-num">{{ memoryStats.short_count }}</span>
+              <span class="bv-mem-label">short</span>
+            </div>
+            <div
+              class="bv-mem-tier tier-working"
+              :title="`Working: ${memoryStats.working_count}`"
+            >
+              <span class="bv-mem-num">{{ memoryStats.working_count }}</span>
+              <span class="bv-mem-label">working</span>
+            </div>
+            <div
+              class="bv-mem-tier tier-long"
+              :title="`Long-term: ${memoryStats.long_count}`"
+            >
+              <span class="bv-mem-num">{{ memoryStats.long_count }}</span>
+              <span class="bv-mem-label">long</span>
+            </div>
           </div>
-          <div
-            class="bv-mem-tier tier-long"
-            :title="`Long-term: ${memoryStats.long_count}`"
-          >
-            <span class="bv-mem-num">{{ memoryStats.long_count }}</span>
-            <span class="bv-mem-label">long</span>
-          </div>
-        </div>
-        <dl class="bv-dl">
-          <div class="bv-dl-row">
-            <dt>Total memories</dt>
-            <dd>{{ memoryStats.total }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>Connections</dt>
-            <dd>{{ edgeCount }} edge{{ edgeCount === 1 ? '' : 's' }}</dd>
-          </div>
-          <div class="bv-dl-row">
-            <dt>Avg freshness</dt>
-            <dd>
-              <span class="bv-decay-bar">
-                <span
-                  class="bv-decay-fill"
-                  :style="{ width: (memoryStats.avg_decay * 100) + '%' }"
-                />
-              </span>
-              <span class="bv-decay-num">{{ Math.round(memoryStats.avg_decay * 100) }}%</span>
-            </dd>
-          </div>
-        </dl>
-      </article>
+          <dl class="bv-dl">
+            <div class="bv-dl-row">
+              <dt>Total memories</dt>
+              <dd>{{ memoryStats.total }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>Connections</dt>
+              <dd>{{ edgeCount }} edge{{ edgeCount === 1 ? '' : 's' }}</dd>
+            </div>
+            <div class="bv-dl-row">
+              <dt>Avg freshness</dt>
+              <dd>
+                <span class="bv-decay-bar">
+                  <span
+                    class="bv-decay-fill"
+                    :style="{ width: (memoryStats.avg_decay * 100) + '%' }"
+                  />
+                </span>
+                <span class="bv-decay-num">{{ Math.round(memoryStats.avg_decay * 100) }}%</span>
+              </dd>
+            </div>
+          </dl>
+        </article>
       </div>
     </section>
 
@@ -1143,9 +1242,9 @@
         <button
           type="button"
           class="bp-switch"
-          :data-on="(appSettings.settings?.auto_tag ?? false) ? 'true' : 'false'"
+          :data-on="(appSettings.settings?.auto_tag ?? true) ? 'true' : 'false'"
           data-testid="bv-autotag-toggle"
-          @click="onToggleAutoTag(!(appSettings.settings?.auto_tag ?? false))"
+          @click="onToggleAutoTag(!(appSettings.settings?.auto_tag ?? true))"
         />
       </div>
     </section>
@@ -1262,20 +1361,11 @@
       </p>
     </section>
 
-    <!-- ── 19 · Persona ────────────────────────────────────────────────────── -->
-    <section class="bp-module">
-      <header class="bp-module-head">
-        <div class="bp-module-head-left">
-          <div class="bp-module-eyebrow">
-            <span class="ix">19</span> Persona
-          </div>
-          <h2 class="bp-module-title">
-            Data storage & management
-          </h2>
-        </div>
-      </header>
-      <PersonaPanel />
-    </section>
+    <!-- Persona panel was moved to Settings → Character so it is clearly
+         scoped to the active character/model, not a TerranSoul-wide
+         config. The PersonaTraits store still applies globally as a
+         fallback when the active character has no override, but the
+         editor lives next to the active-model picker now. -->
 
     <!-- ── DANGER ZONE ─────────────────────────────────────────────────────── -->
     <section
@@ -1344,15 +1434,15 @@ import WikiPanel from '../components/WikiPanel.vue';
 import TaskProgressBar from '../components/TaskProgressBar.vue';
 import LanSharePanel from '../components/LanSharePanel.vue';
 import PromptCommandsPanel from '../components/PromptCommandsPanel.vue';
-import PersonaPanel from '../components/PersonaPanel.vue';
 import PluginsView from './PluginsView.vue';
 import AICodingIntegrationsView from './AICodingIntegrationsView.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
 import { summariseCognitiveKinds } from '../utils/cognitive-kind';
 import { formatRam } from '../utils/format';
 
 const emit = defineEmits<{
   /** Navigate to another tab; values match the App.vue tab ids. */
-  (e: 'navigate', target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain-setup'): void;
+  (e: 'navigate', target: string): void;
 }>();
 const emitNavigate = (target: 'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain-setup') => {
   emit('navigate', target);
@@ -1377,8 +1467,36 @@ type EmbeddingQueueStatus = {
   failing: number;
   next_retry_at: number | null;
 };
+type EmbedWorkerStatus = {
+  rate_limited: boolean;
+  pause_remaining_secs: number;
+  hard_failures: number;
+  total_embedded: number;
+  rate_limit_pauses: number;
+};
+type PendingEmbeddingDebugRow = {
+  memory_id: number;
+  attempts: number;
+  last_error: string | null;
+  next_retry_at: number;
+  content_preview: string;
+};
+type EmbeddingQueueDiagnostics = {
+  status: EmbeddingQueueStatus;
+  worker: EmbedWorkerStatus;
+  recent_failures: PendingEmbeddingDebugRow[];
+  brain_configured: boolean;
+  brain_mode_label: string | null;
+  ollama_chat_skip_active: boolean;
+  last_chat_at_ms: number;
+  reason: string;
+  now_ms: number;
+};
 const embedQueueStatus = ref<EmbeddingQueueStatus | null>(null);
+const embedQueueDebugOpen = ref(false);
+const embedQueueDiagnostics = ref<EmbeddingQueueDiagnostics | null>(null);
 let embedQueuePollHandle: ReturnType<typeof setInterval> | null = null;
+let embedQueueDebugPollHandle: ReturnType<typeof setInterval> | null = null;
 
 async function refreshEmbedQueueStatus() {
   try {
@@ -1387,6 +1505,37 @@ async function refreshEmbedQueueStatus() {
     // Silent — backend may not be ready, or we hit a brief lock contention.
     void e;
   }
+}
+
+async function refreshEmbedQueueDiagnostics() {
+  try {
+    embedQueueDiagnostics.value = await invoke<EmbeddingQueueDiagnostics>(
+      'embedding_queue_diagnostics',
+    );
+  } catch (e) {
+    void e;
+  }
+}
+
+function toggleEmbedQueueDebug() {
+  embedQueueDebugOpen.value = !embedQueueDebugOpen.value;
+  if (embedQueueDebugOpen.value) {
+    void refreshEmbedQueueDiagnostics();
+    if (embedQueueDebugPollHandle === null) {
+      embedQueueDebugPollHandle = setInterval(refreshEmbedQueueDiagnostics, 5_000);
+    }
+  } else if (embedQueueDebugPollHandle !== null) {
+    clearInterval(embedQueueDebugPollHandle);
+    embedQueueDebugPollHandle = null;
+  }
+}
+
+function formatRetryEta(retryAtMs: number, nowMs: number): string {
+  const deltaSec = Math.round((retryAtMs - nowMs) / 1000);
+  if (deltaSec <= 0) return 'due now';
+  if (deltaSec < 60) return `in ${deltaSec}s`;
+  if (deltaSec < 3600) return `in ${Math.round(deltaSec / 60)}m`;
+  return `in ${Math.round(deltaSec / 3600)}h`;
 }
 
 // ── Hero text ──────────────────────────────────────────────────────────────
@@ -2359,18 +2508,29 @@ onUnmounted(() => {
     clearInterval(embedQueuePollHandle);
     embedQueuePollHandle = null;
   }
+  if (embedQueueDebugPollHandle !== null) {
+    clearInterval(embedQueueDebugPollHandle);
+    embedQueueDebugPollHandle = null;
+  }
 });
 </script>
 
 <style scoped>
 .brain-view {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
+  /* Make the bp-shell behave as a scrollable view within app-main's
+     flex column (which has overflow:hidden). Without this, BrainView's
+     content gets clipped on both desktop and mobile because the cockpit
+     hero + modules are taller than the viewport. We keep bp-shell's own
+     padding/gap/max-width and only add the flex sizing + scroll. */
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  max-height: none;
   width: 100%;
-  padding: 1rem;
-  height: 100%;
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* ── Hero ───────────────────────────────────────────────────────────────── */
@@ -2612,14 +2772,23 @@ onUnmounted(() => {
 /* ── Self-healing embedding queue strip ─────────────────────────────────── */
 .bv-embed-queue {
   display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.625rem 0.875rem;
+  border-radius: 0.5rem;
+  background: var(--ts-bg-card);
+  border: 1px solid var(--ts-border);
+  font-size: 0.8125rem;
+  color: var(--ts-text-primary);
+}
+.bv-embed-queue--open {
+  background: var(--ts-bg-overlay);
+}
+.bv-embed-queue__row {
+  display: flex;
   align-items: center;
   gap: 0.625rem;
-  padding: 0.5rem 0.875rem;
-  border-radius: 0.5rem;
-  background: var(--ts-surface-2, rgba(255, 255, 255, 0.04));
-  border: 1px solid var(--ts-border, rgba(255, 255, 255, 0.08));
-  font-size: 0.8125rem;
-  color: var(--ts-text);
+  flex-wrap: wrap;
 }
 .bv-embed-queue__icon {
   font-size: 1rem;
@@ -2631,7 +2800,128 @@ onUnmounted(() => {
   color: var(--ts-text-muted);
   font-size: 0.75rem;
 }
-.bv-embed-queue__warn { color: var(--ts-warning, #f59e0b); font-weight: 600; }
+.bv-embed-queue__warn { color: var(--ts-warning); font-weight: 600; }
+.bv-embed-queue__toggle {
+  appearance: none;
+  background: transparent;
+  border: 1px solid var(--ts-border);
+  color: var(--ts-text-primary);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.bv-embed-queue__toggle:hover {
+  border-color: var(--ts-accent);
+  color: var(--ts-accent);
+}
+.bv-embed-queue__toggle:focus-visible {
+  outline: 2px solid var(--ts-accent);
+  outline-offset: 2px;
+}
+.bv-embed-queue__debug {
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--ts-border);
+}
+.bv-embed-queue__reason {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ts-text-primary);
+  font-weight: 500;
+}
+.bv-embed-queue__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 0.75rem;
+}
+.bv-embed-queue__facts > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 8px;
+  background: var(--ts-bg-input);
+  border-radius: 6px;
+  border: 1px solid var(--ts-border);
+}
+.bv-embed-queue__facts dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ts-text-muted);
+}
+.bv-embed-queue__facts dd {
+  margin: 0;
+  font-weight: 600;
+  color: var(--ts-text-primary);
+}
+.bv-embed-queue__failures-title {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ts-text-primary);
+}
+.bv-embed-queue__failure-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+.bv-embed-queue__failure {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--ts-bg-input);
+  border: 1px solid var(--ts-border);
+}
+.bv-embed-queue__failure-head {
+  display: flex;
+  gap: 10px;
+  font-size: 0.72rem;
+  color: var(--ts-text-secondary);
+}
+.bv-embed-queue__failure-id {
+  font-family: var(--ts-font-mono, monospace);
+  color: var(--ts-accent);
+  font-weight: 600;
+}
+.bv-embed-queue__failure-attempts {
+  color: var(--ts-warning);
+  font-weight: 600;
+}
+.bv-embed-queue__failure-eta { margin-left: auto; }
+.bv-embed-queue__failure-error {
+  font-family: var(--ts-font-mono, monospace);
+  font-size: 0.72rem;
+  color: var(--ts-error);
+  word-break: break-word;
+}
+.bv-embed-queue__failure-preview {
+  font-size: 0.72rem;
+  color: var(--ts-text-muted);
+  font-style: italic;
+  word-break: break-word;
+}
+.bv-embed-queue__no-failures {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ts-text-muted);
+  font-style: italic;
+}
 @keyframes bv-embed-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }

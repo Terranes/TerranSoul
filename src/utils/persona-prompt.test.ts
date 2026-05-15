@@ -140,7 +140,7 @@ describe('buildPersonaBlock', () => {
     expect(block.endsWith('[/PERSONA]')).toBe(true);
   });
 
-  it('renders whisper, accent, dialect, and provider voice from voice profile', () => {
+  it('renders whisper, accent, and provider voice from voice profile', () => {
     const block = buildPersonaBlock(baseTraits({
       voiceProfile: {
         gender: 'male',
@@ -148,11 +148,10 @@ describe('buildPersonaBlock', () => {
         pitch: 'very_low',
         style: 'whisper',
         englishAccent: 'british',
-        chineseDialect: 'sichuanese',
         voiceName: 'en-GB-RyanNeural',
       },
     }));
-    expect(block).toContain('Voice design: male elderly voice, very low pitch, whisper style, British English accent, 四川话 Chinese dialect, preferred TTS voice en-GB-RyanNeural.');
+    expect(block).toContain('Voice design: male elderly voice, very low pitch, whisper style, British English accent, preferred TTS voice en-GB-RyanNeural.');
   });
 
   it('migrates old persona JSON with a default voice profile', () => {

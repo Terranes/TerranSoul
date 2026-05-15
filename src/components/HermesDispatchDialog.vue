@@ -36,7 +36,10 @@
           :aria-busy="officeLoading"
         >
           <div class="office-status-row">
-            <span class="dot" :aria-hidden="true" />
+            <span
+              class="dot"
+              :aria-hidden="true"
+            />
             <strong>Hermes Office</strong>
             <span class="office-summary">{{ officeSummary }}</span>
             <button

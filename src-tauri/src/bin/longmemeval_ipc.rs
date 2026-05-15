@@ -56,7 +56,10 @@ use terransoul_lib::memory::store::{MemoryStore, MemoryType, NewMemory, ShardMod
 
 const SOURCE_URL_PREFIX: &str = "longmemeval://session/";
 const RRF_K: f32 = 60.0;
-const DEFAULT_EMBED_MODEL: &str = "nomic-embed-text";
+/// Default embedder for the bench harness. Promoted to
+/// `mxbai-embed-large` by BENCH-LCM-5 (2026-05-12, +3.7pp R@10 on
+/// LoCoMo); override with `LONGMEM_EMBED_MODEL` env var for A/B runs.
+const DEFAULT_EMBED_MODEL: &str = "mxbai-embed-large";
 const DEFAULT_RERANK_MODEL: &str = "gemma3:4b";
 /// HyDE expansion model. Same default as the reranker — small enough to keep
 /// the bench tractable; override via `LONGMEM_HYDE_MODEL`. BENCH-LCM-10.
@@ -95,6 +98,21 @@ struct Request {
     mode: String,
     #[serde(default = "default_limit")]
     limit: usize,
+    // BENCH-SCALE-3 (2026-05-15): IVF-PQ build/search parameters. All
+    // optional — search ops only touch `nprobe`; the `build_ivf_pq` op
+    // touches `nlist` / `pq_m` / `pq_nbits` / `threshold` / `max_shards`.
+    #[serde(default)]
+    nlist: Option<usize>,
+    #[serde(default)]
+    pq_m: Option<usize>,
+    #[serde(default)]
+    pq_nbits: Option<usize>,
+    #[serde(default)]
+    threshold: Option<usize>,
+    #[serde(default)]
+    max_shards: Option<usize>,
+    #[serde(default)]
+    nprobe: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -853,7 +871,7 @@ impl IndexState {
     }
 
     fn new() -> Self {
-        let store = MemoryStore::in_memory();
+        let store = Self::build_store();
         store.set_shard_mode(Self::shard_mode_from_env());
         Self {
             store,
@@ -866,13 +884,36 @@ impl IndexState {
     }
 
     fn reset(&mut self) {
-        self.store = MemoryStore::in_memory();
+        self.store = Self::build_store();
         self.store.set_shard_mode(Self::shard_mode_from_env());
         self.embeddings.clear();
         self.session_ids.clear();
         self.token_counts.clear();
         self.contents_lower.clear();
         self.kg.reset();
+    }
+
+    /// BENCH-SCALE-3 (2026-05-15): build the `MemoryStore`. When
+    /// `LONGMEM_DATA_DIR` is set, open an on-disk SQLite store there —
+    /// IVF-PQ disk-backed ANN requires `data_dir` to be `Some`
+    /// (otherwise `build_ivf_pq_indexes` silently returns `Ok(Vec::new())`
+    /// and `search_ivf_pq` returns `Ok(None)`). Falls back to the
+    /// historical in-memory store when the env var is unset.
+    fn build_store() -> MemoryStore {
+        match std::env::var("LONGMEM_DATA_DIR").ok().filter(|s| !s.trim().is_empty()) {
+            Some(dir) => {
+                let path = std::path::PathBuf::from(&dir);
+                if let Err(e) = std::fs::create_dir_all(&path) {
+                    eprintln!(
+                        "[longmemeval-ipc] LONGMEM_DATA_DIR='{}' create failed: {}; falling back to in-memory",
+                        dir, e
+                    );
+                    return MemoryStore::in_memory();
+                }
+                MemoryStore::new(&path)
+            }
+            None => MemoryStore::in_memory(),
+        }
     }
 }
 
@@ -1172,6 +1213,26 @@ fn search(
                 .map_err(|err| err.to_string())?
         }
         "emb" | "rrf_emb" | "search_emb" | "best" => Vec::new(),
+        // BENCH-SCALE-3 (2026-05-15): vector-only retrieval routed
+        // through disk-backed IVF-PQ + ADC instead of in-memory HNSW.
+        // Requires `LONGMEM_DATA_DIR` so the store can persist the
+        // IVF-PQ index files, and a prior `build_ivf_pq` op so the
+        // sidecars/index files exist. Falls back to an empty pool if
+        // either condition is unmet (search() at the call site then
+        // returns 0 hits, which the bench harness reports as R@k=0
+        // rather than silently confusing HNSW results with IVF-PQ).
+        "ivfpq" => {
+            let q_emb = embedder
+                .and_then(|e| e.embed(&request.query, EmbedRole::Query).ok())
+                .ok_or_else(|| {
+                    "ivfpq mode requires LONGMEM_EMBED=1 and a reachable Ollama".to_string()
+                })?;
+            let nprobe = request.nprobe.unwrap_or(32);
+            state
+                .store
+                .vector_search_ivf_pq(&q_emb, limit.max(1), nprobe)
+                .map_err(|err| err.to_string())?
+        }
         other => return Err(format!("unsupported search mode: {other}")),
     };
 
@@ -1712,6 +1773,50 @@ fn rrf_emb_hits(
     Ok(hits)
 }
 
+/// BENCH-SCALE-3 (2026-05-15): trigger the IVF-PQ index build for every
+/// populated shard. Reads optional `nlist` / `pq_m` / `pq_nbits` /
+/// `threshold` / `max_shards` from the request, falling back to defaults
+/// tuned for 1024-dim mxbai-embed-large (`pq_m=128` so 1024 % pq_m = 0
+/// and each PQ subspace is 8 floats — higher quality than `pq_m=64`).
+///
+/// Returns a JSON array of per-shard `IvfPqBuildStats`. Requires
+/// `LONGMEM_DATA_DIR` to be set; otherwise the underlying store has no
+/// `data_dir` and returns an empty `Vec` — surfaced here as `built=0`.
+fn build_ivf_pq_op(state: &IndexState, request: &Request) -> Result<Value, String> {
+    let nlist = request.nlist.unwrap_or(4096);
+    let pq_m = request.pq_m.unwrap_or(128);
+    let pq_nbits = request.pq_nbits.unwrap_or(8);
+    let threshold = request.threshold.unwrap_or(1);
+    let max_shards = request.max_shards.unwrap_or(0);
+    let params = terransoul_lib::memory::disk_backed_ann::IvfPqParams {
+        nlist,
+        pq_m,
+        pq_nbits,
+    };
+    let stats = state
+        .store
+        .build_ivf_pq_indexes_with_params(params, threshold, max_shards)?;
+    Ok(json!({
+        "built": stats.len(),
+        "nlist": nlist,
+        "pq_m": pq_m,
+        "pq_nbits": pq_nbits,
+        "threshold": threshold,
+        "max_shards": max_shards,
+        "stats": stats.iter().map(|s| json!({
+            "dim": s.dim,
+            "nlist": s.nlist,
+            "pq_m": s.pq_m,
+            "pq_nbits": s.pq_nbits,
+            "total_vectors": s.total_vectors,
+            "training_sample_size": s.training_sample_size,
+            "coarse_kmeans_iterations": s.coarse_kmeans_iterations,
+            "pq_kmeans_iterations": s.pq_kmeans_iterations,
+            "build_time_ms": s.build_time_ms,
+        })).collect::<Vec<_>>(),
+    }))
+}
+
 fn write_response(id: u64, payload: Result<Value, String>) {
     let response = match payload {
         Ok(value) => json!({ "id": id, "ok": true, "data": value }),
@@ -1768,6 +1873,10 @@ fn main() {
                     hyder.as_ref(),
                     &request,
                 ),
+            ),
+            "build_ivf_pq" => write_response(
+                request.id,
+                build_ivf_pq_op(&state, &request),
             ),
             "shutdown" => {
                 write_response(request.id, Ok(json!({ "shutdown": true })));

@@ -59,6 +59,11 @@ pub mod sharded_retrieval;
 #[cfg(feature = "time-shards")]
 pub mod shards;
 pub mod snapshot;
+pub mod sources;
+#[cfg(feature = "repo-rag")]
+pub mod repo_ingest;
+#[cfg(feature = "repo-rag")]
+pub mod repo_oauth;
 pub mod store;
 pub mod tag_vocabulary;
 pub mod temporal;

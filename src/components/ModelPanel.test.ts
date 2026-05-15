@@ -20,7 +20,7 @@ describe('ModelPanel', () => {
 
   it('renders panel header', () => {
     const wrapper = mount(ModelPanel);
-    expect(wrapper.find('.panel-header h3').text()).toBe('3D Models');
+    expect(wrapper.find('.panel-shell__title').text()).toBe('3D Models');
   });
 
   it('renders import button', () => {
@@ -50,13 +50,13 @@ describe('ModelPanel', () => {
 
   it('emits close on overlay click', async () => {
     const wrapper = mount(ModelPanel);
-    await wrapper.find('.model-panel-overlay').trigger('click');
+    await wrapper.find('[data-testid="model-panel"]').trigger('click');
     expect(wrapper.emitted('close')).toBeTruthy();
   });
 
   it('emits close on close button click', async () => {
     const wrapper = mount(ModelPanel);
-    await wrapper.find('.close-btn').trigger('click');
+    await wrapper.find('[data-testid="panel-shell-close"]').trigger('click');
     expect(wrapper.emitted('close')).toBeTruthy();
   });
 

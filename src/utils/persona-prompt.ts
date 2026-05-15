@@ -14,7 +14,6 @@
  */
 
 import {
-  PERSONA_CHINESE_DIALECT_OPTIONS,
   PERSONA_ENGLISH_ACCENT_OPTIONS,
   PERSONA_VOICE_AGE_OPTIONS,
   PERSONA_VOICE_GENDER_OPTIONS,
@@ -131,10 +130,6 @@ export function buildVoiceDesignInstruction(profile: PersonaVoiceProfile | null 
     `${labelFor(p.style, PERSONA_VOICE_STYLE_OPTIONS).toLowerCase()} style`,
     `${labelFor(p.englishAccent, PERSONA_ENGLISH_ACCENT_OPTIONS)} English accent`,
   ];
-  const chineseDialect = labelFor(p.chineseDialect, PERSONA_CHINESE_DIALECT_OPTIONS);
-  if (p.chineseDialect !== 'none') {
-    parts.push(`${chineseDialect} Chinese dialect`);
-  }
   const voiceName = sanitiseLine(p.voiceName);
   if (voiceName) {
     parts.push(`preferred TTS voice ${voiceName}`);

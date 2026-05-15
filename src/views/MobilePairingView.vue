@@ -1,5 +1,14 @@
 <template>
-  <div class="mobile-pairing-view">
+  <div
+    class="bp-shell mobile-pairing-view"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <AppBreadcrumb
+      here="PHONE LINK"
+      @navigate="emit('navigate', $event)"
+    />
+
     <header class="mobile-header">
       <h2>Phone Link</h2>
       <span :class="['status-pill', store.status]">{{ statusLabel }}</span>
@@ -100,6 +109,11 @@ import { computed, ref } from 'vue';
 import { useMobilePairingStore } from '../stores/mobile-pairing';
 import { fingerprintPreview } from '../utils/mobile-pairing';
 import MobileSettingsView from './MobileSettingsView.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
+
+const emit = defineEmits<{
+  navigate: [target: string];
+}>();
 
 const store = useMobilePairingStore();
 const vaultPassword = ref('');
@@ -134,18 +148,20 @@ async function confirm() {
 </script>
 
 <style scoped>
+/*
+ * Phone Link uses the shared `.bp-shell` chrome (padding / max-width / gap /
+ * scrollbar) so the breadcrumb sits at the exact same position as every
+ * other panel (Brain, Memory, Marketplace, Skill Tree, Voice). The rules
+ * below only add Phone-Link-specific extras: mobile safe-area insets and a
+ * bottom inset so the mobile bottom-nav bar doesn't cover content.
+ */
 .mobile-pairing-view {
-  width: min(100%, 720px);
-  height: 100%;
-  min-height: 100%;
-  margin: 0 auto;
-  padding: calc(var(--ts-space-xl) + var(--ts-safe-area-top)) var(--ts-space-lg) calc(var(--ts-mobile-nav-total-height) + var(--ts-space-xl));
-  display: flex;
-  flex-direction: column;
-  gap: var(--ts-space-lg);
-  overflow-x: hidden;
-  overflow-y: auto;
-  scrollbar-gutter: stable;
+  /* Reserve room for the mobile bottom-nav on small screens; .bp-shell
+     already provides padding: 28px 32px 80px so we only extend the bottom
+     when the mobile nav is present. */
+  padding-bottom: calc(var(--ts-mobile-nav-total-height, 0px) + var(--ts-space-xl));
+  /* Safe-area top inset stacks on top of .bp-shell's 28px. */
+  padding-top: calc(28px + var(--ts-safe-area-top, 0px));
 }
 
 .mobile-header {
@@ -286,8 +302,9 @@ code {
 
 @media (max-width: 640px) {
   .mobile-pairing-view {
-    padding-left: max(var(--ts-space-md), var(--ts-safe-area-left));
-    padding-right: max(var(--ts-space-md), var(--ts-safe-area-right));
+    /* Drop side padding to phone-friendly values, honouring safe-area. */
+    padding-left: max(var(--ts-space-md), var(--ts-safe-area-left, 0px));
+    padding-right: max(var(--ts-space-md), var(--ts-safe-area-right, 0px));
   }
 
   .vault-row {

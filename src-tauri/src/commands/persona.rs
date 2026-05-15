@@ -60,7 +60,6 @@ fn default_persona_json() -> &'static str {
         "pitch": "medium",
         "style": "natural",
         "englishAccent": "american",
-        "chineseDialect": "mandarin",
         "voiceName": "en-US-AnaNeural"
     },
   "updatedAt": 0

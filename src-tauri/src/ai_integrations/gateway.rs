@@ -482,6 +482,104 @@ pub struct HealthDescriptions {
     pub memory_total: String,
 }
 
+// ─── Repo RAG request/response types (BRAIN-REPO-RAG-1c-b-i) ────────────────
+
+/// Source-scoped hybrid search request. `source_id` matches a row in the
+/// `memory_sources` registry (kind = 'repo').
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSearchRequest {
+    pub source_id: String,
+    pub query: String,
+    /// Top-k results. Bounded `1..=100` server-side; defaults to 10.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoListFilesRequest {
+    pub source_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoReadFileRequest {
+    pub source_id: String,
+    pub file_path: String,
+}
+
+// ─── BRAIN-REPO-RAG-1d: repo map + signatures request types ─────────────────
+
+/// `repo.repo_map` — render an Aider-style overview of a repo, bounded by a
+/// token budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoMapRequest {
+    pub source_id: String,
+    /// Soft cap on the rendered repo map size, measured in tokens
+    /// (`chars / 4` estimate). Defaults to 1024, bounded `64..=16_384`.
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
+}
+
+/// `repo.repo_signatures` — tree-sitter signature-only preview for a single
+/// file inside a repo source.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RepoSignaturesRequest {
+    pub source_id: String,
+    pub file_path: String,
+}
+
+/// Wire-stable repo hit (mirrors `memory::repo_ingest::RepoSearchHit` so the
+/// trait stays compilable when the `repo-rag` feature is off — callers
+/// without the feature receive `GatewayError::NotConfigured`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RepoSearchHit {
+    pub id: i64,
+    pub source_id: String,
+    pub file_path: String,
+    pub parent_symbol: Option<String>,
+    /// Either `"text"` or `"code"`.
+    pub kind: String,
+    pub byte_start: u64,
+    pub byte_end: u64,
+    pub content: String,
+    /// RRF fused score (vector + keyword + recency, k = 60).
+    pub score: f64,
+}
+
+// ─── Cross-source request/response types (BRAIN-REPO-RAG-1c-b-ii-a) ─────────
+
+/// Fan-out hybrid search request: runs the main `MemoryStore::hybrid_search_rrf`
+/// against `'self'` *and* `RepoStore::hybrid_search` against every
+/// `memory_sources` repo, then merges the result rankings with Reciprocal
+/// Rank Fusion (k = 60).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CrossSourceSearchRequest {
+    pub query: String,
+    /// Bounded `1..=100` server-side; defaults to 10.
+    #[serde(default)]
+    pub limit: Option<usize>,
+}
+
+/// One row in a cross-source fused ranking. `source_id` is `"self"` for
+/// the main brain or a repo memory-source id; `file_path` / `parent_symbol`
+/// are `Some` for repo hits only.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MultiSourceHit {
+    pub source_id: String,
+    pub source_label: String,
+    /// Id within the source's local store (main `memories.id` or
+    /// per-repo `repo_chunks.id`).
+    pub local_id: i64,
+    pub content: String,
+    /// RRF fused score across all sources (k = 60).
+    pub score: f64,
+    /// Repo file path; `None` for main-brain hits.
+    pub file_path: Option<String>,
+    pub parent_symbol: Option<String>,
+    /// Main-brain tier (short/working/long); `None` for repo hits.
+    pub tier: Option<String>,
+    pub tags: String,
+}
+
 // ─── Pluggable ingest sink ──────────────────────────────────────────────────
 
 /// The gateway is transport-agnostic and Tauri-`AppHandle`-free; long-running
@@ -580,6 +678,64 @@ pub trait BrainGateway: Send + Sync {
 
     /// `brain.health` — server + brain status snapshot.
     async fn health(&self, caps: &GatewayCaps) -> Result<HealthResponse, GatewayError>;
+
+    // ─── BRAIN-REPO-RAG-1c-b-i: per-repo retrieval surface ───────────────
+
+    /// `repo.search` — hybrid (vector + keyword + recency, RRF k=60)
+    /// search scoped to a single `memory_sources` repo. Returns
+    /// `GatewayError::NotConfigured` when the `repo-rag` feature is off
+    /// or when the source does not exist.
+    async fn repo_search(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoSearchRequest,
+    ) -> Result<Vec<RepoSearchHit>, GatewayError>;
+
+    /// `repo.list_files` — distinct `file_path` values indexed for
+    /// `source_id`, sorted.
+    async fn repo_list_files(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoListFilesRequest,
+    ) -> Result<Vec<String>, GatewayError>;
+
+    /// `repo.read_file` — read one file from the per-repo checkout
+    /// (preferred) or chunk-reassembled SQLite fallback.
+    async fn repo_read_file(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoReadFileRequest,
+    ) -> Result<String, GatewayError>;
+
+    /// `repo.repo_map` — Aider-style repository map: a token-budgeted text
+    /// overview that ranks files by importance (chunk-count heuristic) and
+    /// surfaces each file's top tree-sitter symbols with signature
+    /// previews. Returns `GatewayError::NotConfigured` when the `repo-rag`
+    /// feature is off or when the source does not exist.
+    async fn repo_map(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoMapRequest,
+    ) -> Result<String, GatewayError>;
+
+    /// `repo.repo_signatures` — tree-sitter signature-only preview for one
+    /// file inside a repo source. Used by AI coding agents to read a
+    /// compressed function/struct outline before requesting the full file.
+    async fn repo_signatures(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoSignaturesRequest,
+    ) -> Result<String, GatewayError>;
+
+    /// `brain.cross_source_search` — `All` fan-out across the main brain
+    /// + every `memory_sources` repo, RRF-merged (k = 60). Returns top-k
+    /// hits tagged with their originating `source_id` so prompt-assembly
+    /// and chat citations can group by source.
+    async fn cross_source_search(
+        &self,
+        caps: &GatewayCaps,
+        req: CrossSourceSearchRequest,
+    ) -> Result<Vec<MultiSourceHit>, GatewayError>;
 }
 
 // ─── AppState adapter ───────────────────────────────────────────────────────
@@ -1530,6 +1686,474 @@ impl BrainGateway for AppStateGateway {
             disk_ann_health,
             descriptions,
         })
+    }
+
+    // ─── BRAIN-REPO-RAG-1c-b-i: per-repo retrieval surface ───────────────
+
+    #[cfg(not(feature = "repo-rag"))]
+    async fn repo_search(
+        &self,
+        _caps: &GatewayCaps,
+        _req: RepoSearchRequest,
+    ) -> Result<Vec<RepoSearchHit>, GatewayError> {
+        Err(GatewayError::NotConfigured(
+            "repo-rag feature is not enabled in this build".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "repo-rag"))]
+    async fn repo_list_files(
+        &self,
+        _caps: &GatewayCaps,
+        _req: RepoListFilesRequest,
+    ) -> Result<Vec<String>, GatewayError> {
+        Err(GatewayError::NotConfigured(
+            "repo-rag feature is not enabled in this build".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "repo-rag"))]
+    async fn repo_read_file(
+        &self,
+        _caps: &GatewayCaps,
+        _req: RepoReadFileRequest,
+    ) -> Result<String, GatewayError> {
+        Err(GatewayError::NotConfigured(
+            "repo-rag feature is not enabled in this build".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "repo-rag"))]
+    async fn repo_map(
+        &self,
+        _caps: &GatewayCaps,
+        _req: RepoMapRequest,
+    ) -> Result<String, GatewayError> {
+        Err(GatewayError::NotConfigured(
+            "repo-rag feature is not enabled in this build".into(),
+        ))
+    }
+
+    #[cfg(not(feature = "repo-rag"))]
+    async fn repo_signatures(
+        &self,
+        _caps: &GatewayCaps,
+        _req: RepoSignaturesRequest,
+    ) -> Result<String, GatewayError> {
+        Err(GatewayError::NotConfigured(
+            "repo-rag feature is not enabled in this build".into(),
+        ))
+    }
+
+    #[cfg(feature = "repo-rag")]
+    async fn repo_search(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoSearchRequest,
+    ) -> Result<Vec<RepoSearchHit>, GatewayError> {
+        require_read(caps)?;
+        if req.query.trim().is_empty() {
+            return Err(GatewayError::InvalidArgument("query is empty".into()));
+        }
+        crate::memory::repo_ingest::validate_source_id(&req.source_id)
+            .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
+        let limit = req.limit.unwrap_or(10).clamp(1, 100);
+        let data_dir = self.state.data_dir.clone();
+        let source_id = req.source_id.clone();
+        let query = req.query.clone();
+
+        // Best-effort query embedding (vector signal silently skipped when
+        // no brain is configured).
+        let model_opt = self.active_brain()?;
+        let brain_mode = self.brain_mode()?;
+        let query_emb = if brain_mode.is_some() {
+            crate::brain::cloud_embeddings::embed_for_mode(
+                &query,
+                brain_mode.as_ref(),
+                model_opt.as_deref(),
+            )
+            .await
+        } else {
+            None
+        };
+
+        // Step 1: best-effort ANN search against the per-repo HNSW.
+        let ann_data_dir = data_dir.clone();
+        let ann_source_id = source_id.clone();
+        let ann_emb = query_emb.clone();
+        let ann_matches: Vec<(i64, f32)> = tokio::task::spawn_blocking(move || {
+            let Some(emb) = ann_emb else {
+                return Vec::new();
+            };
+            let root = crate::memory::repo_ingest::repo_root(&ann_data_dir, &ann_source_id);
+            let Ok(index) = crate::memory::ann_index::AnnIndex::open(&root, emb.len()) else {
+                return Vec::new();
+            };
+            index.search(&emb, (limit * 5).max(20)).unwrap_or_default()
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?;
+
+        // Step 2: open the per-repo store and run the hybrid search.
+        let hits = tokio::task::spawn_blocking(move || -> Result<Vec<RepoSearchHit>, String> {
+            let store = crate::memory::repo_ingest::RepoStore::open(
+                &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                &source_id,
+            )
+            .map_err(|e| e.to_string())?;
+            let raw = store
+                .hybrid_search(&query, query_emb.as_deref(), &ann_matches, limit)
+                .map_err(|e| e.to_string())?;
+            Ok(raw
+                .into_iter()
+                .map(|h| RepoSearchHit {
+                    id: h.id,
+                    source_id: h.source_id,
+                    file_path: h.file_path,
+                    parent_symbol: h.parent_symbol,
+                    kind: h.kind,
+                    byte_start: h.byte_start,
+                    byte_end: h.byte_end,
+                    content: h.content,
+                    score: h.score,
+                })
+                .collect())
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+        .map_err(GatewayError::Storage)?;
+        Ok(hits)
+    }
+
+    #[cfg(feature = "repo-rag")]
+    async fn repo_list_files(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoListFilesRequest,
+    ) -> Result<Vec<String>, GatewayError> {
+        require_read(caps)?;
+        crate::memory::repo_ingest::validate_source_id(&req.source_id)
+            .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
+        let data_dir = self.state.data_dir.clone();
+        let source_id = req.source_id;
+        tokio::task::spawn_blocking(move || -> Result<Vec<String>, String> {
+            let store = crate::memory::repo_ingest::RepoStore::open(
+                &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                &source_id,
+            )
+            .map_err(|e| e.to_string())?;
+            store.list_files().map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+        .map_err(GatewayError::Storage)
+    }
+
+    #[cfg(feature = "repo-rag")]
+    async fn repo_read_file(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoReadFileRequest,
+    ) -> Result<String, GatewayError> {
+        require_read(caps)?;
+        crate::memory::repo_ingest::validate_source_id(&req.source_id)
+            .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
+        if req.file_path.is_empty()
+            || req.file_path.contains("..")
+            || req.file_path.starts_with('/')
+            || req.file_path.starts_with('\\')
+            || std::path::PathBuf::from(&req.file_path).is_absolute()
+        {
+            return Err(GatewayError::InvalidArgument(
+                "invalid file_path".to_string(),
+            ));
+        }
+        let data_dir = self.state.data_dir.clone();
+        let source_id = req.source_id;
+        let file_path = req.file_path;
+        tokio::task::spawn_blocking(move || -> Result<String, GatewayError> {
+            let checkout = crate::memory::repo_ingest::checkout_dir(&data_dir, &source_id);
+            let full = checkout.join(&file_path);
+            match full.canonicalize() {
+                Ok(canon) => {
+                    let canon_root = checkout.canonicalize().unwrap_or_else(|_| checkout.clone());
+                    if !canon.starts_with(&canon_root) {
+                        return Err(GatewayError::InvalidArgument(
+                            "path escapes checkout".to_string(),
+                        ));
+                    }
+                    std::fs::read_to_string(&canon)
+                        .map_err(|e| GatewayError::Storage(e.to_string()))
+                }
+                Err(_) => {
+                    let store = crate::memory::repo_ingest::RepoStore::open(
+                        &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                        &source_id,
+                    )
+                    .map_err(|e| GatewayError::Storage(e.to_string()))?;
+                    store
+                        .read_file(&file_path)
+                        .map_err(|e| GatewayError::Storage(e.to_string()))?
+                        .ok_or_else(|| {
+                            GatewayError::NotFound(format!("file not found: {file_path}"))
+                        })
+                }
+            }
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+    }
+
+    // ─── BRAIN-REPO-RAG-1d: repo_map + repo_signatures ───────────────────
+
+    #[cfg(feature = "repo-rag")]
+    async fn repo_map(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoMapRequest,
+    ) -> Result<String, GatewayError> {
+        require_read(caps)?;
+        crate::memory::repo_ingest::validate_source_id(&req.source_id)
+            .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
+        let budget = req.budget_tokens.unwrap_or(1024).clamp(64, 16_384);
+        let data_dir = self.state.data_dir.clone();
+        let source_id = req.source_id;
+        tokio::task::spawn_blocking(move || -> Result<String, String> {
+            let store = crate::memory::repo_ingest::RepoStore::open(
+                &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                &source_id,
+            )
+            .map_err(|e| e.to_string())?;
+            store.build_repo_map(budget).map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+        .map_err(GatewayError::Storage)
+    }
+
+    #[cfg(feature = "repo-rag")]
+    async fn repo_signatures(
+        &self,
+        caps: &GatewayCaps,
+        req: RepoSignaturesRequest,
+    ) -> Result<String, GatewayError> {
+        require_read(caps)?;
+        crate::memory::repo_ingest::validate_source_id(&req.source_id)
+            .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
+        if req.file_path.is_empty()
+            || req.file_path.contains("..")
+            || req.file_path.starts_with('/')
+            || req.file_path.starts_with('\\')
+            || std::path::PathBuf::from(&req.file_path).is_absolute()
+        {
+            return Err(GatewayError::InvalidArgument(
+                "invalid file_path".to_string(),
+            ));
+        }
+        let data_dir = self.state.data_dir.clone();
+        let source_id = req.source_id;
+        let file_path = req.file_path;
+        tokio::task::spawn_blocking(move || -> Result<String, String> {
+            let store = crate::memory::repo_ingest::RepoStore::open(
+                &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                &source_id,
+            )
+            .map_err(|e| e.to_string())?;
+            store
+                .build_file_signatures(&file_path)
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+        .map_err(GatewayError::Storage)
+    }
+
+    async fn cross_source_search(
+        &self,
+        caps: &GatewayCaps,
+        req: CrossSourceSearchRequest,
+    ) -> Result<Vec<MultiSourceHit>, GatewayError> {
+        require_read(caps)?;
+        if req.query.trim().is_empty() {
+            return Err(GatewayError::InvalidArgument("query is empty".into()));
+        }
+        let limit = req.limit.unwrap_or(10).clamp(1, 100);
+        // Snapshot brain mode + model once for embedding reuse across sources.
+        let model_opt = self.active_brain()?;
+        let brain_mode = self.brain_mode()?;
+        let query_emb = if brain_mode.is_some() {
+            crate::brain::cloud_embeddings::embed_for_mode(
+                &req.query,
+                brain_mode.as_ref(),
+                model_opt.as_deref(),
+            )
+            .await
+        } else {
+            None
+        };
+
+        // Per-source recall window: pull ~5× the final limit from each source
+        // so RRF can compose a top-`limit` from a wider pool.
+        let per_source_limit = (limit * 5).clamp(20, 100);
+
+        // Source 0: main brain ('self').
+        let main_entries: Vec<MemoryEntry> = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            store
+                .hybrid_search_rrf(&req.query, query_emb.as_deref(), per_source_limit)
+                .map_err(|e| GatewayError::Storage(e.to_string()))?
+        };
+
+        // Discover all repo sources from the main `memory_sources` registry.
+        #[cfg(feature = "repo-rag")]
+        let repo_sources: Vec<crate::memory::sources::MemorySource> = {
+            let store = self
+                .state
+                .memory_store
+                .lock()
+                .map_err(GatewayError::from_lock)?;
+            crate::memory::sources::list_sources(store.conn())
+                .map_err(|e| GatewayError::Storage(e.to_string()))?
+                .into_iter()
+                .filter(|s| s.kind == crate::memory::sources::MemorySourceKind::Repo)
+                .collect()
+        };
+        #[cfg(not(feature = "repo-rag"))]
+        let repo_sources: Vec<crate::memory::sources::MemorySource> = Vec::new();
+
+        // Build per-source MultiSourceHit lists (already ranked).
+        let mut per_source_hits: Vec<Vec<MultiSourceHit>> = Vec::with_capacity(1 + repo_sources.len());
+        per_source_hits.push(
+            main_entries
+                .into_iter()
+                .map(|e| MultiSourceHit {
+                    source_id: "self".into(),
+                    source_label: "TerranSoul".into(),
+                    local_id: e.id,
+                    content: e.content,
+                    score: 0.0,
+                    file_path: None,
+                    parent_symbol: None,
+                    tier: Some(e.tier.as_str().to_string()),
+                    tags: e.tags,
+                })
+                .collect(),
+        );
+
+        #[cfg(feature = "repo-rag")]
+        for src in &repo_sources {
+            let data_dir = self.state.data_dir.clone();
+            let source_id = src.id.clone();
+            let source_label = src.label.clone();
+            let query = req.query.clone();
+            let ann_emb = query_emb.clone();
+            let ann_data_dir = data_dir.clone();
+            let ann_source_id = source_id.clone();
+
+            // Per-repo ANN (best-effort).
+            let ann_matches: Vec<(i64, f32)> = tokio::task::spawn_blocking(move || {
+                let Some(emb) = ann_emb else {
+                    return Vec::new();
+                };
+                let root = crate::memory::repo_ingest::repo_root(&ann_data_dir, &ann_source_id);
+                let Ok(index) = crate::memory::ann_index::AnnIndex::open(&root, emb.len()) else {
+                    return Vec::new();
+                };
+                index
+                    .search(&emb, per_source_limit.max(20))
+                    .unwrap_or_default()
+            })
+            .await
+            .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?;
+
+            // Per-repo hybrid search (best-effort: skip the source on error).
+            let label_for_blocking = source_label.clone();
+            let query_emb_local = query_emb.clone();
+            let hits: Vec<MultiSourceHit> = tokio::task::spawn_blocking(
+                move || -> Result<Vec<MultiSourceHit>, String> {
+                    let store = crate::memory::repo_ingest::RepoStore::open(
+                        &crate::memory::repo_ingest::db_path(&data_dir, &source_id),
+                        &source_id,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    let raw = store
+                        .hybrid_search(
+                            &query,
+                            query_emb_local.as_deref(),
+                            &ann_matches,
+                            per_source_limit,
+                        )
+                        .map_err(|e| e.to_string())?;
+                    Ok(raw
+                        .into_iter()
+                        .map(|h| MultiSourceHit {
+                            source_id: h.source_id,
+                            source_label: label_for_blocking.clone(),
+                            local_id: h.id,
+                            content: h.content,
+                            score: 0.0,
+                            file_path: Some(h.file_path),
+                            parent_symbol: h.parent_symbol,
+                            tier: None,
+                            tags: String::new(),
+                        })
+                        .collect())
+                },
+            )
+            .await
+            .map_err(|e| GatewayError::Internal(format!("join error: {e}")))?
+            .unwrap_or_default();
+            per_source_hits.push(hits);
+        }
+
+        // RRF-fuse rankings across sources. Use the position in each Vec<...>
+        // (`per_source_hits[i]`) as a globally-unique numeric key by assigning
+        // each `(source_id, local_id)` pair a stable index. We then rebuild
+        // the rankings as `Vec<usize>` over those indices and call
+        // `reciprocal_rank_fuse`.
+        use std::collections::HashMap;
+        let mut index_for: HashMap<(String, i64), usize> = HashMap::new();
+        let mut flat: Vec<MultiSourceHit> = Vec::new();
+        let rankings_idx: Vec<Vec<usize>> = per_source_hits
+            .into_iter()
+            .map(|src_hits| {
+                src_hits
+                    .into_iter()
+                    .map(|h| {
+                        let key = (h.source_id.clone(), h.local_id);
+                        if let Some(idx) = index_for.get(&key) {
+                            *idx
+                        } else {
+                            let idx = flat.len();
+                            index_for.insert(key, idx);
+                            flat.push(h);
+                            idx
+                        }
+                    })
+                    .collect()
+            })
+            .collect();
+        let rankings: Vec<&[usize]> = rankings_idx.iter().map(|v| v.as_slice()).collect();
+        let fused = crate::memory::fusion::reciprocal_rank_fuse(
+            &rankings,
+            crate::memory::fusion::DEFAULT_RRF_K,
+        );
+
+        let out: Vec<MultiSourceHit> = fused
+            .into_iter()
+            .take(limit)
+            .map(|(idx, score)| {
+                let mut hit = flat[idx].clone();
+                hit.score = score;
+                hit
+            })
+            .collect();
+        // Already sorted desc by RRF score.
+        Ok(out)
     }
 }
 
@@ -2594,5 +3218,173 @@ mod tests {
             )
             .await;
         assert!(err.is_err(), "non-existent id must surface an error");
+    }
+
+    // ─── BRAIN-REPO-RAG-1c-b-i: repo gateway surface ──────────────────
+
+    #[tokio::test]
+    async fn repo_search_requires_brain_read() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .repo_search(
+                &GatewayCaps::NONE,
+                RepoSearchRequest {
+                    source_id: "repo_test".into(),
+                    query: "anything".into(),
+                    limit: None,
+                },
+            )
+            .await
+            .expect_err("repo_search must reject when brain_read is false");
+        assert!(matches!(err, GatewayError::PermissionDenied(_)));
+    }
+
+    #[tokio::test]
+    async fn repo_search_rejects_empty_query() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .repo_search(
+                &GatewayCaps::READ_WRITE,
+                RepoSearchRequest {
+                    source_id: "repo_test".into(),
+                    query: "   ".into(),
+                    limit: None,
+                },
+            )
+            .await
+            .expect_err("empty query must be rejected");
+        assert!(matches!(err, GatewayError::InvalidArgument(_)));
+    }
+
+    #[tokio::test]
+    async fn repo_search_rejects_invalid_source_id() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .repo_search(
+                &GatewayCaps::READ_WRITE,
+                RepoSearchRequest {
+                    source_id: "../etc/passwd".into(),
+                    query: "secrets".into(),
+                    limit: None,
+                },
+            )
+            .await
+            .expect_err("traversal source_id must be rejected");
+        assert!(matches!(err, GatewayError::InvalidArgument(_)));
+    }
+
+    #[tokio::test]
+    async fn repo_read_file_rejects_path_traversal() {
+        let gw = AppStateGateway::new(seed_state());
+        for bad in [
+            "../etc/passwd",
+            "/absolute/file.txt",
+            "\\absolute\\file.txt",
+            "C:/Windows/System32/cmd.exe",
+        ] {
+            let err = gw
+                .repo_read_file(
+                    &GatewayCaps::READ_WRITE,
+                    RepoReadFileRequest {
+                        source_id: "repo_test".into(),
+                        file_path: bad.to_string(),
+                    },
+                )
+                .await
+                .expect_err(&format!("must reject file_path {bad:?}"));
+            assert!(matches!(err, GatewayError::InvalidArgument(_)));
+        }
+    }
+
+    #[tokio::test]
+    async fn repo_list_files_rejects_invalid_source_id() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .repo_list_files(
+                &GatewayCaps::READ_WRITE,
+                RepoListFilesRequest {
+                    source_id: "bad space".into(),
+                },
+            )
+            .await
+            .expect_err("invalid source_id must be rejected");
+        assert!(matches!(err, GatewayError::InvalidArgument(_)));
+    }
+
+    // ─── BRAIN-REPO-RAG-1c-b-ii-a: cross-source All fan-out ───────────
+
+    #[tokio::test]
+    async fn cross_source_search_requires_brain_read() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .cross_source_search(
+                &GatewayCaps::NONE,
+                CrossSourceSearchRequest {
+                    query: "anything".into(),
+                    limit: None,
+                },
+            )
+            .await
+            .expect_err("must reject when brain_read is false");
+        assert!(matches!(err, GatewayError::PermissionDenied(_)));
+    }
+
+    #[tokio::test]
+    async fn cross_source_search_rejects_empty_query() {
+        let gw = AppStateGateway::new(seed_state());
+        let err = gw
+            .cross_source_search(
+                &GatewayCaps::READ_WRITE,
+                CrossSourceSearchRequest {
+                    query: "   ".into(),
+                    limit: None,
+                },
+            )
+            .await
+            .expect_err("empty query must be rejected");
+        assert!(matches!(err, GatewayError::InvalidArgument(_)));
+    }
+
+    #[tokio::test]
+    async fn cross_source_search_self_only_when_no_repos() {
+        // Seeded state has main-brain entries but no repo sources, so the
+        // result must be drawn entirely from 'self'.
+        let gw = AppStateGateway::new(seed_state());
+        let hits = gw
+            .cross_source_search(
+                &GatewayCaps::READ_WRITE,
+                CrossSourceSearchRequest {
+                    query: "rust ownership".into(),
+                    limit: Some(5),
+                },
+            )
+            .await
+            .expect("self-only fan-out should succeed");
+        assert!(!hits.is_empty(), "seeded memory should produce at least one hit");
+        assert!(hits.iter().all(|h| h.source_id == "self"));
+        assert!(hits.iter().all(|h| h.file_path.is_none()));
+        assert!(hits.iter().all(|h| h.tier.is_some()));
+        // RRF scores must be non-zero (1 / (k + rank)) and strictly
+        // descending — i.e. results are sorted by fused score.
+        for w in hits.windows(2) {
+            assert!(w[0].score >= w[1].score, "results must be sorted desc");
+        }
+    }
+
+    #[tokio::test]
+    async fn cross_source_search_clamps_limit() {
+        let gw = AppStateGateway::new(seed_state());
+        // limit=0 should clamp to 1 (not panic / empty).
+        let hits = gw
+            .cross_source_search(
+                &GatewayCaps::READ_WRITE,
+                CrossSourceSearchRequest {
+                    query: "rust".into(),
+                    limit: Some(0),
+                },
+            )
+            .await
+            .expect("clamped limit should not error");
+        assert!(hits.len() <= 1);
     }
 }

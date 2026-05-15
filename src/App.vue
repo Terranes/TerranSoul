@@ -89,12 +89,22 @@
         v-if="panelOnly === 'brain'"
         @navigate="handleSkillNavigate"
       />
-      <MemoryView v-if="panelOnly === 'memory'" />
-      <MarketplaceView v-if="panelOnly === 'marketplace'" />
-      <MobilePairingView v-if="panelOnly === 'mobile'" />
+      <MemoryView
+        v-if="panelOnly === 'memory'"
+        @navigate="handleSkillNavigate"
+      />
+      <MarketplaceView
+        v-if="panelOnly === 'marketplace'"
+        @navigate="handleSkillNavigate"
+      />
+      <MobilePairingView
+        v-if="panelOnly === 'mobile'"
+        @navigate="handleSkillNavigate"
+      />
       <VoiceSetupView
         v-if="panelOnly === 'voice'"
         @done="() => {}"
+        @navigate="handleSkillNavigate"
       />
     </main>
   </div>
@@ -243,14 +253,43 @@
             v-if="activeTab === 'brain'"
             @navigate="handleSkillNavigate"
           />
-          <MemoryView v-if="activeTab === 'memory'" />
-          <MarketplaceView v-if="activeTab === 'marketplace'" />
-          <MobilePairingView v-if="activeTab === 'mobile'" />
+          <MemoryView
+            v-if="activeTab === 'memory'"
+            @navigate="handleSkillNavigate"
+          />
+          <MarketplaceView
+            v-if="activeTab === 'marketplace'"
+            @navigate="handleSkillNavigate"
+          />
+          <MobilePairingView
+            v-if="activeTab === 'mobile'"
+            @navigate="handleSkillNavigate"
+          />
           <VoiceSetupView
             v-if="activeTab === 'voice'"
             @done="activeTab = 'chat'"
+            @navigate="handleSkillNavigate"
+          />
+          <SettingsView
+            v-if="activeTab === 'settings'"
+            @navigate="handleSkillNavigate"
           />
         </main>
+
+        <!-- Global top-right action cluster (settings gear + notifications
+             bell). Visible on every tab. Replaces the legacy standalone
+             NotificationBubble + per-view gear buttons. -->
+        <AppChromeActions
+          @open-settings="settingsModalOpen = true"
+        />
+
+        <!-- Quick-settings modal triggered by the gear bubble.
+             Distinct from the Settings nav-tab which opens the full
+             SettingsView panel. -->
+        <SettingsModal
+          v-model:open="settingsModalOpen"
+          @open-full-settings="activeTab = 'settings'"
+        />
 
         <!-- Floating quest progress bubble — chat tab only so it doesn't
              overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
@@ -264,8 +303,8 @@
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
 
-        <!-- Hermes job tracking + general notifications -->
-        <NotificationBubble />
+        <!-- Hermes job tracking + general notifications panel.
+             The notifications bell now lives inside AppChromeActions above. -->
         <NotificationPanel />
 
         <!-- Quest reward ceremony overlay (Chunk 132) -->
@@ -298,10 +337,12 @@ import BrainView from './views/BrainView.vue';
 // BrainSetupView removed — FirstLaunchWizard handles initial brain config
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
+import SettingsView from './views/SettingsView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
-import NotificationBubble from './components/NotificationBubble.vue';
+import AppChromeActions from './components/ui/AppChromeActions.vue';
+import SettingsModal from './components/SettingsModal.vue';
 import NotificationPanel from './components/NotificationPanel.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
@@ -320,7 +361,7 @@ const settingsStore = useSettingsStore();
 const mobileNotifications = useMobileNotificationsStore();
 const notifications = useNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
-const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile' | 'settings'>('chat');
 const appLoading = ref(true);
 const tauriAvailable = ref(false);
 const browserMode = ref(false);
@@ -329,6 +370,7 @@ const browserAppWindowRef = ref<HTMLElement | null>(null);
 const browserDisplayMode = ref<'desktop' | 'chatbox'>('desktop');
 const questConstellationOpen = ref(false);
 const showFirstLaunchWizard = ref(false);
+const settingsModalOpen = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);
@@ -350,6 +392,7 @@ const tabs = [
   { id: 'marketplace' as const, label: 'Market' },
   { id: 'mobile' as const, label: 'Link' },
   { id: 'voice' as const, label: 'Voice' },
+  { id: 'settings' as const, label: 'Settings' },
 ];
 
 function onFirstLaunchDone() {
@@ -389,6 +432,7 @@ function handleSkillNavigate(target: string) {
     voice: 'voice',
     brain: 'brain',
     mobile: 'mobile',
+    settings: 'settings',
     'brain-setup': 'brain',
   };
   const tab = tabMap[target];

@@ -367,7 +367,7 @@ function authoriseSelectedProvider(): void {
   padding-top: var(--ts-space-xs);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .browser-auth-panel {
     grid-template-columns: 1fr;
     max-height: calc(100dvh - 2rem);

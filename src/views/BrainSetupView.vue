@@ -1,13 +1,13 @@
 <template>
-  <div class="bp-shell brain-setup" data-density="cozy">
+  <div
+    class="bp-shell brain-setup"
+    data-density="cozy"
+  >
     <!-- ── Breadcrumb ──────────────────────────────────────────────────────────────── -->
-    <div class="bp-crumb">
-      <span>TERRANSOUL</span>
-      <span class="bp-crumb-sep">›</span>
-      <span>COMPANION</span>
-      <span class="bp-crumb-sep">›</span>
-      <span class="bp-crumb-now">BRAIN SETUP</span>
-    </div>
+    <AppBreadcrumb
+      here="BRAIN SETUP"
+      @navigate="emit('navigate', $event)"
+    />
 
     <!-- Step indicator -->
     <div class="bs-steps">
@@ -31,7 +31,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">01</span> Brain Tier
           </div>
-          <h2 class="bp-module-title">🧠 Choose how to power your Brain</h2>
+          <h2 class="bp-module-title">
+            🧠 Choose how to power your Brain
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -89,7 +91,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">02</span> Configure
           </div>
-          <h2 class="bp-module-title">☁️ Free Cloud API</h2>
+          <h2 class="bp-module-title">
+            ☁️ Free Cloud API
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -188,7 +192,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">02</span> Configure
           </div>
-          <h2 class="bp-module-title">💳 Paid Cloud API</h2>
+          <h2 class="bp-module-title">
+            💳 Paid Cloud API
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -283,7 +289,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">02</span> Provider
           </div>
-          <h2 class="bp-module-title">🖥 Choose Local Provider</h2>
+          <h2 class="bp-module-title">
+            🖥 Choose Local Provider
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -346,7 +354,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">03</span> Hardware
           </div>
-          <h2 class="bp-module-title">🖥 Local LLM Setup — Ollama</h2>
+          <h2 class="bp-module-title">
+            🖥 Local LLM Setup — Ollama
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -402,7 +412,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">04</span> Model
           </div>
-          <h2 class="bp-module-title">Choose your Brain</h2>
+          <h2 class="bp-module-title">
+            Choose your Brain
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -465,7 +477,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">06</span> Download
           </div>
-          <h2 class="bp-module-title">Download {{ selectedModel }}</h2>
+          <h2 class="bp-module-title">
+            Download {{ selectedModel }}
+          </h2>
         </div>
       </header>
       <p class="bs-desc">
@@ -534,7 +548,9 @@
           <div class="bp-module-eyebrow">
             <span class="ix">✓</span> Complete
           </div>
-          <h2 class="bp-module-title">Brain connected!</h2>
+          <h2 class="bp-module-title">
+            Brain connected!
+          </h2>
         </div>
       </header>
       <div class="bs-done-icon">
@@ -573,8 +589,12 @@ import {
 } from '../stores/brain';
 import BrainSetupOllamaStep from './BrainSetupOllamaStep.vue';
 import BrainSetupLmStudioStep from './BrainSetupLmStudioStep.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
 
-const emit = defineEmits<{ (e: 'done'): void }>();
+const emit = defineEmits<{
+  done: [];
+  navigate: [target: string];
+}>();
 
 const brain = useBrainStore();
 const step = ref(0);

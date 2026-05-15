@@ -43,6 +43,13 @@
   --bp-glow-cyan-soft: 0 0 60px rgba(0, 153, 255, 0.10);
   --bp-inset-hl:       var(--ts-shadow-inset, inset 0 1px 0 rgba(0, 212, 255, 0.10));
 
+  /* Recessed-well backgrounds. Dark themes pick up the deep navy tint;
+     light themes (corporate, pastel) override these below so inputs,
+     switches, tabs, slider tracks etc. don't become muddy gray-on-white. */
+  --bp-well:      rgba(0, 0, 0, 0.40);
+  --bp-well-soft: rgba(0, 0, 0, 0.18);
+  --bp-well-tint: rgba(2, 8, 16, 0.40);
+
   --bp-r-sm: var(--ts-radius-sm, 6px);
   --bp-r-md: var(--ts-radius-md, 10px);
   --bp-r-lg: var(--ts-radius-lg, 14px);
@@ -56,39 +63,88 @@
   container-name: bp;
   display: grid;
   grid-template-columns: 1fr;
-  max-width: 1440px;
+  /* Fullscreen by default — match Phone Link (.mobile-pairing-view) which
+     uses the full app-main width. The previous 1440px cap left large dead
+     margins on wide screens and made the panel layout feel inconsistent
+     with the Link view. Individual modules still cap their own widths. */
+  max-width: 100%;
   margin: 0 auto;
-  padding: 28px 32px 80px;
+  /* Top padding reserves a 66px chrome gutter (cluster lives at top:18px,
+     36px tall, +12px breathing room) so the global AppChromeActions
+     cluster (gear + bell, top-right) cannot obscure breadcrumb or
+     header content underneath. */
+  padding: 66px 32px 80px;
   gap: 20px;
   color: var(--bp-text);
   font-family: var(--bp-font-sans);
   font-size: 14px;
   line-height: 1.45;
+  /* Defensive: prevent any descendant from forcing horizontal overflow
+     of the shell when the parent layout is narrower than the cockpit's
+     intrinsic min-content width (e.g., pet-panel windows ≤ 600px). */
+  min-width: 0;
+  overflow-x: clip;
 }
+.bp-shell > * { min-width: 0; }
 
-.bp-shell[data-density="compact"]  { padding: 18px 24px 60px; gap: 14px; }
-.bp-shell[data-density="spacious"] { padding: 36px 44px 100px; gap: 28px; }
+.bp-shell[data-density="compact"]  { padding: 56px 24px 60px; gap: 14px; }
+.bp-shell[data-density="spacious"] { padding: 74px 44px 100px; gap: 28px; }
 
 /* ── crumb ─────────────────────────────────────────────────────────────── */
 .bp-crumb {
   display: flex; align-items: center;
   gap: 10px;
-  color: var(--bp-text-muted);
+  /* Was --bp-text-muted, which fell below WCAG AA on light themes —
+     bump to secondary so "TERRANSOUL › COMPANION ›" stays readable on
+     every theme. The accent-colored current crumb still draws focus. */
+  color: var(--bp-text-2);
   font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   margin-bottom: 4px;
   font-family: var(--bp-font-mono);
 }
-.bp-crumb-sep { opacity: 0.4; }
+.bp-crumb-sep {
+  opacity: 0.6;
+  color: var(--bp-text-muted);
+}
 .bp-crumb-now {
   color: var(--bp-accent);
   text-shadow: 0 0 14px rgba(0, 212, 255, 0.45);
+  font-weight: 600;
+}
+/* Clickable crumb segments (TERRANSOUL / COMPANION). Keep visual parity
+   with sibling spans but expose hover/focus affordance so users know they
+   can navigate back. */
+.bp-crumb-link {
+  appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: none;
+  border-radius: 2px;
+}
+.bp-crumb-link:hover {
+  color: var(--bp-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.bp-crumb-link:focus-visible {
+  outline: 2px solid var(--bp-accent);
+  outline-offset: 2px;
+  color: var(--bp-accent);
 }
 
 /* ── cockpit hero ──────────────────────────────────────────────────────── */
 .bp-cockpit {
   position: relative;
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 320px) 1fr minmax(280px, 340px);
   grid-template-areas: "avatar body now";
@@ -96,11 +152,17 @@
   padding: 26px 28px;
   border-radius: var(--bp-r-xl);
   background:
+    /* Decorative radial glow — moved from `::after` into the background
+       shorthand so the rounded border naturally clips it. This removes the
+       need for `overflow: hidden` on the cockpit, which previously clipped
+       the `.bp-now` (ACTIVE BRAIN) card whenever it grew taller than the
+       cockpit's auto-sized row. */
+    radial-gradient(circle 180px at calc(100% + 100px) -120px,
+      rgba(0, 212, 255, 0.18), transparent 65%),
     linear-gradient(135deg, rgba(0, 153, 255, 0.06), rgba(110, 142, 255, 0.02) 50%, transparent),
     var(--bp-bg-card);
   border: 1px solid var(--bp-border-2);
   box-shadow: var(--bp-inset-hl), var(--bp-glow-cyan-soft), 0 24px 60px rgba(0, 8, 24, 0.45);
-  overflow: hidden;
 }
 .bp-cockpit::before {
   /* corner reticle */
@@ -116,15 +178,6 @@
   background-size: 22px 1px, 1px 22px, 22px 1px, 1px 22px;
   background-repeat: no-repeat;
   opacity: 0.55;
-}
-.bp-cockpit::after {
-  content: "";
-  position: absolute;
-  right: -100px; top: -120px;
-  width: 360px; height: 360px;
-  background: radial-gradient(circle, rgba(0, 212, 255, 0.18), transparent 65%);
-  pointer-events: none;
-  filter: blur(8px);
 }
 
 /* hero left: avatar */
@@ -209,7 +262,13 @@
   transform: translateX(-50%);
   padding: 6px 14px;
   display: inline-flex; align-items: center; gap: 8px;
-  background: rgba(2, 8, 16, 0.85);
+  /* Theme-aware: solid surface token + soft translucency via color-mix so
+     the pill reads correctly on both dark themes (default/midnight/brain/…)
+     and light themes (corporate/pastel). The previous hardcoded
+     rgba(2, 8, 16, 0.85) stayed near-black on light themes and broke contrast. */
+  background: color-mix(in srgb, var(--bp-bg-elevated) 92%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   border: 1px solid var(--bp-border-strong);
   border-radius: 999px;
   font-family: var(--bp-font-mono);
@@ -230,8 +289,8 @@
 }
 .bp-orb-status[data-state="degraded"]::before { background: var(--bp-warn); box-shadow: 0 0 10px var(--bp-warn); }
 .bp-orb-status[data-state="offline"]::before  { background: var(--bp-error); box-shadow: 0 0 10px var(--bp-error); }
-.bp-orb-status[data-state="degraded"] { color: var(--bp-warn); border-color: rgba(255, 181, 32, 0.4); }
-.bp-orb-status[data-state="offline"]  { color: var(--bp-error); border-color: rgba(255, 71, 87, 0.4); }
+.bp-orb-status[data-state="degraded"] { color: var(--bp-warn); border-color: color-mix(in srgb, var(--bp-warn) 45%, transparent); }
+.bp-orb-status[data-state="offline"]  { color: var(--bp-error); border-color: color-mix(in srgb, var(--bp-error) 45%, transparent); }
 @keyframes bpPulse { 50% { opacity: 0.4; transform: scale(0.85); } }
 
 /* hero center: identity */
@@ -283,6 +342,11 @@
   border-radius: 999px;
   font-size: 12px;
   color: var(--bp-text-2);
+  /* Allow pills to shrink and wrap inside .bp-hero-pills so long labels
+     ("Ollama + LM Studio", etc.) never overflow narrow viewports. */
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
 }
 .bp-pill strong { color: var(--bp-text-bright); font-weight: 600; }
 .bp-pill .dot {
@@ -299,6 +363,7 @@
 .bp-now {
   grid-area: now;
   position: relative;
+  min-width: 0;
   display: flex; flex-direction: column; gap: 10px;
   padding: 16px;
   border-radius: var(--bp-r-lg);
@@ -335,8 +400,9 @@
   padding-top: 8px;
   border-top: 1px dashed var(--bp-border);
 }
-.bp-now-meta b { color: var(--bp-text-bright); font-weight: 500; font-family: var(--bp-font-mono); font-size: 11px; }
-.bp-now-actions { display: flex; gap: 6px; margin-top: 4px; }
+.bp-now-meta b { color: var(--bp-text-bright); font-weight: 500; font-family: var(--bp-font-mono); font-size: 11px; word-break: break-all; }
+.bp-now-actions { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
+.bp-now-actions > .bp-btn { flex: 1 1 120px; justify-content: center; min-width: 0; }
 
 /* ── primary buttons ───────────────────────────────────────────────────── */
 .bp-btn {
@@ -487,7 +553,7 @@
   text-transform: uppercase;
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.4);
+  background: var(--bp-well);
   color: var(--prov-color, var(--bp-accent));
   border: 1px solid var(--bp-border);
 }
@@ -559,7 +625,7 @@
   font-family: var(--bp-font-sans);
   font-size: 13px;
   padding: 9px 12px;
-  background: rgba(0, 0, 0, 0.30);
+  background: var(--bp-well);
   border: 1px solid var(--bp-border-2);
   border-radius: var(--bp-r-sm);
   color: var(--bp-text-bright);
@@ -644,7 +710,7 @@
 .bp-cap-track {
   position: relative;
   height: 8px;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--bp-well);
   border-radius: 999px;
   overflow: hidden;
   border: 1px solid var(--bp-border);
@@ -768,7 +834,7 @@
   position: relative;
   width: 38px; height: 22px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.50);
+  background: var(--bp-well);
   border: 1px solid var(--bp-border-2);
   cursor: pointer;
   transition: background 0.18s, border-color 0.18s;
@@ -793,7 +859,7 @@
 /* ── segmented control ─────────────────────────────────────────────────── */
 .bp-seg {
   display: inline-flex;
-  background: rgba(0, 0, 0, 0.40);
+  background: var(--bp-well);
   border: 1px solid var(--bp-border);
   border-radius: var(--bp-r-sm);
   padding: 3px;
@@ -831,7 +897,7 @@
 .bp-slider {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 4px;
-  background: linear-gradient(90deg, var(--bp-accent) calc(var(--p, 50) * 1%), rgba(0,0,0,0.5) calc(var(--p, 50) * 1%));
+  background: linear-gradient(90deg, var(--bp-accent) calc(var(--p, 50) * 1%), var(--bp-well) calc(var(--p, 50) * 1%));
   border-radius: 999px;
   outline: none;
   cursor: pointer;
@@ -868,7 +934,7 @@
   gap: 12px;
   align-items: center;
   padding: 12px 14px;
-  background: rgba(2, 8, 16, 0.40);
+  background: var(--bp-well-tint);
   border: 1px solid var(--bp-border);
   border-radius: var(--bp-r-md);
   transition: border-color 0.15s;
@@ -892,7 +958,7 @@
   font-family: var(--bp-font-mono);
   font-size: 11px;
   color: var(--bp-text-2);
-  background: rgba(0, 0, 0, 0.40);
+  background: var(--bp-well);
   border: 1px solid var(--bp-border);
   border-radius: 999px;
   padding: 4px 10px;
@@ -937,7 +1003,7 @@
 /* ── advanced disclosure ───────────────────────────────────────────────── */
 .bp-advanced {
   border: 1px solid var(--bp-border);
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0.18), transparent), var(--bp-bg-card);
+  background: linear-gradient(180deg, var(--bp-well-soft), transparent), var(--bp-bg-card);
   border-radius: var(--bp-r-lg);
   overflow: hidden;
 }
@@ -991,7 +1057,7 @@
   display: flex;
   gap: 4px;
   padding: 4px;
-  background: rgba(0, 0, 0, 0.40);
+  background: var(--bp-well);
   border: 1px solid var(--bp-border);
   border-radius: var(--bp-r-sm);
 }
@@ -1080,11 +1146,10 @@
   .bp-row .bp-btn { white-space: normal; }
 
   .bp-crumb       { font-size: 10px; gap: 6px; flex-wrap: wrap; }
-  .bp-cockpit::after { width: 220px; height: 220px; right: -80px; top: -80px; }
 }
 
 @container bp (max-width: 520px) {
-  .bp-shell    { padding: 14px 12px 48px; gap: 12px; }
+  .bp-shell    { padding: 48px 12px 48px; gap: 12px; }
   .bp-cockpit  { padding: 18px 14px; border-radius: 16px; gap: 14px; }
   .bp-cockpit::before { inset: 6px; background-size: 14px 1px, 1px 14px, 14px 1px, 1px 14px; }
   .bp-hero-name { font-size: 22px; line-height: 1.1; }
@@ -1093,9 +1158,15 @@
   .bp-orb-status  { font-size: 9px; padding: 4px 10px; letter-spacing: 0.14em; }
 
   .bp-now           { padding: 14px; border-radius: 12px; }
-  .bp-now-model     { font-size: 16px; }
-  .bp-now-meta      { grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 11px; }
-  .bp-now-actions .bp-btn { flex: 1; justify-content: center; }
+  .bp-now-model     { font-size: 16px; word-break: break-word; }
+  .bp-now-meta      { grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 4px 10px; font-size: 11px; }
+  .bp-now-meta b    { word-break: break-all; }
+  .bp-now-actions   { flex-direction: column; }
+  .bp-now-actions .bp-btn { flex: 1; justify-content: center; width: 100%; }
+
+  .bp-hero-sub      { overflow-wrap: anywhere; }
+  .bp-hero-pills    { gap: 6px; }
+  .bp-pill          { padding: 5px 10px; font-size: 11.5px; }
 
   .bp-tiers     { grid-template-columns: repeat(2, 1fr); gap: 8px; }
   .bp-tier      { padding: 10px; }
@@ -1128,44 +1199,51 @@
 }
 
 /* ═════════════════════════════════════════════════════════════════════════
-   Light-theme refinements — when html[data-theme] swaps to a light palette,
-   adjust the few hard-coded translucent darks so cards/inputs don't go murky.
+   Light-theme refinements — corporate and pastel are the project's
+   light themes (see @custom-variant light in src/style.css). Override
+   the bp-well tokens so inputs, switches, segmented controls, slider
+   tracks, source cards, tabs and the advanced disclosure don't become
+   muddy translucent-black on a white canvas; also force opaque card
+   surfaces so the cockpit/modules pop on the lighter background.
+   Aurora/midnight/etc. are dark and inherit the default well tints.
    ═════════════════════════════════════════════════════════════════════════ */
-html[data-theme="aurora"] .bp-shell,
-html[data-theme="paper"] .bp-shell,
-html[data-theme="light"] .bp-shell {
-  --bp-overlay-deep: rgba(255, 255, 255, 0.6);
+html[data-theme="corporate"] .bp-shell,
+html[data-theme="pastel"] .bp-shell {
+  --bp-well:      rgba(0, 0, 0, 0.05);
+  --bp-well-soft: rgba(0, 0, 0, 0.03);
+  --bp-well-tint: rgba(0, 0, 0, 0.04);
 }
-html[data-theme="aurora"] .bp-prov,
-html[data-theme="paper"] .bp-prov,
-html[data-theme="light"] .bp-prov,
-html[data-theme="aurora"] .bp-tier,
-html[data-theme="paper"] .bp-tier,
-html[data-theme="light"] .bp-tier,
-html[data-theme="aurora"] .bp-rag-cell,
-html[data-theme="paper"] .bp-rag-cell,
-html[data-theme="light"] .bp-rag-cell,
-html[data-theme="aurora"] .bp-source,
-html[data-theme="paper"] .bp-source,
-html[data-theme="light"] .bp-source,
-html[data-theme="aurora"] .bp-row,
-html[data-theme="paper"] .bp-row,
-html[data-theme="light"] .bp-row,
-html[data-theme="aurora"] .bp-input,
-html[data-theme="paper"] .bp-input,
-html[data-theme="light"] .bp-input,
-html[data-theme="aurora"] .bp-select,
-html[data-theme="paper"] .bp-select,
-html[data-theme="light"] .bp-select,
-html[data-theme="aurora"] .bp-model-select,
-html[data-theme="paper"] .bp-model-select,
-html[data-theme="light"] .bp-model-select {
+html[data-theme="corporate"] .bp-prov,
+html[data-theme="pastel"] .bp-prov,
+html[data-theme="corporate"] .bp-tier,
+html[data-theme="pastel"] .bp-tier,
+html[data-theme="corporate"] .bp-rag-cell,
+html[data-theme="pastel"] .bp-rag-cell,
+html[data-theme="corporate"] .bp-source,
+html[data-theme="pastel"] .bp-source,
+html[data-theme="corporate"] .bp-row,
+html[data-theme="pastel"] .bp-row,
+html[data-theme="corporate"] .bp-input,
+html[data-theme="pastel"] .bp-input,
+html[data-theme="corporate"] .bp-select,
+html[data-theme="pastel"] .bp-select,
+html[data-theme="corporate"] .bp-textarea,
+html[data-theme="pastel"] .bp-textarea,
+html[data-theme="corporate"] .bp-model-select,
+html[data-theme="pastel"] .bp-model-select {
   background: var(--ts-bg-surface);
 }
-html[data-theme="aurora"] .bp-cockpit,
-html[data-theme="paper"] .bp-cockpit,
-html[data-theme="light"] .bp-cockpit {
+html[data-theme="corporate"] .bp-cockpit,
+html[data-theme="pastel"] .bp-cockpit {
   background:
     linear-gradient(135deg, var(--ts-accent-glow, rgba(0, 153, 255, 0.06)), transparent 60%),
     var(--ts-bg-elevated);
+}
+/* Primary buttons use a cyan→indigo gradient. Corporate's accent gradient
+   (deep blue → indigo) is dark, so the default near-black text becomes
+   unreadable — switch to white. Pastel's accent gradient is light, so the
+   default near-black text stays readable. */
+html[data-theme="corporate"] .bp-btn--primary,
+html[data-theme="corporate"] .bp-btn--primary:hover {
+  color: var(--ts-text-on-accent, #ffffff);
 }

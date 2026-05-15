@@ -3,6 +3,17 @@
 .mv-header h2 { margin: 0; font-size: 1.25rem; white-space: nowrap; }
 .mv-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .mv-feedback { padding: 0.5rem 1rem; background: var(--ts-success-bg); color: var(--ts-success); border-radius: 6px; margin: 0; }
+.mv-feedback--error { background: var(--ts-danger-bg, rgba(229, 57, 53, 0.12)); color: var(--ts-danger, #e53935); }
+.mv-desc-inline { color: var(--ts-text-muted); font-weight: 400; font-size: 0.85em; }
+
+/* ── Source picker (BRAIN-REPO-RAG-1a) ── */
+.mv-source-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; padding: 0.4rem 0.6rem; background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 8px; }
+.mv-source-pill { appearance: none; cursor: pointer; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--ts-border); background: transparent; color: var(--ts-text-primary); font-size: 0.85rem; font-weight: 500; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+.mv-source-pill:hover { background: var(--ts-bg-elevated, rgba(255,255,255,0.04)); }
+.mv-source-pill.is-active { background: var(--ts-accent-blue, #4e8df5); border-color: var(--ts-accent-blue, #4e8df5); color: var(--ts-text-on-accent, #fff); }
+.mv-source-pill--add { border-style: dashed; color: var(--ts-text-muted); }
+.mv-source-pill--add:hover { color: var(--ts-text-primary); }
+.mv-source-hint { font-size: 0.78rem; color: var(--ts-text-muted); margin-left: auto; padding: 0 0.3rem; }
 
 /* ── Stats dashboard ── */
 .mv-stats { display: flex; gap: 0.5rem; flex-wrap: wrap; }

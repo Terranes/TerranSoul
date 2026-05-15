@@ -1240,7 +1240,7 @@ watch(
   color: var(--ts-danger);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 840px) {
   .gncp {
     width: 100%;
     height: auto;

@@ -1,0 +1,533 @@
+.kg-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(70, 40, 110, 0.35) 0%, rgba(8, 6, 16, 0.95) 60%, #04030a 100%);
+  color: var(--ts-text, #e6e7eb);
+  overflow: hidden;
+  border-radius: var(--ts-radius-md, 12px);
+  font-family: var(--ts-font-sans, system-ui, -apple-system, 'Segoe UI', sans-serif);
+  --kg-doc: #c8d9f5;
+  --kg-chunk: #97baba;
+  --kg-entity: #e8ce96;
+  --kg-panel-bg: rgba(8, 10, 22, 0.72);
+  --kg-panel-border: rgba(255, 255, 255, 0.10);
+  --kg-panel-text: rgba(255, 255, 255, 0.92);
+  --kg-panel-mute: rgba(255, 255, 255, 0.62);
+  --kg-accent: #b9ace8;
+}
+
+.kg-stage {
+  position: absolute;
+  inset: 0;
+}
+.kg-stage :deep(canvas) {
+  display: block;
+  width: 100% !important;
+  height: 100% !important;
+}
+
+/* Brand mark (top-left) — sits below where the app's optional title bar
+   used to be; offset gives breathing room when the bar is hidden. */
+.kg-brand {
+  position: absolute;
+  top: 44px;
+  left: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kg-panel-text);
+  pointer-events: none;
+  z-index: 5;
+}
+.kg-brand-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kg-accent);
+  box-shadow: 0 0 8px var(--kg-accent);
+}
+
+/* Status (top-right) */
+.kg-status {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  color: var(--kg-panel-text);
+  pointer-events: none;
+  z-index: 5;
+}
+.kg-status-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #74e08c;
+  box-shadow: 0 0 8px #74e08c;
+  animation: kg-pulse 1.8s ease-in-out infinite;
+}
+@keyframes kg-pulse {
+  0%, 100% { opacity: 0.65; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* Crumb (top-center) */
+.kg-crumb {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(8px);
+  font-size: 13px;
+  color: var(--kg-panel-text);
+  z-index: 5;
+}
+.kg-crumb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--kg-panel-border);
+  border-radius: 999px;
+  color: var(--kg-panel-text);
+  font: inherit;
+  cursor: pointer;
+  transition: background 200ms ease, border-color 200ms ease;
+}
+.kg-crumb-btn:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.25); }
+.kg-crumb-sep { color: var(--kg-panel-mute); }
+.kg-crumb-name { font-weight: 600; }
+
+/* Invite */
+.kg-invite {
+  position: absolute;
+  left: 50%;
+  bottom: 30px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--kg-panel-mute);
+  pointer-events: none;
+  z-index: 4;
+  animation: kg-breathe 3.6s ease-in-out infinite;
+}
+@keyframes kg-breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* Hint (bottom-left) */
+.kg-hint {
+  position: absolute;
+  bottom: 12px;
+  left: 16px;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(8px);
+  font-size: 11px;
+  color: var(--kg-panel-mute);
+  pointer-events: none;
+  z-index: 5;
+  max-width: calc(100% - 32px);
+}
+.kg-hint kbd {
+  font-family: var(--ts-font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  margin-right: 3px;
+  border: 1px solid var(--kg-panel-border);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.04);
+  color: var(--kg-panel-text);
+}
+
+/* Legend (bottom-right) */
+.kg-legend {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(8px);
+  font-size: 11px;
+  color: var(--kg-panel-text);
+  z-index: 5;
+}
+.kg-legend-row { display: inline-flex; align-items: center; gap: 8px; }
+.kg-legend-swatch {
+  width: 10px; height: 10px; border-radius: 50%;
+  box-shadow: 0 0 6px currentColor;
+}
+
+/* Info panel (right) */
+.kg-info {
+  position: absolute;
+  top: 64px;
+  right: 16px;
+  width: min(320px, calc(100% - 32px));
+  max-height: calc(100% - 130px);
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(10px);
+  color: var(--kg-panel-text);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 6;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.35);
+}
+.kg-info-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--kg-accent);
+  font-weight: 600;
+}
+.kg-info-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.kg-info-sub {
+  margin: 0;
+  font-size: 13px;
+  color: var(--kg-panel-mute);
+  line-height: 1.45;
+}
+.kg-info-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid var(--kg-panel-border);
+  border-bottom: 1px solid var(--kg-panel-border);
+}
+.kg-stat-num {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.kg-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--kg-panel-mute);
+}
+.kg-info-docs-label {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kg-panel-mute);
+}
+.kg-info-docs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 240px;
+}
+.kg-info-docs li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background 180ms ease, border-color 180ms ease;
+  font-size: 12px;
+}
+.kg-info-docs li:hover { background: rgba(255,255,255,0.05); border-color: var(--kg-panel-border); }
+.kg-info-docs li.active {
+  background: rgba(185, 172, 232, 0.16);
+  border-color: rgba(185, 172, 232, 0.45);
+}
+.kg-info-doc-title {
+  flex: 1 1 auto;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.kg-info-doc-meta {
+  color: var(--kg-panel-mute);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.kg-info-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--kg-panel-mute);
+  font-style: italic;
+}
+
+/* Tooltip */
+.kg-tooltip {
+  position: absolute;
+  pointer-events: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  backdrop-filter: blur(6px);
+  color: var(--kg-panel-text);
+  font-size: 12px;
+  max-width: 260px;
+  z-index: 8;
+  transform: translateY(-4px);
+}
+.kg-tooltip-title { font-weight: 600; }
+.kg-tooltip-sub { font-size: 10px; color: var(--kg-panel-mute); margin-top: 2px; }
+
+/* Intro splash */
+.kg-intro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: radial-gradient(circle at center, rgba(8, 6, 16, 0.55), rgba(4, 3, 10, 0.95));
+  color: var(--kg-panel-text);
+  z-index: 9;
+}
+.kg-intro-spinner {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: var(--kg-accent);
+  animation: kg-spin 0.9s linear infinite;
+}
+@keyframes kg-spin { to { transform: rotate(360deg); } }
+.kg-intro-label {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--kg-panel-mute);
+}
+
+/* Transitions */
+.kg-fade-enter-active, .kg-fade-leave-active { transition: opacity 240ms ease; }
+.kg-fade-enter-from, .kg-fade-leave-to { opacity: 0; }
+.kg-slide-right-enter-active, .kg-slide-right-leave-active {
+  transition: opacity 260ms ease, transform 260ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.kg-slide-right-enter-from, .kg-slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+/* Mobile: hide info panel and legend */
+@media (max-width: 900px) {
+  .kg-info { display: none; }
+  .kg-legend { display: none; }
+  .kg-hint { font-size: 10px; }
+}
+
+/* Light themes: lift panel contrast */
+:root[data-theme='corporate'] .kg-shell,
+:root[data-theme='pastel'] .kg-shell {
+  --kg-panel-bg: rgba(255, 255, 255, 0.88);
+  --kg-panel-border: rgba(0, 0, 0, 0.10);
+  --kg-panel-text: rgba(20, 22, 32, 0.92);
+  --kg-panel-mute: rgba(20, 22, 32, 0.62);
+}
+:root[data-theme='corporate'] .kg-hint kbd,
+:root[data-theme='pastel'] .kg-hint kbd {
+  background: rgba(0,0,0,0.04);
+  border-color: rgba(0,0,0,0.12);
+  color: var(--kg-panel-text);
+}
+
+/* Brain-design HUD: tier/category/avg chips (mirrors brain-advanced-design.md) */
+.kg-info-section-label {
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--kg-panel-mute);
+}
+.kg-tier-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kg-tier-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--kg-panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--kg-panel-text);
+}
+.kg-tier-name {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+.kg-tier-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--kg-panel-mute);
+}
+.kg-tier-chip.kg-tier-short {
+  border-color: rgba(244, 191, 117, 0.45);
+  background: rgba(244, 191, 117, 0.10);
+}
+.kg-tier-chip.kg-tier-working {
+  border-color: rgba(120, 198, 255, 0.45);
+  background: rgba(120, 198, 255, 0.10);
+}
+.kg-tier-chip.kg-tier-long {
+  border-color: rgba(170, 142, 255, 0.45);
+  background: rgba(170, 142, 255, 0.10);
+}
+.kg-info-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+}
+.kg-info-meta {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--kg-panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  min-width: 80px;
+}
+.kg-info-meta-label {
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--kg-panel-mute);
+}
+.kg-info-meta-value {
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--kg-panel-text);
+}
+.kg-category-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.kg-cat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  border: 1px solid var(--kg-panel-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--kg-panel-text);
+}
+.kg-cat-name {
+  text-transform: capitalize;
+}
+.kg-cat-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--kg-panel-mute);
+}
+
+:root[data-theme='pastel'] .kg-tier-chip,
+:root[data-theme='corporate'] .kg-tier-chip,
+:root[data-theme='pastel'] .kg-cat-chip,
+:root[data-theme='corporate'] .kg-cat-chip,
+:root[data-theme='pastel'] .kg-info-meta,
+:root[data-theme='corporate'] .kg-info-meta {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+
+/* Collapsible planet info panel — chevron button anchored to the inside-left
+   edge of the panel. When collapsed, the panel shrinks to a thin vertical
+   tab so the 3D scene reads clearly. */
+.kg-info-collapse {
+  position: absolute;
+  top: 12px;
+  left: -14px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--kg-panel-bg);
+  border: 1px solid var(--kg-panel-border);
+  color: var(--kg-panel-text);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  z-index: 7;
+  transition: background 180ms ease, transform 180ms ease;
+}
+.kg-info-collapse:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(1.05);
+}
+.kg-info--collapsed {
+  width: 36px;
+  min-width: 36px;
+  padding: 12px 0;
+  gap: 0;
+  align-items: center;
+}
+.kg-info--collapsed .kg-info-collapse {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+.kg-info--collapsed .kg-info-collapse:hover {
+  transform: translate(-50%, -50%) scale(1.05);
+}

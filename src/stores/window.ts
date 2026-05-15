@@ -60,11 +60,16 @@ export const useWindowStore = defineStore('window', () => {
     try {
       await invoke('set_window_mode', { mode: newMode });
       mode.value = newMode;
-      // Safety net: every mode change forces cursor passthrough OFF so the
-      // window can never get stuck in a click-through state.  Pet mode in
-      // this app captures clicks via the transparent overlay instead of OS
-      // click-through, and desktop mode must obviously be interactive.
-      await ensurePassthroughOff();
+      // Safety net: leaving pet mode (→ window/mcp) forces cursor passthrough
+      // OFF and stops the cursor poll so the desktop window is always
+      // interactive. We must NOT run this when entering pet mode — doing so
+      // races with PetOverlayView.onMounted (which restarts the poll and
+      // re-enables passthrough). If our reset wins the race, the pet cursor
+      // poll stays stopped and clicks on the model fall through to the
+      // desktop forever. PetOverlayView owns pet-mode passthrough/poll setup.
+      if (newMode !== 'pet') {
+        await ensurePassthroughOff();
+      }
       return true;
     } catch (err) {
       // Tauri unavailable (browser / e2e) — fall back to a local mode flip
@@ -83,7 +88,9 @@ export const useWindowStore = defineStore('window', () => {
     try {
       const newMode = await invoke<WindowMode>('toggle_window_mode');
       mode.value = newMode;
-      await ensurePassthroughOff();
+      if (newMode !== 'pet') {
+        await ensurePassthroughOff();
+      }
       return newMode;
     } catch (err) {
       // Tauri unavailable — perform a local flip so the UI remains usable

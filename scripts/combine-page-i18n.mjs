@@ -20,7 +20,6 @@ const files = fs.existsSync(I18N_DIR)
 
 const builtin = {};
 let totalKeys = 0;
-let totalExtras = 0;
 for (const file of files) {
   const lang = file.replace(/\.json$/, '');
   const data = JSON.parse(fs.readFileSync(path.join(I18N_DIR, file), 'utf8'));
@@ -35,7 +34,6 @@ for (const file of files) {
   }
   builtin[lang] = filtered;
   totalKeys += Object.keys(filtered).length;
-  totalExtras += extras;
   const missing = sourceStrings.length - Object.keys(filtered).length;
   console.log(`[i18n] ${lang.padEnd(6)} — ${Object.keys(filtered).length}/${sourceStrings.length} strings${missing ? ` (${missing} missing)` : ''}${extras ? ` (${extras} unused keys ignored)` : ''}`);
 }
