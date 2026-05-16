@@ -544,7 +544,9 @@ WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
     WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
 
-INSERT INTO memories (content, cognitive_kind, tags, importance, source_hash, memory_type, tier, decay_score, created_at, accessed_at)
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
 SELECT
   'TerranSoul bench resume pattern (BENCH-SCALE-3, 2026-05-16): any ' ||
   'long-running bench that talks to longmemeval-ipc can become ' ||
@@ -565,11 +567,8 @@ SELECT
   'helper must accept {total, offset} so progress percentages and ' ||
   'question_id namespacing (`scale-${globalOff}`) stay globally ' ||
   'correct after a resume.',
-  'procedural',
-  'bench,resume,ipc,sigint,locomo,ivf-pq,signal-safety,workflow',
-  0.85,
   'seed:lesson-bench-resume-pattern-2026-05-16',
-  'lesson',
+  'procedural',
   'long',
   0.85,
   strftime('%s','now'),
