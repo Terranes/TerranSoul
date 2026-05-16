@@ -912,3 +912,71 @@ WHERE impl.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
     SELECT 1 FROM memory_edges e
     WHERE e.src_id = impl.id AND e.dst_id = design.id AND e.rel_type = 'derived_from'
   );
+
+-- ------------------------------------------------------------------
+-- CTX-OFFLOAD-1a implementation lesson (2026-05-17)
+-- DB-backed verbose tool-output offload storage primitive +
+-- gateway/MCP/Tauri surfaces. Bundled fixes for pre-existing build
+-- blockers (gix-hash sha1 feature, rustls 0.23 default provider).
+-- ------------------------------------------------------------------
+
+INSERT INTO memories
+  (content, source_hash, memory_type, tier, importance, created_at, last_accessed)
+SELECT
+  'CTX-OFFLOAD-1a landed 2026-05-17. Tencent-inspired DB-backed offload of verbose ' ||
+  'agent tool outputs into the brain. V23 schema bump adds sidecar table ' ||
+  'memory_offload_payloads(memory_id PK FK->memories ON DELETE CASCADE, payload BLOB, ' ||
+  'byte_count INTEGER, mime_type TEXT DEFAULT ''text/plain'', created_at INTEGER); ' ||
+  'lives in src-tauri/src/memory/schema.rs canonical SQL + ensure_v23_offload_payloads ' ||
+  'upgrade hook. New src-tauri/src/memory/offload_payload.rs adds OffloadPayload, ' ||
+  'OffloadPayloadInfo, and MemoryStore::{add,get,get_info,delete}_offload_payload + ' ||
+  'offload_payload_total_bytes (INSERT OR REPLACE idempotent on PK; info path avoids ' ||
+  'materializing BLOB). Gateway adds BrainGateway::drilldown_payload + ' ||
+  'DrilldownPayloadRequest/Response (bytes base64-encoded for JSON transport); ' ||
+  'AppStateGateway impl uses require_read, validates memory_id > 0, maps missing ' ||
+  'payload to GatewayError::NotFound. MCP tool brain_drilldown_payload (input memory_id ' ||
+  'required) wired into tools.rs definitions/dispatch/registry; counts: brain 19->20, ' ||
+  'total MCP 36->37 (default caps 25->26, READ_WRITE 42->43). Tauri command ' ||
+  'memory_drilldown_payload registered in lib.rs. Bundled fixes: (1) gix-hash 0.25.0 ' ||
+  'compile_error required sha1 feature; added direct optional dep ' ||
+  '`gix-hash = { version = "0.25", default-features = false, features = ["sha1"], ' ||
+  'optional = true }` + `dep:gix-hash` in repo-rag feature so Cargo unification flips ' ||
+  'sha1 on for all transitive consumers; (2) rustls 0.23 ServerConfig/ClientConfig ' ||
+  'builders panic without an installed CryptoProvider; added ' ||
+  'ensure_default_crypto_provider() std::sync::Once guard in link/quic.rs that calls ' ||
+  'rustls::crypto::ring::default_provider().install_default(), invoked from both ' ||
+  'build_server_config and build_client_config. Test helper for offload tests must ' ||
+  'produce unique content per call because MemoryStore::add dedupes by content hash. ' ||
+  'Validation: cargo build clean; cargo test --lib 3031 passed 0 failed (7 new offload ' ||
+  'tests + 4 previously-failing quic tests now passing); cargo clippy clean. ' ||
+  'CTX-OFFLOAD-1b (runtime_hooks OffloadToolOutputHook + Context Compression quest) ' ||
+  'still pending.',
+  'seed:lesson-ctx-offload-1a-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, drilldown.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories drilldown ON drilldown.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = drilldown.id AND e.rel_type = 'derived_from'
+  );

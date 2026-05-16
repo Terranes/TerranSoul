@@ -2853,6 +2853,39 @@ pub async fn memory_drilldown(
         .map_err(|e| e.to_string())
 }
 
+/// CTX-OFFLOAD-1a — fetch an offloaded verbose tool-output payload from
+/// the sidecar `memory_offload_payloads` table. Returns the raw bytes
+/// alongside their metadata so the caller can decide how to re-inflate
+/// the content into the agent context. Errors with `"not found"` when
+/// no payload row exists for the given memory id.
+#[tauri::command]
+pub async fn memory_drilldown_payload(
+    memory_id: i64,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::offload_payload::OffloadPayload, String> {
+    if memory_id <= 0 {
+        return Err("memory_id must be positive".into());
+    }
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let payload = store
+        .get_offload_payload(memory_id)
+        .map_err(|e| e.to_string())?;
+    payload.ok_or_else(|| format!("not found: offload payload for memory id {}", memory_id))
+}
+
+/// CTX-OFFLOAD-1b — total bytes stored across all offloaded tool-output
+/// payloads. Used by the "Context Compression" skill-tree quest to detect
+/// whether the agent runtime has offloaded any verbose tool output yet.
+#[tauri::command]
+pub async fn memory_offload_payload_total_bytes(
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .offload_payload_total_bytes()
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(all(test, feature = "wasm-sandbox"))]
 mod tests {
     use super::*;

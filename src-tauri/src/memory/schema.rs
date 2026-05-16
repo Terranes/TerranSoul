@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 22;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 23;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -193,6 +193,21 @@ CREATE TABLE IF NOT EXISTS memory_sources (
     last_synced_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind);
+
+-- V23 (CTX-OFFLOAD-1a): sidecar payload BLOB store keyed by memory_id.
+-- Used by the coding runtime to spill verbose tool outputs into the brain
+-- so they can be drilled back into when the agent actually needs the raw
+-- bytes. The lightweight `memories` row carries the summary + byte_count
+-- ref; the heavy bytes live here so memory list/search queries stay fast.
+-- ON DELETE CASCADE keeps the payload's lifetime tied to its owning memory.
+CREATE TABLE IF NOT EXISTS memory_offload_payloads (
+    memory_id   INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    payload     BLOB    NOT NULL,
+    byte_count  INTEGER NOT NULL,
+    mime_type   TEXT    NOT NULL DEFAULT 'text/plain',
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_offload_payloads_created ON memory_offload_payloads(created_at);
 "#;
 
 /// Create the final memory schema directly and record its canonical version.
@@ -208,6 +223,7 @@ pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     ensure_cap_profile(conn)?;
     ensure_v20_tables(conn)?;
     ensure_v22_memory_sources(conn)?;
+    ensure_v23_offload_payloads(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
 }
@@ -554,6 +570,24 @@ fn ensure_v22_memory_sources(conn: &Connection) -> SqlResult<()> {
             rusqlite::params![now],
         )?;
     }
+    Ok(())
+}
+
+/// V23 (CTX-OFFLOAD-1a): sidecar `memory_offload_payloads` table for
+/// DB-backed verbose tool-output offload. The table also lives in the
+/// canonical schema SQL; this hook lets existing v22 databases pick it
+/// up without a destructive reset.
+fn ensure_v23_offload_payloads(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_offload_payloads (
+            memory_id   INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+            payload     BLOB    NOT NULL,
+            byte_count  INTEGER NOT NULL,
+            mime_type   TEXT    NOT NULL DEFAULT 'text/plain',
+            created_at  INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_offload_payloads_created ON memory_offload_payloads(created_at);",
+    )?;
     Ok(())
 }
 

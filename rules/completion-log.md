@@ -1,3 +1,104 @@
+# Chunk CTX-OFFLOAD-1a — DB-backed verbose tool-output offload (storage primitive)
+
+**Date:** 2026-05-17
+**Status:** Done (1a of 2; 1b — runtime hook + skill-tree quest — deferred)
+
+## Goal
+
+Adopt TencentDB-Agent-Memory's pattern of spilling verbose agent-loop
+tool output into the durable memory layer (instead of per-session
+filesystem). Existing `coding/offload.rs` does filesystem spill, which
+the brain has no record of and cannot sync. CTX-OFFLOAD-1a delivers the
+storage primitive and re-inflate surfaces; CTX-OFFLOAD-1b will wire the
+coding runtime hook + skill-tree "Context Compression" quest.
+
+## Result
+
+* **V23 schema bump** — new sidecar table
+  `memory_offload_payloads(memory_id PK FK->memories ON DELETE CASCADE,
+  payload BLOB, byte_count, mime_type DEFAULT 'text/plain', created_at)`
+  added to `src-tauri/src/memory/schema.rs` (canonical SQL + V23 upgrade
+  hook for existing v22 databases). `CANONICAL_SCHEMA_VERSION` bumped
+  22 → 23.
+* **`MemoryStore` payload CRUD** — new
+  `src-tauri/src/memory/offload_payload.rs` adds five methods
+  (`add_offload_payload`, `get_offload_payload`, `get_offload_payload_info`,
+  `delete_offload_payload`, `offload_payload_total_bytes`) plus the
+  `OffloadPayload` / `OffloadPayloadInfo` types. INSERT OR REPLACE on the
+  PK means re-writes are idempotent. 7 unit tests cover roundtrip,
+  missing-row, info-without-blob, replace, delete idempotency, FK
+  cascade-on-memory-delete, and total bytes. Test helper produces
+  unique content because `MemoryStore::add` dedupes by content hash.
+* **`BrainGateway::drilldown_payload`** — new trait method +
+  `AppStateGateway` impl with `require_read(caps)`, `memory_id > 0`
+  validation, base64 encoding of bytes for JSON transport, `NotFound`
+  when no payload row exists. New types
+  `DrilldownPayloadRequest { memory_id }` and
+  `DrilldownPayloadResponse { memory_id, payload_base64, byte_count, mime_type, created_at }`.
+* **MCP tool `brain_drilldown_payload`** — schema (input: `memory_id`
+  required), dispatch arm, registry insertion right after
+  `brain_drilldown`. Brain-tool count 19 → 20, total MCP tools 36 → 37
+  (default caps 25 → 26; READ_WRITE 42 → 43). Tool-count assertions in
+  `tools.rs` and `integration_tests.rs` updated, all subsequent
+  positional asserts shifted +1 from index 5 onward.
+* **Tauri command `memory_drilldown_payload`** — registered in both the
+  `commands::memory::{…}` re-export and the `invoke_handler` list in
+  `src-tauri/src/lib.rs`.
+* **Docs** — `README.md` (20)/37 totals + tool list, and
+  `docs/brain-advanced-design.md` MCP-tools table updated with the new
+  row in the same change (Brain Documentation Sync rule).
+
+## Build/Test/Clippy Fixes Bundled In
+
+The build was blocked by **two pre-existing issues** that surfaced once
+this chunk needed to compile + test cleanly:
+
+1. **`gix-hash 0.25.0` feature regression** — `gix 0.83`'s subcrates
+   pulled `gix-hash 0.25.0`, which now hard-`compile_error!`s when
+   neither the `sha1` nor `sha256` feature is set. gix 0.83 forgot to
+   forward `sha1` through `gix-features`. Fix: add a direct optional
+   dep `gix-hash = { version = "0.25", default-features = false, features = ["sha1"], optional = true }`
+   in `src-tauri/Cargo.toml` and include `"dep:gix-hash"` in the
+   `repo-rag` feature. Cargo's feature unification flips `sha1` on
+   for every transitive `gix-hash` consumer. Remove once gix upgrades
+   past this gap.
+2. **`rustls 0.23` default-provider panic** — three `link::quic` unit
+   tests (`server_config_builds_successfully`,
+   `client_config_builds_successfully`, `quic_listen_binds_port`)
+   panicked at `rustls/0.23.40/src/crypto/mod.rs:249` because rustls
+   0.23 requires a `CryptoProvider` to be installed before any
+   `ServerConfig::builder()` / `ClientConfig::builder()` call. Fix:
+   added `ensure_default_crypto_provider()` (idempotent `std::sync::Once`
+   guard) calling `rustls::crypto::ring::default_provider().install_default()`
+   at the top of both `build_server_config` and `build_client_config`
+   in `src-tauri/src/link/quic.rs`. Production startup also benefits
+   because both helpers run during app init.
+
+## Validation
+
+* `cargo build --lib --target-dir ../target-test-current` — clean,
+  no errors, no warnings.
+* `cargo test --lib --target-dir ../target-test-current` — **3031
+  passed; 0 failed; 3 ignored** (up from 3024 in MEM-DRILLDOWN-1: 7
+  new offload tests + 4 previously-failing quic tests now passing).
+* `cargo clippy --lib --target-dir ../target-test-current -- -D warnings`
+  — clean, no output.
+
+## Deferred to CTX-OFFLOAD-1b
+
+* `coding/runtime_hooks` `offload_threshold_chars` setting (backlog
+  says 4_000; reconcile with existing `OFFLOAD_CHAR_THRESHOLD = 40_000`
+  in `coding/offload.rs`).
+* `OffloadToolOutputHook` modelled on `SummarizationHook`: when a tool
+  result exceeds the threshold, create a `memory` row (kind
+  `tool_output`, low importance) carrying a summary, store the raw
+  bytes via `add_offload_payload`, replace the in-context message with
+  `{kind: "tool_output_ref", id, summary, byte_count}`.
+* Skill-tree quest "Context Compression" — activates when at least
+  one offloaded payload exists.
+
+---
+
 # Chunk MEM-DRILLDOWN-1 — provenance drill-down chain (Tencent-inspired)
 
 **Date:** 2026-05-17

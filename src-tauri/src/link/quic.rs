@@ -25,8 +25,26 @@ pub fn generate_self_signed_cert(
     Ok((vec![cert_der], key_der))
 }
 
+/// Install the `ring` rustls crypto provider as the process default.
+/// Idempotent and thread-safe: `rustls 0.23+` requires a default
+/// `CryptoProvider` to be installed before `ServerConfig::builder()`
+/// or `ClientConfig::builder()` is invoked. Unit tests that exercise
+/// these paths panic without this guard. Production startup also calls
+/// the two `build_*_config` helpers, so this hook keeps both paths
+/// covered without spreading the install across modules.
+fn ensure_default_crypto_provider() {
+    use std::sync::Once;
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        // Ignore the result: returns Err when another caller already
+        // installed a provider, which is fine — we just need one.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
+
 /// Build a `quinn::ServerConfig` with a self-signed cert.
 pub fn build_server_config() -> Result<ServerConfig, String> {
+    ensure_default_crypto_provider();
     let (certs, key) = generate_self_signed_cert()?;
 
     let crypto = rustls::ServerConfig::builder()
@@ -43,6 +61,7 @@ pub fn build_server_config() -> Result<ServerConfig, String> {
 /// Build a `quinn::ClientConfig` that skips server certificate verification
 /// (trust is established via device pairing, not PKI).
 pub fn build_client_config() -> Result<ClientConfig, String> {
+    ensure_default_crypto_provider();
     let crypto = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(Arc::new(SkipServerVerification))

@@ -44,6 +44,7 @@ pub mod negative;
 pub mod obsidian_export;
 pub mod obsidian_sync;
 pub mod offline_embed;
+pub mod offload_payload;
 pub mod platform;
 pub mod post_retrieval;
 pub mod privacy;

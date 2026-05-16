@@ -311,6 +311,35 @@ pub struct DrilldownResponse {
     pub truncated: bool,
 }
 
+// ─── Drill-down payload (CTX-OFFLOAD-1a) ────────────────────────────────
+
+/// `brain.drilldown_payload` — fetch the raw bytes of an offloaded
+/// verbose tool result. The lightweight `memories` row carries only the
+/// summary; this op re-inflates the full payload on demand.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrilldownPayloadRequest {
+    /// The memory whose offloaded payload to fetch. Must point at a
+    /// memory that was written by the coding runtime's offload hook
+    /// (or any caller of `MemoryStore::add_offload_payload`).
+    pub memory_id: i64,
+}
+
+/// Response wraps the bytes in base64 so it survives JSON transport
+/// (MCP, Tauri events). Clients decode and feed back into the model
+/// context when the agent actually needs the raw output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrilldownPayloadResponse {
+    pub memory_id: i64,
+    /// Base64-encoded raw payload bytes.
+    pub payload_base64: String,
+    /// Authoritative byte length BEFORE base64 encoding.
+    pub byte_count: i64,
+    /// Best-effort MIME hint set when the payload was written.
+    pub mime_type: String,
+    /// Unix-ms when the payload was first written.
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummarizeRequest {
     /// Either `text`, `memory_ids`, or `query` must be supplied. When
@@ -676,6 +705,15 @@ pub trait BrainGateway: Send + Sync {
         caps: &GatewayCaps,
         req: DrilldownRequest,
     ) -> Result<DrilldownResponse, GatewayError>;
+
+    /// `brain.drilldown_payload` — return the raw bytes previously
+    /// offloaded into the sidecar payload table for `memory_id`.
+    /// CTX-OFFLOAD-1a.
+    async fn drilldown_payload(
+        &self,
+        caps: &GatewayCaps,
+        req: DrilldownPayloadRequest,
+    ) -> Result<DrilldownPayloadResponse, GatewayError>;
 
     /// `brain.summarize` — LLM-summarise text or memory ids.
     async fn summarize(
@@ -1240,6 +1278,38 @@ impl BrainGateway for AppStateGateway {
                 })
                 .collect(),
             truncated: chain.truncated,
+        })
+    }
+
+    async fn drilldown_payload(
+        &self,
+        caps: &GatewayCaps,
+        req: DrilldownPayloadRequest,
+    ) -> Result<DrilldownPayloadResponse, GatewayError> {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        require_read(caps)?;
+        if req.memory_id <= 0 {
+            return Err(GatewayError::InvalidArgument(
+                "memory_id must be positive".into(),
+            ));
+        }
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+        let payload = store
+            .get_offload_payload(req.memory_id)
+            .map_err(|e| GatewayError::Storage(e.to_string()))?
+            .ok_or_else(|| {
+                GatewayError::NotFound(format!("offload payload for memory id {}", req.memory_id))
+            })?;
+        Ok(DrilldownPayloadResponse {
+            memory_id: payload.memory_id,
+            payload_base64: STANDARD.encode(&payload.payload),
+            byte_count: payload.byte_count,
+            mime_type: payload.mime_type,
+            created_at: payload.created_at,
         })
     }
 
