@@ -32,13 +32,15 @@
 
 ## Next Chunk
 
-The next active chunk is **THEME-COCKPIT-1c** — audit and spread the
-cockpit pattern across Memory, Settings, Chat root, and the splash.
-**THEME-COCKPIT-1b** landed 2026-05-16 (mood-driven palette accent on
-`.bp-shell[data-accent]`; see completion log). After 1c the queue
-continues with **GRAPHRAG-1a** (hierarchical Leiden community summaries).
-**BENCH-SCALE-3** remains code-done / run-deferred (IVF-PQ 10M-doc
-runner + ~40h wall-clock pass).
+The next active chunk is **GRAPHRAG-1a** (hierarchical Leiden community
+summaries). **THEME-COCKPIT-1c** landed 2026-05-16 (cockpit compact
+variant spread to SettingsView sections and MemoryView Session/Audit
+panels; ChatView brain-card and SplashScreen intentionally left bare;
+Knowledge Graph canvas left bare to avoid reticle clutter; see
+completion log). **THEME-COCKPIT-1b** landed 2026-05-16 (mood-driven
+palette accent on `.bp-shell[data-accent]`). **BENCH-SCALE-3** remains
+code-done / run-in-flight (IVF-PQ 10M-doc runner with `--resume` +
+SIGINT/SIGTERM safety net; ~24% complete).
 
 ---
 
@@ -52,7 +54,7 @@ numbered tracked-caps section labels, breadcrumb header, brain-orb hero).
 |---|---|---|
 | THEME-COCKPIT-1a | done 2026-05-16 | **Tokens + utility primitives landed.** App-wide `--ts-shadow-glow` / `--ts-shadow-inset` strengthened to reference values. New tokens `--ts-glow-cyan{,-soft,-strong}`, `--ts-shadow-cockpit{,-hover,-selected}`, `--ts-cockpit-bg`, `--ts-cockpit-reticle`. New utility classes `.ts-cockpit-card` (with `::before` corner reticles, `::after` cyan halo blob, hover + `[data-selected]/.is-active` states, compact variant, light-theme overrides for corporate/pastel), `.ts-cockpit-label`, `.ts-cockpit-crumb`. CSS-only; vue-tsc clean. See completion log. |
 | THEME-COCKPIT-1b | done 2026-05-16 | **Brain panel view port — completed via existing port + mood-driven palette swap.** Discovery found the brain panel already uses `.bp-*` classes (`.bp-shell`, `.bp-cockpit`, `.bp-module`, `.bp-prov`, etc.) backed by `src/styles/brain-panel.css` (1249 lines, aliased to `--ts-*` tokens). Cockpit hero already has the layered radial halo + corner-reticle `::before`. Gap that remained was mood-driven palette: ported the reference's `[data-accent="violet|green|amber"]` shell variants (plus `pink`) and `[data-backdrop="false"]` opt-out into `brain-panel.css`. Added `accentKey` computed in `BrainView.vue` that maps `moodKey` → `green` (free) / `violet` (paid) / `amber` (local) / `''` (none), bound on `.bp-shell[:data-accent="accentKey"]` so every cockpit border/glow/active-state cascades to the active brain mode without component edits. vue-tsc clean. |
-| THEME-COCKPIT-1c | not-started | **Audit + spread the pattern.** Walk Knowledge Graphs, Settings, Memory, Chat root and the splash. For each large container, decide: adopt `.ts-cockpit-card`, leave as bare panel, or apply the lighter `--compact` variant. Goal is a consistent HUD feel without losing density. Tests: vitest snapshot updates as needed. |
+| THEME-COCKPIT-1c | done 2026-05-16 | **Audit + spread the pattern.** Walked Knowledge Graphs, Settings, Memory, Chat root and the splash; per-container decisions in completion log. Adopted `.ts-cockpit-card.ts-cockpit-card--compact` on SettingsView's five `.sv-section` blocks and MemoryView's `.mv-session-panel` + `.mv-audit-panel`. Left Knowledge Graph canvas, MemoryView List tab, ChatView brain-card setup overlay, and SplashScreen bare. SettingsView `.sv-section` scoped CSS dropped border/bg under `:not(.ts-cockpit-card)` so cockpit chrome wins without specificity hacks. MemoryView panel overflow flipped from `visible` to default to let cockpit halo clip cleanly; added 1rem internal padding so content clears the corner reticles. 1969 vitest tests pass; vue-tsc clean. |
 
 ---
 

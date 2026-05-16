@@ -21,7 +21,7 @@
 
     <!-- ── View Mode ───────────────────────────────────────────────── -->
     <section
-      class="sv-section"
+      class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-view-mode"
     >
       <h2 class="sv-section-title">
@@ -69,7 +69,7 @@
 
     <!-- ── Appearance ───────────────────────────────────────────────── -->
     <section
-      class="sv-section"
+      class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-appearance"
     >
       <h2 class="sv-section-title">
@@ -84,7 +84,7 @@
 
     <!-- ── Character ───────────────────────────────────────────────── -->
     <section
-      class="sv-section"
+      class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-character"
     >
       <h2 class="sv-section-title">
@@ -130,7 +130,7 @@
 
     <!-- ── Persona (per active character/model) ───────────────────── -->
     <section
-      class="sv-section"
+      class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-persona"
     >
       <h2 class="sv-section-title">
@@ -146,7 +146,7 @@
 
     <!-- ── Quick Links ───────────────────────────────────────────────── -->
     <section
-      class="sv-section"
+      class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-quick-links"
     >
       <h2 class="sv-section-title">
@@ -294,6 +294,11 @@ function onModelChange(e: Event) {
   flex-direction: column;
   gap: var(--ts-space-sm, 8px);
   padding: var(--ts-space-lg, 16px);
+}
+
+/* Cockpit utility provides border/background/shadow when present; this
+   fallback only applies if the .ts-cockpit-card class is absent. */
+.sv-section:not(.ts-cockpit-card) {
   border: 1px solid var(--ts-border);
   border-radius: var(--ts-radius-md, 10px);
   background: var(--ts-bg-card);

@@ -476,7 +476,7 @@
     <!-- ── Session tab ── -->
     <div
       v-else-if="activeTab === 'Session'"
-      class="mv-session-panel"
+      class="mv-session-panel ts-cockpit-card ts-cockpit-card--compact"
     >
       <p class="mv-session-hint">
         Short-term memory — the last 20 messages of the current session that the brain reads
@@ -506,7 +506,7 @@
     <!-- ── Audit tab (chunk 33B.4) ── -->
     <div
       v-else-if="activeTab === 'Audit'"
-      class="mv-audit-panel"
+      class="mv-audit-panel ts-cockpit-card ts-cockpit-card--compact"
       data-testid="mv-audit-panel"
     >
       <p class="mv-audit-hint">

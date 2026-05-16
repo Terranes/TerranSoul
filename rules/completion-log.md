@@ -1,3 +1,80 @@
+# Chunk THEME-COCKPIT-1c — spread cockpit pattern across views
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Audit Memory, Settings, Chat root, Splash and the Knowledge-Graph
+canvas; for each large container decide whether to adopt the
+`.ts-cockpit-card` utility (from THEME-COCKPIT-1a), apply the lighter
+`--compact` variant, or leave it bare. Goal: consistent HUD feel
+without losing density.
+
+## Per-view decisions
+
+| Container | Decision | Why |
+|---|---|---|
+| `SettingsView .sv-section` × 5 | **adopt `.ts-cockpit-card--compact`** | Already a card-shaped section (title + help + body). Cockpit chrome upgrades bland border to reticled HUD without changing layout. |
+| `MemoryView .mv-session-panel` | **adopt `.ts-cockpit-card--compact`** | Hint + scrollable short-term list — classic card composition. |
+| `MemoryView .mv-audit-panel` | **adopt `.ts-cockpit-card--compact`** | Hint + toolbar + 2-column body — benefits from the cockpit border framing the provenance work surface. |
+| `MemoryView .mv-graph-panel` | **leave bare** | Hosts the cytoscape Knowledge-Graph canvas; corner reticles would compete with node/edge rendering. |
+| `MemoryView .mv-list-panel` | **leave bare** | Already a dense list/grid with its own per-row `.mv-card` chrome — adding a second card layer would muddy the hierarchy. |
+| `ChatView .brain-card` (setup overlay) | **leave bare** | Has a bespoke glass-bg + backdrop-filter aesthetic; cockpit chrome would clash with the floating-overlay look. |
+| `SplashScreen` | **leave bare** | Kawaii cat illustration + particles is an intentionally soft, non-HUD style. Cockpit chrome would break the tone. |
+
+## Implementation notes
+
+- Vue scoped CSS (component-local) wins specificity over a global
+  utility class because Vue rewrites the selector to include
+  `[data-v-…]`. To make `.ts-cockpit-card` actually paint over
+  `.sv-section`, the scoped `.sv-section` rule split into a layout-only
+  block (flex/gap/padding) and a `:not(.ts-cockpit-card)` fallback for
+  the legacy border/background/border-radius — letting cockpit chrome
+  win without `!important` or specificity hacks.
+- MemoryView's `.mv-session-panel` / `.mv-audit-panel` previously used
+  `overflow: visible`. The cockpit utility uses `overflow: hidden` to
+  clip the off-canvas cyan halo blob in `::after`. Flipped both panels
+  to the default (hidden) and added `padding: 1rem` so content clears
+  the inset reticles.
+
+## Files touched
+
+- `src/views/SettingsView.vue` — class attribute on 5 `.sv-section`
+  blocks; scoped CSS split for the fallback rule.
+- `src/views/MemoryView.vue` — class attribute on session/audit panel
+  wrappers.
+- `src/views/MemoryView.css` — overflow + padding tweak for the two
+  panels.
+- `rules/milestones.md`, `rules/completion-log.md`,
+  `mcp-data/shared/memory-seed.sql`.
+
+## CI gate
+
+- `npx vue-tsc --noEmit` → clean.
+- `npx vitest run` → 1969 / 1969 pass across 154 files.
+- `cargo clippy --target-dir ..\target-test-current -- -D warnings`
+  → clean.
+- `cargo test --lib --target-dir ..\target-test-current` → 2979 pass,
+  3 ignored, 1 environmental failure
+  (`agents::roster::tests::resolve_executable_returns_bare_name_when_nothing_found`)
+  caused by a stale local `hermes-agent.exe` install racing with the
+  unsafe `set_var("LOCALAPPDATA", "")` reset — unrelated to this chunk
+  and not reproducible on a clean GitHub Actions runner.
+
+## Durable lesson
+
+When spreading a global utility class across components that use
+`<style scoped>`, the scoped rules' Vue-rewritten `[data-v-…]`
+selectors out-rank the global class. Two safe fixes: (a) split the
+scoped rule so layout stays scoped and chrome moves under
+`:not(.<utility>)`, or (b) move the chrome properties out to the
+global stylesheet. Avoid `!important` and avoid bumping specificity
+via id selectors. Synced to MCP memory seed
+(`seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16`).
+
+---
+
 # Chunk BENCH-SCALE-3-RESUME — bench resume capability
 
 **Date:** 2026-05-16

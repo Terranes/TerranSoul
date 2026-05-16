@@ -119,7 +119,7 @@
 .mv-decay-bar { width: 40px; height: 6px; background: var(--ts-bg-base); border-radius: 3px; overflow: hidden; margin-left: auto; }
 .mv-decay-fill { display: block; height: 100%; background: var(--ts-success); border-radius: 3px; transition: width 0.3s ease; }
 
-.mv-session-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: visible; min-height: 0; }
+.mv-session-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding: 1rem; }
 .mv-session-hint { color: var(--ts-text-muted); font-size: 0.85rem; margin: 0; }
 .mv-session-list { list-style: none; margin: 0; padding: 0; flex: 0 0 auto; min-height: 0; overflow-y: visible; display: flex; flex-direction: column; gap: 0.4rem; }
 .mv-session-msg { display: flex; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--ts-bg-surface); font-size: 0.85rem; color: var(--ts-text-primary); }
@@ -141,7 +141,7 @@
 .btn-danger { padding: 0.35rem 0.75rem; background: var(--ts-error-bg); color: var(--ts-error); border: none; border-radius: 6px; cursor: pointer; }
 
 /* ── Audit tab (chunk 33B.4) ── */
-.mv-audit-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: visible; min-height: 0; }
+.mv-audit-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding: 1rem; }
 .mv-audit-hint { color: var(--ts-text-muted); font-size: 0.85rem; margin: 0; }
 .mv-audit-toolbar { display: flex; gap: 0.5rem; align-items: center; }
 .mv-audit-search { flex: 1; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; padding: 0.4rem 0.75rem; color: var(--ts-text-primary); outline: none; }

@@ -587,4 +587,45 @@ WHERE lesson.source_hash = 'seed:lesson-bench-resume-pattern-2026-05-16'
     WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
 
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul scoped vs global CSS specificity (THEME-COCKPIT-1c, ' ||
+  '2026-05-16): when spreading a global utility class like ' ||
+  '`.ts-cockpit-card` across components that use `<style scoped>`, ' ||
+  'the scoped rules win on equal specificity because Vue rewrites ' ||
+  'their selectors to include a `[data-v-…]` attribute. The global ' ||
+  'utility cannot paint border/background/box-shadow until the ' ||
+  'scoped chrome is moved out of the way. Two safe fixes, both used ' ||
+  'in this chunk: (a) split the scoped rule into a layout-only block ' ||
+  '(flex/gap/padding) plus a fallback under ' ||
+  '`:not(.ts-cockpit-card)` for the legacy chrome (see ' ||
+  'SettingsView .sv-section); (b) flip conflicting properties in the ' ||
+  'component CSS to match what the utility expects — e.g. drop ' ||
+  '`overflow: visible` so the utility''s `overflow: hidden` clips ' ||
+  'its off-canvas halo blob cleanly (see MemoryView .mv-session-panel ' ||
+  '/ .mv-audit-panel). Never use `!important`; never bump specificity ' ||
+  'with id selectors. Pattern applies to any future cockpit/HUD ' ||
+  'utility rollout.',
+  'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
 
