@@ -23,6 +23,7 @@ pub mod edge_crdt_sync;
 pub mod edges;
 pub mod embedding_queue;
 pub mod eviction;
+pub mod extraction;
 pub mod fusion;
 pub mod gap_detection;
 pub mod graph_page;
@@ -30,6 +31,7 @@ pub mod graph_paging;
 pub mod graph_rag;
 pub mod hyde;
 pub mod instruction_slices;
+pub mod ivf_pq;
 pub mod judgment;
 pub mod kg_cache;
 pub mod late_chunking;
@@ -58,6 +60,11 @@ pub mod sharded_retrieval;
 #[cfg(feature = "time-shards")]
 pub mod shards;
 pub mod snapshot;
+pub mod sources;
+#[cfg(feature = "repo-rag")]
+pub mod repo_ingest;
+#[cfg(feature = "repo-rag")]
+pub mod repo_oauth;
 pub mod store;
 pub mod tag_vocabulary;
 pub mod temporal;

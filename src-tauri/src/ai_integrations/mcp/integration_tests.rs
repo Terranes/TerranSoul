@@ -110,7 +110,7 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 35);
+        assert_eq!(tools.len(), 41);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
@@ -122,13 +122,23 @@ mod tests {
         assert_eq!(tools[16]["name"], "brain_review_gaps");
         assert_eq!(tools[17]["name"], "brain_session_checklist");
 
+        // Verify repo RAG tools (BRAIN-REPO-RAG-1c-b-i) are between brain and code.
+        assert_eq!(tools[18]["name"], "repo_search");
+        assert_eq!(tools[19]["name"], "repo_list_files");
+        assert_eq!(tools[20]["name"], "repo_read_file");
+        // Cross-source All fan-out (BRAIN-REPO-RAG-1c-b-ii-a).
+        assert_eq!(tools[21]["name"], "cross_source_search");
+        // Aider-style repo map + signatures (BRAIN-REPO-RAG-1d).
+        assert_eq!(tools[22]["name"], "repo_map");
+        assert_eq!(tools[23]["name"], "repo_signatures");
+
         // Verify code tools are present.
-        assert_eq!(tools[18]["name"], "code_query");
-        assert_eq!(tools[21]["name"], "code_rename");
-        assert_eq!(tools[31]["name"], "code_branch_sync");
-        assert_eq!(tools[32]["name"], "code_index_commit");
-        assert_eq!(tools[33]["name"], "code_branch_diff");
-        assert_eq!(tools[34]["name"], "code_group_drift");
+        assert_eq!(tools[24]["name"], "code_query");
+        assert_eq!(tools[27]["name"], "code_rename");
+        assert_eq!(tools[37]["name"], "code_branch_sync");
+        assert_eq!(tools[38]["name"], "code_index_commit");
+        assert_eq!(tools[39]["name"], "code_branch_diff");
+        assert_eq!(tools[40]["name"], "code_group_drift");
 
         handle.stop();
     }

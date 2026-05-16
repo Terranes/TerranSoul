@@ -103,6 +103,15 @@ pub struct CompanionApp {
     /// before the registered command runs. This is the mandatory consent
     /// gate from the Phase INTEGRATE install policy.
     pub requires_elevation: bool,
+    /// Optional `owner/repo` slug for the upstream GitHub repository.
+    ///
+    /// When present, the marketplace can poll
+    /// `https://api.github.com/repos/{owner}/{repo}/releases/latest` to
+    /// surface an "Update available" badge — the NuGet-style update flow
+    /// requested in the 2026-05-14 marketplace update.
+    /// `None` means the companion has no upstream release feed we know
+    /// how to read (e.g. an internal-only or non-GitHub project).
+    pub github_repo: Option<String>,
 }
 
 impl CompanionApp {
@@ -169,24 +178,41 @@ pub enum GuidedInstallOutcome {
 pub fn default_registry() -> Vec<CompanionApp> {
     vec![
         // Hermes Desktop — Electron GUI for Hermes Agent (deep research).
+        //
+        // The winget manifest (`NousResearch.HermesDesktop`) is not yet
+        // accepted into `microsoft/winget-pkgs` (per the upstream README
+        // as of 2026-05-14), so we install directly from the GitHub
+        // Releases NSIS `.exe` and detect via the user-scope install path.
         CompanionApp {
             id: "hermes-desktop".into(),
             display_name: "Hermes Desktop".into(),
             role: "Deep-research GUI".into(),
             official_url: "https://github.com/fathah/hermes-desktop".into(),
             windows_install: Some(ShellCommand::new(
-                "winget",
-                ["install", "--id", "NousResearch.HermesDesktop", "--exact"],
-                "Installs Hermes Desktop machine-wide via the Windows Package Manager. Requires UAC.",
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    "$ErrorActionPreference='Stop'; $r=Invoke-RestMethod -Uri 'https://api.github.com/repos/fathah/hermes-desktop/releases/latest' -Headers @{'User-Agent'='TerranSoul'}; $a=$r.assets | Where-Object { $_.name -like '*setup*.exe' -and $_.name -notlike '*blockmap*' } | Select-Object -First 1; if(-not $a){throw 'No Windows setup.exe in latest release'}; $dest=Join-Path $env:TEMP $a.name; Invoke-WebRequest -Uri $a.browser_download_url -OutFile $dest -UseBasicParsing; Start-Process -FilePath $dest -ArgumentList '/S' -Wait",
+                ],
+                "Downloads the latest Hermes Desktop NSIS installer from GitHub Releases (fathah/hermes-desktop) and runs a silent /S install into %LOCALAPPDATA%. Reused for both initial install and updates.",
             )),
             macos_install: None,
             linux_install: None,
             detect: Some(ShellCommand::new(
-                "winget",
-                ["list", "--id", "NousResearch.HermesDesktop", "--exact"],
-                "Lists Hermes Desktop via winget; exit 0 means installed.",
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-Command",
+                    "$p=Join-Path $env:LOCALAPPDATA 'Programs\\hermes-desktop\\hermes-agent.exe'; if(Test-Path $p){ (Get-Item $p).VersionInfo.ProductVersion } else { exit 1 }",
+                ],
+                "Reads ProductVersion from the installed Hermes Desktop executable under %LOCALAPPDATA%; exit 0 means installed.",
             )),
-            requires_elevation: true,
+            // Hermes Desktop installs to %LOCALAPPDATA% (user scope) so no UAC.
+            requires_elevation: false,
+            github_repo: Some("fathah/hermes-desktop".into()),
         },
         // Hermes Agent — Python CLI; already a TerranSoul MCP consumer.
         CompanionApp {
@@ -195,27 +221,28 @@ pub fn default_registry() -> Vec<CompanionApp> {
             role: "Deep-research CLI (MCP consumer)".into(),
             official_url: "https://github.com/NousResearch/hermes-agent".into(),
             windows_install: Some(ShellCommand::new(
-                "py",
-                ["-m", "pip", "install", "--upgrade", "nous-hermes-agent"],
-                "Installs the Hermes Agent CLI into the active Python via pip.",
+                "powershell",
+                ["-NoProfile", "-Command", "irm https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.ps1 | iex"],
+                "Runs the official Hermes Agent Windows installer (downloads uv, Python, ripgrep, etc.).",
             )),
             macos_install: Some(ShellCommand::new(
-                "python3",
-                ["-m", "pip", "install", "--upgrade", "nous-hermes-agent"],
-                "Installs the Hermes Agent CLI into the active Python via pip.",
+                "bash",
+                ["-c", "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"],
+                "Runs the official Hermes Agent installer for macOS/Linux.",
             )),
             linux_install: Some(ShellCommand::new(
-                "python3",
-                ["-m", "pip", "install", "--upgrade", "nous-hermes-agent"],
-                "Installs the Hermes Agent CLI into the active Python via pip.",
+                "bash",
+                ["-c", "curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash"],
+                "Runs the official Hermes Agent installer for Linux.",
             )),
             detect: Some(ShellCommand::new(
-                "hermes-agent",
+                "hermes",
                 ["--version"],
-                "Runs the Hermes Agent CLI; exit 0 means installed.",
+                "Runs the Hermes CLI; exit 0 means installed.",
             )),
-            // pip user-scope install does NOT need OS elevation.
+            // The installer handles its own elevation when needed.
             requires_elevation: false,
+            github_repo: Some("NousResearch/hermes-agent".into()),
         },
         // OpenClaw — the upstream CLI behind the openclaw-bridge plugin.
         CompanionApp {
@@ -244,6 +271,7 @@ pub fn default_registry() -> Vec<CompanionApp> {
                 "Runs the OpenClaw CLI; exit 0 means installed.",
             )),
             requires_elevation: true,
+            github_repo: Some("openclaw/openclaw".into()),
         },
     ]
 }
@@ -335,6 +363,208 @@ pub fn plan_guided_install_by_id(id: &str, os: CompanionOs) -> GuidedInstallOutc
     }
 }
 
+// ---------------------------------------------------------------------------
+// Update checks (NuGet-style "update available" badge in the marketplace).
+//
+// Approach: when a companion declares `github_repo`, we hit the public
+// `GET /repos/{owner}/{repo}/releases/latest` endpoint, parse the
+// `tag_name`, normalise it to a numeric `MAJOR.MINOR.PATCH[.BUILD]`
+// version, and compare against the version extracted from the detect
+// command's stdout. No background polling \u2014 the Tauri command runs on
+// explicit user click, mirroring `companions_detect_one`.
+// ---------------------------------------------------------------------------
+
+/// Minimal projection of a GitHub Releases-API response.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LatestReleaseInfo {
+    /// Normalised numeric version (e.g. `"0.3.7"`).
+    pub version: String,
+    /// Raw upstream tag (e.g. `"v0.3.7"`).
+    pub tag: String,
+    /// Browser-facing release page URL.
+    pub html_url: String,
+}
+
+/// Outcome of an update check: combines local detect state with the
+/// upstream release info so the UI can render one of:
+/// - "Update available: vX \u2192 vY"   (`update_available: true`)
+/// - "Up to date (vX)"                  (`update_available: false`)
+/// - "Latest: vY (install to track)"    (`installed_version: None`)
+/// - "Unknown" branches when either side fails.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct UpdateCheckResult {
+    pub id: String,
+    /// Trimmed version string parsed from the detect command's stdout,
+    /// `None` if the companion is not installed or detect failed.
+    pub installed_version: Option<String>,
+    /// Latest release info from GitHub, `None` if no `github_repo` is
+    /// registered or the API call failed.
+    pub latest: Option<LatestReleaseInfo>,
+    /// `true` only when both versions are known **and** latest > installed.
+    pub update_available: bool,
+    /// Free-form note shown beneath the badge (e.g. error reason).
+    pub note: Option<String>,
+}
+
+/// Extract the first numeric `MAJOR.MINOR[.PATCH[.BUILD]]` substring from
+/// arbitrary text. Returns `None` when no version-like token is found.
+///
+/// Examples:
+/// - `"Hermes Agent v0.13.0 (2026.5.7)"` \u2192 `"0.13.0"`
+/// - `"v0.3.7"`                          \u2192 `"0.3.7"`
+/// - `"hermes 1.2"`                      \u2192 `"1.2"`
+/// - `"no version here"`                 \u2192 `None`
+pub fn parse_version(text: &str) -> Option<String> {
+    let bytes = text.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i].is_ascii_digit() {
+            let start = i;
+            // Read digits + dots, but require at least one dot to qualify.
+            while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+                i += 1;
+            }
+            let slice = &text[start..i];
+            // Trim trailing dot if present (e.g. "1.2." \u2192 "1.2").
+            let trimmed = slice.trim_end_matches('.');
+            if trimmed.contains('.')
+                && trimmed.split('.').all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_ascii_digit()))
+            {
+                return Some(trimmed.to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
+}
+
+/// Compare two numeric dotted versions. Returns `true` when `latest > installed`.
+///
+/// Segments are compared numerically left-to-right; missing trailing
+/// segments on either side are treated as `0`.
+pub fn is_newer(installed: &str, latest: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.split('.')
+            .map(|seg| seg.parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let a = parse(installed);
+    let b = parse(latest);
+    let n = a.len().max(b.len());
+    for i in 0..n {
+        let x = a.get(i).copied().unwrap_or(0);
+        let y = b.get(i).copied().unwrap_or(0);
+        if y > x {
+            return true;
+        }
+        if y < x {
+            return false;
+        }
+    }
+    false
+}
+
+/// Fetch the latest release for `owner/repo` from GitHub's public API.
+///
+/// Caller controls when this fires (no background polling). Network and
+/// JSON errors surface as `Err`. The response is intentionally minimal so
+/// the marketplace UI does not depend on the full release payload.
+pub async fn fetch_latest_github_release(repo: &str) -> Result<LatestReleaseInfo, String> {
+    use std::time::Duration;
+    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()
+        .map_err(|e| format!("HTTP client: {e}"))?;
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "TerranSoul-CompanionRegistry")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("GitHub API HTTP {} for {repo}", resp.status()));
+    }
+    let value: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse GitHub release JSON: {e}"))?;
+    let tag = value
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "release missing tag_name".to_string())?
+        .to_string();
+    let html_url = value
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("https://github.com/{repo}/releases/latest"));
+    let version = parse_version(&tag).unwrap_or_else(|| tag.trim_start_matches('v').to_string());
+    Ok(LatestReleaseInfo {
+        version,
+        tag,
+        html_url,
+    })
+}
+
+/// Run the detect command and the GitHub release lookup, then produce a
+/// merged update-check result for `id`.
+///
+/// `runner` is the same hook used by [`detect_status_with`] so unit tests
+/// can drive both halves without touching the network.
+pub async fn check_update_with<F, Fut>(
+    app: &CompanionApp,
+    runner: F,
+    fetch_latest: impl FnOnce(&str) -> Fut,
+) -> UpdateCheckResult
+where
+    F: FnOnce(&ShellCommand) -> Result<DetectOutput, String>,
+    Fut: std::future::Future<Output = Result<LatestReleaseInfo, String>>,
+{
+    let detect = detect_status_with(app, runner);
+    let installed_version = match &detect {
+        DetectStatus::Installed { version } => version.as_deref().and_then(parse_version),
+        _ => None,
+    };
+    let mut note: Option<String> = None;
+    let latest = match app.github_repo.as_deref() {
+        Some(repo) => match fetch_latest(repo).await {
+            Ok(info) => Some(info),
+            Err(e) => {
+                note = Some(format!("Update check failed: {e}"));
+                None
+            }
+        },
+        None => {
+            note = Some("No upstream release feed registered".into());
+            None
+        }
+    };
+    let update_available = match (&installed_version, &latest) {
+        (Some(i), Some(l)) => is_newer(i, &l.version),
+        _ => false,
+    };
+    UpdateCheckResult {
+        id: app.id.clone(),
+        installed_version,
+        latest,
+        update_available,
+        note,
+    }
+}
+
+/// Production wrapper around [`check_update_with`] using
+/// [`spawn_detect_status_real`] and the live GitHub API.
+pub async fn check_update_real(app: &CompanionApp) -> UpdateCheckResult {
+    check_update_with(app, spawn_detect_status_real, |repo| {
+        let repo = repo.to_string();
+        async move { fetch_latest_github_release(&repo).await }
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -367,8 +597,8 @@ mod tests {
 
     #[test]
     fn requires_elevation_flag_produces_requires_elevation_variant() {
-        // Hermes Desktop requires UAC on Windows.
-        let app = get("hermes-desktop").expect("hermes-desktop in registry");
+        // OpenClaw requires UAC on Windows (machine-wide winget install).
+        let app = get("openclaw-cli").expect("openclaw-cli in registry");
         assert!(app.requires_elevation);
         let plan = plan_guided_install(&app, CompanionOs::Windows);
         match plan {
@@ -378,6 +608,26 @@ mod tests {
             }
             other => panic!("expected RequiresElevation, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn hermes_desktop_install_uses_github_releases_powershell() {
+        // The winget manifest is not yet accepted upstream; the
+        // marketplace must install via the GitHub Releases NSIS .exe.
+        let app = get("hermes-desktop").expect("hermes-desktop in registry");
+        let cmd = app
+            .windows_install
+            .as_ref()
+            .expect("Windows installer registered");
+        assert_eq!(cmd.program, "powershell");
+        let joined = cmd.args.join(" ");
+        assert!(
+            joined.contains("api.github.com/repos/fathah/hermes-desktop/releases/latest"),
+            "install script must hit GitHub Releases API"
+        );
+        assert!(joined.contains("/S"), "must use NSIS silent install flag");
+        // Hermes Desktop installs to %LOCALAPPDATA% \u2014 no UAC.
+        assert!(!app.requires_elevation);
     }
 
     #[test]
@@ -454,10 +704,128 @@ mod tests {
             linux_install: None,
             detect: None,
             requires_elevation: false,
+            github_repo: None,
         };
         let status = detect_status_with(&app, |_| {
             panic!("runner must not be called when no detect command is registered")
         });
         assert!(matches!(status, DetectStatus::Unknown { .. }));
+    }
+
+    #[test]
+    fn parse_version_extracts_first_dotted_token() {
+        assert_eq!(parse_version("v0.3.7"), Some("0.3.7".into()));
+        assert_eq!(
+            parse_version("Hermes Agent v0.13.0 (2026.5.7)"),
+            Some("0.13.0".into())
+        );
+        assert_eq!(parse_version("hermes 1.2"), Some("1.2".into()));
+        assert_eq!(parse_version("no version here"), None);
+        assert_eq!(parse_version("build 42"), None); // no dot \u2192 not a version
+    }
+
+    #[test]
+    fn is_newer_compares_segments_numerically() {
+        assert!(is_newer("0.3.6", "0.3.7"));
+        assert!(is_newer("0.3.7", "0.4.0"));
+        assert!(is_newer("0.9.0", "0.10.0")); // numeric, not lexicographic
+        assert!(!is_newer("0.3.7", "0.3.7"));
+        assert!(!is_newer("1.0.0", "0.9.9"));
+        // Missing trailing segments treated as 0.
+        assert!(is_newer("1.0", "1.0.1"));
+        assert!(!is_newer("1.0.0", "1.0"));
+    }
+
+    #[tokio::test]
+    async fn check_update_with_flags_update_when_latest_is_newer() {
+        let app = get("hermes-desktop").unwrap();
+        let result = check_update_with(
+            &app,
+            |_| {
+                Ok(DetectOutput {
+                    exit_code: 0,
+                    stdout_first_line: Some("0.3.6".into()),
+                })
+            },
+            |_repo| async {
+                Ok(LatestReleaseInfo {
+                    version: "0.3.7".into(),
+                    tag: "v0.3.7".into(),
+                    html_url: "https://github.com/fathah/hermes-desktop/releases/tag/v0.3.7".into(),
+                })
+            },
+        )
+        .await;
+        assert_eq!(result.installed_version.as_deref(), Some("0.3.6"));
+        assert_eq!(result.latest.as_ref().unwrap().version, "0.3.7");
+        assert!(result.update_available);
+    }
+
+    #[tokio::test]
+    async fn check_update_with_reports_up_to_date_when_equal() {
+        let app = get("hermes-desktop").unwrap();
+        let result = check_update_with(
+            &app,
+            |_| {
+                Ok(DetectOutput {
+                    exit_code: 0,
+                    stdout_first_line: Some("0.3.7".into()),
+                })
+            },
+            |_repo| async {
+                Ok(LatestReleaseInfo {
+                    version: "0.3.7".into(),
+                    tag: "v0.3.7".into(),
+                    html_url: "https://github.com/fathah/hermes-desktop/releases/tag/v0.3.7".into(),
+                })
+            },
+        )
+        .await;
+        assert!(!result.update_available);
+    }
+
+    #[tokio::test]
+    async fn check_update_with_handles_missing_install() {
+        let app = get("hermes-desktop").unwrap();
+        let result = check_update_with(
+            &app,
+            |_| {
+                Ok(DetectOutput {
+                    exit_code: 1,
+                    stdout_first_line: None,
+                })
+            },
+            |_repo| async {
+                Ok(LatestReleaseInfo {
+                    version: "0.3.7".into(),
+                    tag: "v0.3.7".into(),
+                    html_url: "https://example/".into(),
+                })
+            },
+        )
+        .await;
+        assert_eq!(result.installed_version, None);
+        // Latest is known but install is missing \u2192 not an "update", it's an install.
+        assert!(!result.update_available);
+        assert!(result.latest.is_some());
+    }
+
+    #[tokio::test]
+    async fn check_update_with_surfaces_api_failure_in_note() {
+        let app = get("hermes-desktop").unwrap();
+        let result = check_update_with(
+            &app,
+            |_| {
+                Ok(DetectOutput {
+                    exit_code: 0,
+                    stdout_first_line: Some("0.3.7".into()),
+                })
+            },
+            |_repo| async { Err("HTTP 503".into()) },
+        )
+        .await;
+        assert!(result.latest.is_none());
+        assert!(result.note.as_deref().unwrap_or("").contains("HTTP 503"));
+        assert!(!result.update_available);
     }
 }

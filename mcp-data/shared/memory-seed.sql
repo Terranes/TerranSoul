@@ -5,2595 +5,804 @@
 -- Schema: see src-tauri/src/memory/schema.rs (version 21)
 -- Fields: content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category, cognitive_kind
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-VALUES
--- Architecture overview
-('TerranSoul is a Vue 3 + Tauri 2 desktop AI companion app with a Rust backend. It features a 3D VRM anime character, multi-provider LLM chat, persistent memory with semantic-search RAG, voice I/O, CRDT-based device sync, and a gamified skill tree quest system.', 'architecture,overview,terransoul', 5, 'fact', 1746316800000, 'long', 1.0, 50, 'architecture'),
 
-('Tech stack: Shell=Tauri 2.x, Backend=Rust (stable, MSRV 1.80+) with Tokio async, Frontend=Vue 3.5+TypeScript 5.x with Pinia, 3D=Three.js 0.175+ with @pixiv/three-vrm 3.x, Bundler=Vite 6.x, DB=SQLite (default) with StorageBackend trait, LLM=Ollama (local) + OpenAI-compatible APIs + Pollinations (free).', 'architecture,tech-stack,terransoul', 5, 'fact', 1746316800000, 'long', 1.0, 60, 'architecture'),
-
-('Frontend source is in src/ — Vue 3.5 + TypeScript 5.x, Pinia stores. Backend source is in src-tauri/src/ — Rust async (Tokio), 150+ Tauri commands. Tests: npx vitest run, npm run build, npm run lint, cargo test, and cargo clippy --all-targets -- -D warnings.', 'architecture,project-structure,testing', 5, 'fact', 1746316800000, 'long', 1.0, 55, 'architecture'),
-
--- Brain system
-('Brain modes: (1) Free API — Pollinations/OpenRouter free-tier with no API key needed, (2) Paid API — OpenAI/Anthropic/Groq with user-supplied key, (3) Local Ollama — private, offline-capable, hardware-adaptive model selection. MCP headless mode seeds a local Ollama config when available and does not silently fall back to a free API if Ollama is missing.', 'brain,llm,providers,terransoul', 5, 'fact', 1746316800000, 'long', 1.0, 65, 'brain'),
-
-('RAG pipeline: contentful live chat uses fast-path skip for short/empty turns, thresholded hybrid 6-signal eligibility, then RRF + query-intent ordering for top-5 prompt injection. Free/paid modes can include query embeddings; Local Ollama hot stream stays keyword/freshness-only when embedding would swap models. HyDE, matryoshka, and LLM-as-judge rerank are available through MemoryView/MCP/non-streaming helper surfaces rather than automatic streamed chat by default. Live prompts wrap retrieved records in a [RETRIEVED CONTEXT] pack containing backward-compatible [LONG-TERM MEMORY] snippets plus a contract that the snippets are query results, not the whole database.', 'brain,rag,memory,search,context-pack', 5, 'fact', 1746316800000, 'long', 1.0, 110, 'brain'),
-
-('Vector support: Ollama nomic-embed-text (768-dim) locally, or cloud embedding API (/v1/embeddings) for paid/free modes. Default builds use a pure-Rust linear cosine AnnIndex for loader-stable CI/headless MCP; the native-ann feature enables persisted usearch HNSW vectors.usearch for large local stores.', 'brain,embeddings,vector,ann,native-ann', 4, 'fact', 1746316800000, 'long', 1.0, 55, 'brain'),
-
--- MCP Server
-('MCP server exposes brain on three ports: 7421 (release app), 7422 (dev app), 7423 (headless npm run mcp). All wired into .vscode/mcp.json. Bearer-token auth required. Tools include brain_search, brain_get_entry, brain_list_recent, brain_kg_neighbors, query-backed brain_summarize, brain_suggest_context, brain_ingest_url, brain_health, and brain_failover_status. In headless/stdio runs where MCP is not attached to full AppState provider-rotator state, brain_failover_status may return "failover status requires app state" as a diagnostics-only limitation; core memory/RAG tools still work.', 'mcp,server,tools,setup', 5, 'fact', 1746316800000, 'long', 1.0, 95, 'mcp'),
-
-('MCP shared data policy: mcp-data/shared is committed and reviewable; runtime files such as mcp-token.txt, memory.db, SQLite WAL/SHM files, vector indexes, logs, locks, sessions, and worktrees are ignored. Contributors and self-improve runs may update mcp-data/shared/memory-seed.sql with durable project knowledge.', 'mcp,data,gitignore,shared-seed', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
-
-('To start the local MCP tray/coding-agent server: run npm run mcp from the repo root. It binds 127.0.0.1:7423 when available, uses mcp-data/ for state, configures Local Ollama when available, leaves setup explicit when no local brain is available, and writes the bearer token to mcp-data/mcp-token.txt plus .vscode/.mcp-token.', 'mcp,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'mcp'),
-
-('LESSON: MCP containerization is for CI, research, and isolated headless services only. Use the explicit npm run mcp:container aliases and the display-free terransoul --mcp-http entry point; the container must set TERRANSOUL_MCP_BIND=0.0.0.0 internally while Compose publishes host loopback only. Keep npm run mcp as the local tray/coding-agent workflow and never make the Tauri desktop app depend on Docker.', 'lesson,mcp,container,docker,ci,research,headless,desktop-native,bind', 9, 'procedure', 1778544000000, 'long', 1.0, 110, 'mcp'),
-
--- Setup & Development
-('CI gate command: npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy --all-targets -- -D warnings && cargo test. Run after every chunk completion. On Linux, install Tauri WebKit/GTK system libraries before Rust checks.', 'ci,testing,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'development'),
-
-('MCP/app dependency bootstrap rule: if npm run mcp, npm run dev, cargo tauri dev, or validation fails because pkg-config cannot find Linux system libraries such as glib-2.0 or gio-2.0, install the missing Tauri/MCP packages with the platform package manager and retry before declaring the task blocked. Ubuntu minimum set: libglib2.0-dev, libgtk-3-dev, libwebkit2gtk-4.1-dev, libappindicator3-dev, librsvg2-dev, patchelf, libsoup-3.0-dev, libjavascriptcoregtk-4.1-dev, pkg-config.', 'mcp,setup,dependencies,tauri,linux,agent-rule', 5, 'procedure', 1746487655000, 'long', 1.0, 95, 'development'),
-
-('Dev server: npm run dev starts Vite on :1420. Tauri dev: cargo tauri dev. Full build: cargo tauri build. The app window opens a webview to the Vite dev server.', 'development,setup,commands', 4, 'procedure', 1746316800000, 'long', 1.0, 35, 'development'),
-
-('Coding standards: snake_case for Rust, camelCase for TypeScript. Never .unwrap() in library code — use ? + thiserror. Vue components use <script setup lang="ts"> with scoped styles. CSS uses var(--ts-*) design tokens. Tests required for all new functionality.', 'coding-standards,conventions', 5, 'fact', 1746316800000, 'long', 1.0, 45, 'development'),
-
--- Code Intelligence (Chunks 31.3-31.8)
-('Code intelligence pipeline: (1) tree-sitter symbol-table ingest (Rust + TypeScript always on; Python/Go/Java/C/C++ behind parser-* features), (2) content-hash incremental re-indexing via code_file_hashes, (3) cross-file resolution + call graph with confidence scores, (4) label-propagation functional clustering via petgraph, (5) entry-point scoring + BFS process tracing, (6) native MCP tools (code_query, code_context, code_impact, code_rename), (7) editor pre/post-tool-use hooks with auto re-indexing.', 'code-intelligence,symbol-index,mcp', 5, 'fact', 1746316800000, 'long', 1.0, 85, 'code-intelligence'),
-
-('To index a repo for code intelligence: use the code_index_repo Tauri command with the repo path. Then code_resolve_edges for cross-file resolution, then code_compute_processes for clustering. Results are runtime state and should stay ignored under mcp-data/.', 'code-intelligence,indexing,setup', 4, 'procedure', 1746316800000, 'long', 1.0, 45, 'code-intelligence'),
-
--- Self-Improve System
-('Self-improve system: TerranSoul can improve its own codebase via temporary git worktrees. Flow: detect target repo → create worktree → make changes → run CI gate → create PR. Controlled by coding workflow config. Uses coding LLM configured separately from chat LLM.', 'self-improve,coding,workflow', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'self-improve'),
-
-('Self-improve with MCP mode: agents should start npm run mcp, call brain_health/brain_search/brain_suggest_context for project context, and update mcp-data/shared when a durable repo convention or architecture fact should help future sessions. Runtime self-improve artifacts stay ignored.', 'self-improve,mcp,workflow,shared-seed', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'self-improve'),
-
-('DEEPWIKI REVERSE-ENGINEERING RULE: when studying any GitHub project, first check https://deepwiki.org/<owner>/<repo> when reachable, then cross-check upstream README/docs/code/license. If DeepWiki is unavailable, record the blocker and proceed with direct upstream research. Credit any learned source in CREDITS.md.', 'rules,deepwiki,reverse-engineering,credits,non-negotiable', 10, 'procedure', 1746416915000, 'long', 1.0, 75, 'self-improve'),
-
-('MCP SELF-LEARNING RULE: durable rules, conventions, architecture facts, and reverse-engineering lessons learned in an agent session must be synced into mcp-data/shared/memory-seed.sql in the same PR. The Obsidian vault at mcp-data/wiki/ is auto-generated by the maintenance scheduler and must not be edited by hand. Runtime memory.db is not the durable source of truth.', 'rules,mcp,self-improve,self-learning,shared-data,non-negotiable', 10, 'procedure', 1746416915000, 'long', 1.0, 80, 'self-improve'),
-
--- Memory System
-('Memory store uses SQLite with FTS5 for keyword search and a vector nearest-neighbor adapter. Default builds use pure-Rust linear cosine scan; native-ann enables usearch HNSW. Memories have: content, tags, importance (1-5), memory_type (fact/preference/episode/procedure), tier, decay_score, category, optional embedding. Knowledge graph via memory_edges table.', 'memory,schema,storage,ann,native-ann', 5, 'fact', 1746316800000, 'long', 1.0, 65, 'memory'),
-
--- Recommended First Steps for New Contributors
-('Recommended first steps after cloning: (1) npm ci, (2) npm run mcp to start the brain server, (3) Read rules/milestones.md for current work queue, (4) Read rules/completion-log.md for recent history, (5) Run the CI gate to verify everything builds. The MCP server pre-loads shared TerranSoul knowledge from mcp-data/shared/.', 'onboarding,setup,quickstart', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'onboarding'),
-
-('Key directories: src/ (Vue frontend), src-tauri/src/ (Rust backend), rules/ (project rules + milestones), docs/ (design docs), scripts/ (dev utilities), public/ (static assets — models, animations, audio), mcp-data/shared/ (committed seed knowledge for MCP brain), mcp-data/ runtime files (ignored).', 'project-structure,directories', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'architecture'),
-
--- ====================================================================
--- Pointers to the rest of the shared dataset (read these for full detail)
--- ====================================================================
-('MCP shared seed dataset lives in mcp-data/shared/memory-seed.sql (the single SQL source of truth). The Obsidian vault at mcp-data/wiki/ is auto-generated by the maintenance scheduler as a human-readable projection. Read the seed SQL or query the brain for project navigation before scanning code.', 'project-index,navigation,onboarding,shared-doc', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'onboarding'),
-
-('Durable gotchas, decisions, and lessons learned from past agent sessions are stored as LESSON: rows in mcp-data/shared/memory-seed.sql and retrievable via brain_search. The Obsidian vault at mcp-data/wiki/ provides a browsable view. Append new LESSON: rows to memory-seed.sql when a non-obvious trade-off or architectural decision is worth keeping.', 'lessons-learned,gotchas,self-improve,shared-doc', 5, 'procedure', 1746316800000, 'long', 1.0, 60, 'self-improve'),
-
--- ====================================================================
--- Brain submodule map (src-tauri/src/brain/)
--- ====================================================================
-('Brain module map: brain_config.rs (persisted provider/model/keys), brain_store.rs (state container), cloud_embeddings.rs (paid/free embed_for_mode), context_budget.rs (token budgeting), doc_catalogue.rs (brain-aware doc catalogue), docker_ollama.rs (auto-setup Ollama via Docker), free_api.rs (Pollinations/OpenRouter free tier), intent_classifier.rs, lm_studio.rs, maintenance_runtime.rs + maintenance_scheduler.rs (decay/GC/summarization), mcp_auto_config.rs (headless brain auto-config), model_recommender.rs (RAM-based catalogue), ollama_agent.rs (embed_text + hyde_complete + rerank_score), ollama_lifecycle.rs, openai_client.rs, provider_rotator.rs, ram_budget.rs, segmenter.rs, selection.rs, system_info.rs.', 'brain,module-map,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 120, 'brain'),
-
--- ====================================================================
--- Memory submodule map (src-tauri/src/memory/)
--- ====================================================================
-('Memory module map: schema.rs (canonical V20 SQLite schema), store.rs (default SQLite memory store with hybrid_search + hybrid_search_rrf + ANN bridge), ann_index.rs (HNSW via usearch), eviction.rs (capacity pruning with protected/high-importance preservation), backend.rs (StorageBackend trait/factory), cassandra.rs / mssql.rs / postgres.rs (optional backends), chunking.rs + late_chunking.rs (semantic chunking), code_rag.rs, cognitive_kind.rs, conflicts.rs + edge_conflict_scan.rs (LLM contradiction resolution), consolidation.rs, context_pack.rs ([RETRIEVED CONTEXT] assembly), contextualize.rs (Anthropic Contextual Retrieval), crag.rs, crdt_sync.rs, edges.rs (typed/directional KG edges), fusion.rs (RRF k=60), gitnexus_mirror.rs, graph_rag.rs, hyde.rs (HyDE), matryoshka.rs, obsidian_export.rs + obsidian_sync.rs, query_intent.rs, reflection.rs (/reflect session reflection + derived_from source-turn provenance), replay.rs, reranker.rs (LLM-as-judge), tag_vocabulary.rs, temporal.rs, versioning.rs.', 'memory,module-map,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 175, 'memory'),
-
-('Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs: vector(40%) + keyword(20%) + recency(15%) + importance(10%) + decay(10%) + tier(5%). RRF fusion uses k=60. HyDE and cross-encoder rerank are optional per-query; default for RRF/HyDE MCP search is rerank on with rerank_threshold 0.55.', 'memory,search,signals,rag,rerank', 5, 'fact', 1746316800000, 'long', 1.0, 70, 'memory'),
-
-('SQLite schema is at version 20 (CANONICAL_SCHEMA_VERSION in src-tauri/src/memory/schema.rs). memories columns include content, tags, importance, memory_type, created_at, last_accessed, access_count, embedding, embedding_model_id, embedding_dim, source_url, source_hash, expires_at, tier, decay_score, session_id, parent_id, token_count, valid_to, obsidian_path, last_exported, category, cognitive_kind, updated_at, origin_device, hlc_counter, protected, share_scope, and confidence. Edges in memory_edges are typed/directional and include origin_device plus hlc_counter. Versions in memory_versions. FTS5 virtual table for keyword search. pending_embeddings(memory_id PK, attempts, last_error, next_retry_at) backs the self-healing embedding retry queue.', 'memory,schema,sqlite', 5, 'fact', 1746316800000, 'long', 1.0, 125, 'memory'),
-
-('Self-healing embedding retry queue (Chunk 38.2): src-tauri/src/memory/embedding_queue.rs spawns a background worker that backfills NULL-embedding memories on boot and drains pending_embeddings every 10s in batches of 32 via embed_batch_for_mode. Per-row exponential backoff (10s, 20s, 40s, ... cap 1h) on failure. Tauri command embedding_queue_status returns pending/failing/next_retry_at. BrainView.vue polls every 5s. rag_quality_pct self-heals to ~99% as long as the embedding provider is reachable.', 'memory,embedding-queue,self-heal,rag-quality', 5, 'fact', 1746316800000, 'long', 1.0, 110, 'memory'),
-
-('Batched embedding pipeline (Chunk 38.1): OllamaAgent::embed_text_batch and brain::embed_batch_for_mode POST array input to /api/embed (or cloud /v1/embeddings) for ~10x faster ingest. AppStateInner.ingest_semaphore (Semaphore::new(4)) caps concurrent ingest tasks. commands/ingest.rs replaced its per-chunk for-loop with a single batch call and enqueues failed embeds into pending_embeddings (Chunk 38.2 picks them up).', 'brain,embedding,batch,ingest,perf', 5, 'fact', 1746316800000, 'long', 1.0, 100, 'brain'),
-
--- ====================================================================
--- ai_integrations submodule map
--- ====================================================================
-('ai_integrations exposes the brain to external AI assistants. gateway.rs defines the BrainGateway trait + AppStateGateway adapter (8 ops: search, get, list_recent, kg_neighbors, summarize, suggest_context, ingest_url, health). mcp/ holds the MCP HTTP server (bearer-token auth, tools/prompts/resources). grpc/ holds the brain.v1 transport for desktop-mobile bridge.', 'ai-integrations,mcp,grpc,gateway', 5, 'fact', 1746316800000, 'long', 1.0, 80, 'ai-integrations'),
-
--- ====================================================================
--- Persona / motion / charisma
--- ====================================================================
-('Persona module map: pack.rs (persona pack import/export schema), extract.rs + drift.rs (trait extraction + drift detection), charisma.rs (charisma teaching system), motion_clip.rs (motion clip parser/validator), motion_tokens.rs (MotionGPT motion token codec), motion_reconstruction.rs (MoMask-style full-body reconstruction), motion_smooth.rs + motion_feedback.rs (offline polish + self-improve loop), pose_frame.rs (LLM-as-Animator pose-frame parser), prosody.rs, retarget.rs.', 'persona,motion,module-map', 5, 'fact', 1746316800000, 'long', 1.0, 90, 'persona'),
-
-('Pose pipeline: <pose> tag in StreamTagParser emits llm-pose event consumed by frontend PoseAnimator (Chunks 14.16b1/b2/b3). Emotion-reactive procedural pose bias (14.16d). generate_motion_from_text Tauri command + Persona-panel UI (14.16c2/c3). ARKit blendshape passthrough is the canonical face rig (Chunk 27.3).', 'persona,pose,animation,arkit', 4, 'fact', 1746316800000, 'long', 1.0, 65, 'persona'),
-
--- ====================================================================
--- Voice
--- ====================================================================
-('Voice module map: config_store.rs (persisted voice config), stub_asr.rs / stub_diarization.rs / stub_tts.rs (default offline stubs), whisper_api.rs (Whisper-compatible ASR endpoint). Defaults: Web Speech TTS, stub ASR/diarization. VoiceConfig serde-stable across hotword field rollouts.', 'voice,module-map,asr,tts', 4, 'fact', 1746316800000, 'long', 1.0, 60, 'voice'),
-
--- ====================================================================
--- Self-improve / coding workflow
--- ====================================================================
-('coding/ module map: engine.rs + workflow.rs + autostart.rs + client.rs (self-improve engine), apply_file.rs + git_ops.rs + worktree.rs (patch application + temporary git worktrees), context_budget.rs + context_engineering.rs + prompting.rs (prompt assembly), conversation_learning.rs + session_chat.rs + task_queue.rs (session learning), cost.rs + metrics.rs, dag_runner.rs + multi_agent.rs + resolver.rs + reviewer.rs + processes.rs (DAG orchestration), github.rs (GitHub PR flow), handoff.rs + handoff_store.rs + milestones.rs + promotion_plan.rs (handoff + promotion), repo.rs + rename.rs + symbol_index.rs + wiki.rs + test_runner.rs.', 'self-improve,coding,module-map', 5, 'fact', 1746316800000, 'long', 1.0, 130, 'self-improve'),
-
-('Self-improve flow: detect target repo -> create temporary git worktree (chunk 28.13) -> path-scoped workflow context loading (28.14) -> coding intent router (28.2) -> multi-agent DAG runner (28.3 + 28.12) -> apply/review/test execution gate (28.11) -> GitHub PR flow with OAuth device authorization (28.5). Session transcripts auto-append to mcp-data via Chunk 30.6. Isolated patch auto-merge added in 32.4. Chunk completion + retry in 32.3. Chunk 34.1 adds a persisted backend workboard sourced from milestones, completion-log, and run metrics.', 'self-improve,workflow,history,workboard', 5, 'fact', 1746316800000, 'long', 1.0, 105, 'self-improve'),
-
--- ====================================================================
--- Identity, link, sync, network, messaging
--- ====================================================================
-('Device identity uses Ed25519. Files: identity/device.rs (DeviceIdentity), key_store.rs, qr.rs (pairing QR), trusted_devices.rs (registry). LAN gRPC enforces mTLS to paired devices (Chunks 24.2b/24.3). Phone-control RPC surface (24.4). gRPC-Web client + transport adapter for browser (24.8).', 'identity,sync,grpc,mtls', 4, 'fact', 1746316800000, 'long', 1.0, 70, 'sync'),
-
-('Sync primitives in src-tauri/src/sync/: lww_register.rs, or_set.rs, append_log.rs. Soul Link wire protocol (Chunks 17.5a + 17.5b). link/ module: manager.rs, quic.rs, ws.rs (QUIC + WebSocket transports), handlers.rs.', 'sync,link,crdt,transport', 4, 'fact', 1746316800000, 'long', 1.0, 55, 'sync'),
-
--- ====================================================================
--- Plugins, sandbox, agents, orchestrator, workflows, tasks
--- ====================================================================
-('Plugins run in a WASM sandbox: src-tauri/src/sandbox/wasm_runner.rs + capability.rs (capability gating) + host_api.rs. Plugin host: plugins/host.rs + manifest.rs. Capability grants prompted via composables/usePluginCapabilityGrants. Plugin command dispatch in commands/plugins.rs (Chunk 22.7).', 'plugins,sandbox,wasm,capabilities', 4, 'fact', 1746316800000, 'long', 1.0, 65, 'plugins'),
-
-('Orchestrator submodules: agent_orchestrator.rs (agent routing with capability gates), agentic_rag.rs, coding_router.rs, self_rag.rs (Self-RAG orchestrator loop, Chunk 16.4b). Workflows engine: workflows/engine.rs + resilience.rs (retry, circuit breaker, watchdog). Tasks: tasks/manager.rs (long-running task tracking).', 'orchestrator,workflows,tasks', 4, 'fact', 1746316800000, 'long', 1.0, 60, 'orchestrator'),
-
--- ====================================================================
--- Frontend Pinia stores (high-level inventory)
--- ====================================================================
-('Frontend Pinia stores in src/stores/: brain (active provider config), conversation (local chat history + streaming), memory (memory CRUD + search), persona (traits + learned expressions), skill-tree (~1500 lines, gamified quest system with auto-detection), voice (TTS/ASR), settings, character (active VRM + emotion), audio, background, charisma, ai-decision-policy, ai-integrations, agent-roster, browser-lan, chat-store-router, coding-workflow, identity, link, mcp-activity (live MCP tool-use UI badge), messaging, mobile-notifications, mobile-pairing, package, plugins, provider-health, remote-conversation, routing, sandbox, self-improve, streaming, sync, tasks, teachable-capabilities, window (Window vs Pet mode), workflow-plans.', 'frontend,stores,pinia,inventory', 4, 'fact', 1746316800000, 'long', 1.0, 130, 'frontend'),
-
-('Frontend composables in src/composables/: useAsrManager + useTtsPlayback + useDiarization + useHotwords + useLipSyncBridge (voice pipeline), useChatExpansion + useChatExport (chat UI), useCameraCapture + usePresenceDetector (vision), useTheme + useActivePluginTheme, useTranslation (worldwide translator), usePluginCapabilityGrants + usePluginSlashDispatch (plugin UX), useVrmThumbnail (offscreen VRM rendering), useModelCameraStore (per-model framing), useBgmPlayer, useKeyboardDetector.', 'frontend,composables,inventory', 4, 'fact', 1746316800000, 'long', 1.0, 90, 'frontend'),
-
--- ====================================================================
--- Tauri command surface inventory
--- ====================================================================
-('commands/ files (~150 Tauri commands): agent.rs + agents_roster.rs (agents), auto_setup.rs (first-launch), brain.rs + chat.rs + streaming.rs (chat pipeline), character.rs + emotion.rs + vision.rs, charisma.rs + persona.rs, coding.rs + coding_sessions.rs (self-improve), consolidation.rs + crag.rs + gitnexus.rs + ingest.rs + memory.rs (memory ops), docker.rs + lan.rs + link.rs + routing.rs (network), github_auth.rs (GitHub OAuth device flow), grpc.rs + mcp.rs (transport lifecycle), identity.rs + messaging.rs, package.rs + plugins.rs + registry.rs + sandbox.rs (plugins), quest.rs (skill tree), settings.rs + window.rs + workflow_plans.rs, teachable_capabilities.rs, translation.rs, user_models.rs, voice.rs, vscode.rs, ipc_contract_tests.rs.', 'commands,inventory,architecture', 4, 'fact', 1746316800000, 'long', 1.0, 130, 'commands'),
-
--- ====================================================================
--- Design docs (one-line summaries)
--- ====================================================================
-('Design docs (docs/) and tutorials (tutorials/): docs/ contains AI-coding-integrations.md, brain-advanced-design.md, coding-workflow-design.md, DESIGN.md, gitnexus-capability-matrix.md, hive-protocol.md, licensing-audit.md, llm-animation-research.md, momask-full-body-retarget-research.md, motion-model-inference-evaluation.md, neural-audio-to-face-evaluation.md, offline-motion-polish-research.md, persona-design.md, persona-pack-schema.md, plugin-development.md, teachable-capabilities.md. tutorials/ has 18 files: quick-start, brain-rag-setup, brain-rag-local-lm, voice-setup, skill-tree-quests, advanced-memory-rag, knowledge-wiki, folder-to-knowledge-graph, teaching-animations-expressions-persona, charisma-teaching, device-sync-hive, lan-mcp-sharing, mcp-coding-agents, multi-agent-workflows, packages-plugins, browser-mobile, self-improve-to-pr, openclaw-plugin (all *-tutorial.md).', 'docs,tutorials,inventory,design', 4, 'fact', 1746316800000, 'long', 1.0, 110, 'docs'),
-
--- ====================================================================
--- Rules (one-line summaries)
--- ====================================================================
-('Rules files (rules/): agent-mcp-bootstrap.md (how agents connect to npm run mcp), architecture-rules.md (incl. brain doc-sync rule), backlog.md, coding-standards.md (incl. Multi-Agent Instruction Sync, CREDITS rule), coding-workflow-reliability.md, completion-log.md (permanent done-chunk record, 10k-line cap then archived), llm-decision-rules.md, local-first-brain.md, milestones.md (active queue: only not-started/in-progress), prompting-rules.md (incl. enforcement rules), quality-pillars.md, reality-filter.md (no pretend code), research-reverse-engineering.md, tutorial-template.md (required structure for tutorials/ Markdown files: H1, intro block-quote, requirements, numbered steps quoting exact UI/code paths, worked example, troubleshooting, where-to-next), ui-ux-standards.md.', 'rules,inventory,governance', 5, 'fact', 1746316800000, 'long', 1.0, 110, 'rules'),
-
--- ====================================================================
--- Lessons learned (durable; never re-solve)
--- ====================================================================
-('LESSON: Tauri requires Linux WebKit/GTK system deps before any cargo command on Linux: libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev pkg-config libglib2.0-dev libssl-dev. The Copilot cloud agent installs these in .github/workflows/copilot-setup-steps.yml.', 'lesson,build,linux,tauri', 5, 'procedure', 1746316800000, 'long', 1.0, 50, 'lessons'),
-
-('LESSON: First `npm run mcp` build is slow (full Rust crate, ~3-5 min). Subsequent runs are warm via src-tauri/target. Always wait on GET /health via scripts/wait-for-service.mjs before issuing tool calls. In sandboxed environments, use setsid to detach so npm run mcp survives short tool calls.', 'lesson,mcp,build,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 55, 'lessons'),
-
-('LESSON: clippy lint items_after_test_module rejects items declared after a `#[cfg(test)] mod ...` block in the same file. Always place test modules at the very bottom of lib.rs / module roots.', 'lesson,clippy,rust,testing', 5, 'procedure', 1746316800000, 'long', 1.0, 40, 'lessons'),
-
-('LESSON: The MCP seed (mcp-data/shared/memory-seed.sql) is applied ONLY on first run when memory.db does not yet exist. Existing runtime DBs must be re-ingested via brain_ingest_* tools when shared seed content changes — there is no automatic re-seed.', 'lesson,mcp,seed,memory', 5, 'procedure', 1746316800000, 'long', 1.0, 50, 'lessons'),
-
-('LESSON: Cypress was removed; do not reintroduce. Frontend tests use Vitest + Playwright only (docs/licensing-audit.md).', 'lesson,testing,dependencies', 4, 'preference', 1746316800000, 'long', 1.0, 30, 'lessons'),
-
-('LESSON: GitHub Actions on the agent first push may show conclusion=action_required with zero jobs/logs. This means the workflow needs human approval, not that the code failed. Code-side validation (lint/build/test/clippy) is the source of truth.', 'lesson,ci,github-actions', 4, 'fact', 1746316800000, 'long', 1.0, 45, 'lessons'),
-
-('LESSON: Per the Brain Documentation Sync rule (rules/architecture-rules.md rule 10), any change touching the brain surface (LLM providers, memory store, RAG pipeline, ingestion, embeddings, cognitive-kind classification, knowledge graph, decay/GC, brain-gating quests, brain Tauri commands or Pinia stores) MUST update both docs/brain-advanced-design.md and README.md in the same PR.', 'lesson,brain,docs,governance', 5, 'procedure', 1746316800000, 'long', 1.0, 70, 'lessons'),
-
-('LESSON: AppState is Arc<AppStateInner> with auto-Deref, so background servers (MCP, gRPC) can hold cheap clones without lifetime issues. Use it for any server task that must outlive the originating Tauri command.', 'lesson,rust,architecture,state', 4, 'fact', 1746316800000, 'long', 1.0, 50, 'lessons'),
-
-('LESSON: For provenance-linked brain write paths such as /reflect, use a dedicated persistence helper that returns concrete inserted memory IDs before writing memory_edges. Generic save_summary/save_facts helpers are fine for simple writes but do not expose IDs, so they cannot create reliable derived_from source-turn edges.', 'lesson,memory,provenance,reflection,brain-write', 5, 'procedure', 1746487655000, 'long', 1.0, 70, 'lessons'),
-
-('LESSON: When making frontend changes, do NOT bulk-rewrite unrelated lint warnings — fix only what your change touches. ESLint enforces vue/max-attributes-per-line, self-closing void elements, and singleline-element newlines but tolerates pre-existing warnings.', 'lesson,frontend,lint,scope', 4, 'preference', 1746316800000, 'long', 1.0, 50, 'lessons'),
-
-('LESSON: Never .unwrap() in library code. Use ? + thiserror. The crate roots use #![deny(unused_must_use)] so every Result must be handled.', 'lesson,rust,error-handling', 5, 'preference', 1746316800000, 'long', 1.0, 35, 'lessons'),
-
-('LESSON: Use var(--ts-*) design tokens from src/style.css; never hardcode hex colors. Vue components use <script setup lang="ts"> with scoped styles only.', 'lesson,frontend,css,vue', 4, 'preference', 1746316800000, 'long', 1.0, 40, 'lessons'),
-
-('LESSON: Do not commit MCP runtime state. .gitignore covers mcp-token.txt, memory.db, *.db-shm, *.db-wal, tasks.db*, workflows.sqlite, *.idx, *.lock, sessions/, worktrees/. Only mcp-data/shared/** and mcp-data/README.md are tracked.', 'lesson,mcp,gitignore,data-policy', 5, 'preference', 1746316800000, 'long', 1.0, 60, 'lessons'),
-
-('LESSON: Self-improve runs in temporary git worktrees so the main checkout is never disturbed. Always read rules/milestones.md (next not-started chunk) and the top of rules/completion-log.md (recent context) before starting.', 'lesson,self-improve,git,workflow', 5, 'procedure', 1746316800000, 'long', 1.0, 55, 'lessons'),
-
--- ====================================================================
--- Standing user requirement (May 2026) — verbatim, never forget
--- ====================================================================
-('STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data is refined and attached to git repo. Please analysis and choose wisely gitignore stuffs for mcp-data to expose shared data in GitHub repo for mcp usage of TerranSoul. Other people changes and self-improve will update these dataset. Make sure that the entire TerranSoul is saved in mcp-data as default dataset so we never forgot anything and repeat same problems twice and continue implement new features without duplication or rescan entire code base." Implementation: only mcp-data/shared/** + mcp-data/README.md are tracked; runtime tokens/DBs/indexes/logs/locks/sessions/worktrees are ignored. Shared dataset = memory-seed.sql + project-index.md + lessons-learned.md + brain_config.json + app_settings.json. Update them in any PR that adds durable knowledge. Every agent session must read project-index.md and lessons-learned.md (or query the brain) before scanning code or attempting features.', 'requirement,user,mcp-data,policy,governance', 5, 'preference', 1746316800000, 'long', 1.0, 200, 'requirements'),
-
-('STANDING REQUIREMENT (user, 2026-05-04): every agent session must actively USE the MCP brain (start `npm run mcp`, verify GET /health, set TERRANSOUL_MCP_TOKEN_MCP from mcp-data/mcp-token.txt, then query brain_search / brain_suggest_context for project context BEFORE rescanning the codebase or implementing features). Self-improve writes new durable knowledge back to mcp-data/shared/ in the same PR.', 'requirement,user,mcp,session-protocol', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'requirements'),
-
--- ====================================================================
--- Memory philosophy (markdown != memory) — see mcp-data/shared/memory-philosophy.md
--- ====================================================================
-('CORE LESSON (Stop Calling It Memory, Jonathan Edwards 2026-03): Markdown files are NOT a memory system, NOT a database, NOT infrastructure — they are a notebook. .md files (CLAUDE.md, MEMORY.md, Obsidian vaults) are instruction-delivery mechanisms (prompts/config/sticky notes), not data stores. Treating them as memory creates 5 predictable failure modes: no querying, no relationships, scale ceiling (token cost grows linearly with vault), no schema enforcement (same fact gets formatted three ways), no concurrent access (silent corruption). Real memory needs a database with schema + indexes + query language. TerranSoul already implements this: SQLite + FTS5 + HNSW (usearch) + memory_edges KG + RRF k=60 fusion + HyDE + LLM-as-judge reranker + maintenance scheduler. Read mcp-data/shared/memory-philosophy.md for the full mapping table and the 7 non-negotiable rules for future PRs.', 'lesson,memory,architecture,philosophy,markdown,database', 5, 'fact', 1746316800000, 'long', 1.0, 200, 'memory'),
-
-('RULE (memory philosophy): Markdown is for INSTRUCTIONS, not facts. The only files in the repo allowed to CONTAIN memory data (vs. describe it) are mcp-data/shared/memory-seed.sql and the runtime SQLite memory.db. Everything in rules/, docs/, .github/copilot-instructions.md, AGENTS.md, CLAUDE.md, .cursorrules, and mcp-data/shared/*.md is INSTRUCTION — prose pointing at where the data lives. Never propose "store memories as .md / Obsidian as the source of truth" — Obsidian is a one-way projection via obsidian_export.rs.', 'rule,memory,architecture,governance', 5, 'preference', 1746316800000, 'long', 1.0, 100, 'memory'),
-
-('RULE (memory access pattern): Never bulk-load a whole "memory file" into the prompt context. Always retrieve via memory/store.rs hybrid_search_rrf, optionally HyDE + reranker, and inject through memory/context_pack.rs which wraps results in a [RETRIEVED CONTEXT] block that explicitly tells the LLM the contents are query results, not the whole DB. Never bypass the StorageBackend trait with ad-hoc file I/O for memory; new backends go alongside postgres.rs / cassandra.rs / mssql.rs.', 'rule,memory,rag,context-pack', 5, 'preference', 1746316800000, 'long', 1.0, 90, 'memory'),
-
-('RULE (provenance): Every memory must populate source_url / source_hash / parent_id where applicable so we can answer "how do you know that?" — same pattern Claudia calls "show your sources" and the Substack article calls "the receipt." TerranSoul also has memory_versions for non-destructive history (versioning.rs), session_id, origin_device, and obsidian_path/last_exported for export tracking.', 'rule,memory,provenance,versioning', 5, 'preference', 1746316800000, 'long', 1.0, 80, 'memory'),
-
--- ====================================================================
--- Claudia (kbanc85/claudia) reverse-engineering — see mcp-data/shared/claudia-research.md
--- ====================================================================
-('REFERENCE PROJECT — kbanc85/claudia (PolyForm Noncommercial 1.0.0): A Claude-Code-hosted personal companion that tracks people, commitments, and judgment rules. Architecture: markdown TEMPLATE LAYER (41 skills, identity, rules — instructions only) + Python MEMORY DAEMON (one SQLite DB shared by a per-session MCP daemon and a 24/7 standalone scheduler daemon). Hybrid search 50% vector + 25% importance + 10% recency + 15% FTS, with rehearsal-effect access boost. Scheduled jobs: adaptive decay (2 AM), consolidation/dedupe (3 AM), vault sync (3:15 AM, one-way to PARA-organised Obsidian), pattern detection (every 6 h). Slash skills include /morning-brief, /meditate, /memory-audit, /brain (3-D visualiser), /what-am-i-missing, /capture-meeting, /research, /follow-up-draft. README explicitly: "SQLite is the source of truth; the vault is a read-only projection." Read mcp-data/shared/claudia-research.md for the full inventory and the 10 adoption proposals mapped to existing TerranSoul modules.', 'reference,claudia,reverse-engineering,memory,architecture', 5, 'fact', 1746316800000, 'long', 1.0, 230, 'references'),
-
-('CLAUDIA LICENSE (CRITICAL): kbanc85/claudia is licensed under PolyForm Noncommercial 1.0.0. Do NOT copy any source files, prompts, skill markdown, scheduler scripts, or asset names. Adopt PATTERNS and PRODUCT IDEAS from the public README only — that is standard reverse engineering and is allowed. TerranSoul ships as a free product, so commercial copy of PolyForm-NC code is forbidden. Credited in CREDITS.md.', 'rule,license,claudia,polyform-noncommercial', 5, 'preference', 1746316800000, 'long', 1.0, 80, 'licensing'),
-
-('CLAUDIA ADOPTION PROPOSALS (from research file, in order of leverage): (1) judgment_rules persisted artefact (extend memories with category=judgment + memory_type=preference and inject into chat system prompt), (2) /meditate slash command exposing existing Chunks 30.2 + 30.6 session reflection, (3) /morning-brief daily quest (uses temporal.rs + hybrid_search_rrf), (4) /memory-audit view joining memories + memory_versions + memory_edges with provenance tree, (5) BrainGraphViewport.vue 3-D visualiser using Three.js (already loaded for VRM), (6) capability tags on agent roster routed by coding/coding_router.rs, (7) per-workspace data_root setting, (8) /health + /status — already aligned, (9) optional stdio MCP transport adapter on top of BrainGateway, (10) PARA-organised opt-in template for obsidian_export.rs. Each must be filed as a chunk in rules/milestones.md before implementation.', 'reference,claudia,adoption,roadmap', 4, 'fact', 1746316800000, 'long', 1.0, 180, 'references'),
-
-('ANTI-PATTERN (claudia): Do NOT bolt on a Python memory daemon — TerranSoul memory is Rust in src-tauri/src/memory/ behind StorageBackend. Do NOT make Obsidian the user-facing primary surface — TerranSoul primary surface is chat + character + brain panel; Obsidian export stays opt-in. Do NOT introduce branded names ("claudia", literal /meditate label, "morning brief" as product noun) — pick neutral names per rules/coding-standards.md.', 'rule,claudia,anti-pattern,naming', 4, 'preference', 1746316800000, 'long', 1.0, 80, 'references'),
-
--- ====================================================================
--- Storage invariant — the seed itself eats the SQLite + KG-edges + RRF
--- + HyDE + reranker dog food. Documents how each layer is exercised so
--- agents don't suspect the seed is a "markdown vault in disguise."
--- ====================================================================
-('STORAGE INVARIANT (mcp-data seed): mcp-data/shared/memory-seed.sql is REAL SQL inserted into the canonical SQLite memories + memory_edges schema (V15, schema.rs) — not a markdown vault. The seed actively exercises the full stack: (a) **schema** = memory_type/tier/decay_score/importance/category populated for every row, (b) **FTS5** = content is indexed automatically by schema.rs CREATE VIRTUAL TABLE, (c) **knowledge graph** = the `-- KNOWLEDGE GRAPH EDGES` section below populates typed memory_edges (part_of / cites / supports / derived_from / related_to) so brain_kg_neighbors works on day one, (d) **RRF fusion + HyDE + reranker** = all run at query time on whatever signals are populated. **HNSW vectors** are populated lazily: when a brain provider is configured, call the `backfill_embeddings` Tauri command (commands/memory.rs:593) — it walks store.unembedded_ids() and calls embed_for_mode for each. Until then, the 5 non-vector signals (keyword/recency/importance/decay/tier) still fully power RRF, brain_search, and brain_suggest_context.', 'storage,invariant,seed,architecture,kg,embeddings,backfill', 5, 'fact', 1746316800000, 'long', 1.0, 220, 'storage'),
-
-('EMBEDDING BACKFILL PROCEDURE: After first MCP startup with the shared seed, vector signals are populated by the post-seed `backfill_mcp_seed_embeddings` hook when an embedding source is configured, or by the explicit `backfill_embeddings` Tauri command (commands/memory.rs:593) which iterates store.unembedded_ids() and calls embed_for_mode(content, brain_mode, active_brain) per row, then store.set_embedding(id, &emb). The shared maintenance scheduler now starts in both GUI and headless MCP modes for decay, GC, tier promotion, and edge extraction. For headless `npm run mcp` with no embed provider configured, embedding backfill is a no-op by design — RRF + HyDE + reranker still work on keyword/recency/importance/decay/tier signals, plus KG traversal and FTS5 keyword search work fully without vectors.', 'procedure,embeddings,backfill,mcp,headless,maintenance', 5, 'procedure', 1746316800000, 'long', 1.0, 150, 'procedures'),
-
-('LESSON: GitNexus is PolyForm Noncommercial. TerranSoul must not bundle, vendor, auto-install, or default-spawn GitNexus packages, binaries, Docker images, prompts, skills, or UI assets. Treat GitNexus and its DeepWiki pages as credited public product and architecture research only, then implement neutral TerranSoul-native Rust/Vue code-intelligence features. Sidecar bridge code is removed entirely; the only supported MCP/code path is native TerranSoul code intelligence.', 'lesson,gitnexus,license,clean-room,code-intelligence,mcp,native,noncommercial', 10, 'procedure', 1746489600000, 'long', 1.0, 90, 'lessons'),
-
-('CODE INTELLIGENCE ROADMAP: Native TerranSoul parity targets learned from public GitNexus docs are repo registry, incremental content-hash indexing, broader Tree-sitter language coverage, import/re-export resolution, heritage and receiver/type inference, confidence-scored code relations, functional clusters, execution processes, hybrid BM25 plus semantic plus RRF code search, diff impact, graph-backed rename, MCP resources/prompts, generated agent skills, and code-wiki generation. Implement these under neutral names using existing coding/symbol_index.rs, coding/processes.rs, memory RAG, and MCP tool surfaces.', 'roadmap,gitnexus,code-intelligence,native,mcp,symbol-index,processes,search', 9, 'fact', 1746489600000, 'long', 1.0, 95, 'code-intelligence'),
-
-('CODE WORKBENCH UX LESSON: GitNexus public Web UI shows a useful AI-development pattern to reimplement natively: graph canvas as the primary structural map, file tree as physical navigation, code references panel as grounded evidence, right-side chat with visible tool-call cards, clickable file/node citations that focus graph and code, process diagrams, repo switcher, status bar, and blast-radius highlights for change risk. TerranSoul should adapt this as a dense Brain/Coding workbench using Vue, Pinia, Cytoscape or Three.js, and existing design tokens, not copy React components or visual identity.', 'lesson,gitnexus,ui-ux,code-workbench,graph,chat,citations,blast-radius', 9, 'fact', 1746489600000, 'long', 1.0, 95, 'frontend'),
-
-('LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow. The host must enable LAN brain sharing before starting or restarting the MCP server, then name the shared brain and share the bearer token out-of-band. Discovery uses UDP 7424 for metadata only; authenticated retrieval uses MCP HTTP brain_search against the host port. Peers retrieve ranked snippets, not the host memory database.', 'lesson,mcp,lan,brain-sharing,discovery,token,remote-search,tutorial', 9, 'procedure', 1777939200000, 'long', 1.0, 75, 'mcp'),
-
-('RULE: Treat LAN MCP bearer-token access as read access to the shared TerranSoul knowledge surface. Never broadcast the token, never enable LAN sharing on public Wi-Fi, and stop sharing when the session ends. User-facing docs should describe this with the tutorials/lan-mcp-sharing-tutorial.md Alice Vietnamese law notes scenario and avoid legal-advice claims.', 'rule,mcp,lan,security,bearer-token,docs,legal-disclaimer', 9, 'procedure', 1777939200000, 'long', 1.0, 70, 'mcp'),
-
-('RULE: LAN MCP sharing must expose an explicit auth mode choice: `token_required` or `public_read_only`. Public mode may skip the bearer token only for the read-only brain MCP surface (initialize, ping, tools/list, and read-only brain tools); write tools, code-intelligence tools, /status, and hook endpoints remain authenticated.', 'rule,mcp,lan,auth-mode,public-read-only,token-required,security', 9, 'procedure', 1778112000000, 'long', 1.0, 95, 'mcp'),
-
-('LESSON: LAN discovery should advertise whether a TerranSoul host requires a token, but it must never broadcast the token itself. UI flows should hide the token field for public-read-only peers and still treat public mode as read access to the shared knowledge surface.', 'lesson,mcp,lan,discovery,auth-mode,public-read-only,token-ui', 8, 'procedure', 1778112000000, 'long', 1.0, 85, 'mcp'),
-
-('LESSON: MCP-mode self-improve runtime logs live under mcp-data/ and are bounded runtime state, not durable project memory. self_improve_runs.jsonl, self_improve_gates.jsonl, and self_improve_mcp.jsonl each keep only the current file plus a .001 archive, with a 1 MiB cap per file. The UI reads both current and archive, while durable lessons still belong in the consolidated mcp-data/shared/memory-seed.sql init snapshot.', 'lesson,mcp,self-improve,logs,rolling-log,mcp-data,jsonl,runtime-state', 9, 'procedure', 1778025600000, 'long', 1.0, 85, 'mcp'),
-
-('RULE: New self-improve runtime logs must use coding::rolling_log or an equivalent current-plus-.001 rotation policy before writing under mcp-data/. Do not create unbounded MCP runtime logs, do not commit runtime logs, and do not treat runtime JSONL as the durable MCP knowledge source.', 'rule,mcp,self-improve,logs,rotation,runtime-state,shared-seed', 9, 'procedure', 1778025600000, 'long', 1.0, 70, 'mcp'),
-
-('LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale. If target-mcp/release/terransoul(.exe) is older than src-tauri sources/config, startup must terminate managed MCP, rebuild target-mcp, relaunch, and re-check /health. If termination fails, report a blocker instead of silently reusing stale binaries.', 'lesson,mcp,target-mcp,stale-binary,rebuild,relaunch,startup', 9, 'procedure', 1778025600000, 'long', 1.0, 85, 'mcp'),
-
-('LESSON: MCP tray reliability on Windows depends on startup order in mcp-app mode. Do not await shared-seed embedding backfill before binding the MCP server. Start start_server_full first so /health becomes available quickly, then run backfill_mcp_seed_embeddings in a background task. Otherwise background panics or slow embedding prep can keep terransoul.exe alive without opening port 7423, which looks like a tray startup failure.', 'lesson,mcp,windows,tray,startup-order,backfill,health,7423', 10, 'procedure', 1778112000000, 'long', 1.0, 110, 'mcp'),
-
-('RULE: Agents must not reuse MCP port 7423 when target-mcp is out of date. Required sequence is terminate -> rebuild -> relaunch -> health-check; skipping any step is a process violation because it hides stale runtime behavior.', 'rule,mcp,target-mcp,stale-binary,terminate,rebuild,relaunch,health-check', 9, 'procedure', 1778025600000, 'long', 1.0, 70, 'mcp'),
-
-('RULE: TerranSoul MCP preflight must be visible to the user, not only hidden in tool calls. After brain_health plus a relevant brain_search or brain_suggest_context succeeds, the agent must send a short MCP receipt naming the health/provider result and the search/context query topic. If MCP is blocked, the receipt must name the blocker. If the user cannot see the receipt, treat preflight as incomplete.', 'rule,mcp,preflight,visible-receipt,user-visible,enforcement,non-negotiable', 10, 'procedure', 1778025600000, 'long', 1.0, 90, 'mcp'),
-
-('LESSON: Text-only MCP rules were not enough because users cannot see hidden tool calls. The durable fix is to require a visible MCP receipt in .github/instructions/mcp-preflight.instructions.md, .github/copilot-instructions.md, AGENTS.md, CLAUDE.md, .cursorrules, rules/agent-mcp-bootstrap.md, and MCP seed memory.', 'lesson,mcp,preflight,visible-receipt,instruction-sync,user-trust', 9, 'procedure', 1778025600000, 'long', 1.0, 75, 'mcp'),
-
-('RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order across release, dev, and MCP modes: TERRANSOUL_MCP_SHARED_DIR (override) -> <data_dir>/shared -> <cwd>/mcp-data/shared -> compiled fallback. This guarantees predictable boot while letting local dev/release runs consume checked-in mcp-data/shared updates without manual copy steps.', 'rule,mcp,seed,migrations,schema,dev,release,shared-data,resolution-order', 9, 'procedure', 1778025600000, 'long', 1.0, 95, 'mcp'),
-
-('LESSON: Relying only on <data_dir>/shared for seed migrations caused dev/release drift from repository mcp-data/shared when no runtime shared folder existed. The durable fix is explicit source resolution plus startup logging of the selected source, with compiled SQL as the final fallback.', 'lesson,mcp,seed,migrations,schema,drift,dev,release,fallback', 9, 'procedure', 1778025600000, 'long', 1.0, 80, 'mcp'),
-
-('RULE: Fresh MCP databases bootstrap from a single consolidated init snapshot (mcp-data/shared/memory-seed.sql). Durable knowledge is appended to that one file as new INSERT INTO memories ... WHERE NOT EXISTS blocks plus matching INSERT OR IGNORE INTO memory_edges rows; numbered per-chunk migration files are no longer used. The runtime loader (memory/seed_migrations.rs) replays the snapshot once on first boot and records the version checksum.', 'rule,mcp,seed,init-snapshot,bootstrap,performance', 9, 'procedure', 1778025600000, 'long', 1.0, 100, 'mcp'),
-
-('VERDICT: Reject direct GitNexus import/bundling. TerranSoul must keep clean-room native code-intelligence UX inspired by public behavior only; no GitNexus binaries, Docker images, prompts, skills, or UI assets may be bundled, auto-installed, or default-spawned due PolyForm Noncommercial constraints.', 'verdict,gitnexus,clean-room,license,ui-ux,native,noncommercial', 10, 'decision', 1778025600000, 'long', 1.0, 100, 'code-intelligence'),
-
-('LESSON: LocalLLM fast chat path (2026-05-09): short content-light turns such as "Hi", "Hello", "OK", or "who are you" must not call the intent classifier, embedding model, or hybrid RAG retrieval. On consumer GPUs, gemma4:e4b can fill VRAM and loading nomic-embed-text evicts the chat model, causing 5-15s model swaps. The durable fix is pure-code fast-path guards in src/stores/conversation.ts, src-tauri/src/brain/intent_classifier.rs, and src-tauri/src/commands/streaming.rs; contentful questions still use classifier + full RAG.', 'lesson,perf,rag,streaming,vram,ollama,local-llm,fast-path', 10, 'procedure', 1778284800000, 'long', 1.0, 115, 'brain'),
-
-('LESSON: LocalOllama VRAM eviction by background workers (2026-05-12): In LocalOllama mode the embedding worker (10s tick) and any helper that calls /api/embed (HyDE, late-chunking, batch ingest) loads nomic-embed-text into VRAM, which evicts the chat model (e.g. gemma4:e4b) and adds a 10-20s reload cost on the very next chat reply. The first attempted fix still let the real desktop app take ~10s because AppState.last_chat_at_ms started at 0 and spawn_embedding_queue_worker ran before spawn_local_ollama_warmup; tokio interval workers tick immediately, so the embedding backfill could seize Ollama at app startup before the first user chat. The durable fix is layered: (1) AppState gains last_chat_at_ms: AtomicU64 initialized to now for production AppState and set by run_chat_stream/process_message on every user turn; (2) startup calls spawn_local_ollama_warmup before spawn_embedding_queue_worker; (3) the embedding worker skips ticks while last chat/startup quiet-window was within 5 minutes when provider_category == "ollama"; (4) every Ollama embed body sets keep_alive: 0 so the embed model unloads immediately after each batch; (5) every /api/chat caller sets keep_alive: "30m"; (6) stream_ollama sends think:false so Gemma/Qwen thinking models do not spend seconds in a silent reasoning phase before visible content; (7) LocalOllama non-streaming fallback uses keyword-only memories instead of LLM semantic_search_entries before answering. Verified with Playwright Real-E2E hi-latency including a real Rust run_chat_stream probe: first real backend llm-chunk 537ms with gemma4:e4b; direct Hi chat 595ms; chat-only 681ms; all under 1s first-token target.', 'lesson,perf,vram,ollama,local-llm,embedding-queue,keep-alive,warmup,streaming,real-app-latency', 10, 'procedure', 1778544000000, 'long', 1.0, 150, 'brain'),
-
-('LESSON: VRAM-aware model defaults beat RAM-only heuristics (2026-05-09): The ramAwareFallback() in src/stores/brain.ts must NOT recommend gemma4:e4b (8.9 GB) just because system RAM >= 32 GB; VRAM not RAM is the real constraint for interactive chat. On a 12 GB consumer GPU (RTX 3080 Ti) gemma4:e4b leaves only ~3 GB for nomic-embed-text + cache, causing constant model swaps and 5-15s latency spikes. gemma4:31b (18.5 GB) does not fit at all and must never be auto-selected on consumer hardware. Durable rule: gemma3:4b (3.1 GB) is the default for any GPU < 24 GB VRAM (sub-500 ms TTFT verified, leaves embedding headroom); only recommend gemma4:e4b for >= 48 GB system RAM (heuristic for >= 24 GB VRAM). The MCP brain config (mcp-data/brain_config.json) is independent from the app config (%APPDATA%/com.terranes.terransoul/brain_config.json) and must be checked separately when diagnosing model-selection latency.', 'lesson,perf,vram,ollama,model-selection,gemma3,gemma4,ramAwareFallback,rtx3080ti,mcp-config', 10, 'procedure', 1778976000000, 'long', 1.0, 145, 'brain'),
-
-('LESSON: VRMA mood animation re-triggering per sentence (2026-05-09): During a streamed LLM response the characterStore.state watcher in src/components/CharacterViewport.vue plays a one-shot VRMA mood animation every time setState() is called. Multiple sources call setState in one response: the llm-animation event handler (per <anim> tag), the isStreaming watcher (sets talking), and the isSpeaking watcher (sets final emotion). If the LLM emits the same emotion in multiple <anim> tags (one per sentence), the body animation visibly re-triggers per sentence and breaks the talking flow. The durable fix is a lastMoodAnimState tracker inside CharacterViewport.vue: skip vrmaManager.play() when newState === lastMoodAnimState; reset to null on idle and talking transitions so the next distinct emotion can fire normally. Face blend shapes (asm.setEmotion) update independently of body animation, so emotion expressions still flow smoothly per sentence.', 'lesson,animation,vrma,characterstore,llm-animation,streaming-sync,three-stream,bug-fix', 10, 'procedure', 1778976000000, 'long', 1.0, 145, 'brain'),
-
-('VERDICT: terax-ai (https://github.com/crynta/terax-ai) is NOT comparable to TerranSoul for latency benchmarks (2026-05-09). Terax is a 7 MB AI terminal/code editor (xterm.js + CodeMirror 6 + Vercel AI SDK + LM Studio support) with no 3D character, no VRM, no VRMA animations, no TTS, no lip sync, and no viseme scheduling. Its low latency comes from the absence of an animation/voice pipeline; it streams text directly into a chat panel with nothing to coordinate. TerranSoul cannot be made as fast as terax-ai without dropping the avatar; the goal is to keep the three streams (text + animation + voice) tightly synchronised while each stays independently fast: Ollama streaming < 500 ms TTFT, sentence-boundary TTS pipeline, lastMoodAnimState dedup, and VRAM-safe model defaults. Verified TerranSoul direct Ollama chat with gemma3:4b: TTFT < 10 ms, TTFS 26-146 ms, total 66-163 ms; already faster than typical cloud-API terax-ai sessions.', 'verdict,benchmark,terax-ai,scope-mismatch,three-stream,latency,gemma3,deepwiki,2026-05-09', 9, 'decision', 1778976000000, 'long', 1.0, 130, 'brain'),
-
-('LESSON: Decouple Tauri event emission from the LLM streaming loop (2026-05-09): The streaming hot-path in src-tauri/src/commands/streaming.rs (`stream_ollama`, the OpenAI `chat_stream` callback, and `run_self_rag_stream`) used to call `app_handle.emit("llm-chunk"/"llm-animation"/"llm-pose", …)` synchronously inside `while let Some(chunk_result) = stream.next().await`. Each emit JSON-serialises the payload and dispatches it into every subscribed webview (chat + pet overlay + subtitle), so when more than one window was open, the next token had to wait for 2-3 ms × n_windows × n_event_types per chunk. The durable fix introduces a private `StreamEvent` enum and `spawn_event_pump<R: Runtime>(app: AppHandle<R>) -> (UnboundedSender<StreamEvent>, JoinHandle<()>)` helper. The streaming loops push events into the unbounded channel (microsecond-cost `tx.send`), and a single Tokio task owns the AppHandle and drains the channel in arrival order. After the stream completes, the loop drops the sender and awaits the pump JoinHandle so `done:true` is never lost. Two regression tests in `commands::streaming::tests` lock this in: `event_pump_preserves_order_and_drains_on_close` (50 chunks + done in order) and `event_pump_send_is_non_blocking` (10 000 sends < 100 ms). Rule: any future event in the per-token hot-path must go through `spawn_event_pump`, never `app_handle.emit` directly. Out-of-band events (provider-failover, providers-exhausted, stub responses) may still emit directly because they fire once per turn, not per token.', 'lesson,perf,streaming,tauri-emit,backpressure,three-stream,event-pump,mpsc,non-blocking,2026-05-09', 10, 'procedure', 1778976000000, 'long', 1.0, 165, 'brain'),
-
-('DEFAULT SYSTEM SETTING: Intent classifier document-learning setup (2026-05-10): When a user says "Learn from my documents" or asks to learn/study from their own documents, files, notes, PDFs, or sources, classify the turn as learn_with_docs. Phrase examples include "Learn from my documents", "Learn my documents", "Learn documents", "Please look at my provided documents and learn it", "I want you to read my files", "Can you study these documents for me?", "Read and learn from my notes", and "học luật Việt Nam từ tài liệu của tôi". If they do not specify a topic or setup mode, use topic "the material in your documents" and assume the recommended setup flow. The recommended flow is the Scholar''s Quest prerequisite chain: free-brain (Awaken the Mind) -> memory (Long-Term Memory) -> rag-knowledge (Sage''s Library, 6-signal hybrid RAG) -> scholar-quest (document ingestion/attachment). If classifier JSON is malformed or unknown, return Unknown and continue normal chat/install flows; never force docs/setup routing via regex, contains, includes, or keyword arrays. This is the behavior described by tutorials/brain-rag-setup-tutorial.md.', 'system,default-system-setting,system:default-system-setting,rule,intent-classifier,learn-with-docs,documents,rag,quest,scholar-quest,recommended-setup,tutorial,no-heuristic-fallback,user-customizable', 10, 'preference', 1778371200000, 'long', 1.0, 170, 'system.default_system_setting'),
-
-('DEFAULT SYSTEM SETTING: Intent classifier teach-ingest setup (2026-05-10): When the user is pasting content or a source for the brain to remember, classify the turn as teach_ingest. Phrase examples include "remember the following law", "ingest this URL", "memorize this fact", "here is the source", and similar paraphrases in any language. Return a short topic phrase that names the source/content when one is present; otherwise use a concise generic topic. This setting is user-customizable through system default setting memories tagged intent-classifier.', 'system,default-system-setting,system:default-system-setting,rule,intent-classifier,teach-ingest,documents,rag,source-ingest,user-customizable', 10, 'preference', 1778371200000, 'long', 1.0, 92, 'system.default_system_setting'),
-
-('DEFAULT SYSTEM SETTING: Intent classifier gated-setup setup (2026-05-10): When the user explicitly asks to upgrade to Gemini, configure Gemini, or use Gemini, classify as gated_setup with setup "upgrade_gemini". When the user asks to connect, add, provide, or supply context to the brain/app, classify as gated_setup with setup "provide_context". Keep ordinary questions as chat. This setting is user-customizable through system default setting memories tagged intent-classifier.', 'system,default-system-setting,system:default-system-setting,rule,intent-classifier,gated-setup,upgrade-gemini,provide-context,user-customizable', 10, 'preference', 1778371200000, 'long', 1.0, 84, 'system.default_system_setting'),
-
-('RULE: When correctness is confirmed in a chunk (tests green, bug gone, CI gate green, or explicit user acceptance), the agent must trigger self-improve write-back in the same chunk: persist the durable lesson into mcp-data/shared/memory-seed.sql and verify retrieval via brain_search/brain_suggest_context when MCP is healthy; if MCP is blocked, record the exact blocker in progress/final output. Chunk completion is invalid without this knowledge sync.', 'rule,self-improve,write-back,knowledge-sync,chunk-completion,mcp,non-negotiable', 10, 'procedure', 1778371200000, 'long', 1.0, 95, 'self-improve'),
-
-('RULE: Local E2E response latency budget (2026-05-10): Dedicated Playwright latency/responsiveness tests outside GitHub Actions must fail assistant/LLM first-visible response latency above 2 seconds with an investigation-focused failure message. Broad UI, animation, and tutorial E2Es must still use the real WebView/LLM path and assert eventual completion, but should not inherit the latency assertion unless the test is explicitly measuring responsiveness. Keep diagnostic wait timeouts long enough to collect evidence, and investigate model warmup, VRAM contention, RAG retrieval, embedding backfill, provider selection, streaming first chunk, and UI state propagation before changing the dedicated latency budget.', 'rule,e2e,latency,playwright,local-only,ollama,rag,streaming,timeout-discipline', 10, 'procedure', 1778371200000, 'long', 1.0, 100, 'testing'),
-
-('LESSON: Persistent WebView2 CDP E2E state isolation (2026-05-10): Regular Playwright E2Es attach to a long-lived Tauri WebView instead of launching a fresh browser page, so each connectToDesktopApp() must clear leaked conversation messages, streamingText, isThinking/isStreaming, messageQueue, generationActive, MCP/window mode flags, quest dialogs, and the __tsE2ELastSend marker before a spec starts. Otherwise tutorial/animation specs can leave huge chat history or active local generations that make later real Ollama prompts queue behind stale work and appear as false latency failures. Broad desktop/mobile flow specs should use real completion waits; reserve the 2s budget for dedicated responsiveness tests.', 'lesson,e2e,playwright,webview2,cdp,state-isolation,ollama,latency,conversation,tauri', 10, 'procedure', 1778976000000, 'long', 1.0, 115, 'testing');
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-VALUES
-('LESSON: Scholar''s Quest is the document-learning chain target, not an installable prerequisite. The Learn Docs flow should only auto-install unmet prerequisites through Sage''s Library (`rag-knowledge`), then start Scholar''s Quest. Scholar crawl settings are persisted in AppSettings (`scholar_crawl_enabled`, `scholar_crawl_max_depth`, `scholar_crawl_max_pages`) and the ingest backend preserves custom crawl bounds in canonical `crawl:depth=<n>,pages=<n>:<url>` task sources for resume safety.', 'lesson,scholar-quest,learn-docs,rag-knowledge,crawl,app-settings,ingest', 9, 'procedure', 1778544000000, 'long', 1.0, 80, 'brain');
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-VALUES
-('LESSON: Scholar''s Quest should not show a Verify Brain step. Entry into KnowledgeQuestDialog gates on unmet prerequisites; if any prerequisites remain, show a prerequisite decline modal listing the missing quests with Cancel and Start Now. Start Now launches the Learn Docs prerequisite setup flow; otherwise the first quest step is Gather Sources.', 'lesson,scholar-quest,verify-brain,prerequisite-gate,learn-docs,knowledge-quest', 9, 'procedure', 1778544000000, 'long', 1.0, 58, 'brain');
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-VALUES
-('LESSON: Learn Docs must precheck Scholar''s Quest prerequisites from live app state before deciding whether Sage''s Library or Scholar''s Quest should start. Saved quest completion can be stale if the user removes a brain mode, Local Ollama setup, or memories. Attach the precheck to the resulting chat prompt as collapsed thinkingContent so users can see why the hotseat shows Install Sage''s Library + Cancel or the Scholar''s Quest start prompt.', 'lesson,learn-docs,scholar-quest,rag-knowledge,sage-library,precheck,thinking-content,chat-ui', 9, 'procedure', 1778630400000, 'long', 1.0, 76, 'brain');
-
-UPDATE memories
-SET protected = 1,
-    cognitive_kind = 'procedural'
-WHERE category = 'system.default_system_setting'
-  AND tags LIKE '%intent-classifier%';
-
--- ====================================================================
--- KNOWLEDGE GRAPH EDGES
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul pet-mode click-through: do not use gl.readPixels() on the WebGL canvas to refine the hit-test under WebView2 transparent layered windows. Premultiplied alpha plus back-buffer timing quirks make the alpha read return 0 even when the model is visibly opaque, which keeps set_ignore_cursor_events(true) permanently and makes every click fall through to the desktop. Use the .pet-character bounding rect as the deterministic hit area instead. Also: do NOT run ensurePassthroughOff (which stops the cursor poll) when entering pet mode — it races with PetOverlayView.onMounted starting the poll, and if the safety-net wins, the poll stays stopped forever. Only run the safety-net when leaving pet mode.',
+  'lesson',
+  'ux,pet-mode,tauri,webview2,click-through,cursor-passthrough,webgl',
+  9,
+  strftime('%s','now'),
+  'seed:ux-pet-click-fix-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:ux-pet-click-fix-2026-05-16');
+
+
+
+
+
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul UI refactor lesson: when extracting an inline menu (CharacterViewport.vue FloatingMenu) into a standalone SettingsPanel + a global SettingsModal opened from AppChromeActions, the new modal must embed the full SettingsPanel — not re-implement a minimal subset. Pre-refactor inline menu had 9 sections (View Mode, Quests, Character, Mood/Pose, Background, BGM, Karaoke, ThemePicker, System Info / Audio Controls); the rewritten modal initially shipped only 2. Production fix: render <SettingsPanel> inside the modal body, share a single BGM player via getSharedBgmPlayer() singleton (factory still returns fresh instances for test isolation), wire toggle-system-info / toggle-audio-controls emits to mount the overlays inside the modal, and use :deep(.floating-menu) to neutralise the panel''s floating chrome so it lays out inline.',
+  'lesson',
+  'ux,settings,modal,panel-refactor,bgm,singleton,vue',
+  9,
+  strftime('%s','now'),
+  'seed:ux-settings-parity-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:ux-settings-parity-2026-05-16');
+
+
+
+
+
+
+
+
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul brain-config audit 2026-05-16: bench-validated default for the local Ollama embedder is mxbai-embed-large (1024d, 512 tokens), promoted by BENCH-LCM-5 (+3.7pp R@10 overall on LoCoMo vs nomic-embed-text). Code drift fix: six sites still resolved nomic as the default — brain/provider_policy.rs::task_default_model_ollama, brain/mcp_auto_config.rs::EMBEDDING_MODEL, brain/ollama_agent.rs::PREFERRED_EMBED_MODEL + EMBED_MODEL_FALLBACKS + LATE_CHUNK_MODEL_FALLBACKS, commands/brain.rs preferred-embed fallback string, bin/longmemeval_ipc.rs::DEFAULT_EMBED_MODEL. All updated to mxbai-embed-large; nomic-embed-text demoted to lightweight 768d/8192-token fallback in EMBED_MODEL_FALLBACKS. Existing users keep their persisted ActiveModelState; switch only affects first-run + resolver cache misses. Other bench-validated defaults already correct: RRF k=60, rerank pool=30 (LCM-9: 50 regressed -4pp), rerank threshold=0.55 (gemma3:4b is bimodal at temp 0), relevance_threshold=0.30, HyDE class-gated on Semantic+Episodic only (LCM-10), enable_kg_boost=false (KG-2: 0pp lift / 2x latency on adversarial), contextual_retrieval=false (LCM-11: missed acceptance ~9pp NDCG short).',
+  'lesson',
+  'brain-config,bench,defaults,mxbai-embed-large,embeddings,rrf,rerank,hyde,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-config-audit-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-config-audit-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul TTS-SUPERTONIC-1c lesson: Supertonic on-device TTS (~268 MB, OpenRAIL-M v1 weights) ships with explicit consent UX. SupertonicConsentDialog.vue surfaces 6 plain-English OpenRAIL-M restrictions (no discrimination/harassment, no mass surveillance, no mis/disinfo, no CSAM, no automated legal/medical/financial advice, restrictions propagate) plus a link to the upstream Hugging Face model card and docs/licensing-audit.md. Stages: consent | downloading | error | done. Errors mapped to remediation hints: network → check internet; size mismatch → integrity/redownload; io → disk/permissions. Default-provider promotion lives in voice store autoPromoteSupertonicIfReady(): promotes to supertonic only when current tts_provider is null OR ''web-speech'' AND supertonicInstalled — never overrides an explicit cloud choice. revertSupertonicPromotion() restores previousProvider. Architecture pattern: to stay under ESLint MAX_LINES_VUE=800 in VoiceSetupView.vue, the consent flow extracted into useSupertonicConsent composable + SupertonicSection wrapper that uses defineExpose({ consent }) so the parent can call supertonicSectionRef.value?.consent.openIfNeeded(providerId) from onSetTts. Tauri events used: supertonic-download-progress, supertonic-download-complete; commands: supertonic_download_model, supertonic_is_installed, supertonic_install_path, supertonic_remove, supertonic_status. Backend has no cancel primitive — frontend treats consent-stage Cancel as true cancel (no bytes flow) and downloading-stage Hide as dismiss-only (download continues harmlessly).',
+  'lesson',
+  'voice,tts,supertonic,openrail,consent,ux,vue,licensing,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:tts-supertonic-1c-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:tts-supertonic-1c-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1 research synthesis 2026-05-16 (docs/repo-rag-systems-research-2026-05-16.md). Field audit covered Aider (PageRank RepoMap over tree-sitter tag co-occurrence graph, budget-fit Lines of Interest), Continue (CodebaseIndexer + LanceDB embedded vector store, typed @codebase/@file/@folder context providers in TipTap composer), Cline (no precomputed index; tool-driven read_file/list_files/search_files with .clineIgnore + Plan/Act approval gates), Cody (ContextRetriever / PromptBuilder separation, pluggable retrievers), LlamaIndex (canonical Reader -> NodeParser -> Embed -> VectorStoreIndex -> Retriever -> ResponseSynthesizer pipeline; CodeHierarchyNodeParser AST chunking), gitingest (parse_remote_repo -> clone_repo with sparse-checkout/submodules -> _scan_directory -> pathspec match -> 10 MB cap -> tiktoken o200k_base; ignore precedence user-includes -> repo .gitignore -> user-excludes -> defaults), repomix (searchFiles -> collectFiles -> validateFileSafety (Secretlint) -> processFiles (tree-sitter signature compression) -> produceOutput -> calculateMetrics; tinypool workers). All licences Apache-2.0 / MIT — patterns adoptable. Decisions for BRAIN-REPO-RAG-1 (storage model: separate SQLite per repo): (1) mcp-data/repos/<source_id>/{checkout,memories.db,ann.usearch,manifest.json} layout; memory_sources registry in memory.db only with kinds self/repo/topic. (2) Ingest via gix shallow clone + ignore-crate walk + secrets-patterns-db scan + tree-sitter AST chunker for code (.rs/.ts/.tsx/.py/.go/.java/.c/.cpp) + text-splitter for prose + 10 MB cap. (3) Retrieval modes Self / Source(id) / All; All fans out + RRF-fuses (k=60) across DBs. (4) MCP surface mirrors GitNexus shape with source_id arg: repo_list_sources, repo_add_source, repo_remove_source, repo_sync, repo_map (Aider PageRank), repo_search, repo_read_file (Cline-style), repo_signatures (repomix-style). (5) Aider RepoMap reimplemented natively on top of coding/symbol_index.rs (no Python port). (6) Continue @codebase pattern surfaces as @source-id mentions in chat composer for one-turn pulls without changing active source. (7) Secret scanning is mandatory before any embed step (repomix Secretlint precedent) — files with detected secrets skipped, count surfaced in MemoryView via 🛡 badge. (8) Memory panel UX: segmented header 🧠 TerranSoul / 📦 owner/repo / 🌐 All sources / ➕ Add source; filters stats/list/search/Add-memory by active source. (9) Quests: new repo-scholar-quest gated on memory_sources.count(kind=repo) >= 1, combos with paid-brain + rag-knowledge. (10) Anti-patterns NOT to copy: Aider auto-commit, Continue mandatory Hub control plane, Cline YOLO --auto-approve-all, GitNexus PolyForm-NC dependency, Cody Sourcegraph backend dependency. Chunk split: 1a UI-first (memory_sources table + picker, no ingest), 1b ingest backend, 1c source-scoped retrieval + chat wiring, 1d Aider repo-map + signatures + quest + Brain Docs Sync. Credits in CREDITS.md row "Top-tier coding-RAG / repo-context comparison sources studied for BRAIN-REPO-RAG-1 (2026-05-16)".',
+  'lesson',
+  'brain-repo-rag,coding-rag,aider,continue,cline,cody,llamaindex,gitingest,repomix,gitnexus,research,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:repo-rag-research-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:repo-rag-research-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1a frontend slice landed 2026-05-16. Pinia store src/stores/memory-sources.ts owns the active memory-source id: state = {sources, activeId, isLoading, error}; computed = {activeSource, isAllView, repoSources}; actions = fetchAll() / setActive(id) / createSource({id,kind,label,repo_url?,repo_ref?}) / deleteSource(id). Mirrors backend invariants from memory::sources: cannot delete the seeded ''self'' row, cannot create a second kind=''self'', list is sorted ''self''-first then alpha by lower(label). Active id is persisted to localStorage under key terransoul.memory-sources.active.v1 — that is the canonical handoff for any future surface (chat composer @source-id mentions in 1c, MCP repo_search in 1c) that needs source awareness. A sentinel id ''__all__'' is reserved for the cross-source aggregate that lands in BRAIN-REPO-RAG-1c (isAllView==true, activeSource==null). MemoryView.vue gained a <nav class="mv-source-picker"> strip rendering 🧠 TerranSoul / 📦 <repo> / 🌐 All sources / ＋ Add source pills + a modal Add-source dialog (label + optional URL + git ref + slugifySourceId helper that derives repo:<host>/<path>). When a non-self source is active the picker shows "Repo ingest lands in BRAIN-REPO-RAG-1b — this source is registered but not yet indexed." Validation: vitest 5/5 (memory-sources.test.ts), ESLint clean on the touched files, backend memory::sources 10/10 and memory::schema 11/11 unchanged. Pre-existing TS errors in SettingsModal.vue:99 and SupertonicConsentDialog.test.ts:17 are untracked WIP unrelated to this slice. Sub-component extraction in MemoryView.vue is explicitly DEFERRED to BRAIN-REPO-RAG-1b alongside the actual repo-chunk listing surface — MemoryView.vue is already on the ESLint max-lines allowlist so this slice does not regress lint.',
+  'lesson',
+  'brain-repo-rag,memory-sources,pinia,vue,localStorage,2026-05-16',
+  8,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1a-frontend-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1a-frontend-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1b-i (per-repo ingest backend, foundation slice) shipped 2026-05-16 behind a new repo-rag Cargo feature (desktop default; mobile/headless-mcp builds compile without gix/ignore/regex). New module src-tauri/src/memory/repo_ingest.rs owns the end-to-end pipeline: (1) gix 0.66 shallow clone via prepare_clone(url, dest).with_shallow(Shallow::DepthAtRemote(NonZeroU32::new(1))).fetch_then_checkout(Discard, &gix::interrupt::IS_INTERRUPTED) → PrepareCheckout.main_worktree(...). gix features used: blocking-network-client + blocking-http-transport-reqwest-rust-tls + worktree-mutation + max-performance-safe (the worktree-mutation + blocking-network-client gate is REQUIRED for fetch_then_checkout to be exposed — without both, you get E0599 "method not found"). (2) ignore::WalkBuilder honours .gitignore + .git/info/exclude + .terransoulignore + OverrideBuilder for user includes/excludes (precedence: user-includes → repo ignores → user-excludes → defaults). Always skips .git/. (3) Per-file 10 MiB cap (RepoIngestOptions::max_file_bytes). (4) Secret regex set: PEM private-key headers, AKIA[A-Z0-9]{16}, gh[pousr]_[A-Za-z0-9]{36,}, xox[abprs]-..., AIza[A-Za-z0-9_-]{35}, and (api_key|secret_key|access_token|password)\s*[:=]\s*[A-Za-z0-9_\-+/]{20,}. Compiled once via OnceLock. Scans only first 256 KiB so large fixtures don''t dominate ingest. (5) NUL-byte binary heuristic + UTF-8 decode skip. (6) Text chunker reuses memory::chunking::split_markdown + text-splitter 0.30 — recovers byte_start/byte_end by linearly scanning content with a monotonic cursor (text-splitter chunks are ordered + non-overlapping, so cursor-find is robust). (7) Per-repo SQLite at <data_dir>/repos/<source_id>/memories.db with a single repo_chunks table (id, source_id, file_path, parent_symbol, kind CHECK IN(''text'',''code''), byte_start, byte_end, content, content_hash, embedding BLOB NULL, created_at) + WAL + indices on source_id / (source_id,file_path) / content_hash. (8) manifest.json at <data_dir>/repos/<source_id>/manifest.json with RepoIngestStats + head_commit (12-hex) + last_synced_at + manifest_version=1. (9) Three Tauri commands in src-tauri/src/commands/repos.rs: repo_add_source (registers memory_sources row kind=''repo'' then ingests), repo_sync (re-ingests existing source), repo_remove_source (idempotent: deletes the per-repo dir AND the memory_sources row). Blocking work runs on tokio::task::spawn_blocking. Commands are gated in tauri::generate_handler! via #[cfg(feature = "repo-rag")] on each fully-qualified path — Tauri 2.11''s generate_handler! tolerates per-item #[cfg] attributes on identifier lines. (10) 12 Rust unit tests green (validate_source_id positive+negative, secret-scanner positive+negative, NUL-byte detector, ChunkKind classifier, chunk-span monotonicity, RepoStore round-trip, walk_files .gitignore + .git/ skip + cap, manifest JSON round-trip, idempotent remove_repo). Deferred to 1b-ii: AST tree-sitter chunker (reuse coding/symbol_index.rs), mxbai-embed-large embedding pass + per-repo HNSW, streaming task-progress events with phase enum, incremental sync via content_hash, integration test against a file:// fixture repo.',
+  'lesson',
+  'brain-repo-rag,repo-ingest,gix,ignore,secret-scanner,tauri-feature-flags,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1b-i-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1b-i-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1b-ii-a (per-repo ingest: AST + incremental sync + progress events) shipped 2026-05-16. Adds three orthogonal capabilities to the 1b-i pipeline without touching the embed/HNSW path (deferred to 1b-ii-b). (1) AST parent_symbol annotation: new ast_annotate_chunks(file_rel, content, &mut chunks) in src-tauri/src/memory/repo_ingest.rs reuses coding::parser_registry::create_parser + the pub(crate) extractors coding::symbol_index::extract_rust_symbols / extract_ts_symbols (both take (source, root_node, file) -> (Vec<Symbol>, Vec<CodeEdge>)). Symbol carries 1-based line + end_line, not byte offsets — so the annotator builds a single byte→line table (Vec<usize> of line-start byte offsets) per file via binary_search, sorts symbols by smallest span (innermost-wins), and labels each chunk Some("<kind>::<parent?>::<name>"). Wired today for .rs and .ts/.tsx via detect_language; optional parsers (parser-python/go/java/c) plug in automatically. Falls back silently when parsing fails so the prose chunker''s heading-derived parent_symbol is preserved. (2) Incremental sync: new repo_files(source_id, file_path, file_hash, last_synced_at, chunk_count) table with composite PK. ingest_repo_with computes SHA-256 hex per file (reuses sha2 + hex — chose over blake3 because blake3 was not yet a direct dep and sha2 is already used by chunking::split_markdown). Files whose hash matches existing_file_hashes() are skipped with stats.files_skipped_unchanged++. INVARIANT: per-file hash upserts (RepoStore::upsert_file_hash) happen AFTER the chunk buffer is flushed — deferring them via Vec<(rel, hash, count)> pending_hashes avoids stranding a hash ahead of its rows if the pipeline errors mid-flow. RepoStore::prune_missing(seen: &HashSet<String>) GCs both repo_files and repo_chunks rows for paths no longer in the walk; stats.files_pruned reports the count. RepoIngestStats grows files_skipped_unchanged + files_pruned, both #[serde(default)] for forward-compat with 1b-i manifest.json snapshots. (3) Progress sink: IngestPhase enum (Clone | Walk | ScanSecrets | Chunk | Embed | Persist | Done — Embed reserved for 1b-ii-b), IngestProgress payload, IngestSink trait (Sync), SilentSink no-op (preserves the old ingest_repo(data_dir, options) signature as a thin wrapper), CapturingSink for tests with Mutex<Vec<IngestProgress>>. ingest_repo_with(data_dir, options, &dyn IngestSink) is the real impl driving the phases. The Supertonic-1c sink pattern (TaskProgressEmitter enum in commands/ingest.rs) is the precedent. Test-only seam ingest_from_checkout_for_tests(data_dir, options, checkout, sink) runs the pipeline against an already-checked-out tempdir to exercise walk+scan+chunk+AST+persist+incremental+prune without a git binary; full file:// integration test is deferred to 1b-ii-b alongside the embed pass. Validation: 8 new tests (20/20 total in memory::repo_ingest) — ast_annotate_sets_parent_symbol_for_rust, ast_annotate_noop_for_unknown_language, file_hash_hex_is_stable, repo_files_table_round_trip, prune_missing_drops_files_not_in_seen, ingest_phase_as_str_round_trip, ingest_from_checkout_emits_phases_and_chunks, ingest_from_checkout_is_incremental (three-pass: initial → unchanged-skip → modify-and-prune). cargo clippy --features repo-rag --lib -- -D warnings clean after a drive-by fix in voice/supertonic_tts.rs:690 (std::iter::repeat(x).take(n) → std::iter::repeat_n(x,n) — Rust 1.95 manual_repeat_n lint upgrade unrelated to 1b-ii but blocked the gate under the same desktop default feature set).',
+  'lesson',
+  'brain-repo-rag,repo-ingest,ast,tree-sitter,incremental-sync,progress-events,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1b-ii-a-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1b-ii-a-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1b-ii-b (per-repo ingest: embed pass + per-repo HNSW + Tauri progress sink) shipped 2026-05-16. Closes out 1b-ii by wiring the embedding stage through the IngestSink/IngestPhase scaffolding from 1b-ii-a. (1) embed_repo_with_fn(data_dir, source_id, dimensions, embed_fn: FnMut(&str)->Option<Vec<f32>>, sink) is a sync function in memory::repo_ingest. Loops repo_chunks rows where embedding IS NULL (RepoStore::pending_embedding_rows), persists each vector as little-endian f32 bytes via RepoStore::set_embedding (UPDATE ... SET embedding = ?1), and adds it to a per-repo HNSW opened at <data_dir>/repos/<source_id>/vectors.usearch via AnnIndex::open(repo_root, dimensions). Index is saved once at the end (single fsync). Dim-mismatch and None returns are counted as chunks_failed and do NOT abort the run — important because cloud embedding providers may rate-limit mid-batch and we want to keep partial progress. Empty pending set returns early without creating an empty .usearch file. New RepoEmbedStats { chunks_embedded, chunks_failed } is serde camelCase. New RepoIngestError::AnnIndex(String) variant wraps usearch error strings. (2) commands/repos.rs::TauriIngestSink wraps an AppHandle + task_id and maps each IngestProgress into a TaskProgressEvent emitted on "task-progress" (Supertonic-1c precedent in commands/ingest.rs). Percent is computed via processed.checked_mul(100).and_then(checked_div(total)).unwrap_or(0) — clippy manual_checked_ops fix. sync_inner now runs TWO spawn_blocking stages: first the ingest, then the embed pass. brain_mode + active_brain are snapshotted from AppState BEFORE the first blocking hop (avoids holding the std::sync::Mutex across await). The embed closure inside the second spawn_blocking uses tokio::runtime::Handle::current().block_on(embed_for_mode(text, brain_mode_ref, active_brain_ref)) — block_on inside spawn_blocking is correct because the blocking pool thread is separate from the reactor. When brain_mode is None the closure short-circuits via "brain_mode_ref?;" (clippy question_mark fix) so ingest still finishes with chunks_failed=0/chunks_embedded=0. (3) RepoSyncResponse grew an embed_stats: RepoEmbedStats field (camelCase as embedStats on the wire) so the Memory panel UI can render "embedded N / M chunks" alongside ingest counts. Both repo_add_source and repo_sync now take an additional AppHandle parameter — Tauri 2.11 auto-injects this when declared in the command signature, no generate_handler! change needed. Validation: 23/23 tests in memory::repo_ingest green (3 new: embed_repo_persists_blobs_and_writes_hnsw_index, embed_repo_skips_when_no_pending_rows, embed_repo_records_dim_mismatch_as_failure). cargo clippy --features repo-rag --lib -- -D warnings clean. Pitfall observed during implementation: multi_replace_string_in_file applied only partial matches when oldString contained complex multi-line context that already existed in two near-identical forms (repo_add_source signature + sync_inner signature) — left the file in a half-edited state requiring follow-up cleanup. Lesson: when refactoring two similar function signatures in one file, edit each with a UNIQUE 5-line anchor or read-then-rewrite-block; do not rely on multi_replace overlap heuristics.',
+  'lesson',
+  'brain-repo-rag,repo-ingest,embeddings,hnsw,usearch,tauri-progress,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1b-ii-b-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1b-ii-b-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1c-a (source-scoped retrieval backend) shipped 2026-05-16. First half of 1c: hybrid search inside a single per-repo SQLite + HNSW source. Cross-source All fan-out, chat prompt citations, @source-id mentions, and BrainGateway/MCP tool registration are queued as 1c-b. (1) RepoStore::hybrid_search(query, _query_embedding, ann_matches: &[(i64,f32)], limit) fuses three independent rankings via Reciprocal Rank Fusion with k=60. Vector ranking comes from caller-supplied ann_matches (typically pre-fetched from AnnIndex::open(<repo_root>, dim).search(emb, limit*5)) — keeping AnnIndex out of the method signature keeps it dep-free and deterministically testable. Keyword ranking uses case-insensitive LOWER(content) LIKE %term% per whitespace-split token >=2 chars, capped at 500 candidates, ranked by hit count then id (no FTS5 on repo_chunks — LIKE keeps the surface lean). Recency ranking is ORDER BY created_at DESC, id DESC LIMIT 100. Repo chunks have no tier/importance/decay_score columns so the main-brain 6-signal formula in memory/store.rs is NOT reused. Results hydrate to RepoSearchHit { id, source_id, file_path, parent_symbol, kind, byte_start, byte_end, content, score: f64 } sorted by fused score desc, truncated to limit. (2) RepoStore helpers: list_files() returns SELECT DISTINCT file_path ORDER BY file_path; read_file(file_path) reassembles chunks ordered by byte_start, id as a fallback when the on-disk checkout has been removed; get_chunk(id) fetches one row. (3) Three Tauri commands in commands/repos.rs all gated #[cfg(feature = "repo-rag")] and registered in lib.rs generate_handler!: repo_search(source_id, query, limit?) snapshots brain_mode + active_brain BEFORE the blocking hop, awaits embed_for_mode (best-effort — None when brain not configured), spawn_blocking #1 opens the per-repo AnnIndex and runs search(emb, limit*5).max(20) (vector signal silently skipped on dim mismatch or empty index), spawn_blocking #2 opens RepoStore and runs hybrid_search; repo_list_files; repo_read_file prefers std::fs::read_to_string from checkout_dir/<file_path> after canonicalize() + starts_with(checkout_root) guard against symlink / .. escapes, rejects empty / absolute / ..-containing paths up-front, falls back to chunk reassembly when checkout is gone. Validation: 28/28 tests in memory::repo_ingest green (5 new: repo_hybrid_search_finds_keyword_hits, repo_hybrid_search_fuses_vector_keyword_and_recency, repo_hybrid_search_respects_top_k_and_empty_query, repo_list_files_returns_distinct_paths_sorted, repo_read_file_reassembles_chunks). cargo clippy --features repo-rag --lib -- -D warnings clean (one drive-by fix: needless_return on the early-exit in repo_read_file). Lesson: when adding a SQL keyword path beside a vector path, accept ann_matches as a parameter rather than embedding the AnnIndex inside the store method — keeps the method free of tokio/usearch deps and makes RRF fusion testable with synthetic (id, score) pairs from real chunk ids.',
+  'lesson',
+  'brain-repo-rag,repo-search,hybrid-search,rrf,source-scoped,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1c-a-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1c-a-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1c-b-i (BrainGateway MCP surface for per-repo retrieval) shipped 2026-05-16. First half of 1c-b: promotes the three repo Tauri commands from 1c-a (repo_search, repo_list_files, repo_read_file) to first-class BrainGateway methods + identically-named MCP tools so external AI coding agents can reach indexed repositories through MCP, not just the Tauri frontend. Cross-source All fan-out, prompt assembler with grouped citations, @source-id chat-composer mentions, and frontend vitest are deferred to 1c-b-ii. (1) Wire-stable request types in ai_integrations/gateway.rs — RepoSearchRequest { source_id, query, limit: Option<usize> }, RepoListFilesRequest { source_id }, RepoReadFileRequest { source_id, file_path } — plus a wire-stable gateway::RepoSearchHit that mirrors memory::repo_ingest::RepoSearchHit so the trait stays compilable when the repo-rag feature is off (the gateway just maps repo_ingest hits into wire hits). (2) Three new BrainGateway trait methods: repo_search(caps, RepoSearchRequest) -> Vec<RepoSearchHit>, repo_list_files(caps, RepoListFilesRequest) -> Vec<String>, repo_read_file(caps, RepoReadFileRequest) -> String. Trait surface itself is feature-flag-free; impl bodies are #[cfg(feature = "repo-rag")] with #[cfg(not)] stubs that return GatewayError::NotConfigured("repo-rag feature is not enabled in this build"). (3) AppStateGateway implementations mirror commands::repos verbatim: require_read(caps)? → validate_source_id → snapshot brain_mode/active_brain → embed_for_mode (best-effort) → spawn_blocking #1 opens per-repo AnnIndex.search(emb, (limit*5).max(20)) (silently skipped on no embedding / dim mismatch) → spawn_blocking #2 opens RepoStore + hybrid_search. repo_read_file prefers on-disk checkout via std::fs::read_to_string after canonicalize() + starts_with(checkout_root) symlink/.. guard, falls back to RepoStore::read_file chunk reassembly when canonicalize fails. Path-traversal hardening rejects "..", absolute prefixes ("/", "\\"), and OS-absolute PathBuf::is_absolute() up-front as InvalidArgument. (4) Three new MCP tools registered unconditionally in ai_integrations/mcp/tools.rs::definitions alongside the existing brain_* tools (capability gating happens server-side via require_read inside each gateway method, matching the pattern of the other brain tools). Dispatch arms parse args["source_id"]/args["query"]/args["file_path"]/args["limit"] and call the gateway methods. Bumped tools_list count tests 18→21 (brain-only) and 35→38 (with code_read) + added repo_* names to brain_tool_names_match_dispatch_arms expected list + shifted code_tool_names_are_correct slice start from defs[18..] to defs[21..] + updated tools_list_returns_28_tools (now 38) integration test with new index assertions tools[18]=repo_search, tools[19]=repo_list_files, tools[20]=repo_read_file. Validation: 5 new gateway::tests::repo_* tests (permission denial, empty query, invalid source_id, path-traversal x4, list-files invalid source_id). cargo test --features repo-rag --lib ai_integrations: 171 passed, 1 failed (kg_neighbors_reads_shared_seed_lesson_hub_edges — verified pre-existing via git stash before my edits, "table memories has no column named kind" schema drift unrelated to 1c-b-i). cargo clippy --features repo-rag --lib -- -D warnings clean. Lesson: when promoting an internal Tauri command to a BrainGateway trait method, define the wire types (request + response) inside the gateway module so the trait remains feature-flag-free, then conditionally compile the impl bodies — this keeps non-default builds (CI without --features repo-rag) compilable, and lets the dispatch layer (MCP) and frontend (Tauri command) share one canonical schema.',
+  'lesson',
+  'brain-repo-rag,brain-gateway,mcp-tools,repo-search,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1c-b-i-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1c-b-i-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1c-b-ii-a (cross-source All fan-out backend) shipped 2026-05-16. First slice of 1c-b-ii: lands the gateway/Tauri/MCP backend for cross-source retrieval; frontend prompt-assembler grouping, @source-id chat mentions, citation rendering, and vitest are deferred to 1c-b-ii-b. (1) New wire types in ai_integrations/gateway.rs: CrossSourceSearchRequest { query: String, limit: Option<usize> } and MultiSourceHit { source_id, source_label, local_id, content, score, file_path: Option<String>, parent_symbol: Option<String>, tier: Option<String>, tags } — source_id is "self" for main-brain hits and a memory_sources.id for repo hits; tier is Some for main brain (MemoryTier::as_str()), None for repo; file_path/parent_symbol are Some only for repo hits. (2) New BrainGateway::cross_source_search(caps, req) -> Vec<MultiSourceHit> trait method. Trait surface itself feature-flag-free; AppStateGateway impl: require_read(caps)? → reject empty query → clamp limit 1..=100 default 10 → per-source recall = (limit*5).clamp(20,100) → snapshot brain_mode + active_brain → embed_for_mode (best-effort) → run MemoryStore::hybrid_search_rrf for the self bucket → enumerate repo sources via crate::memory::sources::list_sources(store.conn()).filter(|s| s.kind == MemorySourceKind::Repo) under #[cfg(feature = "repo-rag")] (empty Vec under #[cfg(not)]) → for each repo spawn_blocking #1 AnnIndex::open + search(emb, recall.max(20)) (silently skipped on missing index / dim mismatch / no embedding) → spawn_blocking #2 RepoStore::open + hybrid_search → map results to MultiSourceHit with the repo''s source_label. (3) RRF fusion: each (source_id, local_id) pair gets a stable usize index into a flat arena (Vec<MultiSourceHit>); per-source rankings become Vec<usize>; call crate::memory::fusion::reciprocal_rank_fuse(&[&Vec<usize>], DEFAULT_RRF_K=60). Why usize and not (String, i64) tuples: reciprocal_rank_fuse<T: Copy + Eq + Hash + Ord> requires Copy keys, so tuple-of-String won''t compile — the arena indirection is the idiomatic fix. Top-k slice taken from the fused ranking, RRF score stamped onto each hit, returned already sorted desc. (4) New Tauri command commands::cross_source::cross_source_search(query, limit, state) — registered in lib.rs::generate_handler! between repo_read_file and memory_graph_page (NOT feature-gated since the gateway impl handles cfg internally). New MCP tool cross_source_search registered unconditionally in tools.rs immediately after repo_read_file with required {query} param + optional {limit} (1-100). Tool-count tests bumped: definitions_has_8_brain_tools_without_code_read 21→22; definitions_has_21_tools_with_code_read 38→39; brain_tool_names_match_dispatch_arms includes "cross_source_search"; code_tool_names_are_correct slices defs[22..] (was [21..]); integration_tests::tools_list_returns_28_tools asserts tools.len()=39 with tools[21]=cross_source_search and code tools shifted by one. Validation: 4 new cross_source_search_* gateway tests (permission denied without brain_read, empty query InvalidArgument, self-only fan-out returning source_id="self" / file_path=None / tier=Some(_) sorted desc by RRF score, limit=0 clamps to 1 instead of panicking). cargo test --features repo-rag --lib ai_integrations: 105/105 green. cargo clippy --features repo-rag --lib --tests -- -D warnings clean. Lesson: when implementing RRF across heterogeneous sources whose natural keys are (String, i64), assign each unique key a stable usize index into a flat arena and rank-fuse the indices — reciprocal_rank_fuse<T: Copy> rejects compound non-Copy keys, and the arena indirection is cheaper than per-source key cloning during merge.',
+  'lesson',
+  'brain-repo-rag,cross-source-search,rrf,brain-gateway,mcp-tools,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1c-b-ii-a-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1c-b-ii-a-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1c-b-ii-b (frontend cross-source chat wiring) shipped 2026-05-16. Second slice of 1c-b-ii: wires the cross_source_search Tauri command + MCP tool (shipped earlier the same day in 1c-b-ii-a) into the desktop chat surface. (1) New TS wire type MultiSourceHit in src/types/index.ts mirroring the Rust gateway::MultiSourceHit (source_id, source_label, local_id, content, score, file_path?, parent_symbol?, tier?, tags); Message gains optional sources: MultiSourceHit[] so each assistant turn can carry its retrieval payload. (2) useMemoryStore().crossSourceSearch(query, limit=5) wrapper calls invoke<MultiSourceHit[]>("cross_source_search", { query, limit }) and falls back to wrapping hybridSearch results as self-source hits when Tauri is unavailable, preserving graceful behaviour in pure-browser builds. (3) Three exported helpers in src/stores/conversation.ts: parseSourceMentions(text) uses the regex /(?:^|\s)@([A-Za-z0-9_.-][A-Za-z0-9_./-]*)/g so email addresses (user@example.com) are not misinterpreted as @source-id mentions — the (?:^|\s) word-boundary is mandatory; strips trailing sentence punctuation [.,!?:;]+$ from the captured id; dedups while preserving first-appearance order. groupHitsBySource(hits) groups by source_id preserving first-appearance order. formatCrossSourceContextPack(hits) — multi-source emits "── 🧠 TerranSoul ──" / "── 📦 owner/repo ──" group headers + repo hits render with [file_path::parent_symbol] preface; single-source collapses to the legacy formatRetrievedContextPack shape so existing prompt-shape tests keep passing without modification. (4) sendMessage browser path (path 2) now calls crossSourceSearch when the user mentions @source-id tokens OR the active source equals ALL_SOURCES_ID, filters hits to the explicitly-mentioned ids when present (one-turn override — never mutates the active source registry, matching the Continue @codebase precedent), and attaches the surviving hits to assistantMsg.sources. (5) src/components/ChatMessageList.vue grows a <details class="sources-footer"> block rendered when item.msg.sources?.length > 0: <summary> shows per-source badges (🧠/📦 + label + count), and the expanded ordered list shows each contributing row''s [file_path::parent_symbol] (or tier for brain hits) + a truncate(content,160) preview. All styles use var(--ts-*) design tokens. Validation: npx vitest run = 1962/1962 passed (153 files, +15 new cases from this chunk including 14 in the new cross-source-rag.test.ts file). npx vue-tsc --noEmit has 2 pre-existing errors in SettingsModal.vue and SupertonicConsentDialog.test.ts unrelated to this chunk. Scope deferral: this slice wires path 2 (browser-side streaming) only. Path 1 (Tauri streaming with backend prompt injection in Rust) still uses single-source RAG; folding cross-source into path 1 is rolled into chunk 1d alongside the Aider-style repo map + repo-scholar quest + Brain Documentation Sync pass, because path 1 needs Rust-side prompt-assembler changes that are naturally bundled with the 1d finalisation. Lesson 1: TerranSoul has two LLM streaming paths — path 1 (Tauri/Rust backend, sees backend-injected RAG) and path 2 (browser-side streamChatCompletion, frontend builds the system prompt). Frontend RAG changes ONLY affect path 2; backend RAG changes ONLY affect path 1. Both must be touched for full feature coverage. Lesson 2: when designing @-mention syntax in chat, require a word boundary ((?:^|\s)@) in the regex to skip email addresses — otherwise me@example.com is misparsed as source id "example.com". Lesson 3: when prompt-shape backward compatibility matters, collapse multi-source rendering to the legacy single-source format whenever the filtered result set ends up in one source — preserves every existing assertion without per-test special-casing.',
+  'lesson',
+  'brain-repo-rag,cross-source-search,frontend,chat,citations,mentions,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1c-b-ii-b-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1c-b-ii-b-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1d shipped 2026-05-16 (Aider-style repo map + signatures + repo-scholar quest + Brain Documentation Sync). New surfaces: RepoStore::build_repo_map(budget_tokens) and RepoStore::build_file_signatures(file_path) in src-tauri/src/memory/repo_ingest.rs, exposed as BrainGateway::repo_map / repo_signatures trait methods + Tauri commands + identically-named MCP tools. MCP tool count is now 24 brain-only + 17 code = 41 total. Repo-map output uses the Aider shape: leading ⋮ per file boundary, │-prefixed lines for up to REPO_MAP_MAX_SYMBOLS_PER_FILE=8 unique parent_symbols (HashSet dedup, earliest occurrence wins), each rendered as signature_preview = first REPO_MAP_SIGNATURE_LINES=3 non-blank trimmed lines of the chunk. Budget bounds clamp 64..=16384 tokens default 1024; char-budget = tokens * 4; budget 0 returns empty string; tiny budgets always keep the top file. Repo-scholar-quest skill in src/stores/skill-tree.ts (tier advanced, requires rag-knowledge) activates when brain.brainMode !== null && useMemorySourcesStore().repoSources.length > 0; combos with paid-brain (Repo Sage) and rag-knowledge (Polyglot Librarian). Scope deviation: importance proxy, NOT PageRank. Aider runs PageRank over a symbol call-graph; TerranSoul has no per-repo repo_edges table yet (main brain ships code_symbols / code_edges in coding/symbol_index.rs, but those operate on code_repos not memory_sources). Chunk count per file is a robust proxy until a future slice extracts the per-repo call graph. Scope deferral: OAuth device flow for private repos split into chunk 1e because it needs orthogonal HTTP scaffolding (verification_uri prompts, token persistence, FS-permission hardening, refresh on expiry) that should not block the compression surfaces. Lesson 1: NEVER use the id column with string literals in memory-seed.sql — the schema is id INTEGER PRIMARY KEY AUTOINCREMENT and SQLite rejects string ids with SQLITE_MISMATCH (extended code 20). Always use no-id INSERT keyed on source_hash = ''seed:<original-id>'' — matches the runtime appender pattern at gateway.rs:1442. Fixed 13 pre-existing INSERTs out-of-scope during 1d. Lesson 2: when ranking files for token-budgeted compression, chunk count per file is a useful PageRank proxy when no call-graph exists yet — pair it with a per-file symbol cap (8) so a single wide module cannot monopolise the budget. Lesson 3: Aider-style ⋮ / │ glyph language has become a de-facto interchange shape for repo-map tools — preserving it makes the output familiar to any agent that has already learned Aider conventions. Lesson 4: when splitting a 5-part chunk, ship the orthogonal-scaffolding part (OAuth in this case) as its own follow-up chunk instead of stalling the compression surfaces behind it.',
+  'lesson',
+  'brain-repo-rag,repo-map,signatures,aider,quest,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1d-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1d-2026-05-16');
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-1e shipped 2026-05-16 (private-repo OAuth device flow, final chunk of the BRAIN-REPO-RAG phase). New surfaces: (1) src-tauri/src/memory/repo_oauth.rs — RepoOAuthToken { access_token, token_type, scope, created_at, expires_at }, token_path/load_token/save_token/clear_token persist to <data_dir>/oauth/github.json with FS-permission hardening (Unix PermissionsExt 0o700 dir + 0o600 file; non-Unix permissions.set_readonly(true) best-effort matching VS Code/npm/pip posture; full icacls ACL tightening intentionally deferred to keep the path dependency-free). Atomic .json.tmp + rename writes. inject_https_token(remote_url, token) rewrites https://github.com/owner/repo.git → https://x-access-token:<token>@github.com/owner/repo.git; SSH URLs, non-GitHub URLs, and empty tokens pass through unchanged; URLs that already contain userinfo (https://olduser:oldpass@github.com/...) get their stale credentials replaced not duplicated — detection must accept both bare prefix (starts_with(\"https://github.com/\")) AND userinfo forms (contains(\"@github.com/\")). (2) repo_ingest::ingest_repo_with loads the token via repo_oauth::load_token(data_dir) and passes the rewritten URL to shallow_clone — gix credentials Cascade is deliberately bypassed because x-access-token: is GitHub''s own documented HTTPS auth pattern and is accepted by every git client. (3) Four feature-gated Tauri commands in commands/repos.rs: repo_oauth_github_start(scopes) → DeviceCodeResponse (reuses crate::coding::request_device_code from the self-improve scaffolding); repo_oauth_github_poll(device_code) → DevicePollResult, persists token under spawn_blocking on Success; repo_oauth_github_status() → RepoOAuthStatus { linked, token_type, scope, created_at, expires_at, expired } — never exposes the token itself; repo_oauth_github_clear() — idempotent. RepoOAuthToken::redacted() returns \"<redacted N chars>\" — the only serialisation that touches the token. (4) Frontend: src/components/RepoOAuthDialog.vue mounts in MemoryView via a 🔐 GitHub auth pill in the source-picker nav; shows verification_uri + large monospace user_code with copy button, auto-polls every device_code.interval seconds, displays linked/scope/expired status + unlink button. Uses var(--ts-*) design tokens. src/stores/memory-sources.ts gains 4 wrappers (startGitHubOAuth, pollGitHubOAuth, fetchGitHubOAuthStatus, clearGitHubOAuth) + 3 refs + types. Validation: 5/5 new Rust unit tests pass (roundtrip persistence under oauth/, redaction never leaks, idempotent clear, expiry semantics, URL rewriting); 4/4 new vitest cases pass; cargo clippy --features repo-rag --lib --tests -- -D warnings clean; cargo test --features repo-rag --lib → 2964 passed, 3 failed (3 pre-existing seed/schema-version failures unrelated to 1e: compiled_seed_applies_to_canonical_schema, kg_neighbors_reads_shared_seed_lesson_hub_edges, schema_version_is_21). Lesson 1: URL-rewriting https://x-access-token:<token>@github.com/... is simpler than gix Credentials Cascade and accepted by every git client; avoid the trait-object plumbing layer when a documented URL form does the same job. Lesson 2: FS hardening on Windows via set_readonly(true) is best-effort and matches the posture of VS Code/npm/pip; full ACL tightening would require an icacls shellout — defer the dependency unless a threat model demands it. Lesson 3: when matching GitHub HTTPS URLs for credential injection, the detection regex/predicate must accept BOTH the bare prefix (https://github.com/) AND userinfo-containing forms (https://user:pass@github.com/) — otherwise URLs that have been rewritten once (e.g. a stale token from a prior session) will not be re-rewritten and the user appears to be using stale credentials forever. Lesson 4: any token-bearing struct should have a redacted() / Debug impl that emits length but never the raw value — and a unit test that asserts the raw token does not appear in the redacted output. Lesson 5: when a chunk splits a 5-part feature (1d compression surfaces + 1e OAuth scaffolding), shipping the orthogonal-scaffolding part as its own follow-up chunk keeps the original chunk''s test surface clean and lets reviewers reason about each concern independently — pattern worth repeating when a chunk grows beyond ~6 files.',
+  'lesson',
+  'brain-repo-rag,oauth,device-flow,private-repos,github,fs-hardening,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-1e-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-1e-2026-05-16');
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-2a shipped 2026-05-16 (per-source knowledge-graph visualization). Before 2a the 2D MemoryGraph + 3D MemoryGalaxy rendered only personal memories; every repo source registered through 1a-1e was retrievable from chat but invisible in every graph view. Closing pipeline: (1) RepoStore::recent_chunks(limit) in src-tauri/src/memory/repo_ingest.rs queries per-repo SQLite ORDER BY (parent_symbol IS NULL) ASC, created_at DESC, id DESC so AST-annotated function/class boundaries surface first. (2) New Tauri command cross_source_graph_nodes(per_source_limit?) in commands/repos.rs lists every non-self row from memory_sources, opens each RepoStore, takes up to per_source_limit (default 64, clamped [1,512]) recent chunks, and emits CrossSourceGraph { nodes, perSourceCounts } with each node tagged { graphId, sourceId, sourceLabel, localId, content, filePath, parentSymbol, createdAt }. (3) Collision-free numeric id space: positive memories.id stays personal; the projection hands out negative graphIds -1, -2, -3, ... per repo chunk — d3-force numeric node identity stays unique across sources without a string-id migration, and the id space stays well inside JS 2^53. (4) Frontend wiring: useMemoryStore.fetchCrossSourceGraph wraps the command and returns {nodes:[], perSourceCounts:[]} on invoke failure so non-RAG / feature-off builds stay functional; MemoryView.vue watches sourcesStore.isAllView and concatenates the projected MemoryEntry rows onto displayedMemories before binding to <MemoryGraph :memories>. (5) MemoryGraph.vue extends its theme with repo: tok(--ts-warning, #d4a14a) and recolours nodes whose sourceId is set; SelectedNodesPanel shows the 📦 source · file::symbol provenance row. MemoryGalaxy.vue mirrors with REPO_NODE_COLOR. Lesson 1: project unknown sources into a unified node space rather than growing the consumer surface — the graph stayed source-unaware through 1a-1e because the projection step was missing; once cross_source_graph_nodes existed, MemoryGraph + MemoryGalaxy only needed optional-field plumbing on MemoryEntry (no API breakage). Lesson 2: synthesised graph nodes should claim a disjoint numeric id range (negatives) so d3-force collision-free identity comes for free without forcing a string-id migration through every renderer. Lesson 3: when projecting many-source rows under a limit, sort structurally meaningful rows first ((parent_symbol IS NULL) ASC then created_at DESC, id DESC) so AST-annotated function/class chunks dominate the visible set under tight per-source budgets. Lesson 4: chat ([LONG-TERM MEMORY] block via cross_source_search + prompt assembler) and graph render are independent surfaces that both need wiring whenever a new source kind ships — visual parity is not a free side-effect of retrieval parity.',
+  'lesson',
+  'brain-repo-rag,knowledge-graph,visualization,per-source,cross-source,d3-force,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-2a-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-2a-2026-05-16');
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul BRAIN-REPO-RAG-2b shipped 2026-05-16 (deep-scan ingest visibility + debug log). Before 2b, repo-RAG ingest silently dropped 4 classes of files — over-cap (files_skipped_size), binary (files_skipped_binary), unchanged-since-last-sync (files_skipped_unchanged), and likely-secret (files_skipped_secret). Counters were incremented inside ingest_repo_with (and the test-only ingest_from_checkout_for_tests twin), but the IngestSink::progress channel only fired on walk/scan/chunk/persist phase boundaries. Users running a Memory-panel repo scan saw nothing for skipped files — a deep-scan-visibility hole that violated the no-partial-scans rule. Closing pipeline: (1) Rust IngestPhase gains Skip (per-file skip events) and Summary (one final event before Done carrying scanned=N indexed=N skipped_size=N skipped_binary=N skipped_unchanged=N skipped_secret=N pruned=N chunks=N). (2) IngestProgress gains skip_reason: Option<&static str> with the four values too_large | binary | unchanged | secret. (3) Both ingest loops in src-tauri/src/memory/repo_ingest.rs were rewritten so rel is computed BEFORE the size check, then every skip branch fires emit_skip(processed, total, rel, reason) before continue. (4) TaskProgressEvent adds optional log_line: Option<String> with #[serde(default, skip_serializing_if = Option::is_none)] for back-compat. (5) TauriIngestSink::progress in src-tauri/src/commands/repos.rs formats every event into a stable log line: skip[<reason>]: <rel> for skips, summary: <counters> for summary, and <phase> (<p>/<t>): <msg> for normal phases. (6) Frontend useTaskStore keeps a per-task ring buffer taskLogs: Map<string, string[]> capped at TASK_LOG_MAX_LINES=500; the task-progress listener appends every log_line. (7) TaskProgressBar.vue renders a collapsible Debug log disclosure under each running task with sticky counter chips (indexed, skip-size, skip-binary, skip-unchanged, skip-secret) coloured via --ts-accent / --ts-warning / --ts-accent-error design tokens; the open <pre> auto-scrolls. Tests: memory::repo_ingest::tests::ingest_emits_skip_and_summary_events_for_every_decision + 3 vitest cases in src/stores/tasks.test.ts. Lesson 1: counters alone are not progress — every silent skip path must emit a visible event in the same channel as the success path, otherwise users see a stalled pipeline. Lesson 2: when a generic event struct (here TaskProgressEvent) gains an optional field, use #[serde(skip_serializing_if = Option::is_none)] so wire payloads stay back-compat AND add log_line: None to every existing struct-literal site in one pass (in TerranSoul that was 12 sites across brain.rs/ingest.rs/repos.rs). Lesson 3: a per-task ring buffer beats unbounded debug history — TASK_LOG_MAX_LINES=500 + slice(0, len-cap) on overflow gives constant memory under any repo size. Lesson 4: format the wire log line in the sink (server side), not in every UI consumer — the frontend just appends a string, which keeps the consumer trivial and lets every other task kind opt-in to logs by populating log_line.',
+  'lesson',
+  'brain-repo-rag,ingest,progress,debug-log,deep-scan,no-silent-skips,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:brain-repo-rag-2b-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:brain-repo-rag-2b-2026-05-16');
+
+
+-- ============================================================================
+-- Knowledge-graph hub anchors (seed contract for ai_integrations gateway tests)
 --
--- Wire the seeded memories into a typed graph so the KG layer
--- (memory_edges, brain_kg_neighbors, graph_rag.rs) is exercised
--- immediately on first run, instead of being dead weight until LLM
--- extraction populates it.
+-- The shared MCP seed exposes a small hub-and-spoke graph so coding agents
+-- (and the gateway::kg_neighbors tests) can rely on the following structure
+-- being present after `run_all`:
 --
--- We match by unique substring of `content` rather than hard-coded
--- AUTOINCREMENT IDs so the seed is robust to row reordering. Each
--- edge uses INSERT OR IGNORE against the UNIQUE(src_id, dst_id,
--- rel_type) constraint, so re-running the seed (e.g. against a fresh
--- DB on a different machine) is idempotent.
+--   <any LESSON: row>  --part_of-->  seed:lessons-learned-hub
+--   seed:lessons-learned-hub  --covers-->  seed:stack-coverage-anchor
 --
--- rel_type vocabulary follows POSITIVE_REL_TYPES from
--- edge_conflict_scan.rs: supports, implies, related_to, derived_from,
--- cites, part_of. `normalise_rel_type` (edges.rs:199) lowercases and
--- strips, so the literals below already match the stored form.
--- ====================================================================
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1777939200000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow%'
-  AND (
-       d.content LIKE 'MCP server exposes brain on three ports:%'
-    OR d.content LIKE 'MCP shared data policy:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1777939200000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: Treat LAN MCP bearer-token access as read access%'
-  AND d.content LIKE 'LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778112000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: LAN MCP sharing must expose an explicit auth mode choice%'
-  AND (
-       d.content LIKE 'LESSON: LAN MCP brain sharing is an opt-in local-network retrieval flow%'
-    OR d.content LIKE 'RULE: Treat LAN MCP bearer-token access as read access%'
-    OR d.content LIKE 'MCP server exposes brain on three ports:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778112000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: LAN discovery should advertise whether a TerranSoul host requires a token%'
-  AND d.content LIKE 'RULE: LAN MCP sharing must expose an explicit auth mode choice%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
-  AND (
-       d.content LIKE 'MCP shared data policy:%'
-    OR d.content LIKE 'Self-improve with MCP mode:%'
-    OR d.content LIKE 'LESSON: Do not commit MCP runtime state.%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: New self-improve runtime logs must use coding::rolling_log%'
-  AND d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale%'
-  AND (
-       d.content LIKE 'MCP AUTO-START TASK:%'
-    OR d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
-    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: Agents must not reuse MCP port 7423 when target-mcp is out of date%'
-  AND d.content LIKE 'LESSON: For MCP 7423 startup, a healthy process is not sufficient if target-mcp is stale%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user%'
-  AND (
-       d.content LIKE 'MCP EVERY-SESSION RULE:%'
-    OR d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
-    OR d.content LIKE 'MCP PREFLIGHT INSTRUCTIONS FILE:%'
-    OR d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
-  AND (
-       d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier document-learning setup%'
-    OR d.content LIKE 'Batched embedding pipeline%'
-    OR d.content LIKE 'commands/ files%ingest.rs%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Scholar''s Quest should not show a Verify Brain step%'
-  AND (
-       d.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
-    OR d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier document-learning setup%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778630400000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Learn Docs must precheck Scholar''s Quest prerequisites from live app state%'
-  AND (
-       d.content LIKE 'LESSON: Scholar''s Quest should not show a Verify Brain step%'
-    OR d.content LIKE 'LESSON: Scholar''s Quest is the document-learning chain target%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Text-only MCP rules were not enough%'
-  AND d.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%'
-  AND (
-       d.content LIKE 'MCP shared data policy:%'
-    OR d.content LIKE 'MCP server exposes brain on three ports:%'
-    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Relying only on <data_dir>/shared for seed migrations caused dev/release drift%'
-  AND d.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: Fresh MCP databases should bootstrap from a single init snapshot%'
-  AND (
-       d.content LIKE 'MCP shared data policy:%'
-    OR d.content LIKE 'RULE: Migration/schema bootstrap must resolve shared seed sources in deterministic order%'
-    OR d.content LIKE 'LESSON: MCP-mode self-improve runtime logs live under mcp-data/%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778025600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'VERDICT: Reject direct GitNexus import/bundling.%'
-  AND (
-       d.content LIKE 'LESSON: GitNexus is PolyForm Noncommercial.%'
-    OR d.content LIKE 'CODE WORKBENCH UX LESSON:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778371200000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE: When correctness is confirmed in a chunk%'
-  AND (
-       d.content LIKE 'MCP SELF-LEARNING RULE:%'
-    OR d.content LIKE 'RULE: TerranSoul MCP preflight must be visible to the user%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1778371200000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier %'
-  AND (
-       d.content LIKE 'RAG pipeline:%'
-    OR d.content LIKE 'Brain module map:%'
-    OR d.content LIKE 'MCP shared data policy:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778371200000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier document-learning setup%'
-  AND (
-       d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier teach-ingest setup%'
-    OR d.content LIKE 'DEFAULT SYSTEM SETTING: Intent classifier gated-setup setup%'
-    OR d.content LIKE 'RULE: Local E2E response latency budget%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778976000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: Persistent WebView2 CDP E2E state isolation%'
-  AND (
-       d.content LIKE 'RULE: Local E2E response latency budget%'
-    OR d.content LIKE 'For TerranSoul desktop UI verification and desktop E2E%'
-  );
-
--- Hub edges: every inventory fact is part_of the project-index pointer
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE '%MCP shared seed dataset lives in mcp-data/shared/memory-seed.sql%'
-  AND (
-       s.content LIKE 'Brain module map:%'
-    OR s.content LIKE 'Memory module map:%'
-    OR s.content LIKE 'ai_integrations exposes the brain%'
-    OR s.content LIKE 'Persona module map:%'
-    OR s.content LIKE 'Voice module map:%'
-    OR s.content LIKE 'coding/ module map:%'
-    OR s.content LIKE 'commands/ files (~150 Tauri commands):%'
-    OR s.content LIKE 'Frontend Pinia stores in src/stores/:%'
-    OR s.content LIKE 'Frontend composables in src/composables/:%'
-    OR s.content LIKE 'Design docs (docs/):%'
-    OR s.content LIKE 'Rules files (rules/):%'
-    OR s.content LIKE 'Pose pipeline:%'
-    OR s.content LIKE 'Orchestrator submodules:%'
-    OR s.content LIKE 'Plugins run in a WASM sandbox:%'
-    OR s.content LIKE 'Sync primitives in src-tauri/src/sync/:%'
-    OR s.content LIKE 'Device identity uses Ed25519.%'
-    OR s.content LIKE 'Self-improve flow:%'
-  );
-
--- Hub edges: every LESSON is part_of the lessons-learned pointer
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE '%Durable gotchas, decisions, and lessons learned%'
-  AND s.content LIKE 'LESSON:%';
-
--- Memory-philosophy cluster: rules derive_from the core lesson; the
--- core lesson cites the concrete TerranSoul implementation it endorses
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
-  AND (
-       s.content LIKE 'RULE (memory philosophy):%'
-    OR s.content LIKE 'RULE (memory access pattern):%'
-    OR s.content LIKE 'RULE (provenance):%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'cites', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CORE LESSON (Stop Calling It Memory%'
-  AND (
-       d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
-     OR d.content LIKE 'SQLite schema is at version 20%'
-    OR d.content LIKE 'Memory module map:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULE (memory philosophy):%'
-  AND d.content LIKE 'MCP shared data policy: mcp-data/shared is committed%';
-
--- Claudia cluster: adoption + license + anti-pattern are part_of the
--- reference; the reference cites the memory-philosophy core lesson
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%'
-  AND (
-       s.content LIKE 'CLAUDIA LICENSE (CRITICAL):%'
-    OR s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
-    OR s.content LIKE 'ANTI-PATTERN (claudia):%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
-  AND d.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'cites', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'REFERENCE PROJECT — kbanc85/claudia%'
-  AND d.content LIKE 'CORE LESSON (Stop Calling It Memory%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 0.8, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CLAUDIA ADOPTION PROPOSALS%'
-  AND (
-       d.content LIKE 'Memory module map:%'
-    OR d.content LIKE 'coding/ module map:%'
-    OR d.content LIKE 'commands/ files (~150 Tauri commands):%'
-    OR d.content LIKE 'Frontend Pinia stores in src/stores/:%'
-  );
-
--- Standing requirements cluster: explicit support + relation links
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data%'
-  AND d.content LIKE 'MCP shared data policy: mcp-data/shared is committed%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): every agent session%'
-  AND d.content LIKE 'To start MCP headless server:%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'STANDING REQUIREMENT (user, 2026-05-04): "Make sure mcp-data%'
-  AND (
-       d.content LIKE '%MCP shared seed dataset lives in mcp-data/shared/memory-seed.sql%'
-    OR d.content LIKE '%Durable gotchas, decisions, and lessons learned%'
-  );
-
--- Storage invariant + backfill procedure connect to the architectural facts
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
-  AND (
-       d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
-     OR d.content LIKE 'SQLite schema is at version 20%'
-    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
-  AND d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%';
-
+-- This gives every lesson a single two-hop walk to the stack-coverage anchor
+-- without requiring per-row edge wiring at seed time. All inserts here are
+-- idempotent via `WHERE NOT EXISTS`, so re-running the seed is safe.
 -- ============================================================================
--- STACK COVERAGE ANCHOR (single hub node any agent can land on first)
--- ============================================================================
--- Documents which memory/retrieval layer each seeded fact-cluster exercises.
--- Future Phase 33 work (see rules/milestones.md) must keep this in sync.
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'STACK COVERAGE: the mcp-data seed exercises the full TerranSoul retrieval stack — SQLite schema V20 (every row), FTS5 (auto-indexed on insert), KG edges (memory_edges populated by content-LIKE subqueries below), RRF fusion (5 non-vector signals always live; vector signal lights up after embedding backfill), HyDE expansion (works on any populated row at query time), and LLM-as-judge reranker (default-on for RRF/HyDE when a local brain is available, pruning below threshold 0.55).',
-  'mcp-data,architecture,retrieval-stack,phase-33,non-negotiable',
-  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
-);
 
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE '%Durable gotchas, decisions, and lessons learned%'
-  AND d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%';
-
--- Wire the anchor to every other seed hub so RRF + KG traversal both land here first.
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
-  AND (
-       d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
-    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
-    OR d.content LIKE 'CORE LESSON (Stop Calling It Memory%'
-    OR d.content LIKE '%lessons-learned.md captures durable%'
-    OR d.content LIKE '%project-index.md is the single source of truth%'
-    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
-  );
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP EVERY-SESSION RULE: every coding agent run must use TerranSoul MCP as the project-memory layer when available — check/reuse/start the release, dev, or headless MCP server; call brain_health plus a relevant brain_search or brain_suggest_context before broad repo exploration; and preserve durable self-improve lessons in mcp-data/shared or rules/docs. If MCP is blocked, report the blocker instead of silently skipping it.',
-  'mcp,agent-rule,self-improve,project-memory,non-negotiable',
-  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP EVERY-SESSION RULE:%'
-  AND (
-       d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
-    OR d.content LIKE 'STORAGE INVARIANT (mcp-data seed):%'
-    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
-  );
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP AUTOSTART + OFFLINE EMBEDDER: Copilot setup runs scripts/copilot-start-mcp.mjs after dependency install to reuse or start headless MCP on port 7423. Fresh headless MCP seed/query embedding falls back to a deterministic in-process token-hash embedder when provider embeddings are unavailable, keeping HNSW + RRF vector retrieval active with zero network.',
-  'mcp,autostart,offline-embedder,hnsw,rrf,copilot-setup,self-improve',
-  10, 'fact', 1746316800000, 'long', 1.0, 'general', 'principle'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP AUTOSTART + OFFLINE EMBEDDER:%'
-  AND (
-       d.content LIKE 'MCP EVERY-SESSION RULE:%'
-    OR d.content LIKE 'STACK COVERAGE: the mcp-data seed exercises%'
-    OR d.content LIKE 'EMBEDDING BACKFILL PROCEDURE:%'
-  );
-
--- ============================================================================
--- Rules enforcement coverage — high-priority operational rules from rules/*.md
--- ============================================================================
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'RULES ENFORCEMENT BUNDLE: every agent must query MCP for project rules before broad exploration, then obey rules/milestones.md, rules/prompting-rules.md, rules/coding-standards.md, rules/architecture-rules.md, rules/reality-filter.md, and rules/quality-pillars.md. If a rule is missing from retrieval, update mcp-data/shared in the same PR so future agents cannot skip it.',
-  'rules,enforcement,mcp,self-improve,non-negotiable',
-  10, 'fact', 1746316800000, 'long', 1.0, 'rules', 'principle'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MILESTONE HYGIENE RULE: rules/milestones.md is the active queue only. It may contain only not-started or in-progress chunks. When a chunk is complete, log full details in rules/completion-log.md, remove the done row from milestones.md, drop empty phase headings, and update Next Chunk to the next not-started item. Never leave done rows in milestones.md.',
-  'rules,milestones,completion-log,chunk-hygiene,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'BACKLOG PROMOTION RULE: rules/backlog.md is a holding area only. Agents must never start backlog chunks directly. If milestones.md has no not-started chunks, stop and ask the user which backlog items to promote; only after user confirmation move selected items into milestones.md and continue.',
-  'rules,backlog,milestones,user-confirmation,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PROMPT CONTEXT RULE: every coding workflow/self-improve prompt must auto-load rules/*.md, instructions/*.md, and docs/*.md into indexed XML document blocks through the shared CodingPrompt/run_coding_task path. Do not create one-off prompt builders that bypass these rule documents.',
-  'rules,prompting,self-improve,codingprompt,documents',
-  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-AGENT INSTRUCTION SYNC RULE: .github/copilot-instructions.md is canonical. When changing project-wide instructions, keep AGENTS.md, CLAUDE.md, and .cursorrules quick references aligned in the same commit. rules/agent-mcp-bootstrap.md must stay agent-agnostic even when Copilot setup owns cloud autostart.',
-  'rules,instruction-sync,copilot,agents,claude,cursor',
-  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'DOCUMENTATION SYNC RULES: any brain-surface change must update both docs/brain-advanced-design.md and README.md; any persona-surface change must update both docs/persona-design.md and README.md. Brain/persona PRs missing those docs are incomplete.',
-  'rules,docs-sync,brain,persona,readme,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'CREDITS AND LICENSING RULE: any external author, open-source project, paper, docs page, dataset, tutorial, or reverse-engineered reference that informs code, docs, roadmap, prompts, feature catalogues, or rejected decisions must be credited in top-level CREDITS.md in the same PR. Use neutral TerranSoul names for runtime identifiers.',
-  'rules,credits,licensing,third-party,naming,non-negotiable',
-  9, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'NO PRETEND CODE RULE: production code must be real, compilable, and functional. No TODO/placeholder/future/subsequent-chunk comments, no empty trait impls, no mock/canned production responses, no symbolic scaffolding. Either implement fully with tests or track it as a milestone/backlog item and remove it from user-reachable paths.',
-  'rules,reality-filter,no-mocks,production-ready,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'LLM DECISION ROUTING RULE: decisions about what the AI should do — agent/tool choice, UX overlay, RAG injection, model switching, setup gates — must route through the configured brain classifier/command with a user toggle in src/stores/ai-decision-policy.ts. Hand-rolled regex/includes/keyword arrays for AI behaviour are banned except documented parsing/fallback exceptions.',
-  'rules,llm-decision,ai-routing,brain,classifier,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'VALIDATION AND REALITY RULE: after each chunk, run relevant existing lint/build/tests and report blockers honestly. Do not claim verification that did not run; label unverified/inferred claims. Code changes must also run security review via CodeQL checker when available, and dependency additions must check GH advisory data first for supported ecosystems.',
-  'rules,validation,reality-filter,codeql,security,non-negotiable',
-  10, 'procedure', 1746316800000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP MARKDOWN BOUNDARY RULE: Markdown files are not TerranSoul MCP memory. If rules/docs/lessons Markdown contains durable project knowledge for future agents, sync the same knowledge into mcp-data/shared/memory-seed.sql and connect it with memory_edges so SQLite plus the knowledge graph remains the authoritative MCP memory source.',
-  'rules,mcp,markdown,memory,knowledge-graph,non-negotiable',
-  10, 'procedure', 1746416974000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
-  AND (
-       d.content LIKE 'MCP EVERY-SESSION RULE:%'
-    OR d.content LIKE 'MILESTONE HYGIENE RULE:%'
-    OR d.content LIKE 'BACKLOG PROMOTION RULE:%'
-    OR d.content LIKE 'PROMPT CONTEXT RULE:%'
-    OR d.content LIKE 'MULTI-AGENT INSTRUCTION SYNC RULE:%'
-    OR d.content LIKE 'DOCUMENTATION SYNC RULES:%'
-    OR d.content LIKE 'CREDITS AND LICENSING RULE:%'
-    OR d.content LIKE 'NO PRETEND CODE RULE:%'
-    OR d.content LIKE 'LLM DECISION ROUTING RULE:%'
-    OR d.content LIKE 'VALIDATION AND REALITY RULE:%'
-    OR d.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
-    OR d.content LIKE 'Rules files (rules/):%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746316800000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
-  AND (
-       s.content LIKE 'MILESTONE HYGIENE RULE:%'
-    OR s.content LIKE 'BACKLOG PROMOTION RULE:%'
-    OR s.content LIKE 'PROMPT CONTEXT RULE:%'
-    OR s.content LIKE 'MULTI-AGENT INSTRUCTION SYNC RULE:%'
-    OR s.content LIKE 'DOCUMENTATION SYNC RULES:%'
-    OR s.content LIKE 'CREDITS AND LICENSING RULE:%'
-    OR s.content LIKE 'NO PRETEND CODE RULE:%'
-    OR s.content LIKE 'LLM DECISION ROUTING RULE:%'
-    OR s.content LIKE 'VALIDATION AND REALITY RULE:%'
-    OR s.content LIKE 'MCP MARKDOWN BOUNDARY RULE:%'
-    OR s.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
-  );
-
--- ============================================================================
--- MCP Preflight Enforcement (added 2026-05-05)
--- ============================================================================
--- These entries document the THREE mechanical enforcement layers that prevent
--- agents from silently skipping MCP. Without these, agents read the rule and
--- then violate it anyway because rules-in-markdown have no teeth.
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP PREFLIGHT ENFORCEMENT: three layers enforce MCP usage for every agent session. (1) VS Code task "TerranSoul MCP: Auto-Start" in .vscode/tasks.json with runOptions.runOn=folderOpen auto-launches node scripts/copilot-start-mcp.mjs when the workspace opens — no agent action required. (2) .github/instructions/mcp-preflight.instructions.md with applyTo="**" is loaded by VS Code Copilot on EVERY request as mandatory context — it instructs the agent to call brain_health before any work. (3) The MCP mandate is the FIRST section in .github/copilot-instructions.md, AGENTS.md, and CLAUDE.md (before architecture, before tech stack) so it is never truncated by context-window limits. All three layers work together: auto-start ensures MCP is running, the .instructions.md ensures the agent knows to use it, and the top-of-file placement ensures the rule is never lost to summarization.',
-  'mcp,preflight,enforcement,auto-start,instructions,non-negotiable',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'rules', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP AUTO-START TASK: .vscode/tasks.json contains a task labeled "TerranSoul MCP: Auto-Start" with type=shell, command=node scripts/copilot-start-mcp.mjs, isBackground=true, and runOptions.runOn=folderOpen. This means VS Code launches it automatically whenever the TerranSoul workspace folder is opened. The script checks authenticated MCP servers in priority order 7421 release, 7423 MCP tray, then 7422 dev; it reuses the first available server or starts npm run mcp detached if none is healthy. No manual agent intervention needed.',
-  'mcp,auto-start,vscode-task,setup,enforcement',
-  9, 'fact', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP PREFLIGHT INSTRUCTIONS FILE: .github/instructions/mcp-preflight.instructions.md with YAML frontmatter applyTo="**" is auto-loaded by VS Code Copilot on every agent request regardless of which file the user is editing. It tells the agent to call brain_health, then brain_search/brain_suggest_context before any codebase exploration. If MCP is not healthy, start it. If MCP cannot start, report the blocker. This is VS Code''s native per-request instruction injection — the agent cannot skip it because VS Code prepends it to every prompt.',
-  'mcp,preflight,instructions-file,vscode,enforcement,copilot',
-  9, 'fact', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
-  AND (
-       d.content LIKE 'MCP EVERY-SESSION RULE:%'
-    OR d.content LIKE 'MCP AUTOSTART + OFFLINE EMBEDDER:%'
-    OR d.content LIKE 'RULES ENFORCEMENT BUNDLE:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'part_of', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE d.content LIKE 'MCP PREFLIGHT ENFORCEMENT:%'
-  AND (
-       s.content LIKE 'MCP AUTO-START TASK:%'
-    OR s.content LIKE 'MCP PREFLIGHT INSTRUCTIONS FILE:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP AUTO-START TASK:%'
-  AND d.content LIKE 'To start MCP headless server:%';
-
--- ============================================================================
--- MCP write capability lesson (added 2026-05-05)
--- ============================================================================
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP WRITE CAPABILITY FIX (2026-05-05): MCP transports must use the explicit transport capability profile, not GatewayCaps::default(). Root cause of brain_ingest_url permission denied was src-tauri/src/ai_integrations/mcp/mod.rs constructing brain_write=false and stdio using GatewayCaps::default(). Fix: mcp::transport_caps() returns GatewayCaps::READ_WRITE for HTTP bearer-token MCP and trusted stdio MCP. GatewayCaps::default remains read-only for tests/future embedders. This allows coding agents to persist durable self-improve/research knowledge through brain_ingest_url while preserving fail-closed defaults outside MCP.',
-  'mcp,brain_write,capabilities,permission-fix,self-improve,transport-caps',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP WRITE CAPABILITY FIX:%'
-  AND (
-       d.content LIKE 'MCP EVERY-SESSION RULE:%'
-    OR d.content LIKE 'SELF-IMPROVE WRITE-BACK CONTRACT:%'
-    OR d.content LIKE 'MCP SELF-LEARNING RULE:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP WRITE CAPABILITY FIX:%'
-  AND d.content LIKE 'MCP server exposes brain on three ports:%';
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP INGEST SINK FIX (2026-05-05): brain_ingest_url requires both brain_write caps and a production IngestSink. After fixing caps, MCP returned "not configured: ingest sink not attached" because src-tauri/src/ai_integrations/mcp/mod.rs still created AppStateGateway::new(). Fix: when start_server_with_activity receives a Tauri AppHandle, construct AppHandleIngestSink and AppStateGateway::with_ingest(); the sink calls commands::ingest::ingest_document and returns IngestUrlResponse task_id/source/source_type. HTTP MCP app/tray mode can now start real background ingest tasks. Stdio remains a trusted transport for reads/write caps, but URL ingestion requires an AppHandle-backed process unless a direct non-UI ingest sink is added later.',
-  'mcp,ingest_url,ingest-sink,apphandle,brain_write,self-improve',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP INGEST SINK FIX:%'
-  AND (
-       d.content LIKE 'MCP WRITE CAPABILITY FIX:%'
-    OR d.content LIKE 'MCP server exposes brain on three ports:%'
-    OR d.content LIKE 'ai_integrations exposes the brain%'
-  );
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP STDIO INGEST SINK FIX (2026-05-05): editor MCP clients may connect through terransoul --mcp-stdio rather than HTTP 7423. Stdio already uses READ_WRITE caps, but brain_ingest_url still failed with "not configured: ingest sink not attached" because stdio::run_with_state constructed AppStateGateway::new(state). Fix: attach StdioIngestSink via AppStateGateway::with_ingest(); the sink calls commands::ingest::ingest_document_silent(), which starts the real background ingest pipeline against AppState without requiring a Tauri AppHandle or emitting WebView progress events. Both HTTP MCP tray and stdio MCP now support brain_ingest_url writes.',
-  'mcp,stdio,ingest_url,ingest-sink,brain_write,self-improve',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP STDIO INGEST SINK FIX:%'
-  AND (
-       d.content LIKE 'MCP INGEST SINK FIX:%'
-    OR d.content LIKE 'MCP WRITE CAPABILITY FIX:%'
-    OR d.content LIKE 'MCP server exposes brain on three ports:%'
-    OR d.content LIKE 'ai_integrations exposes the brain%'
-  );
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-AGENT ORCHESTRATION RESEARCH SOURCE CHECK (2026-05-05): for public GitHub multi-agent projects, first check DeepWiki when reachable, then cross-check upstream repo/docs/license and TerranSoul source before proposing adoption. The 2026-05 survey covered a self-hosted multi-agent dashboard plus LangGraph, CrewAI, AutoGen, Semantic Kernel, OpenAI Agents SDK, Google ADK, LlamaIndex Workflows, Pydantic AI, Haystack Agents, Agno, and Mastra. Credit all sources in CREDITS.md and keep TerranSoul names neutral.',
-  'research,multi-agent,reverse-engineering,deepwiki,credits,self-improve',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'research', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-AGENT ORCHESTRATION VERDICT (2026-05-05): partial-adopt. TerranSoul should absorb durable lineage, per-session tool bundles, bounded swarm joins, task queue recovery, quality gates, trace/eval hooks, and dense operations UI patterns. Do not import a Next.js/Node dashboard stack, hosted workflow service, or another memory store. Keep orchestration local-first in Rust/Tauri and reuse TerranSoul memory/RAG, provider policy, MCP caps, and LAN sharing.',
-  'multi-agent,orchestration,verdict,partial-adopt,local-first,rust-tauri',
-  10, 'fact', 1746489600000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'TERRANSOUL MULTI-AGENT BASELINE (2026-05-05): current equivalents include coding/multi_agent.rs workflow plans and recurrence, coding/dag_runner.rs dependency layers and parallel execution, coding/task_queue.rs persistent SQLite retry queue, workflows/engine.rs durable SQLite event log, workflows/resilience.rs retry/timeout/circuit-breaker/watchdog, coding/engine.rs self-improve gates, coding/gate_telemetry.rs gate metrics, workflow-plans.ts plan UI store, agent-roster.ts handoff profiles, MCP brain exposure, and LAN MCP brain sharing. Next work is integration, not a rewrite.',
-  'multi-agent,terransoul-baseline,coding-workflow,dag-runner,task-queue,workflow-engine',
-  9, 'fact', 1746489600000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-AGENT BACKEND ADOPTION PLAN (2026-05-05): add durable run lineage with parent/child ids, agent role, model, status, tool-bundle hash, cancellation flag, timestamps, and verdict; emit typed sub-agent events; build session tool bundles from capability policy, provider policy, MCP transport caps, plan role, and approval state; layer a bounded swarm pool over dag_runner with all/any/quorum/best joins; extend task_queue with dead-letter, stalled recovery, quality gate rows, and budget deferral; add trace ids to every LLM/tool/approval/retry/gate event.',
-  'multi-agent,backend-plan,lineage,tool-bundles,swarm-runtime,task-queue,tracing',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'self-improve', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-AGENT UI UX ADOPTION PLAN (2026-05-05): build a compact operations workbench, not a landing page. First screen should answer what is running, which agent owns it, what tools it can touch, what is blocked, and what changed. Use active-run rail, agent lanes, backlog/queued/running/blocked/review/failed/done task cards, parent-child run graph, transcript bubbles for delegation/tool/approval/validation/verdict events, repair controls, and LAN peer brain status panels with source host and token state.',
-  'multi-agent,ui-ux,operations-workbench,run-graph,agent-lanes,lan-sharing',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'ui-ux', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'WINDOWS COMMON CONTROLS DLL LESSON (2026-05-05): Rust lib test harnesses on Windows can fail before Rust code runs with STATUS_ENTRYPOINT_NOT_FOUND when native dependencies import comctl32.dll!TaskDialogIndirect without a Common Controls v6 activation manifest. Root fix: embed one canonical Windows app manifest that declares Microsoft.Windows.Common-Controls version 6.0.0.0, compatibility, UTF-8 code page, DPI, longPathAware, and asInvoker privileges; disable Tauri duplicate default manifest via WindowsAttributes::new_without_app_manifest(). Validate with cargo test, not only cargo check.',
-  'windows,manifest,comctl32,TaskDialogIndirect,dll-loader,tauri,testing',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'development', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'ANN AND WASM FEATURE-GATING LESSON (2026-05-05): native-heavy dependencies should be opt-in when not required for normal MCP/test flows. TerranSoul default builds now use a pure-Rust linear cosine AnnIndex fallback and a WASM runner stub that returns a clear disabled message. The native-ann feature enables persisted usearch HNSW vectors.usearch for large stores; the wasm-sandbox feature enables Wasmtime plugin execution. README and docs/brain-advanced-design.md must describe default vs feature-enabled behavior together.',
-  'memory,ann,usearch,wasmtime,feature-gating,rag,brain-docs,self-improve',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'brain', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MULTI-AGENT ORCHESTRATION VERDICT:%'
-  AND d.content LIKE 'TERRANSOUL MULTI-AGENT BASELINE:%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'informs', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MULTI-AGENT BACKEND ADOPTION PLAN:%'
-  AND d.content LIKE 'MULTI-AGENT ORCHESTRATION VERDICT:%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'informs', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MULTI-AGENT UI UX ADOPTION PLAN:%'
-  AND d.content LIKE 'MULTI-AGENT ORCHESTRATION VERDICT:%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MULTI-AGENT ORCHESTRATION RESEARCH SOURCE CHECK:%'
-  AND (
-       d.content LIKE 'DEEPWIKI REVERSE-ENGINEERING RULE:%'
-    OR d.content LIKE 'MCP SELF-LEARNING RULE:%'
-    OR d.content LIKE 'DEEP ANALYSIS RULE:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 0.9, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'ANN AND WASM FEATURE-GATING LESSON:%'
-  AND (
-       d.content LIKE 'RAG pipeline:%'
-    OR d.content LIKE 'Vector support:%'
-    OR d.content LIKE 'Memory store uses SQLite%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 0.9, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'WINDOWS COMMON CONTROLS DLL LESSON:%'
-  AND (
-       d.content LIKE 'CI gate command:%'
-    OR d.content LIKE 'MCP/app dependency bootstrap rule:%'
-    OR d.content LIKE 'Self-improve with MCP mode:%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'LESSON: GitNexus is PolyForm Noncommercial%'
-  AND (
-       d.content LIKE 'Code intelligence pipeline:%'
-    OR d.content LIKE 'MCP SELF-LEARNING RULE:%'
-    OR d.content LIKE 'DEEPWIKI REVERSE-ENGINEERING RULE:%'
-    OR d.content LIKE 'LESSON: Per the Brain Documentation Sync rule%'
-  );
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CODE INTELLIGENCE ROADMAP:%'
-  AND d.content LIKE 'Code intelligence pipeline:%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CODE WORKBENCH UX LESSON:%'
-  AND (
-       d.content LIKE 'Frontend Pinia stores in src/stores/:%'
-    OR d.content LIKE 'Design docs (docs/):%'
-  );
-
--- ═══════════════════════════════════════════════════════════════════════════
--- UI/UX Design System & Reference Rules (added 2026-05-05)
--- ═══════════════════════════════════════════════════════════════════════════
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-VALUES
-('UI/UX DESIGN RULE: Before implementing any new UI screen, component, or layout, agents MUST consult styles.refero.design for real-product design references. Search for the screen type being built, extract spacing/hierarchy/layout patterns, then map findings to TerranSoul --ts-* tokens. Document which reference informed the design.', 'ui-ux,design-rule,refero,design-reference,non-negotiable', 5, 'procedure', 1746489600000, 'long', 1.0, 65, 'ui-ux'),
-
-('DESIGN SYSTEM: TerranSoul canonical style spec lives at docs/DESIGN.md (Refero DESIGN.md format). Color palette: Cosmic Violet #7c6fff (brand), Sky Blue #60a5fa (secondary), Void Navy #0f172a (bg-base), Deep Slate #1e293b (bg-surface). Typography: Inter (UI) + JetBrains Mono (code), 0.9rem base. Spacing: 4px base unit, 8px element gap, 12px card padding, 16px section gap. Radius: sm=6px, md=10px, lg=14px.', 'design-system,tokens,colors,typography,spacing,terransoul', 5, 'fact', 1746489600000, 'long', 1.0, 90, 'ui-ux'),
-
-('DESIGN TOOLS AUDIT (05/2026): Primary: styles.refero.design (130k+ screens, MCP integration, DESIGN.md export). Supporting: Open Props v1.7 (500+ CSS tokens), Tailwind CSS v4 (utility-first, already integrated), Radix Colors (accessible P3 scales), W3C Design Tokens DTCG format, Style Dictionary (token transforms), Figma Variables+Dev Mode, Storybook 8.x, shadcn/ui (patterns), UnoCSS, Every Layout (intrinsic CSS), Inclusive Components (a11y).', 'design-tools,audit,refero,open-props,tailwind,tooling', 4, 'fact', 1746489600000, 'long', 1.0, 80, 'ui-ux'),
-
-('DESIGN TOKEN HIERARCHY: Design Reference (styles.refero.design) → docs/DESIGN.md (canonical spec) → src/style.css :root { --ts-* } (runtime tokens) → Vue Components (consume via var(--ts-*)). When adding new tokens update both src/style.css and docs/DESIGN.md in the same PR.', 'design-system,tokens,hierarchy,workflow', 4, 'procedure', 1746489600000, 'long', 1.0, 55, 'ui-ux');
-
--- Edge: design rule supports coding standards
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'UI/UX DESIGN RULE:%'
-  AND d.content LIKE 'Coding standards: snake_case for Rust%';
-
--- Edge: design system supports design rule
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'DESIGN SYSTEM: TerranSoul canonical style%'
-  AND d.content LIKE 'UI/UX DESIGN RULE:%';
-
--- Edge: design tools audit supports design rule
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'DESIGN TOOLS AUDIT (05/2026):%'
-  AND d.content LIKE 'UI/UX DESIGN RULE:%';
-
--- ── Chunk 37.13 (2026-05-06) ─────────────────────────────────────────────
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MULTI-REPO CODE INTEL LESSON (chunk 37.13, 2026-05-06): TerranSoul groups multiple indexed repos via three new tables on code_index.sqlite — code_repo_groups (label UNIQUE), code_repo_group_members (group_id, repo_id, role), and code_contracts (signature_hash over name|kind|parent for change detection). Contracts are top-level function/struct/enum/trait/class/interface/type_alias/constant symbols only (parent IS NULL). Cross-repo queries restrict symbol search to a group and flag whether each match is part of that repo''s contract surface. Use repo_groups.rs API; do not query the tables directly from MCP/Tauri layers. Extracting contracts is transactional (atomic per-repo replace) so a partial failure cannot leave a half-replaced contract set on disk.',
-  'code-intelligence,multi-repo,groups,contracts,signature-hash,native,chunk-37.13',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'coding', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP TOOL COUNT (post chunk 37.13, 2026-05-06): TerranSoul MCP exposes 9 brain tools always-on, plus 12 code-intelligence tools when caps.code_read is granted, totalling 21 tools. The 12 code tools are: code_query, code_context, code_impact, code_rename, code_generate_skills, code_list_groups, code_create_group, code_add_repo_to_group, code_group_status, code_extract_contracts, code_list_group_contracts, code_cross_repo_query. Update tools_list_returns_21_tools and definitions_has_21_tools_with_code_read assertions if the count changes.',
-  'mcp,tool-count,code-intelligence,brain-tools,assertions,testing',
-  8, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
--- ─ Chunk 33B.4 (2026-05-06) ─
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MEMORY AUDIT TAB LESSON (chunk 33B.4, 2026-05-06): MemoryView.vue has an Audit tab backed by memory::audit::get_memory_provenance and the get_memory_provenance Tauri command. The backend returns one joined payload: current MemoryEntry, memory_versions history, incident memory_edges, direction labels, and compact neighboring-memory summaries. The Pinia memory store exposes getMemoryProvenance(memoryId), so audit/provenance UI should prefer that authoritative joined query over client-side stitching of get_memory_history plus get_edges_for_memory.',
-  'memory,audit,provenance,versioning,edges,frontend,chunk-33B.4',
-  8, 'procedure', 1746489600000, 'long', 1.0, 'memory', 'procedural'
-);
-
--- ─ Chunk 33B.5 (2026-05-06) ─
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'BRAIN 3D KG VISUALISER LESSON (chunk 33B.5, updated 2026-05-13): BrainGraphViewport.vue is the accelerated 3D/WebGL memory graph. MemoryView.vue must expose graph modes as Lite 2D (normal Canvas2D MemoryGraph.vue) and 3D; do not keep a separate GPU 2D Sigma/Graphology path because it duplicated selection state and broke node CRUD. The 3D graph should provide structural insight, not decoration: size nodes by degree+importance, colour and separate communities, emphasize cross-community gap links, preserve selectedId highlighting, and keep tap selection distinct from orbit drag for mobile. Selected node CRUD belongs in GraphNodeCrudPanel, wrapped by MemoryView.vue as a desktop side rail and mobile bottom sheet. Public graph-UX research informing this is credited in CREDITS.md; runtime labels stay neutral.',
-  'brain,3d,knowledge-graph,three-js,d3-force-3d,visualiser,frontend,graph-ui,mobile-crud,chunk-33B.5',
-  8, 'procedure', 1746489600000, 'long', 1.0, 'brain', 'procedural'
-);
--- Chunk 33B.6 (2026-05-06)
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'AGENT CAPABILITY ROUTING LESSON (chunk 33B.6, 2026-05-06): AgentProfile now has a serde-default capabilities: Vec<String> field. AgentProvider trait gained fn capabilities() with default empty. AgentOrchestrator exposes agents_with_capabilities(required) (AND-match on all tags) and dispatch_by_capability(required, message) which falls back to default agent. CodingCapability::required_tags() bridges intent-detection output to capability tags. CreateAgentRequest accepts capabilities from the frontend. Tag vocabulary is open/extensible convention strings.',
-  'agents,capability,routing,orchestrator,coding-router,tauri,chunk-33B.6',
-  8, 'procedure', 1746489600000, 'long', 1.0, 'coding', 'procedural'
-);
-
--- ====================================================================
--- Phase 38 (Million-memory MCP) — chunks 38.3, 38.4, 38.5 + UI/UX redesign
--- Synced: 2026-05-07
--- ====================================================================
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'CHUNK 38.3 (2026-05-07) — Native-ANN default for desktop builds: native-ann is now part of the default desktop feature set in src-tauri/Cargo.toml ([features] default = ["desktop"], desktop = ["native-ann"], headless-mcp = []). Production desktop builds get persisted usearch HNSW vectors.usearch by default; the headless-mcp build remains pure-Rust linear cosine via AnnIndex fallback. Bench feature bench-million = ["native-ann"] gates the standalone million_memory benchmark binary.',
-  'chunk-38.3,native-ann,usearch,feature-flags,desktop,terransoul,architecture',
-  9, 'fact', 1746576000000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'CHUNK 38.4 (2026-05-07) — Capacity-based self-eviction: src-tauri/src/memory/eviction.rs implements enforce_capacity(conn, cap, target_ratio, data_dir). Single-pass SQL drops lowest-priority entries when memory count exceeds cap, targeting DEFAULT_TARGET_RATIO=0.95. Eviction order: protected=0 first, then by ascending (importance + decay_score) within each tier, oldest first as tie-break. Writes JSONL audit log under <data_dir>/eviction_log.jsonl. Configurable via SettingsConfig.max_long_term_entries (u64). 5 unit tests cover cap=0 no-op, under-cap no-op, eviction order, protected entries skipped, and audit-log shape.',
-  'chunk-38.4,eviction,capacity,self-eviction,audit-log,settings,terransoul',
-  9, 'fact', 1746576000000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'CHUNK 38.5 (2026-05-07) — Million-memory benchmark: src-tauri/benches/million_memory.rs is a Criterion harness with deterministic xoshiro 768-dim synthetic vectors. Default smoke: cargo bench --bench million_memory builds 10k vectors, runs 1,000 HNSW top-10 queries, writes src-tauri/target/bench-results/million_memory.json, and times enforce_capacity. Measured Windows/i9-12900K smoke: p50 0.57ms, p95 0.74ms, p99 0.86ms, max 1.03ms; capacity pruned 10,500 -> 9,500 in 0.26s while preserving protected/high-importance rows. Full local/nightly tier: --features bench-million gates 1M HNSW assertions p50<=30ms, p95<=60ms, p99<=100ms, linear backend skipped at 1M, capacity 1,050,000 -> 950,000 <=30s.',
-  'chunk-38.5,benchmark,million-memory,hnsw,criterion,enforce-capacity,performance,terransoul',
-  10, 'fact', 1746576000000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'SCHEMA UPDATE (2026-05-07): SQLite memory store CANONICAL_SCHEMA_VERSION is now 15 (was 14). v15 adds the protected column on memories (prevents eviction) and the pending_embeddings table for the self-healing retry queue. Migration is forward-only and idempotent.',
-  'schema,sqlite,migration,version-15,protected,pending-embeddings',
-  10, 'fact', 1746576000000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'UI/UX PREMIUM GLASSMORPHISM REDESIGN (2026-05-06): src/style.css gained --ts-glass-bg, --ts-glass-border, --ts-glass-blur, --ts-glass-highlight, --ts-shadow-glow, --ts-shadow-inset, --ts-transition-spring tokens (also wired into corporate and corporate-dark themes). Sidebar (App.css), chat input (ChatInput.vue), chat bubbles + welcome state (ChatMessageList.vue), ChatView panels (bottom-panel, input-footer, chatbox-header/footer, brain-status-pill, subtitle-overlay, brain-card) all now use frosted glass surfaces with backdrop-filter blur+saturate, gradient user bubbles, spring-animated hover states, and progressive disclosure (timestamps/ratings reveal on hover). 1713 vitest tests pass; vite build clean.',
-  'ui-ux,redesign,glassmorphism,design-tokens,style-css,chat,sidebar,terransoul',
-  8, 'fact', 1746489600000, 'long', 1.0, 'frontend', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'RULE (user expectation, 2026-05-06): when a TerranSoul chunk is marked completed, MCP MUST already know its content. Sync durable lessons to mcp-data/shared/memory-seed.sql in the same PR and verify retrievability via brain_search. Retrieval latency for any RAG/knowledge query must remain sub-second (current measured: 5-48ms over MCP HTTP).',
-  'rule,mcp,sync,completion-log,retrieval-latency,non-negotiable,terransoul',
-  10, 'rule', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746576000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 38.3%' AND d.content LIKE 'CHUNK 38.4%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1746576000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 38.4%' AND d.content LIKE 'SCHEMA UPDATE (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746576000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 38.5%' AND d.content LIKE 'CHUNK 38.3%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1746576000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 38.5%' AND d.content LIKE 'CHUNK 38.4%';
-
--- ====================================================================
--- Brain Wiki / graph operations (Graphify + LLM Wiki application)
--- Synced: 2026-05-06
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
 SELECT
-  'BRAIN WIKI APPLICATION LESSON (2026-05-06): TerranSoul studied safishamsi/graphify (MIT; public README, ARCHITECTURE.md, docs/how-it-works.md, tests) plus Karpathy LLM Wiki and append-and-review notes. Apply the pattern as a chat/UI-first Knowledge Wiki: raw sources remain immutable memories with source_hash; graph structure stays in memory_edges with confidence/provenance; synthesized wiki pages are protected summary memories; audit/spotlight/serendipity/revisit expose lint, god-node, cross-community, and append-review behavior without a CLI.',
-  'brain-wiki,graphify,karpathy,llm-wiki,knowledge-graph,rag,chat-ui',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BRAIN WIKI APPLICATION LESSON (2026-05-06):%'
-);
+  'Durable gotchas, decisions, and lessons learned from past agent sessions. This memory is the lessons-learned hub anchored in the shared MCP seed. Every LESSON: row in mcp-data/shared/memory-seed.sql should be wired part_of this hub so that knowledge-graph traversal can surface durable institutional memory with a single hop, and so that a two-hop walk reaches the stack-coverage anchor (seed:stack-coverage-anchor). Treat this hub as the canonical entry point when an agent asks for past lessons.',
+  'principle',
+  'mcp,seed,knowledge-graph,hub,lessons-learned',
+  9,
+  strftime('%s','now'),
+  'seed:lessons-learned-hub'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:lessons-learned-hub');
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
 SELECT
-  'BRAIN WIKI BACKEND SURFACE (2026-05-06): src-tauri/src/memory/wiki.rs is the shared Rust operation layer for graph/wiki brain actions. It adds fingerprint/ensure_source_dedup, confidence_label over existing EdgeSource+confidence, audit_report, god_nodes, surprising_connections, append_and_review_queue, and gravity_score. src-tauri/src/commands/wiki.rs exposes Tauri commands brain_wiki_audit, brain_wiki_digest_text, brain_wiki_spotlight, brain_wiki_serendipity, and brain_wiki_revisit. Unit tests mirror graphify expectations for cache/dedup, incremental reingest, confidence rubric, graph validation, god nodes, surprises, and append-review order.',
-  'brain-wiki,rust,tauri,source-dedup,confidence-rubric,god-nodes,serendipity,revisit,tests',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BRAIN WIKI BACKEND SURFACE (2026-05-06):%'
-);
+  'STACK COVERAGE: the mcp-data seed exercises every TerranSoul stack layer it documents — Rust async/Tokio + rusqlite + thiserror on the backend, Vue 3.5 + Pinia + Vitest on the frontend, Tauri 2 IPC between them, Three.js/VRM for the avatar, Ollama + cloud LLM providers for the brain, FTS5 + HNSW for retrieval, and the CRDT sync core for device link. Every LESSON: row in the seed must remain reachable from this anchor through the lessons-learned hub (seed:lessons-learned-hub) so a coding agent can pull a representative stack-spanning slice with a single two-hop traversal.',
+  'principle',
+  'mcp,seed,knowledge-graph,stack-coverage,anchor',
+  9,
+  strftime('%s','now'),
+  'seed:stack-coverage-anchor'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:stack-coverage-anchor');
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
 SELECT
-  'BRAIN WIKI CHAT/UI SURFACE (2026-05-06): src/utils/slash-commands.ts now has a separate parseBrainWikiSlashCommand for /digest, /ponder, /spotlight, /serendipity, /revisit plus planned /weave, /trace, /why. ChatView dispatches supported commands before plugin slash dispatch; /digest routes URLs/files/crawl: sources to ingest_document and pasted text to brain_wiki_digest_text. src/components/WikiPanel.vue is wired into BrainView and shows Audit, Spotlight, Serendipity, and Revisit tabs backed by the same Tauri commands. Full Vitest after this work: 133 files, 1738 tests passing; vue-tsc clean.',
-  'brain-wiki,chat,slash-commands,wikipanel,brainview,frontend,vitest,vue-tsc',
-  9, 'procedure', 1746489600000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BRAIN WIKI CHAT/UI SURFACE (2026-05-06):%'
-);
+  'LESSON: The MCP seed (mcp-data/shared/memory-seed.sql) is the single source of truth for durable agent memory shipped with TerranSoul. Rules: (1) every lesson row uses INSERT ... SELECT ... WHERE NOT EXISTS keyed on a unique source_hash so re-running the seed is safe; (2) lesson rows should be wired part_of the seed:lessons-learned-hub memory so KG traversal can surface them; (3) the hub itself is wired to the seed:stack-coverage-anchor memory so a two-hop walk gives an agent both a topic-grouped lesson view and a stack-coverage view; (4) never treat Markdown rules files as MCP memory — sync durable knowledge into this SQL file and let memory_edges define the structure; (5) when adding a new lesson, also append a corresponding INSERT INTO memory_edges row at the bottom of this file wiring the new lesson part_of seed:lessons-learned-hub so the KG stays connected.',
+  'lesson',
+  'mcp,seed,lessons,rules,idempotency,knowledge-graph',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-mcp-seed-rules'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-mcp-seed-rules');
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FUTURE MCP GRAPHIFY-LIKE SURFACE RULE (2026-05-06): TerranSoul MCP should eventually expose graph/wiki brain operations like graphify-style query/analyse/path capabilities, but MCP must call the same TerranSoul-native Rust functions used by chat and UI. Humans interact through TerranSoul chatbox and BrainView configuration/panels, not a graphify-like CLI. Future tool names should stay neutral (brain_wiki_audit, brain_wiki_spotlight, brain_wiki_serendipity, brain_wiki_revisit, brain_wiki_digest_text, later trace/why/weave) and remain capability-gated by existing MCP caps.',
-  'mcp,brain-wiki,graphify-like,chat-first,ui-first,capability-gating,rule',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FUTURE MCP GRAPHIFY-LIKE SURFACE RULE (2026-05-06):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MCP BRAIN WIKI SURFACE IMPLEMENTED (2026-05-06): src-tauri/src/ai_integrations/mcp/tools.rs now advertises and dispatches brain_wiki_audit, brain_wiki_spotlight, brain_wiki_serendipity, brain_wiki_revisit, and brain_wiki_digest_text through the same memory::wiki Rust functions used by ChatView and WikiPanel. Audit/spotlight/serendipity/revisit require brain_read and are allowed in LAN public read-only mode; digest_text requires brain_write because it persists a source-hash-deduplicated memory row. Integration tests cover tool listing, audit, digest dedup, and public read-only routing.',
-  'mcp,brain-wiki,implemented,tools,capability-gating,public-read-only,tests',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MCP BRAIN WIKI SURFACE IMPLEMENTED (2026-05-06):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'implements', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BRAIN WIKI BACKEND SURFACE (2026-05-06):%'
-  AND d.content LIKE 'BRAIN WIKI APPLICATION LESSON (2026-05-06):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'exposes', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BRAIN WIKI CHAT/UI SURFACE (2026-05-06):%'
-  AND d.content LIKE 'BRAIN WIKI BACKEND SURFACE (2026-05-06):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'extends', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'FUTURE MCP GRAPHIFY-LIKE SURFACE RULE (2026-05-06):%'
-  AND d.content LIKE 'BRAIN WIKI BACKEND SURFACE (2026-05-06):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'implements', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP BRAIN WIKI SURFACE IMPLEMENTED (2026-05-06):%'
-  AND d.content LIKE 'FUTURE MCP GRAPHIFY-LIKE SURFACE RULE (2026-05-06):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'reuses', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP BRAIN WIKI SURFACE IMPLEMENTED (2026-05-06):%'
-  AND d.content LIKE 'BRAIN WIKI BACKEND SURFACE (2026-05-06):%';
-
-
--- ====================================================================
--- Benchmarking guide (docs/benchmarking.md)
--- Synced: 2026-05-07
--- ====================================================================
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'BENCHMARK DOC (2026-05-07): docs/benchmarking.md is the operator guide for TerranSoul Criterion benches. It documents the Million-memory benchmark (src-tauri/benches/million_memory.rs): smoke command "cargo bench --bench million_memory --target-dir ../target-copilot-bench" (10k vectors, no feature), full command adds "--features bench-million" (1M vectors), CRUD-only command sets TS_BENCH_CRUD_ONLY=1 with TS_BENCH_TIMEOUT_SECS and optional TS_BENCH_SCALES=1000000, env knobs TS_BENCH_SCALES, TS_BENCH_CRUD_ONLY, TS_BENCH_TIMEOUT_SECS, TS_BENCH_FORCE_LARGE, TS_BENCH_OUTPUT_DIR, JSON report at src-tauri/target/bench-results/million_memory.json with machine/hnsw/linear_backend/capacity/crud sections, hard thresholds HNSW p50<=30ms, p95<=60ms, p99<=100ms, capacity 1.05x->0.95x <=30s, and CRUD 1M write<=60s/read<=5s. It records the 2026-05-07 CRUD reference: write 7.27s, read 2.13s, update 2.58s, mixed 10k ops in 160.03s, delete skipped at 1M benchmark scale. The doc also gives the canonical recipe for adding a new bench: add [[bench]] with harness=false and required-features in src-tauri/Cargo.toml, gate heavy tier behind a bench-* feature flag, use deterministic xoshiro seeds, write JSON to target/bench-results/<name>.json, honour env knobs, assert thresholds in main, never kill the running MCP terminal, always use --target-dir ../target-copilot-bench on Windows, and sync results to README.md + docs/brain-advanced-design.md + this seed file.',
-  'docs,benchmarking,benchmark,criterion,million-memory,how-to,terransoul',
-  9, 'fact', 1746489600000, 'long', 1.0, 'docs', 'semantic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'documents', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BENCHMARK DOC (2026-05-07):%'
-  AND d.content LIKE 'CHUNK 38.5%';
-
--- ====================================================================
--- Folder-to-knowledge-graph tutorial + token-usage benchmark
--- Synced: 2026-05-06
--- ====================================================================
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'TUTORIAL FOLDER->KG (2026-05-06): tutorials/folder-to-knowledge-graph-tutorial.md is the canonical English tutorial for turning any folder into a TerranSoul knowledge graph + Obsidian vault + auto-wiki + NL Q&A. Pipeline: code path uses code_index_repo -> code_resolve_edges -> code_compute_processes -> code_generate_wiki Tauri commands; doc/PDF path uses brain_ingest_url MCP / ingest_document Tauri (read_local_file in src-tauri/src/commands/ingest.rs accepts md/markdown/txt/csv/json/xml/html/htm/log/rst/adoc + pdf via extract_pdf_text). Languages actually parsed: 7 in default desktop build (Rust + TS/TSX always on; Python/Go/Java/C/C++ behind cargo features parser-python, parser-go, parser-java, parser-c — see src-tauri/src/coding/parser_registry.rs). Image OCR is NOT supported. There is NO single chat command yet to ingest a mixed code+docs folder in one shot — call code_index_repo for code and loop brain_ingest_url for docs. Do NOT claim 13 languages or 71.5x token reduction in TerranSoul docs; those are third-party claims. Wiki: code_generate_wiki writes <data_dir>/wiki/index.md + per-cluster pages with mermaid call graphs; brain wiki tools brain_wiki_audit/spotlight/serendipity/revisit/digest_text serve memory-side curation. Obsidian: obsidian_export.rs (one-way, <vault>/TerranSoul/<id>-<slug>.md with YAML frontmatter) + obsidian_sync.rs (bidirectional LWW based on file mtime vs last_exported). Backlinks come from memory_edges rendered with id-prefixed filenames.',
-  'tutorial,folder-ingest,knowledge-graph,obsidian,wiki,languages,pdf,coverage,terransoul',
-  9, 'fact', 1746489600000, 'long', 1.0, 'docs', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP TOKEN BENCHMARK (2026-05-06): docs/mcp-token-usage-benchmark.md is the honest per-session measurement of TerranSoul MCP context savings. Methodology: for each brain_search / brain_get_entry call, record bytes returned vs bytes of the closest source-of-truth file the agent would otherwise grep. Aggregate from the tracked subset that wrote the folder->KG tutorial: ~12.5KB returned over 5 brain_search + 1 brain_get_entry calls vs ~360KB of underlying seed.sql + brain-advanced-design.md = ~29x aggregate reduction for in-scope queries. Per-query range: 30x (broad search) to ~100x (targeted lookup / get_entry). Caveats: (a) TerranSoul code is NOT auto-ingested into the brain, so code-discovery questions still fell back to grep_search / search_subagent and consumed ~80KB in one sub-agent call, dropping session-wide saving to ~3-5x; (b) bytes/4 token estimate ±25%; (c) single-machine single-session result. Honest range in tracked rows: 30x (broad MCP query) to ~100x (best). Reject any claim of a fixed externally-published number like 71.5x in TerranSoul docs — measure per session.',
-  'benchmark,mcp,token-usage,context,savings,methodology,terransoul',
-  9, 'fact', 1746489600000, 'long', 1.0, 'docs', 'semantic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'documents', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'TUTORIAL FOLDER->KG (2026-05-06):%'
-  AND d.content LIKE 'BENCHMARK DOC (2026-05-07):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'measures', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP TOKEN BENCHMARK (2026-05-06):%'
-  AND d.content LIKE 'TUTORIAL FOLDER->KG (2026-05-06):%';
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP ERROR FIX RULE (2026-05-06): if any TerranSoul MCP call returns an error, agents must not silently fall back to grep or continue with stale context. Classify the error as (1) bad tool arguments/contract mismatch, (2) unhealthy or stale MCP server/binary, or (3) missing/stale durable knowledge. Then fix the MCP tool schema/adapter/gateway and add a regression test, restart/rebuild MCP via node scripts/copilot-start-mcp.mjs when health/staleness is the cause, or update mcp-data/shared/memory-seed.sql with new INSERT rows for knowledge drift. Always report the original error, root cause, fix, and any remaining blocker. The brain_summarize query error was fixed by adding query-backed summarization to the MCP tool contract.',
-  'mcp,error-handling,server-health,tool-contract,regression-test,seed-migration,non-negotiable',
-  10, 'procedure', 1746489600000, 'long', 1.0, 'mcp', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP HEALTH RESPONSE EXPLANATION (2026-05-06): brain_health plus GET /health and GET /status keep backward-compatible rag_quality_pct and memory_total fields, but now also return rag_quality, memory, and descriptions objects. rag_quality_pct means embedded_long_memory_count / long_memory_count * 100, not an overall intelligence score. A 12% value means only about 12% of long-term memories currently have vector embeddings; keyword/RRF and graph lookup still work, but semantic vector recall is partial until pending embedding backfill completes. Use the nested raw counts and description strings when displaying health JSON to humans.',
-  'mcp,health,rag-quality,embedding-coverage,json,docs,non-negotiable',
-  10, 'fact', 1746489600000, 'long', 1.0, 'mcp', 'semantic'
-);
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MILLION-KNOWLEDGE CRUD AUDIT STATE (updated 2026-05-07): TerranSoul memory store has SQLite WAL + tuned Phase 41.1 PRAGMAs, V15 schema with eviction-friendly indexes, usearch HNSW with brute-force fallback, capacity eviction, embedding retry queue, memory_versions, contradiction detection, semantic chunker, late chunking, contextual retrieval, Criterion 10k/1M bench, ingest semaphore, Phase 41.4 transactional add_many, Phase 41.2 per-op metrics, and Phase 41.3 bounded CRUD benchmark sections. Resolved from the original audit: PRAGMA defaults, missing add_many, missing per-op metrics, and unbounded benchmark stalls. Remaining 1M+ optimization work: route high-level ingest fully through bulk APIs, remove get_all/get_with_embeddings from hot search paths, re-embed and tombstone ANN entries on content update, reduce HNSW save-every-50-op churn, support per-model/dim ANN registries, add cursor reads/quantization/tombstone compaction, and verify FTS/KG indexes at 1M rows.',
-  'audit,memory-store,million-scale,bottlenecks,phase-41,non-negotiable',
-  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PHASE 41 CURRENT PLAN (updated 2026-05-07) — Million-Knowledge CRUD: completed chunks are 41.1 SQLite write-path tuning + FTS5 verification, 41.4 transactional add_many/update_many/delete_many, 41.2 per-op latency histograms surfaced through get_memory_metrics and MCP health, and 41.3 extended million_memory CRUD benchmarking with TS_BENCH_TIMEOUT_SECS guards, bounded mixed workload, and explicit 1M delete skip. Headline 1M write/read SLO is green: latest CRUD-only run wrote 1M in 7.27s and read 1M in 2.13s. Remaining chunks are production-hardening work, not blockers for the headline target: 41.5 cursor reads to remove get_all/get_with_embeddings from hybrid_search/hybrid_search_rrf/relevant_for/find_duplicate; 41.6 re-embed on content update + ANN tombstone + enqueue; 41.7 embedding worker concurrency + rate limiting + pause-on-429 + graceful shutdown; 41.8 V16 multi-model embeddings with memory_embeddings and AnnRegistry keyed by (model_id, dim); 41.9 usearch i8 quantization with recall budget; 41.10 memory-mapped HNSW + debounced async flush replacing SAVE_INTERVAL=50; 41.11 ANN compaction/tombstone GC; 41.12 partial indexes + PRAGMA optimize/ANALYZE; 41.13 bounded KG traversal + LRU cache; 41.14 optional time-bucketed shards; 41.15 online VACUUM INTO + ANN save + manifest snapshot/restore. Each remaining chunk must keep the Full CI Gate green and extend benches/million_memory.rs where relevant.',
-  'plan,phase-41,million-scale,chunks,ann,sqlite,embedding,sharding,non-negotiable',
-  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT plan.id, audit.id, 'derived_from', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories plan
-CROSS JOIN memories audit
-WHERE plan.content LIKE 'PHASE 41 CURRENT PLAN (updated 2026-05-07)%'
-  AND audit.content LIKE 'MILLION-KNOWLEDGE CRUD AUDIT STATE (updated 2026-05-07)%';
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'DB STRATEGY VERDICT (2026-05-06): SQLite is NOT a bottleneck for TerranSoul as the local engine, even at 1M+ memories and on offline mobile. After Phase 41 tuning, the companion is CPU/embedding-bound long before SQLite-bound. SQLite IS the wrong shape for "hive" multi-user federation and distributed jobs. Final posture is two-layer storage: (1) Local layer on every device (desktop + iOS + Android) keeps tuned SQLite + WAL as authoritative source of truth; pure-Rust ANN fallback ships on mobile because usearch C++ build is fragile there; (2) Sync layer between a single user own devices promotes memories + KG edges to CRDTs (LWW for memory rows, 2P-Set/OR-Set for edges) replicated as op-logs over the existing QUIC/WS LinkManager — no server required; (3) Hive layer is opt-in: a reference Tonic gRPC relay backed by Postgres + pgvector accepts Ed25519-signed knowledge bundles, runs a job queue, and federates only when configured. The local app never depends on the hive. Reject standalone vector services (Qdrant/Milvus/Pinecone) for the local app per existing decision (brain-advanced-design.md row 18). Keep usearch HNSW locally; pgvector HNSW on the hive layer. Existing alt backends (postgres.rs/mssql.rs/cassandra.rs) currently lack RRF / FTS5 / KG / contextual-retrieval parity; bringing Postgres to parity is a hive prerequisite. Memory store rows already carry updated_at + origin_device columns but no merge function — wire that.',
-  'verdict,database,sqlite,postgres,hive,mobile,crdt,federation,phase-42,non-negotiable',
-  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PHASE 42 PLAN (2026-05-06) — DB strategy for offline mobile + future hive: 12 ordered chunks across 4 sub-phases, lands AFTER Phase 41. A. Mobile-safe local engine: 42.1 mobile feature gates + pure-Rust ANN fallback for iOS/Android (usearch desktop-only); 42.2 mobile SQLite/WAL hardening + integration tests on aarch64-apple-ios and aarch64-linux-android. B. Memory CRDT (own-device sync): 42.3 memory rows as LWW CRDT with vector-clock conflict markers (HLC + origin_device, loser archived to memory_versions, conflicts surfaced in BrainView); 42.4 KG edges as 2P-Set/OR-Set CRDT with valid_to as tombstone and scheduled compaction; 42.5 op-log replication over LinkManager (QUIC primary + WS fallback) using existing mdns-sd discovery, pairwise sync only. C. Distributed backend parity (hive prerequisite): 42.6 Postgres backend gains tsvector GIN FTS, RRF in single SQL CTE, recursive-CTE KG traversal, contextual retrieval; make hybrid_search_rrf non-default; 42.7 pgvector HNSW vector(768) parity + benchmark mirroring million_memory.rs in Docker CI; 42.8 backend test matrix runs SQLite + Postgres on every memory PR, MSSQL/Cassandra weekly. D. Hive layer (opt-in federation + jobs): 42.9 hive protocol spec in docs/hive-protocol.md with BUNDLE/OP/JOB messages and Ed25519-signed bundles using identity/ device keys; 42.10 reference relay server in crates/hive-relay/ (new workspace member) — Tonic gRPC + Postgres + pgvector, MIT, self-hostable, docker-compose ready; 42.11 job queue + capability gates reusing src-tauri/src/orchestrator/, workers pull jobs and return BUNDLEs; 42.12 privacy/consent/per-memory ACL with share_scope enum (private/paired/hive), default per cognitive_kind, redaction tests proving private rows never appear in outbound bundles. Each chunk keeps Full CI Gate green; brain-advanced-design.md + README updated for any brain-surface change per existing rule.',
-  'plan,phase-42,database,mobile,crdt,hive,federation,postgres,pgvector,job-distribution,non-negotiable',
-  10, 'fact', 1746489600000, 'long', 1.0, 'memory', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT plan.id, verdict.id, 'derived_from', 1.0, 'seed', 1746489600000, 'seed'
-FROM memories plan
-CROSS JOIN memories verdict
-WHERE plan.content LIKE 'PHASE 42 PLAN (2026-05-06)%'
-  AND verdict.content LIKE 'DB STRATEGY VERDICT (2026-05-06)%';
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PHASE 41 RESULT (2026-05-07): chunks 41.1 (SQLite PRAGMA tuning), 41.4 (transactional add_many), 41.2 (per-op metrics), and 41.3 (extended CRUD bench + timeout guards) shipped. Measured on commodity dev hardware via cargo bench --bench million_memory: 10k smoke write 0.04s @ 244,657 rows/s, read 0.01s @ 939,956 rows/s. 1M CRUD-only runs (TS_BENCH_SCALES=1000000 TS_BENCH_CRUD_ONLY=1) keep the headline target green; latest bounded run wrote 1M in 7.27s @ 137,521 rows/s and read 1M in 2.13s @ 469,036 rows/s, with update 2.58s @ 387,042 rows/s and mixed 10k ops in 160.03s. Million-scale benchmark delete is skipped because secondary-index maintenance dominates wall-clock and is not part of the write/read SLO. Remaining Phase 41 chunks (41.5 cursor reads, 41.6 re-embed on update, 41.7 worker concurrency, 41.8 multi-model embeddings, 41.9-41.11 ANN scaling, 41.12-41.13 indexes/KG, 41.14-41.15 sharding/snapshot) remain valuable for production hardening but are no longer blocking the headline throughput goal.',
-  'phase-41,result,bench,million,sqlite,add_many,pragma,measured,non-negotiable',
-  10, 'fact', 1746576000000, 'long', 1.0, 'memory', 'episodic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT result.id, plan.id, 'fulfills', 1.0, 'seed', 1746576000000, 'seed'
-FROM memories result
-CROSS JOIN memories plan
-WHERE result.content LIKE 'PHASE 41 RESULT (2026-05-07)%'
-  AND plan.content LIKE 'PHASE 41 CURRENT PLAN (updated 2026-05-07)%';
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PHASE 41.2/41.3 LESSON (2026-05-07): added per-op MemoryMetrics histograms/timers for memory CRUD and retrieval, exposed via get_memory_metrics and MCP health metrics. The million_memory CRUD bench now includes update/mixed/delete sections with hard timeout guards (TS_BENCH_TIMEOUT_SECS, default 300) so runs cannot appear infinite. At 1M scale, write/read remain the headline SLO and stay comfortably under 60s/5s; mixed workload can be much slower due to post-write index pressure, and benchmark delete is skipped at 1M because secondary-index maintenance dominates runtime and is not representative of the write/read objective.',
-  'phase-41,chunk-41.2,chunk-41.3,metrics,benchmark,timeout,million-memory,sqlite',
-  10, 'fact', 1746579600000, 'long', 1.0, 'memory', 'episodic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT newer.id, older.id, 'related_to', 1.0, 'auto', 1746579600000, 'auto'
-FROM memories newer
-CROSS JOIN memories older
-WHERE newer.content LIKE 'PHASE 41.2/41.3 LESSON (2026-05-07)%'
-  AND older.content LIKE 'PHASE 41 RESULT (2026-05-07)%';
-
--- ====================================================================
--- Phase 42 Section D completion (Hive federation) — 2026-05-07
--- ====================================================================
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PHASE 42 COMPLETE (2026-05-07): all 12 chunks shipped across 4 sub-phases. A. Mobile-safe local engine (42.1-42.2): feature-gated pure-Rust ANN fallback, mobile SQLite/WAL. B. Memory CRDT (42.3-42.5): LWW rows with HLC+origin_device, 2P-Set edges, op-log replication over LinkManager. C. Distributed backend parity (42.6-42.8): Postgres RRF+FTS+KG+contextual parity, pgvector HNSW, CI test matrix. D. Hive layer (42.9-42.12): protocol spec in docs/hive-protocol.md (BUNDLE/OP/JOB, Ed25519-signed envelopes, MessagePack+LZ4), reference relay server in crates/hive-relay/ (Tonic gRPC + Postgres, docker-compose), job queue with capability matching in src-tauri/src/hive/jobs.rs, privacy policy engine in src-tauri/src/hive/privacy.rs (share_scope private/paired/hive, filter_bundle, default_scope_for_kind), schema v19 adds share_scope column. 2383 Rust + 1738 TS tests green, clippy clean.',
-  'phase-42,complete,hive,federation,crdt,mobile,postgres,privacy,share_scope,non-negotiable',
-  10, 'fact', 1746662400000, 'long', 1.0, 'memory', 'episodic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT result.id, plan.id, 'fulfills', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories result
-CROSS JOIN memories plan
-WHERE result.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%'
-  AND plan.content LIKE 'PHASE 42 PLAN (2026-05-06)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT result.id, verdict.id, 'fulfills', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories result
-CROSS JOIN memories verdict
-WHERE result.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%'
-  AND verdict.content LIKE 'DB STRATEGY VERDICT (2026-05-06)%';
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'HIVE MODULE MAP (2026-05-07): src-tauri/src/hive/ contains 4 sub-modules. protocol.rs: wire types (HiveEnvelope, MsgType, ShareScope, Bundle, MemoryDelta, EdgeDelta, Op, OpTarget, OpDelta, JobSpec, JobStatus, Capability). signing.rs: Ed25519 sign/verify for envelopes using identity/ device keys, sign_input format is version(1)||msg_type(1)||sender_id(var)||timestamp(8 LE)||hlc_counter(8 LE)||payload(var). jobs.rs: JobHandler trait, JobDispatcher (register_handler, can_execute_locally, execute_local, dispatch), capabilities_match AND-logic. privacy.rs: filter_bundle(bundle, target), default_scope_for_kind(), apply_default_scopes(), scope_satisfies() — private never leaves device, paired only to own devices, hive to relay.',
-  'hive,module-map,protocol,signing,jobs,privacy,architecture,terransoul',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT newer.id, completion.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories newer
-CROSS JOIN memories completion
-WHERE newer.content LIKE 'HIVE MODULE MAP (2026-05-07)%'
-  AND completion.content LIKE 'PHASE 42 COMPLETE (2026-05-07)%';
-
--- ====================================================================
--- README rewrite + MCP-as-differentiator positioning (2026-05-07)
--- ====================================================================
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'README REWRITE (2026-05-07): README.md was rewritten from 587 lines to ~153 lines following OpenClaw-style concise landing page pattern. Structure: title + badges + elevator pitch, Install table, Quick Start, Key Differentiator (MCP Brain), Highlights (bullet list), Tech Stack, Brain Modes, MCP Tools table, Tutorials table, Security, Development commands, Architecture diagram, Contact. The key differentiator section prominently positions TerranSoul MCP self-running brain as the feature that makes other AI coding agents smarter — giving them persistent memory, semantic search, code intelligence, and self-improvement across sessions.',
-  'readme,documentation,mcp,differentiator,openclaw-style,concise,landing-page',
-  9, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'KEY DIFFERENTIATOR POSITIONING (2026-05-07): TerranSoul unique value vs other AI companions is the self-running MCP brain server (npm run mcp on 127.0.0.1:7423) that exposes persistent memory, semantic search (RRF+HyDE+reranker over 1M+ entries), knowledge graph, and code intelligence to ANY external AI coding agent (VS Code Copilot, Claude Code, Cursor, Codex). This gives agents: project memory across sessions, 10-50x context reduction via focused retrieval, self-improvement (agents write learnings back), and code intelligence (symbol index, impact analysis). Auto-starts when VS Code opens the workspace.',
-  'mcp,differentiator,positioning,marketing,readme,coding-agents,self-improve',
-  9, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'TUTORIALS INDEX (2026-05-07): 18 tutorials in tutorials/ covering: quick-start, brain-rag-setup, brain-rag-local-lm, voice-setup, skill-tree-quests, advanced-memory-rag, knowledge-wiki, folder-to-knowledge-graph, teaching-animations-expressions-persona, charisma-teaching, device-sync-hive, lan-mcp-sharing, mcp-coding-agents, multi-agent-workflows, packages-plugins, browser-mobile, self-improve-to-pr, openclaw-plugin. Each follows rules/tutorial-template.md structure. README links all 18 in a Tutorials table.',
-  'tutorials,documentation,index,readme,18-tutorials',
-  8, 'fact', 1746662400000, 'long', 1.0, 'documentation', 'semantic'
-);
-
--- ====================================================================
--- jcode reverse-engineering research + Phase 43 plan (2026-05-07)
--- ====================================================================
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'JCODE RESEARCH RECORD (2026-05-07): reverse-engineered 1jehuang/jcode (MIT, github.com/1jehuang/jcode) via DeepWiki and four upstream architecture docs (AMBIENT_MODE.md, MEMORY_ARCHITECTURE.md, SAFETY_SYSTEM.md, SWARM_ARCHITECTURE.md, SERVER_ARCHITECTURE.md). Full analysis in docs/jcode-research.md. License is MIT so we may study patterns freely; we still implement everything natively under neutral TerranSoul names. jcode is a Rust TUI agent harness with 4 design pillars: (1) persistent server-process owning provider auth/sessions/swarm/memory/MCP-pool, lightweight clients attach via Unix socket, sessions named adjective+animal, hot-reload via exec(), cross-harness resume from Claude Code/Codex/OpenCode. (2) Ambient mode: agentic background loop with garden/scout/work tools, mandatory end_cycle, adaptive rate-limit-aware scheduler, persistent scheduled queue, single-instance guard, crash safety. (3) Graph-first memory: cascade BFS retrieval through tag/cluster/semantic edges after embedding hits with depth-decayed edge-weighted scoring, per-category confidence half-lives, reinforcement provenance table, negative memories with trigger patterns, gap detection, post-retrieval maintenance. (4) Swarm coordination: coordinator/worktree-manager/agent roles, lifecycle states (spawned/ready/running/blocked/completed/failed/stopped/crashed), DM/channel/broadcast messaging, file-touch notifications, no locks. Skip list: 1800x mermaid renderer, custom terminal handterm, TTFI/RAM micro-benchmarks, multi-account /account UX, native Firefox bridge.',
-  'jcode,research,reverse-engineering,phase-43,mit,coding-workflow,ambient,cascade,graph-rag,swarm',
-  10, 'fact', 1746662400000, 'long', 1.0, 'research', 'episodic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'JCODE ADOPTION PROPOSALS (2026-05-07): twelve Phase 43 chunks sequenced foundations-first. 43.1 memorable session names + idle timeout for headless MCP (adjective+animal registry in mcp-data/sessions.json, --resume <name>; touches commands/mcp.rs, coding/coding_sessions.rs). 43.2 V20 schema migration adding memories.confidence REAL DEFAULT 1.0, memory_reinforcements(memory_id, session_id, message_index, ts), memory_trigger_patterns(memory_id, pattern, kind), memory_gaps(query_embedding, context_snippet, session_id, ts), safety_decisions(action, decision, decided_at, decided_via). One new INSERT block appended to mcp-data/shared/memory-seed.sql. 43.3 per-category confidence decay half-lives Correction 365d / Preference 90d / Procedure 60d / Fact 30d / Inferred 7d in memory/maintenance_runtime.rs. 43.4 reinforcement provenance hooks at memory/reranker.rs and commands/streaming.rs. 43.5 cascade retrieval through memory_edges in memory/store.rs|graph_rag.rs (BFS depth<=2, weight*0.7^depth, edge-type priors Supersedes 0.9 / HasTag 0.8 / RelatesTo confidence / InCluster 0.6 / Contradicts|DerivedFrom 0.3, behind cascade=true flag, default-on for brain_suggest_context). 43.6 post-retrieval maintenance background task in new memory/post_retrieval.rs (strengthen co-relevant edges, +0.05 confidence verified / -0.02 rejected, log gap when verified empty). 43.7 negative memories cognitive_kind extension + memory/negative.rs prepends [NEGATIVE — DO NOT DO THIS] markers when triggers match (regex|substring|file_glob|language). 43.8 gap detection threshold top_score<0.3 && embedding_norm>0.7 + review_gaps MCP tool. 43.9 embedding-indexed instruction slices replaces bulk-XML rules-doc injection (chunk rules/instructions/docs by heading, top-K=10 + per-file TOC pointer line, --bulk-rules escape hatch, then update rules/prompting-rules.md). 43.10 Tier1/Tier2 safety classifier in coding/safety.rs with persistent decision history and 14-consecutive-approvals auto-promotion proposer. 43.11 background-maintenance agent skeleton coding/ambient.rs + coding/ambient_scheduler.rs (default disabled, garden-only until 20 cycles of feedback exist, single-instance PID guard in mcp-data/, x-ratelimit-* header parsing, 20% user headroom, exponential 429 backoff, AmbientControlPanel.vue). 43.12 cross-harness session import coding/session_import.rs reads ~/.claude|.codex|.opencode|.cursor|.config/github-copilot/cli/ transcripts and feeds memory/brain_memory.rs::extract_memories with imported_from tag. Out of scope for Phase 43: swarm same-repo multi-agent (extends mem id 110), MCP runner exec() hot-reload, structural agent-grep refactor of code_query (slot in later code-intel phase).',
-  'jcode,adoption,phase-43,milestones,memory-schema,cascade,ambient,safety,instruction-slicing,session-import',
-  10, 'procedure', 1746662400000, 'long', 1.0, 'planning', 'procedural'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'JCODE AMBIENT MODE LESSON (2026-05-07): a fixed-cadence maintenance scheduler (what TerranSoul has today in memory/maintenance_scheduler.rs) is strictly weaker than an *agentic* ambient loop. The right shape: tool surface garden/extract_from_session/verify_fact/scout_recent_sessions/request_permission/schedule_next/end_cycle (end_cycle is mandatory final tool that yields control back), adaptive interval that reads provider x-ratelimit-* headers and reserves 20% headroom for the user with exponential 429 backoff, persistent scheduled queue rows on disk surviving restarts, single-instance guard via PID file, subscription-OAuth providers prioritised over pay-per-token, atomic temp-file rename + last-processed checkpoints + interrupted-transcript markers for crash safety, every proactive-work action goes through request_permission and lands on a coding/ worktree branch, user feedback (rejections) becomes memories so future cycles avoid the pattern. Default enabled=false on first release with proactive_work=false (garden only) until decision-history feedback loop has at least 20 cycles of data. This is the single most behaviour-changing lift of Phase 43.',
-  'jcode,ambient,lesson,scheduler,rate-limit,crash-safety,phase-43,maintenance',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'JCODE CASCADE RETRIEVAL LESSON (2026-05-07): TerranSoul already populates memory_edges (typed/directional, V19) but hybrid_search_rrf does not traverse them at query time. Adding BFS to depth<=2 from the top-K seeds with edge-weighted depth-decayed scoring (weight * 0.7^depth, edge-type priors per memory_edges rel_type) is the single largest retrieval-quality upgrade we can ship without changing storage. Must ship behind a cascade=true query flag with an A/B recall benchmark extending benches/million_memory.rs; promote to default for brain_suggest_context only after recall@10 holds within +/-1% versus flat RRF on the existing test corpus. Final pool merges seed scores + cascade scores, dedupes by memory_id, returns top-K. We are not changing the RRF fusion itself, only enriching the candidate pool before scoring.',
-  'jcode,cascade-retrieval,memory_edges,graph-rag,phase-43,recall-benchmark,brain_suggest_context',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'JCODE INSTRUCTION SLICING LESSON (2026-05-07): the existing PROMPT CONTEXT RULE that bulk-loads every rules/*.md, instructions/*.md, docs/*.md as XML blocks into every coding-workflow prompt is a major context tax (~5-10k tokens per turn) and silently drops items that do not fit. The jcode pattern is to chunk those files by markdown heading, index each chunk as a memory (category=rule, cognitive_kind=instruction), and at prompt-build time embed the task description and pull only top-K matching slices plus a one-line table-of-contents pointer per file so the agent can request specific files explicitly. We must guarantee a hit on rules whose topic matches the task. Ship behind a --bulk-rules escape hatch in coding/prompting.rs for one release cycle. Update rules/prompting-rules.md once the new path is the default. This is chunk 43.9 and is strictly stronger than today.',
-  'jcode,instruction-slicing,prompt-context,phase-43,prompting-rules,context-economy',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories child
-CROSS JOIN memories parent
-WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
-  AND child.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories child
-CROSS JOIN memories parent
-WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
-  AND child.content LIKE 'JCODE AMBIENT MODE LESSON (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories child
-CROSS JOIN memories parent
-WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
-  AND child.content LIKE 'JCODE CASCADE RETRIEVAL LESSON (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT child.id, parent.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories child
-CROSS JOIN memories parent
-WHERE parent.content LIKE 'JCODE RESEARCH RECORD (2026-05-07)%'
-  AND child.content LIKE 'JCODE INSTRUCTION SLICING LESSON (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT lesson.id, module.id, 'related_to', 0.9, 'seed', 1746662400000, 'seed'
+-- Edge: seed:lesson-mcp-seed-rules --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
 FROM memories lesson
-CROSS JOIN memories module
-WHERE lesson.content LIKE 'JCODE AMBIENT MODE LESSON (2026-05-07)%'
-  AND module.content LIKE 'HIVE MODULE MAP (2026-05-07)%';
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-mcp-seed-rules'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
 
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+-- Edge: seed:lessons-learned-hub --covers--> seed:stack-coverage-anchor
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT hub.id, anchor.id, 'covers', 1.0, 'seed', strftime('%s','now')
+FROM memories hub
+JOIN memories anchor ON anchor.source_hash = 'seed:stack-coverage-anchor'
+WHERE hub.source_hash = 'seed:lessons-learned-hub'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = hub.id AND e.dst_id = anchor.id AND e.rel_type = 'covers'
+  );
+
+
+-- ── WORKSPACE-0 (2026-05-16) ──────────────────────────────────────────
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul WORKSPACE-0 (2026-05-16) — modular-monolithic foundation: introducing a Cargo workspace to a repo that already has a dominant member crate (src-tauri) requires four discipline rules to be non-breaking. (1) Pin target-dir to the old location via a new root .cargo/config.toml ([build] target-dir = "src-tauri/target"); without this, cargo relocates artifacts to <root>/target/ which orphans the existing src-tauri/target/ dir, forces a full rebuild, breaks the CodeQL exclusion list, and breaks sibling --target-dir builds like target-mcp/ that key off the same layout. (2) Move every [profile.*] block from the member manifest to the workspace root; cargo silently ignores profile blocks in non-root members and emits unused_manifest_key warnings. In our case that meant moving [profile.dev], [profile.dev.build-override], [profile.dev.package."*"], and [profile.dev.package.scrypt] from src-tauri/Cargo.toml to Cargo.toml. (3) git mv src-tauri/Cargo.lock to root Cargo.lock so the existing resolved versions are reused — cargo only consults the workspace-root lock once a workspace exists, and skipping this triggers a re-resolve. (4) Validate via cargo metadata --no-deps first (no compile cost) then cargo check on the smallest member (here hive-relay, ~36s) before claiming the workspace works — full terransoul build is ~30 min and not needed for parse validation. Phase 0 ships zero code moves; subsequent WORKSPACE-1+ phases will progressively extract leaf modules (identity → resilience → routing → memory → brain → persona → link → ai_integrations → coding) so incremental rebuilds only touch the changed crate plus downstream consumers.',
+  'lesson',
+  'cargo,workspace,modular-monolithic,build-perf,target-dir,profile-tables,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-workspace-0-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-workspace-0-2026-05-16');
+
+-- Edge: seed:lesson-workspace-0-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-workspace-0-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── KNOWLEDGE-SPLIT-1 (2026-05-16) ────────────────────────────────────
+-- Register a dedicated `terransoul` repo source so project-coding
+-- knowledge can be isolated from generic / shared lessons. The `self`
+-- brain stays the durable seat of meta-lessons (build rules, conventions,
+-- audit findings). The `terransoul` source is the seat of structural
+-- code knowledge (AST chunks, file maps, signatures) populated by the
+-- existing BRAIN-REPO-RAG ingest pipeline.
+INSERT OR IGNORE INTO memory_sources (id, kind, label, repo_url, repo_ref, created_at, last_synced_at)
 VALUES (
-  'PHASE 43 COMPARISON CAPSTONE (2026-05-07): add a deferred final chunk (43.13) to run only after all other milestones are complete and green. Scope is a neutral TerranSoul-vs-jcode-plus-other-coding-tools comparison focused on measurable workflow outcomes (session continuity, memory quality, context efficiency, safety approvals, multi-agent orchestration, self-improve throughput), producing docs/coding-workflow-comparison-2026.md and a follow-up promotion proposal for only materially impactful gaps.',
-  'phase-43,comparison,capstone,jcode,coding-tools,workflow-benchmark,milestones',
-  8, 'fact', 1746662400000, 'long', 1.0, 'planning', 'procedural'
+  'terransoul',
+  'repo',
+  'TerranSoul repo',
+  'https://github.com/TerranSoul/TerranSoul',
+  'main',
+  CAST(strftime('%s','now') AS INTEGER) * 1000,
+  NULL
 );
 
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT capstone.id, plan.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories capstone
-CROSS JOIN memories plan
-WHERE capstone.content LIKE 'PHASE 43 COMPARISON CAPSTONE (2026-05-07)%'
-  AND plan.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
+-- Tag every TerranSoul-specific lesson row with `terransoul-repo` so MCP
+-- agents can scope a search to project-coding knowledge ("brain_search
+-- ... tag:terransoul-repo") vs generic meta-lessons. Idempotent — the
+-- LIKE guard skips rows already carrying the marker.
+UPDATE memories
+SET tags = CASE
+  WHEN tags = '' OR tags IS NULL THEN 'terransoul-repo'
+  ELSE tags || ',terransoul-repo'
+END
+WHERE content LIKE 'TerranSoul %'
+  AND ',' || tags || ',' NOT LIKE '%,terransoul-repo,%';
 
--- Phase 43 completion record (2026-05-07)
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+-- Durable lesson: how the knowledge split works.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul KNOWLEDGE-SPLIT-1 (2026-05-16) — project-coding knowledge isolation: TerranSoul-specific lessons in mcp-data/shared/memory-seed.sql are now tagged `terransoul-repo` and a dedicated `memory_sources` row (id=''terransoul'', kind=''repo'') is registered so the MCP source picker and cross-source search can isolate project-coding context from generic agent meta-lessons. Structural code knowledge (AST chunks, signatures, file maps) still flows through the existing BRAIN-REPO-RAG-1b ingest pipeline into mcp-data/repos/terransoul/memory.sqlite — this seed block only registers the source; the user runs repo ingest from the Knowledge Graphs panel to populate it. The `self` brain remains the canonical seat of meta-lessons (build rules, audit findings, completion entries); the `terransoul` repo source is the canonical seat of code knowledge. Filter pattern for MCP agents: brain_search with tag filter `terransoul-repo` returns only project-coding context.',
+  'lesson',
+  'mcp,seed,knowledge-split,memory-sources,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-knowledge-split-1-2026-05-16'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+);
+
+-- Edge: seed:lesson-knowledge-split-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── KNOWLEDGE-SPLIT-1 (2026-05-16) ────────────────────────────────────
+-- Register a dedicated `terransoul` repo source so project-coding
+-- knowledge can be isolated from generic / shared lessons. The `self`
+-- brain stays the durable seat of meta-lessons (build rules, conventions,
+-- audit findings). The `terransoul` source is the seat of structural
+-- code knowledge (AST chunks, file maps, signatures) populated by the
+-- existing BRAIN-REPO-RAG ingest pipeline.
+INSERT OR IGNORE INTO memory_sources (id, kind, label, repo_url, repo_ref, created_at, last_synced_at)
 VALUES (
-  'PHASE 43 COMPLETION (2026-05-07): all 13 chunks complete, CI green. New modules: session_names, negative, gap_detection, instruction_slices, safety (Tier1/Tier2 classifier + decision history + auto-promotion), ambient (agent skeleton + PID guard + garden/gate/end_cycle), ambient_scheduler (rate-limit-aware + 429 exponential backoff + 20% user headroom), session_import (5 harnesses: Claude/Codex/OpenCode/Cursor/CopilotCli, JSON/JSONL parsing, secret redaction). Rust test count: 2496 (from ~2340 at phase start). Comparison doc: docs/coding-workflow-comparison-2026.md. Key schema: V20 with confidence, reinforcements, trigger_patterns, gaps, safety_decisions tables. safety_decisions columns: (id, action, decision, decided_at, decided_via) — NOT (tier, reason, ts). Follow-up proposal in comparison doc covers RAG latency, setup wizard, ambient validation, replay mode, embedding model registry.',
-  'phase-43,completion,summary,safety,ambient,session-import,instruction-slices,negative-memories,gap-detection',
-  10, 'fact', 1746662400000, 'long', 1.0, 'summary', 'episodic'
+  'terransoul',
+  'repo',
+  'TerranSoul repo',
+  'https://github.com/TerranSoul/TerranSoul',
+  'main',
+  CAST(strftime('%s','now') AS INTEGER) * 1000,
+  NULL
 );
 
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT completion.id, plan.id, 'completes', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories completion
-CROSS JOIN memories plan
-WHERE completion.content LIKE 'PHASE 43 COMPLETION (2026-05-07)%'
-  AND plan.content LIKE 'JCODE ADOPTION PROPOSALS (2026-05-07)%';
+-- Tag every TerranSoul-specific lesson row with `terransoul-repo` so MCP
+-- agents can scope a search to project-coding knowledge ("brain_search
+-- ... tag:terransoul-repo") vs generic meta-lessons. Idempotent — the
+-- LIKE guard skips rows already carrying the marker.
+UPDATE memories
+SET tags = CASE
+  WHEN tags = '' OR tags IS NULL THEN 'terransoul-repo'
+  ELSE tags || ',terransoul-repo'
+END
+WHERE content LIKE 'TerranSoul %'
+  AND ',' || tags || ',' NOT LIKE '%,terransoul-repo,%';
 
--- Phase 45 plan + design lessons (2026-05-07): project-knowledge architecture
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07): TerranSoul code knowledge uses a 3-tier layer model — base snapshot at .codegraph/snapshot.json (deterministic, committable, no merge driver needed because every row keys on (repo_label, file, content_hash, line) and outputs are sorted), branch overlay in SQLite table code_branch_overlays(repo_id, base_ref, branch_ref, file, hash) with overlay_id columns on code_symbols/code_edges (queries union overlay-over-base), and in-memory working-tree overlay for dirty files. Branch switches call code_branch_sync(prev, new) which re-indexes only git diff --name-only prev..new files. Designed in docs/project-knowledge-architecture.md.',
-  'design,phase-45,project-knowledge,branch-overlay,snapshot,code-intelligence,architecture',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'GRAPHIFY ISSUE #52 LESSONS (2026-05-07): public failure-mode catalogue for large-repo knowledge graphs. (1) tree-sitter version mismatch crashed whole pipeline → TerranSoul gates each parser behind a parser-* Cargo feature, single file parse error never aborts others. (2) Python-only cross-file resolution crashed Swift/ObjC → resolver per-language with provenance=skipped:parser_error fallback. (3) PDFs in .imageset/.xcassets misclassified as papers → vendor/asset detector excludes by path. (4) 7414 micro-clusters on 22k nodes → min_cluster_size (default 8) + two-phase clustering (directory partition first). (5) HTML 5000-node hard error → workbench renders top-N degree nodes per cluster with drill-in, no hard cap. (6) god nodes dominated by Pods/node_modules → vendor-tier files excluded from god-node ranking by default. (7) no iOS preset → .codeignore auto-detected from build manifests. (8) no progress feedback → gate_telemetry emits code_index_progress every 100 files. Source: https://github.com/safishamsi/graphify/issues/52',
-  'lesson,graphify,scale,clustering,vendor-detection,phase-45,reverse-engineering,credits',
-  9, 'fact', 1746662400000, 'long', 1.0, 'lesson', 'semantic'
-);
-
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'BRANCH SYNC PROTOCOL (2026-05-07): TerranSoul code-knowledge git lifecycle uses three POSIX hook scripts (post-checkout, post-merge, post-commit) installed by code_install_hooks Tauri command. Hooks POST to local MCP (127.0.0.1:7421/7422/7423) and EXIT 0 on any error so git is never blocked. post-checkout/post-merge call code_branch_sync(prev, new); post-commit calls code_index_commit(sha) and atomically promotes overlay to base when HEAD == base_ref. No git merge driver is needed because the snapshot is deterministic. .codegraph/ is committed (snapshot.json + snapshot.meta.json); code_index.sqlite stays local-only and is a derived cache. Multi-repo orgs use existing code_repo_groups + code_contracts (chunk 37.13) plus new code_group_drift / code_branch_diff MCP tools.',
-  'design,phase-45,git-hooks,branch-sync,mcp,code-intelligence,multi-repo,non-blocking',
-  9, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT plan.id, lesson.id, 'informed_by', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories plan
-CROSS JOIN memories lesson
-WHERE plan.content LIKE 'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07)%'
-  AND lesson.content LIKE 'GRAPHIFY ISSUE #52 LESSONS (2026-05-07)%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT protocol.id, plan.id, 'part_of', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories protocol
-CROSS JOIN memories plan
-WHERE protocol.content LIKE 'BRANCH SYNC PROTOCOL (2026-05-07)%'
-  AND plan.content LIKE 'PROJECT KNOWLEDGE ARCHITECTURE (2026-05-07)%';
-
--- MCP Compliance Gate (2026-05-07): active enforcement of project governance rules
-INSERT OR IGNORE INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-VALUES (
-  'MCP COMPLIANCE GATE (2026-05-07): TerranSoul MCP now actively enforces project rules via compliance_gate.rs. Instead of passive text, the MCP server tracks per-session compliance state and (1) injects reminder annotations into tool responses when preflight is incomplete, (2) exposes a brain_session_checklist tool showing completed/outstanding steps, (3) accepts compliance/signal notifications from agents to mark steps done. Preflight steps: brain_health called, brain_search/brain_suggest_context called, MCP receipt shown. Post-chunk steps: completion-log updated, milestones cleaned, seed synced. Reminders appear in the first 5 tool calls and every 10th call thereafter if preflight is not done. Does NOT block tool calls (MCP protocol-compliant) but makes violations visible in the response text. Located at src-tauri/src/ai_integrations/mcp/compliance_gate.rs, wired into router.rs tool dispatch.',
-  'mcp,compliance-gate,enforcement,rules,session-tracking,preflight,milestone-hygiene,non-negotiable',
-  10, 'fact', 1746662400000, 'long', 1.0, 'architecture', 'procedural'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT gate.id, rule.id, 'implements', 1.0, 'seed', 1746662400000, 'seed'
-FROM memories gate
-CROSS JOIN memories rule
-WHERE gate.content LIKE 'MCP COMPLIANCE GATE (2026-05-07)%'
-  AND rule.content LIKE 'MILESTONE HYGIENE RULE%';
-
--- ── 2026-05-09: RAG write-back must refine, not blindly insert ─────────
--- Lesson: chat-driven memory ingest used to call `brain_memory::save_facts`
--- which inserted every extracted fact verbatim, so the knowledge base
--- accumulated near-duplicates ("User likes Python", "User mostly uses
--- Python", "User prefers Python language" → 3 rows). The fix introduces
--- `memory::refine` with `save_facts_refined`: for each new fact we
--- run a keyword hybrid_search to fetch up to 3 candidates, ask the
--- active brain (LocalOllama / OpenAI / OpenRouter / Pollinations / etc.)
--- to choose `keep` (drop duplicate), `update` (rewrite existing
--- entry with merged content) or `new` (genuinely novel), then apply
--- the decision through `MemoryStore::update` (non-destructive
--- versioning) or `add`. `extract_memories_from_session` now routes
--- through `save_facts_refined` whenever a brain mode is configured;
--- the legacy blind-insert path only runs when no brain exists.
--- Critical Send/Sync rule: the `std::sync::MutexGuard<MemoryStore>` is
--- !Send, so the refine pipeline must NOT hold the lock across the LLM
--- `.await`. `refine_and_save_fact` takes `&Mutex<MemoryStore>` and
--- briefly locks per phase (keyword_candidates → drop → LLM → re-lock for
--- update/add). LLM unreachable / unparseable JSON → FallbackInserted, so
--- knowledge is never silently lost. Added 16 unit tests in
--- src/memory/refine.rs covering prompt shape, parser robustness
--- (fences, invented ids, missing content, garbage), stats accounting,
--- DB-backed keyword retrieval, and the unreachable-brain fallback path.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+-- Durable lesson: how the knowledge split works.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
 SELECT
-  'RAG WRITE-BACK REFINEMENT (2026-05-09): chat-extracted facts must go through memory::refine::save_facts_refined when a brain mode is configured. The refiner pulls up to DEFAULT_REFINE_CANDIDATES=3 keyword-similar entries via MemoryStore::hybrid_search, asks the LLM (BrainMode-routed via complete_via_mode) to return JSON {action: keep|update|new, id?, content?}, and applies keep/update/new via MemoryStore::update or add. Never hold the std::sync::MutexGuard<MemoryStore> across the LLM .await — refine_and_save_fact takes &Mutex<MemoryStore> and locks per phase. LLM failure or invalid JSON falls back to insert (FallbackInserted) so no fact is lost. extract_memories_from_session in commands/memory.rs now calls save_facts_refined for any brain mode; brain_memory::save_facts only runs in the no-brain bootstrap path. Added 16 unit tests in src/memory/refine.rs (prompt shape, parser hardening, stats, DB candidate retrieval, unreachable-brain fallback). Companion lesson: LocalOllama three-stream pump (src-tauri/src/commands/streaming.rs::spawn_event_pump) coalesces consecutive text Chunk events into one Tauri emit per producer wake-up while NEVER coalescing Animation or Pose events, cutting IPC fanout cost on chat+pet+subtitle webviews without losing any text byte or animation/pose timing. Three regression tests guard order, the coalescing collapse, and animation non-coalescing.',
-  'rag,memory,refine,dedup,llm-judge,streaming,event-pump,coalescing,three-streams,local-ollama,perf',
-  10, 'procedure', 1746748800000, 'long', 1.0, 'brain', 'procedural'
+  'TerranSoul KNOWLEDGE-SPLIT-1 (2026-05-16) — project-coding knowledge isolation: TerranSoul-specific lessons in mcp-data/shared/memory-seed.sql are now tagged `terransoul-repo` and a dedicated `memory_sources` row (id=''terransoul'', kind=''repo'') is registered so the MCP source picker and cross-source search can isolate project-coding context from generic agent meta-lessons. Structural code knowledge (AST chunks, signatures, file maps) still flows through the existing BRAIN-REPO-RAG-1b ingest pipeline into mcp-data/repos/terransoul/memory.sqlite — this seed block only registers the source; the user runs repo ingest from the Knowledge Graphs panel to populate it. The `self` brain remains the canonical seat of meta-lessons (build rules, audit findings, completion entries); the `terransoul` repo source is the canonical seat of code knowledge. Filter pattern for MCP agents: brain_search with tag filter `terransoul-repo` returns only project-coding context.',
+  'lesson',
+  'mcp,seed,knowledge-split,memory-sources,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-knowledge-split-1-2026-05-16'
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'RAG WRITE-BACK REFINEMENT (2026-05-09):%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
 );
 
--- 2026-05-09: VRAM-aware online catalogue top-picks (companion to migration 017).
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+-- Edge: seed:lesson-knowledge-split-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── GRAPHRAG-1 (2026-05-16) ───────────────────────────────────────────
+-- Durable cross-system-comparison lesson from the microsoft/graphrag
+-- audit. The full design analysis lives in docs/graphrag-comparison.md;
+-- this row captures the adoption decisions + deferrals so future agent
+-- sessions can find them via brain_search without re-reading the doc.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
 SELECT
-  'LESSON: VRAM-aware online catalogue top-picks (2026-05-09): src-tauri/src/brain/doc_catalogue.rs::build_top_picks must use a curated VRAM-aware tier-to-tag map (VeryHigh -> gemma4:e4b, High -> gemma3:4b, Medium/Low -> gemma3:1b, VeryLow -> tinyllama), NOT largest-fits-RAM. The latter promoted gemma4:31b (20 GB) on 32+ GB systems and the desktop FirstLaunchWizard then auto-pulled it on consumer 12 GB GPUs producing multi-second TTFT or OOM. load_cached_catalogue() runs sanitize_top_picks() which replaces any cached pick with required_ram_mb > 12288 by the largest fitting model so users on a stale cache self-heal on next launch. Doc TOP_PICKS table in docs/brain-advanced-design.md was updated to match. Regression tests: sanitize_top_picks_repairs_oversized_cached_pick, recommend_high_tier_picks_small_not_31b, build_top_picks_matches_hardcoded_recommend, build_top_picks_online_picks_correct_models.',
-  'lesson,perf,vram,ollama,model-selection,doc-catalogue,sanitize,first-launch-wizard,latency',
-  10, 'procedure', 1746748800000, 'long', 1.0, 'brain', 'procedural'
+  'TerranSoul GRAPHRAG-1 (2026-05-16) — microsoft/graphrag cross-system comparison: docs/graphrag-comparison.md maps their pipeline (extract_graph -> summarize_descriptions -> cluster_graph Leiden -> create_community_reports -> generate_text_embeddings; four-strategy query system Global/Local/DRIFT/Basic) against TerranSoul''s hybrid 6-signal RRF + HyDE + cross-encoder + memory_edges KG + cognitive-kind retrieval intent stack. Three adoptions queued as sub-chunks in rules/milestones.md: (1a) hierarchical community summaries — recurse Leiden so memory_communities.level carries levels 0..N (cap N=4); LLM-generated per-level summaries through the active brain provider; new Tauri command graph_rag_build_hierarchy + optional level parameter on graph_rag_search. (1b) structured entity/relationship extraction at ingest — new memory::extraction::extract_entities_relationships(text, kind) writes typed (entity, rel_type, entity, description) quads into memories+memory_edges; gated by BrainConfig.graph_extract_enabled default off so offline-only sessions stay zero-cost. (1c) global vs local query routing — extend the Chunk 16.6b query-intent classifier with a scope axis (global, local, mixed); global routes to top-level community summaries (depends on 1a), local routes to entity-walk + hybrid_search_rrf, mixed routes to current dual-level RRF fusion. Deferred: DRIFT iterative refinement (conflicts with single-stream chat UX), FastGraphRAG NLP-only fallback (local Ollama makes LLM extraction near-free). Rejected: Parquet output format (SQLite + per-repo SQLite already the source of truth), settings.yaml config (Tauri commands + Pinia store cover this). Key insight: memory_communities.level was already a schema column added in Chunk 16.6 but only populated at level=0; hierarchical communities is a schema-aligned extension, not a new column. DeepWiki source URL is deepwiki.com/microsoft/graphrag (the workspace-rule deepwiki.org host redirects there); upstream commit studied: 0da2a4dd.',
+  'lesson',
+  'mcp,seed,graphrag,knowledge-graph,community-detection,leiden,entity-extraction,query-routing,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-graphrag-1-2026-05-16'
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: VRAM-aware online catalogue top-picks (2026-05-09):%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1-2026-05-16'
 );
 
--- 2026-05-10: Screenshot quality workflow and mobile keyboard-offset guard.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+-- Edge: seed:lesson-graphrag-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1a — design tokens vs composition (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
 SELECT
-  'LESSON: Tutorial screenshot refresh must be captured and verified step-by-step, not by blind batch scripts. For each referenced tutorial image: open the exact target tab/view, dismiss quest overlays, confirm 3D mode state, capture, then visually verify the resulting file before moving to the next step. If any screenshot has UI defects (overlay, wrong mode, missing controls, clipping), fix UI/state first and immediately recapture that file. This avoids propagating one bad state across dozens of screenshots.',
-  'lesson,tutorials,screenshots,qa,workflow,3d-mode,verification',
-  10, 'procedure', 1746835200000, 'long', 1.0, 'self-improve', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Tutorial screenshot refresh must be captured and verified step-by-step%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Mobile black-strip and missing-input bug root cause was false keyboard detection in src/composables/useKeyboardDetector.ts. Resizing from 430x932 to 390x844 while the chat input remained focused set keyboardHeight=88 and translated .bottom-panel upward, leaving a dark gap and making the input appear missing. Durable fix: only treat keyboard as open when all are true: shrink > threshold, an editable element is focused, and visualViewport is actually reduced versus layout viewport (window.innerHeight - visualViewport.height > 20 or visualViewport.offsetTop > 0). Plain window/CDP resize must never trigger keyboard offset.',
-  'lesson,frontend,mobile,keyboard,viewport,chat-input,layout,bugfix',
-  10, 'procedure', 1746835200000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Mobile black-strip and missing-input bug root cause was false keyboard detection%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Free-mode Gemini/Vertex MCP tool calls require sanitized JSON Schemas. Before exposing tool definitions to those providers, recursively inline local $ref from $defs, drop $defs, and strip unsupported keys (discriminator, const, exclusiveMinimum, exclusiveMaximum, additionalProperties, $schema, $id, $ref, contentEncoding, contentMediaType). Non-Gemini providers must keep original schemas unchanged. Durable implementation: brain::providers::sanitize_tool_schema_for_gemini + adapt_tool_schema_for_free_provider, wired into ai_integrations::mcp::router tools/list via definitions_for_free_provider when BrainMode is FreeApi.',
-  'lesson,mcp,gemini,vertex,tool-schema,json-schema,sanitization,free-provider,compatibility',
-  10, 'procedure', 1746835200000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Free-mode Gemini/Vertex MCP tool calls require sanitized JSON Schemas.%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Multi-agent verify-before-claim discipline must be explicit in role prompts and docs. Member prompts must include exact rules: read every tool result, never claim success on tool error, and after any state-mutating call (file write/shell) perform a cheap follow-up read (`ls` or `read`) before reporting completion. Lead prompts must include: sanity-check a member done claim with a cheap read when feasible. Keep these exact phrases under unit-test assertions so they cannot be silently dropped during refactors.',
-  'lesson,multi-agent,prompting,verify-before-claim,tool-results,quality-gate,workflow-hardening',
-  10, 'procedure', 1746835200000, 'long', 1.0, 'self-improve', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Multi-agent verify-before-claim discipline must be explicit in role prompts and docs.%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Tutorial screenshot QA closure should be done one screenshot at a time with explicit visual verification notes. When a tutorial screenshot mismatches the documented state, either recapture from the target view or replace with a validated in-repo capture and update the tutorial caption to match the verified image. Track pass/fail and fixes in /memories/session/tutorial-qa-progress.md before archiving the chunk.',
-  'lesson,tutorials,screenshots,qa,visual-verification,workflow,documentation',
-  9, 'procedure', 1746835200000, 'long', 1.0, 'self-improve', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Tutorial screenshot QA closure should be done one screenshot at a time with explicit visual verification notes.%'
-);
--- 019_self_improve_agent_session_gap_lessons.sql
--- Why TerranSoul's self-improve subsystem failed to autonomously capture the
--- 2026-05-10 "manual screenshot QA, not batch scripts" procedural lesson, and
--- what code changes would close the gap.
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'GAP: TerranSoul self-improve has no ingestion path for lessons learned by an EXTERNAL coding agent (Copilot/Claude Code/Codex) operating in the main checkout. coding/conversation_learning.rs only classifies user chat messages as feature/bugfix/improvement -> appends to rules/milestones.md. coding/engine.rs runs the autonomous loop in an isolated worktree against the configured Coding LLM. Neither path observes when an interactive agent in the user-facing chat session discovers a procedural rule (e.g. "do this manually, not with a batch script"). Result: the agent must hand-write SQL migrations into mcp-data/shared/ to durably store the lesson. The user correctly identified this as a self-improve regression, not a normal feature gap.',
-  'gap,self-improve,agent-session,conversation-learning,mcp,knowledge-ingestion',
-  10, 'analysis', 1746921600000, 'long', 1.0, 'self-improve', 'analytical'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'GAP: TerranSoul self-improve has no ingestion path for lessons learned by an EXTERNAL coding agent%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'PROPOSAL: Close the agent-session lesson gap with three additions. (1) New module src-tauri/src/coding/agent_session_lessons.rs with detect_lesson(message, role, prior_messages) -> Option<LessonChunk> that recognises user-corrective patterns ("you should X instead of Y", "stop doing X", "instead of using a script, do X manually") and agent-authored patterns ("I learned X", "lesson:"). (2) New MCP tool brain_ingest_lesson{content, tags, importance, category} that writes to memories table via the gateway AND appends an INSERT row to mcp-data/shared/memory-seed.sql so the lesson survives memory.db reset/reseed. (3) Extend coding/conversation_learning.rs DetectionReply schema to include category="lesson" branch that routes to brain_ingest_lesson instead of milestones.md. CI hook: when a new INSERT block is appended to mcp-data/shared/memory-seed.sql, lessons-learned.md must be updated in the same PR.',
-  'proposal,self-improve,agent-session,brain-ingest-lesson,mcp-tool,roadmap',
-  10, 'proposal', 1746921600000, 'long', 1.0, 'self-improve', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'PROPOSAL: Close the agent-session lesson gap with three additions%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'RULE: When an agent learns a procedural lesson during an interactive coding session (the user corrects a workflow, multiple bugs trace to the same anti-pattern, a screenshot QA reveals systemic issues), the agent MUST: (a) append the lesson to mcp-data/shared/memory-seed.sql as a new INSERT INTO memories ... WHERE NOT EXISTS block, (b) update mcp-data/shared/lessons-learned.md with the same lesson, (c) verify retrievability with brain_search before declaring the task complete, and (d) send a visible MCP receipt naming the lesson topic. The consolidated init snapshot is the durable path until brain_ingest_lesson MCP tool ships. Skipping (a)+(b) means the lesson lives only in chat and is lost when context is summarised.',
-  'rule,self-improve,agent-session,lesson-capture,markdown-not-memory,migration',
-  10, 'rule', 1746921600000, 'long', 1.0, 'self-improve', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'RULE: When an agent learns a procedural lesson during an interactive coding session%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Native HTML <select> dropdown contrast in TerranSoul broke on light themes (Corporate, Pastel, Adventurer-light variants) because src/views/ChatView.vue .reasoning-effort-select used non-existent CSS tokens var(--ts-text, #e2e8f0) and var(--ts-bg-base, #0f172a). --ts-text was never defined; the fallback dark hex always won, producing light-on-light text on light themes. Fix: use var(--ts-text-primary) and var(--ts-bg-surface) which are defined in every html[data-theme=*] block. Also add color-scheme: inherit + accent-color: var(--ts-accent) so the native popup follows the active theme. Audit rule: any custom token reference must match a definition that exists in every theme block of src/style.css.',
-  'lesson,frontend,themes,css-tokens,contrast,native-select,accessibility',
-  10, 'procedure', 1746921600000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Native HTML <select> dropdown contrast in TerranSoul broke on light themes%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Chat input must be a multi-line auto-grow textarea, never a single-line <input type="text">. Long messages scroll horizontally in a single-line input so the user cannot see what they typed; on small screens the issue is amplified because the visible window is narrow. Fix in src/components/ChatInput.vue: replace input with textarea rows="1", set CSS resize:none, line-height:1.4, max-height:calc(1.4em*6 + 18px), overflow-y:auto, and call autoResize() on @input that sets el.style.height=auto then min(scrollHeight, lineHeight*MAX_ROWS+padding). Submit on Enter without Shift; Shift+Enter inserts a newline. Reset textarea height when inputText clears (use a watcher that calls autoResize via nextTick).',
-  'lesson,frontend,chat-input,textarea,auto-grow,responsive,ux',
-  10, 'procedure', 1746921600000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Chat input must be a multi-line auto-grow textarea%'
-);
-
-
-
--- ──────────────────────────────────────────────────────────────────────────────
--- Migration 020 (mirrored from migrations/020_openagentd_audit_lessons.sql)
--- ──────────────────────────────────────────────────────────────────────────────
--- 020_openagentd_audit_lessons.sql
--- Durable lessons distilled from the 2026-05-10 reverse-engineering audit of
--- lthoangg/OpenAgentd (Apache-2.0). Studied via the upstream documents/docs/
--- tree (architecture, agent loop, hooks, tools, teams, summarization,
--- memory) plus the README; DeepWiki was reachable but not yet indexed.
--- Full audit lives in docs/openagentd-audit.md. Mirrored to
--- mcp-data/shared/lessons-learned.md and chunked into rules/milestones.md
--- as Phase 47.
---
--- Clean-room: no source, prompts, asset names, or wire formats are copied.
--- Apache-2.0 attribution is recorded in CREDITS.md.
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Long tool results must spill to disk, not into the conversation. OpenAgentd ToolResultOffloadHook writes any result above ~40 KB / ~10 K tokens to {workspace}/{agent_name}/.tool_results/{tool_call_id}.txt and replaces the in-context value with a head/tail preview plus the file path. Write failure logs a warning and returns the original — execution is never broken by an offload failure. TerranSoul mapping: add the same step in coding::engine run_tool_with_hooks and commands::chat tool-call handling, spilling to <worktree>/.terransoul/tool_results/<id>.txt so the agent can read the full content via its existing file tools.',
-  'lesson,openagentd,coding,tool-offload,context-window,worktree,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Long tool results must spill to disk%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Long shell output must spill, and child processes must die. OpenAgentd shell tool streams output, spills past ~128 KB to .shell_output/<call_id>.txt, returns only the last 200 lines inline plus a reference, and starts subprocesses with start_new_session=True so timeout/cancel can os.killpg() the entire process group (e.g. node under npm run dev). It also appends a <shell_metadata> advisory on timeout suggesting a higher timeout_seconds. TerranSoul mapping: coding::test_runner and coding::processes need a ring-buffer + spill-to-file pattern, process-group kill on cancel/timeout, and a structured timeout advisory.',
-  'lesson,openagentd,coding,shell,process-group,timeout,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Long shell output must spill%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Cancellation must reach in-flight tool calls, not only DAG boundaries. OpenAgentd checks an asyncio.Event interrupt at three points (during LLM streaming, before tool dispatch, during tool execution via asyncio.wait FIRST_COMPLETED racing tool tasks vs the event). Tools that finish in the same tick keep their real result; still-running tools are cancelled and return Cancelled by user. TerranSoul mapping: coding::engine has cancel: Arc<AtomicBool> but only checks between DAG nodes; add a tokio::sync::watch::Sender<bool> per run and tokio::select!{ tool, _ = watch.changed() } around each in-flight task.',
-  'lesson,openagentd,coding,interrupt,cancellation,tokio-select,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Cancellation must reach in-flight tool calls%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Heal orphaned tool calls before the next user turn. OpenAgentd heal_orphaned_tool_calls runs in the same DB transaction as the new user message: it inspects the latest assistant row and inserts a synthetic ToolMessage("Tool execution was interrupted before a result could be recorded.") for every tool_call_id without a reply, anchored to last_assistant.created_at + 1µs * (i+1) so input order stays assistant -> tool -> ... -> user. A second guard in _deserialize_messages drops tool calls with truncated arguments JSON (mid-stream interrupt). Without this, the next OpenAI Responses turn 400s with No tool output found for function call. TerranSoul mapping: add heal-on-load in commands::chat::load_session and coding::session_chat::resume.',
-  'lesson,openagentd,coding,heal,orphan,tool-call,resume,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Heal orphaned tool calls before the next user turn%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Agent loop hooks must use chain-of-responsibility, not branches. OpenAgentd BaseAgentHook exposes before_agent / before_model / wrap_model_call / on_model_delta / after_model / wrap_tool_call / after_agent. wrap_tool_call is a chain (Hook0 -> Hook1 -> ... -> execute_fn), so tool-result offload, OTel, audit, and team-protocol injection are composable units instead of branches in the loop body. All invocations are wrapped in _safe_invoke_hooks() so a buggy hook never crashes the run. TerranSoul mapping: coding/hooks.rs is for git hooks only; introduce a runtime AgentHook trait in coding/runtime_hooks.rs with the same lifecycle, route hook errors through tracing::warn! with the hook name, and migrate the new tool-offload step (lesson above) to be the first hook on the chain.',
-  'lesson,openagentd,coding,hooks,chain-of-responsibility,trait,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Agent loop hooks must use chain-of-responsibility%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: ModelRequest.messages is a frozen tuple; hooks that mutate state must return a new request. OpenAgentd before_model snapshot is built before hooks fire, so SummarizationHook and TeamInboxHook must call request.override(messages=tuple(state.messages_for_llm)) — mutating state.messages alone leaves the LLM seeing stale data. TerranSoul mapping: any future runtime hook that injects context (RAG block, inbox message, summary) must rebuild the outgoing request, not just mutate the in-memory state. Encode this as a doctest on the AgentHook trait.',
-  'lesson,openagentd,coding,hooks,immutable-request,gotcha,phase-47',
-  9, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: ModelRequest.messages is a frozen tuple%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Rolling-window summarization needs cross-request token seeding. OpenAgentd SummarizationHook is a pure state transform that fires when state.usage.last_prompt_tokens >= threshold, but that counter resets to 0 on every Agent.run(). The fix lives in the Checkpointer: mark_loaded() scans history for the last assistant extra.usage.input and seed_state() restores it before the loop, so turn N+1 of a multi-HTTP-request session still triggers summarization. Settings cascade per-agent frontmatter -> .openagentd/config/summarization.md -> module defaults. TerranSoul mapping: add a SummarizationHook on the new hook framework and seed last_prompt_tokens from coding::session_chat persisted usage so long resumed coding sessions actually compress.',
-  'lesson,openagentd,coding,summarization,token-seeding,context,phase-47',
-  8, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Rolling-window summarization needs cross-request token seeding%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Subscribe-before-read + commit-after-persist prevents replay duplication. OpenAgentd stream_store.attach() registers the subscriber asyncio.Queue BEFORE replaying state to close the producer/consumer gap, and commit_agent_content(session_id, agent_name) drops the just-persisted content[agent], thinking[agent], and tool_calls entries from the replay blob immediately after each successful checkpointer.sync(). Without commit-after-persist, a mid-turn UI refresh between sync and the team-wide mark_done renders the same assistant text twice (once from DB, once from replay). TerranSoul mapping: deferred until we actually have a Tauri replay surface (multi-window pet-mode chat mirror, LAN-MCP-shared web UI); adopt the contract from day one when that work begins.',
-  'lesson,openagentd,streaming,replay,sse,subscribe-before-read,deferred',
-  7, 'lesson', 1746921600000, 'long', 1.0, 'streaming', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Subscribe-before-read + commit-after-persist%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: A scheduled dream agent turns ephemeral notes into durable topics. OpenAgentd wiki has three tiers — USER.md (always injected), topics/{slug}.md (BM25-searchable on demand via wiki_search), and notes/{date}.md (append-only via the note tool). A cron-driven dream agent reads unprocessed sessions and notes, synthesises new topics, and updates USER.md and INDEX.md. Empty sessions auto-skip so they do not consume a batch slot. TerranSoul mapping: TerranSoul has memory::wiki, memory::brain_memory, and obsidian_export, but no scheduled-promotion loop turning ephemeral chat notes into BM25-searchable wiki topics. Reuse the brain LLM provider and embedding worker. Deferred until the runtime hook framework lands so the dream agent stays composable.',
-  'lesson,openagentd,memory,wiki,dream,scheduled,bm25,deferred',
-  7, 'lesson', 1746921600000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: A scheduled dream agent turns ephemeral notes%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Sandbox needs a secrets denylist plus a tokenised shell pre-flight. OpenAgentd filesystem sandbox uses a denylist (data/state/cache dirs) plus user-defined globs from sandbox.yaml (e.g. **/.env, **/secrets/**). The same denylist also covers shell commands via a best-effort shlex tokenisation: path-like tokens (containing /, leading ~ or .) are resolved against the workspace and matched. Best-effort only — $VAR, $(...), backticks, and base64 are not evaluated, so OS-level user permissions remain the last line of defence. TerranSoul mapping: TerranSoul coding worktree gives directory isolation; add a first-class secrets_denylist (default **/.env, **/secrets/**, **/*.pem, **/id_rsa*) checked by file tools, plus a tokenised shell pre-flight that rejects path-like tokens resolving into a denied root.',
-  'lesson,openagentd,sandbox,secrets,denylist,shlex,shell,phase-47',
-  8, 'lesson', 1746921600000, 'long', 1.0, 'security', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Sandbox needs a secrets denylist%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Provider tool schemas must be sanitised per provider. OpenAgentd _resolve_refs() inlines $ref and drops $defs so providers that reject $ref (Gemini, Vertex AI) get flat self-contained schemas. GeminiProviderBase._sanitize_schema() recursively strips discriminator, const, exclusiveMinimum/Maximum, additionalProperties, $schema, $id, $ref, contentEncoding, contentMediaType before the request — Gemini returns 400 INVALID_ARGUMENT otherwise. TerranSoul mapping: when free-mode tool calls flow through Gemini, add brain::providers::sanitize_tool_schema_for_gemini and call it in the free-mode tool-call adapter; otherwise some MCP tools silently 400.',
-  'lesson,openagentd,brain,providers,gemini,schema-sanitisation,phase-47',
-  8, 'lesson', 1746921600000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Provider tool schemas must be sanitised per provider%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Tool-call SSE is three-phase, and parallel ids must be preserved. OpenAgentd emits tool_call (from the streaming model delta the moment a name appears, no args yet -> spinner card), tool_start (from wrap_tool_call before execution with assembled args), and tool_end (after execution with the result). All three carry the same tool_call_id so the frontend matches them even for parallel calls. Critical: tool_end must use the id registered at tool_call time — some providers mis-index parallel calls (Gemini snapshots the parts array every chunk; both Gemini providers now assign a stream-scoped tool_idx_by_id.setdefault(fc_id, len(tool_idx_by_id)) before building each ToolCallDelta). TerranSoul mapping: verify StreamTagParser preserves the contract for parallel calls and consider adopting the ToolIdResolver pattern.',
-  'lesson,openagentd,streaming,tool-call,three-phase,parallel-id',
-  7, 'lesson', 1746921600000, 'long', 1.0, 'streaming', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Tool-call SSE is three-phase%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Live config drift detection avoids restart-on-edit. OpenAgentd team members stamp the mtimes of their .md, mcp.json, and every referenced SKILL.md in agent.config_stamp at build time; end-of-turn the wrapper detects drift and the next activation re-parses and swaps the underlying agent in place (model, tools, prompt, MCP). Wrapper, mailbox binding, and session_id are preserved. Parse failures keep the previous agent and re-stamp to avoid looping. TerranSoul mapping: TerranSoul coding skills/personas live as files on disk; add coding::skills::stamp_and_refresh_if_dirty so editing a skill file is reflected on the next ambient-mode wake without restarting the engine.',
-  'lesson,openagentd,coding,skills,drift-detection,hot-reload',
-  7, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Live config drift detection avoids restart-on-edit%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'LESSON: Lead-as-translator team protocol with verify-before-claim is the right multi-agent default. OpenAgentd members describe needs in plain language ("I need to write files to disk") rather than registry names ("grant me write"); the lead translates and calls team_manage(member, "add", "tool", "write"). Validation runs before any disk write. Critical robustness: members must read the result of every tool call before claiming success, and after mutating state (file write) the protocol asks for a cheap follow-up read (ls, read) before reporting completion. The lead must sanity-check a member done claim with a cheap read when feasible. TerranSoul mapping: codify verify-before-claim in coding::multi_agent prompts and rules/prompting-rules.md so it is enforced consistently.',
-  'lesson,openagentd,coding,multi-agent,verify-before-claim,prompts,phase-47',
-  8, 'lesson', 1746921600000, 'long', 1.0, 'coding-workflow', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'LESSON: Lead-as-translator team protocol%'
-);
-
--- chunk 47.1 completion: coding::offload module implemented (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FACT: coding::offload implemented in chunk 47.1 (2026-05-10). OFFLOAD_CHAR_THRESHOLD=40000 chars; SHELL_OUTPUT_BYTES_MAX=131072 bytes. maybe_offload_tool_result writes to <worktree>/.terransoul/tool_results/<call_id>.txt; maybe_offload_shell_output writes to .terransoul/shell_output/<call_id>.txt (last 200 lines inline). configure_process_group: Unix process_group(0) / Windows CREATE_NEW_PROCESS_GROUP. Wired into coding::test_runner run_one_attempt via super::offload::configure_process_group. 11 tests green.',
-  'fact,coding,offload,chunk-47.1,spill-to-disk,process-group,complete',
-  7,
+  'THEME-COCKPIT-1a lesson (2026-05-16). When a user says a reference UI ' ||
+  'looks ''much better'' than ours, FIRST diff the design tokens before ' ||
+  'rewriting components. In the Rag Brain reference port, the --accent / ' ||
+  '--bg-base / --border-strong / --r-xl values were ALREADY identical to ' ||
+  'TerranSoul''s --ts-* tokens (same #00d4ff, #040a12, rgba(0,212,255,0.34)). ' ||
+  'The perceived gap was pure composition: layered linear-on-rgba backgrounds, ' ||
+  'triple-shadow (inset highlight + cyan soft bloom + deep navy drop), ' ||
+  '::before corner reticles, ::after radial halo blob, and bright selected-' ||
+  'state border + halo. Solution pattern: capture the composition as a ' ||
+  'reusable utility class (.ts-cockpit-card + .ts-cockpit-label + ' ||
+  '.ts-cockpit-crumb) plus pre-composed shadow tokens ' ||
+  '(--ts-shadow-cockpit{,-hover,-selected}), so later view ports just add ' ||
+  'class="ts-cockpit-card" instead of restyling each container. Always ' ||
+  'add light-theme overrides for new dark-HUD utilities (corporate/pastel) ' ||
+  'or they turn muddy on white. Phase the rollout: 1a = primitives ' ||
+  '(this chunk), 1b = brain panel port, 1c = audit/spread.',
+  'seed:lesson-theme-cockpit-1a-2026-05-16',
+  'procedural',
   'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: coding::offload implemented in chunk 47.1%'
-);
-
--- chunk 47.2 completion: watch-channel cancel path + orphaned tool-call repair (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FACT: chunk 47.2 added a watch-channel cancel path to coding::engine and a JSONL-based orphaned tool-call repair helper in coding::session_chat. SelfImproveEngine now owns a watch sender alongside the legacy atomic flag; start() resets both and the loop observes cancellation via watch::Receiver at loop boundaries. session_chat::heal_orphaned_tool_calls rewrites the transcript atomically, inserts synthetic tool_result:<id> messages, and is called before user append plus from coding_session_load_chat/coding_session_resume. Session transcript repair is currently JSONL-backed because the repo does not yet have a SQLite session transcript store. Tests green: 13 coding::session_chat tests and request_stop_clears_running_flag.',
-  'fact,coding,engine,session_chat,cancel,watch-channel,orphan-healing,chunk-47.2',
-  7,
-  'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: chunk 47.2 added a watch-channel cancel path%'
-);
-
--- chunk 47.3 completion: runtime hook framework + offload hook chain (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FACT: chunk 47.3 added src-tauri/src/coding/runtime_hooks.rs as a reusable hook framework with RunContext, AgentState, ModelRequest, ToolCall, ToolCallResult, AgentHook, chain runners for before_model/after_model/wrap_tool_call/on_chunk, safe panic isolation, and OffloadHook as the first tool-call chain hook. OffloadHook delegates to coding::offload::maybe_offload_tool_result. The hook-rebuild contract is documented with a doctest and verified by cargo test --doc runtime_hooks. Validation: cargo check, cargo test --lib runtime_hooks, cargo test --doc runtime_hooks, cargo clippy -- -D warnings.',
-  'fact,coding,runtime-hooks,offload,chain-of-responsibility,chunk-47.3',
-  7,
-  'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: chunk 47.3 added src-tauri/src/coding/runtime_hooks.rs%'
-);
-
--- chunk 47.4 completion: rolling summarization hook + token seeding (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FACT: chunk 47.4 added coding::summarization_hook::SummarizationHook with threshold-gated rolling compression (last_prompt_tokens >= 100000 default), exclude_from_context message flags, one synthetic summary message insertion, and request rebuild from active messages. Added threshold cascade helpers (session override -> mcp-data/shared/coding_summarization.toml -> defaults), plus coding::session_chat::seed_last_prompt_tokens to recover persisted assistant prompt usage on resume. Engine now seeds prompt tokens before each chunk run via session_chat_seed_last_prompt_tokens.',
-  'fact,coding,summarization,token-seeding,resume,chunk-47.4,context-window',
-  7,
-  'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: chunk 47.4 added coding::summarization_hook::SummarizationHook%'
-);
-
--- harness/context engineering audit + workflow enforcement (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'FACT: harness/context engineering audit (2026-05) added docs/harness-context-engineering-audit-2026-05.md and wired context-budget enforcement into the shared coding harness path. src-tauri/src/coding/workflow.rs now applies context_engineering::auto_budget_assembly(BudgetConfig::default()) inside run_coding_task before prompt.build(), so every coding task gets priority-based context fitting by default instead of relying on caller-specific behavior. README now documents TerranSoul''s harness + context engineering model with links to coding-workflow design and audit docs.',
-  'fact,coding,harness,context-engineering,workflow,budget,readme,docs,2026-05',
   8,
-  'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
+  strftime('%s','now'),
+  strftime('%s','now')
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: harness/context engineering audit (2026-05) added docs/harness-context-engineering-audit-2026-05.md%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
 );
 
--- openagentd audit expansion: deep ui/ux + team-role handoff cockpit (2026-05-10)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1a — design tokens vs composition (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
 SELECT
-  'FACT: OpenAgentd reverse-engineering audit was expanded to include deep UI/UX analysis, not only backend runtime patterns. docs/openagentd-audit.md now documents team cockpit surfaces (TeamChatView split panes, drag-reorder, TeamStatusBar, tool-call legibility, inbox/handoff visibility, scheduler/settings information architecture, and mobile/accessibility interaction patterns) and maps these role-handoff observability lessons to TerranSoul''s neutral multi-agent UX direction.',
-  'fact,openagentd,audit,ui-ux,team,role-handoff,cockpit,multi-agent,2026-05',
+  'THEME-COCKPIT-1a lesson (2026-05-16). When a user says a reference UI ' ||
+  'looks ''much better'' than ours, FIRST diff the design tokens before ' ||
+  'rewriting components. In the Rag Brain reference port, the --accent / ' ||
+  '--bg-base / --border-strong / --r-xl values were ALREADY identical to ' ||
+  'TerranSoul''s --ts-* tokens (same #00d4ff, #040a12, rgba(0,212,255,0.34)). ' ||
+  'The perceived gap was pure composition: layered linear-on-rgba backgrounds, ' ||
+  'triple-shadow (inset highlight + cyan soft bloom + deep navy drop), ' ||
+  '::before corner reticles, ::after radial halo blob, and bright selected-' ||
+  'state border + halo. Solution pattern: capture the composition as a ' ||
+  'reusable utility class (.ts-cockpit-card + .ts-cockpit-label + ' ||
+  '.ts-cockpit-crumb) plus pre-composed shadow tokens ' ||
+  '(--ts-shadow-cockpit{,-hover,-selected}), so later view ports just add ' ||
+  'class="ts-cockpit-card" instead of restyling each container. Always ' ||
+  'add light-theme overrides for new dark-HUD utilities (corporate/pastel) ' ||
+  'or they turn muddy on white. Phase the rollout: 1a = primitives ' ||
+  '(this chunk), 1b = brain panel port, 1c = audit/spread.',
+  'seed:lesson-theme-cockpit-1a-2026-05-16',
+  'procedural',
+  'long',
   8,
-  'long',
-  strftime('%s','now') * 1000,
-  'long',
-  1.0,
-  'implementation',
-  'fact'
+  strftime('%s','now'),
+  strftime('%s','now')
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'FACT: OpenAgentd reverse-engineering audit was expanded to include deep UI/UX analysis%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
 );
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1b — alias layer enables mood-driven palette swap (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
 SELECT
-  'WEB CRAWLER UX LESSON (2026-05-11): Scholar''s Quest URL input now exposes a 🕸️ Crawl whole site checkbox (KnowledgeQuestDialog.vue) that prefixes the source with crawl: so the user does not need to know the magic prefix. Crawl progress description was upgraded to ''Crawling N/M (depth D/MAX): URL'' in src-tauri/src/commands/ingest.rs::crawl_website_with_progress, and the emit now uses TaskKind::Crawl (was TaskKind::Ingest, which flipped the kind label mid-crawl). Users monitor crawl jobs in two places: KnowledgeQuestDialog Step 3 progress cards and the global TaskProgressBar mounted in ChatView+BrainView. Limits: domain-scoped, BFS depth 2, max 20 pages, 30-min auto-pause, cancel/resume via task_manager checkpoint.',
-  'web-crawler,scholars-quest,knowledge-quest,task-progress,depth,monitoring,ingest_document,crawl,ux',
-  9, 'procedure', 1778457600000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'WEB CRAWLER UX LESSON (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category, cognitive_kind)
-SELECT
-  'UI LESSON (2026-05-11): In ChatView + CharacterViewport, settings/model dropdown must not compete with the bottom chat controls. Keep the settings layer above input/toggle controls (corner-cluster z-index), and when chat history is expanded pass hideSettingsDialog so CharacterViewport forcibly closes settingsOpen instead of only visually hiding it.',
-  'chat-ui,settings-dialog,chat-history,character-viewport,layering,ux,frontend',
+  'THEME-COCKPIT-1b lesson (2026-05-16). When porting a designed UI ' ||
+  'component, build a thin ALIAS layer between the imported tokens and ' ||
+  'your app tokens (here: --bp-* in src/styles/brain-panel.css reading ' ||
+  'from --ts-*). That alias layer pays off later when visual variants ' ||
+  '(mood/theme/accent attributes) need to retint the whole component: ' ||
+  'redefine the --bp-* aliases under .bp-shell[data-accent=violet|green|' ||
+  'amber|pink] and every descendant border/glow/active-state cascades ' ||
+  'automatically — no component edits, no hunting through rules. ' ||
+  'BrainView wires it up via a computed accentKey from moodKey: free->' ||
+  'green, paid->violet, local->amber, none->'''' (default cyan), bound ' ||
+  ':data-accent on .bp-shell. Without the alias layer the same change ' ||
+  'would require editing every border/glow/accent rule in a 1249-line ' ||
+  'stylesheet. Also: do a SELECTOR DIFF before assuming a port is ' ||
+  'incomplete — the brain panel was 145/147 selectors at parity; the ' ||
+  'real gap was three mood variants, not a rewrite.',
+  'seed:lesson-theme-cockpit-1b-2026-05-16',
+  'procedural',
+  'long',
   8,
-  'procedure',
-  1778457600000,
-  'long',
-  1.0,
-  75,
-  'frontend',
-  'procedural'
+  strftime('%s','now'),
+  strftime('%s','now')
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'UI LESSON (2026-05-11): In ChatView + CharacterViewport,%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
 );
 
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'SHARDED ANN LESSON (2026-05-11): Chunk 48.2 replaced single vectors.usearch with per-shard usearch files at <app-data>/vectors/<tier>__<kind>.usearch plus per-index .quant sidecars. MemoryStore now routes set_embedding/update/delete/delete_many through ShardKey=(MemoryTier,CognitiveKind), performs shard fan-out ANN retrieval merged by RRF, and supports rebalance_shards plus shard-wide compaction/save/rebuild paths.',
-  'sharded-ann,usearch,hnsw,rrf,chunk-48.2,vector-search,memory-store,scale',
-  9, 'procedure', 1778457600000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'SHARDED ANN LESSON (2026-05-11):%'
-);
-
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'HERMES AGENT INTEGRATION (2026-05-11): Hermes Agent (NousResearch/hermes-agent, MIT) auto-loads AGENTS.md and uses YAML config at ~/.hermes/cli-config.yaml (or %LOCALAPPDATA%\hermes\cli-config.yaml on native Windows) with a top-level mcp_servers: block. TerranSoul wires Hermes via write_hermes_config() / write_hermes_stdio_config() in src-tauri/src/ai_integrations/mcp/auto_setup.rs using a marker-comment upsert (HERMES_BLOCK_BEGIN / HERMES_BLOCK_END) — no YAML parser dependency, user content outside markers preserved verbatim, duplicate top-level mcp_servers: keys surfaced as warnings. Tauri commands: setup_hermes_mcp / setup_hermes_mcp_stdio / remove_hermes_mcp. Top wins over OpenClaw: built-in learning loop (validates Phase 25), Honcho dialectic user modeling (backlog), FTS5 session search (validates Chunk 48.5), subagent delegation, cron scheduling (backlog), trajectory compression (already Chunk 47.4). 8 unit tests cover YAML block builders, upsert/replace, conflict detection, and managed-block removal.',
-  'hermes-agent,mcp,auto-setup,yaml,nousresearch,ai-coding,chunk-15.6,integrations,attribution',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'HERMES AGENT INTEGRATION (2026-05-11):%'
-);
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BRAIN_APPEND MCP TOOL (2026-05-11): Inspired by rahilp/second-brain-cloudflare (MIT). Added gateway::append + brain_append MCP tool that takes (id, addition, source?) and extends an existing memory entry with format "{old}\n\n[Update {ts_ms} · {src}]\n{addition}" using literal middle-dot. Wraps existing MemoryStore::update which auto-saves a version snapshot via versioning::save_version and re-embeds via shard re-routing — non-destructive AND re-embedded automatically. Wired in src-tauri/src/ai_integrations/gateway.rs (AppendRequest/AppendResponse + trait method + AppStateGateway impl), src-tauri/src/ai_integrations/mcp/tools.rs (schema after brain_ingest_lesson, dispatch arm, expected-list test), and mcp/activity.rs (describe_tool arm). Tool counts bumped: brain tools 17→18, total tools 34→35; integration_tests::tools_list_returns_28_tools updated to 35 with index shift +1 for all tools at position ≥8. 5 unit tests cover write-capability gate, empty-addition rejection, content+version verification, default source label "agent", missing-id error. Lessons: format! macro and \\u escapes do not compose — use literal unicode characters in source; NewMemory has more fields than MemoryEntry — always use store.add(NewMemory{..,..Default::default()}). Do not implement bookmarklet/iOS-Shortcuts/Cloudflare-specific patterns; tiered duplicate detection (≥95 block, 85-95 flag) is a future backlog candidate.',
-  'brain-append,mcp,gateway,versioning,second-brain-cloudflare,attribution,chunk-improvements,rahilp',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BRAIN_APPEND MCP TOOL (2026-05-11):%'
-);
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 48.5-48.7 (2026-05-11): Schema version bumped 20→21. (48.5) FTS5 per-shard keyword index via external-content virtual table memories_fts with unicode61 tokenizer, auto-sync INSERT/UPDATE/DELETE triggers, keyword_candidate_ids_fts5() fast path with INSTR fallback. (48.6) Paged KG: composite covering indexes (src_id,rel_type)/(dst_id,rel_type) on memory_edges, memory_graph_clusters pre-aggregated table refreshed during AnnCompact maintenance, get_edges_paged() + graph_totals() for O(k log n) neighbourhood load. (48.7) Backpressure: DEFAULT_SHARD_MAX_ENTRIES=2M ceiling, check_shard_capacity() rejects ingests at limit, shard_health_summary() reports per-shard status (entry_count, fts5, ann_index, over_capacity). Hot-cache TTL 30s→60s. ShardHealthSummary wired into HealthResponse (brain_health MCP tool) so agents see degraded shards immediately. Key files: memory/schema.rs (ensure_v21_fts5 + ensure_v21_graph_indexes), memory/graph_paging.rs, memory/shard_backpressure.rs, memory/store.rs (has_fts5, data_dir getter, FTS5 search paths), ai_integrations/gateway.rs (HealthResponse.shard_health). All tests pass: 2756 Rust lib + 1801 Vitest.',
-  'billion-scale,fts5,graph-paging,backpressure,shard-health,brain-health,schema-v21,phase48',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.5-48.7 (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'DOCUMENT-LEARNING VOICE UX LESSON (2026-05-11): Explicit prompts such as "learn my provided documents" must wait for classify_intent before starting normal LLM streaming/TTS. If streaming begins first, the user can hear a generic chat answer while the visible UI routes to Scholar''s Quest. Use shouldAwaitIntentBeforeStreaming() in src/stores/conversation.ts for high-confidence learn/study my/provided docs/files/notes prompts, and centralize quest-card subtitle/TTS in ChatView.vue with a message-id dedupe helper so watcher, send, and quest-choice paths cannot speak the same quest card twice.',
-  'document-learning,scholars-quest,tts,conversation-store,chatview,intent-routing,voice-ux,frontend',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'frontend', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'DOCUMENT-LEARNING VOICE UX LESSON (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 48.8 (2026-05-11): Coarse shard router is now durable and queryable across restarts. shard_router.json persists built_at, embedding_dim, and centroid rows {id, shard token, embedding vector}. ShardRouter::load_from_dir rehydrates the in-memory ANN by replaying persisted centroids, while MemoryStore::select_shards_for_query now tries cached router, then persisted load, then lazy build before all-shards fallback. This closes the Phase 2 durability gap where router metadata existed but runtime always rebuilt/probed-all after process restart.',
-  'billion-scale,shard-router,phase48.8,sharded-hnsw,router-persistence,rrf,memory-store,ann',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.8 (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 48.9 (2026-05-11): Coarse shard routing now uses a policy-driven refresh scheduler. MemoryStore applies cooldown-gated refreshes (15m) with dual triggers: time (missing/stale router) and volume (mutation delta >= 500). Query fan-out attempts throttled refresh instead of unconditional rebuild on every miss, and maintenance AnnCompact forces a refresh pass to keep shard_router.json warm. MCP brain_health now includes router_health metadata (cached/persisted presence, built_at, age_ms, centroid_count, stale flag, cooldown, mutation delta) so agents can diagnose routing freshness before retrieval-heavy operations.',
-  'billion-scale,shard-router,phase48.9,router-scheduler,maintenance,brain-health,observability,ann',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 48.9 (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 49.1 (2026-05-11): Phase 3 disk-backed ANN kickoff added a deterministic migration planner scaffold. New module memory/disk_backed_ann.rs defines DiskAnnPlan + DiskAnnShardPlan and plan_from_counts() for threshold-based candidate selection; MemoryStore::disk_ann_plan() now derives per-shard candidates from live SQLite counts and ANN index-file presence. This is an execution-planning surface only (no IVF-PQ read/write path yet) so rollout can be sequenced safely before enabling disk-backed index migration jobs.',
-  'billion-scale,phase49.1,disk-backed-ann,ivf-pq,planner,shard-migration,memory-store',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.1 (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'VOICE DESIGN DECISION (2026-05-11): TerranSoul now models persona/model voice design as structured profile data (gender, age, pitch, style, English accent, Chinese dialect, provider voice). Existing Web Speech/OpenAI-compatible TTS remains the default path and maps only voice/pitch/rate where supported. k2-fsa/OmniVoice matches the requested full voice-design fields, but should be evaluated as an optional future provider because Python/PyTorch/Hugging Face runtime size, packaging, performance, and voice-cloning consent UX need separate design before shipping.',
-  'voice-design,tts,persona,model-profile,omnivoice,provider-decision,frontend',
-  9, 'decision', 1778716800000, 'long', 1.0, 'voice', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'VOICE DESIGN DECISION (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11): Disk-backed ANN execution path is now live at sidecar level. `memory/disk_backed_ann.rs` now defines IVF-PQ sidecar schema + I/O (`DiskAnnSidecar`, `write_sidecar`, `read_sidecar`, `list_sidecars`) with suffix `vectors/<shard>.ivfpq.json`. `MemoryStore::run_disk_ann_migration_job(threshold,max_shards)` executes deterministic planner candidates by writing sidecars for shards with existing ANN index files; `disk_ann_health_summary` reports eligible vs sidecar-ready shards. Maintenance `AnnCompact` now runs this migration hook and includes sidecar-write counts in status text. MCP `brain_health` now exposes `disk_ann_health` so agents can see migration eligibility/readiness gaps before IVF-PQ build/search paths are fully wired.',
-  'billion-scale,phase49.2,disk-backed-ann,ivf-pq,sidecar,migration,maintenance,brain-health',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11): Added explicit Tauri control commands for disk-backed ANN migration operations. `disk_ann_plan_preview(threshold?)` returns deterministic planner candidates, `disk_ann_migration_status(threshold?)` reports eligible-vs-ready sidecar health, and `run_disk_ann_migration(threshold?, max_shards?)` executes one migration batch using `MemoryStore::run_disk_ann_migration_job`. Commands are wired in `src-tauri/src/lib.rs` invoke handler so operators can run deterministic sidecar writes on demand instead of waiting for the AnnCompact schedule.',
-  'billion-scale,phase49.3,disk-backed-ann,commands,plan,status,migration,sidecar,tauri',
-  9, 'procedure', 1778716800000, 'long', 1.0, 'brain', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11):%'
-);
-
--- ====================================================================
--- Chunk 50.1 — Shard health, router health, graph observability Tauri commands
--- Synced: 2026-05-11
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'CHUNK 50.1 (2026-05-11): Added 7 Tauri commands exposing Phase 48 shard/graph observability. Commands in src-tauri/src/commands/memory.rs and registered in src-tauri/src/lib.rs: (1) shard_health(max_entries?) — wraps shard_backpressure::shard_health_summary, returns ShardHealthSummary with per-shard capacity/counts/backpressure state; (2) router_health() — wraps shard_router::router_health, returns RouterHealth with centroid count/staleness/timestamp; (3) rebuild_shard_router() — triggers MemoryStore::build_shard_router, rebuilds centroid index from all shards; (4) rebalance_ann_shards() — wraps MemoryStore::rebalance_shards, redistributes entries across HNSW shards; (5) refresh_graph_clusters() — wraps graph_paging::refresh_graph_clusters, recomputes memory_graph_clusters; (6) get_top_degree_nodes(kind?, limit?) — wraps graph_paging::get_top_degree_nodes, returns high-degree hub nodes optionally filtered by cognitive_kind; (7) graph_totals() — wraps graph_paging::graph_totals, returns node/edge counts. All backed by Phase 48 MemoryStore methods from shard_backpressure.rs, shard_router.rs, and graph_paging.rs. cargo check --target-dir ../target-test passes.',
-  'chunk-50.1,tauri,shard-health,router-health,graph-observability,architecture,memory,phase48,phase50',
-  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.1 (2026-05-11):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 50.1 (2026-05-11):%'
-  AND (
-       d.content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.3 (2026-05-11):%'
-    OR d.content LIKE 'BILLION-SCALE RETRIEVAL PHASE 49.2 (2026-05-11):%'
-    OR d.content LIKE 'Memory module map:%'
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
 
--- ====================================================================
--- Chunk 50.2 — Graph node full CRUD + Graph node panel UI/UX
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
 SELECT
-  'CHUNK 50.2 (2026-05-11): Full CRUD over knowledge-graph nodes + improved Graph node panel UI. Backend: new MemoryStore::update_edge(id, rel_type?, confidence?, source?) in memory/edges.rs — partial patch (None keeps existing), rel_type normalised, confidence clamped to [0,1]. Two new Tauri commands in commands/memory.rs: update_memory_edge (calls EdgeSource::parse, invalidates kg_cache for [src_id,dst_id]) and detach_memory_node (collects neighbours via get_edges_for(Both), runs delete_edges_for_memory, invalidates cache for node + all neighbours; returns count). Both registered in lib.rs invoke handler. Frontend: two new Pinia actions in src/stores/memory.ts — updateEdge(id, patch) and detachNode(id) — that mirror commands and patch local edges[] array. Replaced the bare .mv-node-detail aside in MemoryView.vue with new component src/components/GraphNodeCrudPanel.vue (~900 lines): glass-card header with cognitive-kind dot/badge/content preview, inline node edit (textarea+tags+type+importance), read-mode meta grid, Relationships split into ← Parents (incoming) and → Children (outgoing) with click-to-edit rel pills + click-to-navigate neighbour previews + per-edge delete + Detach-all, inline edge editor (rel_type select + confidence slider), link form with segmented direction toggle and filtered target combobox (max 8, matches #id or substring), footer with ✏ Edit / 🗑 Delete and 2.4s toast feedback. All styles use var(--ts-*) tokens + color-mix translucent accents. MemoryView.vue gained onGraphChanged handler that re-fetches memories+edges+stats and re-resolves selectedEntry. Tests: new update_edge_partial_patch Rust test (31 edges tests pass), cargo check ok, vue-tsc clean, vitest 1806/1806.',
-  'chunk-50.2,graph-crud,memory-edges,ui-ux,vue-component,GraphNodeCrudPanel,tauri-command,pinia-action,architecture,phase50',
-  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.2 (2026-05-11):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 50.2 (2026-05-11):%'
-  AND (
-       d.content LIKE 'CHUNK 50.1 (2026-05-11):%'
-    OR d.content LIKE 'Memory module map:%'
-    OR d.content LIKE 'Frontend Pinia stores:%'
-  );
-
--- ====================================================================
--- Chunk 50.3 — agentmemory-inspired: privacy scrub, content-hash dedup, circuit breaker
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'CHUNK 50.3 (2026-05-11): Learned from rohitg00/agentmemory (DeepWiki analysis, MIT, no source copy) and implemented 3 improvements. (1) Privacy scrubbing: new memory/privacy.rs with strip_secrets() that applies 4 passes before storing memories — <private> tag removal, 20 prefix-based API key patterns (sk-ant-*, sk-*, ghp_*, AKIA*, AIza*, hf_*, glpat-*, xoxb-*, npm_*, etc.), JWT base64 triple-dot detection, and key-value secret name matching (password, api_key, secret, authorization, etc.). Uses LazyLock static vecs and native string ops, no regex crate. (2) Content-hash dedup at insert: MemoryStore::add() and add_many() now auto-compute SHA-256 of (scrubbed) content when source_hash is not caller-provided, then call find_by_source_hash() to return existing entry instead of creating a duplicate. This makes memory creation idempotent by content. (3) Circuit breaker: new brain/circuit_breaker.rs implementing CLOSED→OPEN→HALF_OPEN state machine (default: 3 failures in 60s trips to OPEN, 30s recovery timeout to HALF_OPEN, one probe request). Integrated into ProviderStatus in provider_rotator.rs — select_provider() and select_failover_chain() both check CB state after health gate. New FailoverReason::CircuitBreakerOpen. Public methods: record_request_success/failure(provider_id), circuit_breaker_state(provider_id). Follow-up agentmemory retrieval/consolidation ideas were implemented in Chunk 50.4. Tests: 12 privacy, 10 CB, 98 store, 41 rotator all pass.',
-  'chunk-50.3,privacy,secrets,scrubbing,dedup,content-hash,circuit-breaker,resilience,provider-rotator,agentmemory,architecture',
-  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.3 (2026-05-11):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 50.3 (2026-05-11):%'
-  AND (
-       d.content LIKE 'CHUNK 50.2 (2026-05-11):%'
-    OR d.content LIKE 'Memory module map:%'
-    OR d.content LIKE 'Frontend Pinia stores:%'
-  );
-
--- ====================================================================
--- Chunk 50.4 — consolidation synthesis, diversified search, progressive search
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'CHUNK 50.4 (2026-05-11): Implemented the remaining agentmemory-derived memory improvements. (1) Consolidation synthesis: memory/consolidation.rs now groups active unparented persistent memories by graph neighbourhood first and tag fallback second, creates N-to-1 parent Summary rows tagged synthetic:consolidation/parent_summary, sets child parent_id via MemoryStore::set_parent_for_memories(), and writes parent -> child derived_from edges with edge_source consolidation_synthesis. ConsolidationResult exposes synthesized count and synthesized_parent_ids; config adds synthesis_min_children, synthesis_max_clusters, synthesis_max_children. (2) Session diversification: MemoryStore::hybrid_search_rrf and hybrid_search_rrf_with_intent now pass fused candidates through select_diversified_ranked(), capping non-empty session_id clusters at DEFAULT_MAX_RESULTS_PER_SESSION=3 while leaving global NULL-session long-term memories uncapped. Cache mode keys changed to rrf_vec_diverse/rrf_diverse. (3) Progressive disclosure search: new Tauri command progressive_search_memories(query, limit?, expand_ids?) returns compact ranked previews first and expands selected full MemoryEntry rows by ID; frontend types CompactMemoryResult/ProgressiveMemorySearchResponse and Pinia memory.progressiveSearch() expose it with a browser fallback. Follow-up validation taught cognitive_kind::classify to treat the common procedure tag alias as procedural, and stale tests were updated for content-hash dedup and targeted incremental retrieval. Docs updated in README and docs/brain-advanced-design.md. Tests: consolidation 10/10, store 99/99, cargo check, cargo clippy -D warnings, full cargo test --lib 2791/2791, vue-tsc clean, vitest 1806/1806.',
-  'chunk-50.4,agentmemory,consolidation,synthesis,parent-id,session-diversification,rrf,progressive-search,compact-results,memory-store,architecture',
-  9, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CHUNK 50.4 (2026-05-11):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CHUNK 50.4 (2026-05-11):%'
-  AND (
-       d.content LIKE 'CHUNK 50.3 (2026-05-11):%'
-    OR d.content LIKE 'Memory module map:%'
-    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
-    OR d.content LIKE 'RAG pipeline:%'
-  );
-
--- ====================================================================
--- Memory-quality benchmark history (concept-tagged corpus + LongMemEval-S
--- + LoCoMo / LMEB MTEB-style retrieval). Consolidated 2026-05-12.
--- Full per-round detail lives in benchmark/COMPARISON.md and
--- rules/completion-log.md; here we keep only the durable current-state
--- entry plus the durable lessons that future agents must not relearn.
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MEMORY-QUALITY BENCHMARK STATE (2026-05-12): TerranSoul holds top-1 on every measured retrieval-quality metric across three reproducible benchmarks. (1) Concept-tagged corpus (240 obs / 20 queries, MIT-licensed dataset originally published by rohitg00/agentmemory at pinned commit ae8f061; one row among many in benchmark/COMPARISON.md): TerranSoul search R@10 66.4 / NDCG 96.5 / MRR 100.0 and no-vector RRF R@10 67.1 / NDCG 98.2 / MRR 100.0, vs the published 58.6 / 84.7 / 95.4. Reproduce with `node scripts/build-memory-quality-fixture.mjs && cd src-tauri && cargo bench --bench memory_quality --target-dir ../target-copilot-bench` (reports at target-copilot-bench/bench-results/memory_quality.{json,md}). (2) LongMemEval-S (xiaowu0162/longmemeval-cleaned, 500 questions): search R@5 99.2 / R@10 99.6 / R@20 100.0 / NDCG 91.3 / MRR 92.6, beating agentmemory 95.2/98.6/99.4/87.9/88.2 and MemPalace ~96.6 R@5. Reproduce with `node scripts/longmemeval-s.mjs run --systems=search,rrf --top-k=20`. (3) LoCoMo MTEB (mteb/LoCoMo, 1655 queries) with Ollama mxbai-embed-large 1024d: overall R@10 63.6, single_hop 73.5, multi_hop 46.2, open_domain 42.0, adversarial 61.7 (beats LMEB 12B KaLM-Embedding-Gemma3''s 53.16 R@10 and matches NV-Embed-v2 7.8B''s 66.20). Reproduce with `node scripts/locomo-mteb.mjs run --systems=rrf --embed --limit=0`. Token-efficiency calculator `npm run brain:tokens` reports current RRF default saves 91.4% vs full paste and 64.8% vs 200-line MEMORY.md. Token estimator: chars.div_ceil(4).',
-  'memory-quality,benchmark,top-1,longmemeval,locomo,mteb,agentmemory,recall,ndcg,mrr,token-efficiency,memory-store',
-  10, 'procedure', 1747008000000, 'long', 1.0, 'memory', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MEMORY-QUALITY DURABLE LESSONS (2026-05-12): Lessons learned through the BENCH-AM-1..7 and BENCH-LCM-1..5 retrieval-quality loops, kept here so future agents do not relearn them. (a) FTS5 indexes both content AND tags already (schema.rs); always re-check the schema before assuming a column is not indexed. (b) RRF treats every input ranking with equal weight: a noisy ranking (raw freshness on near-uniform timestamps, generic vector similarity on filler-heavy haystacks) is actively harmful. Use freshness as a post-fusion multiplicative boost clamped to [0.7, 1.15] with a 1-week half-life, not as a peer ranking. (c) FTS5 phrase-vs-OR matters for natural-language queries: split on non-alphanumeric, drop tokens <=2 chars, double-quote each token, OR-join (store.rs query_terms tokenizer). (d) For concept-tagged corpora, exact lexical ranking (exact tag hits > exact content hits > substring > coverage > importance) plus tightly gated KG neighbor boosts beats peer-RRF graph signals. (e) For LongMemEval-S noise-heavy haystacks, rank exact lexical matches by candidate-pool rarity so rare anchors (names, objects, domains) beat generic filler terms — but cap broad workflow terms like configuration/setup/test/validation/middleware/validation to avoid over-boosting in small pools. (f) Embeddings: nomic-embed-text (137M, 768d) loses to FTS5 on LongMemEval-S filler-heavy haystacks; mxbai-embed-large (335M, 1024d) gains +3.7pp overall R@10 on LoCoMo over nomic but regresses adversarial -2.6pp because stronger semantic matching creates trick-question false positives. Embedder-upgrade beats algorithmic RRF tweaks (CANDIDATE_POOL 500->1000 and vector double-weight had zero measurable effect). Embedding modes remain opt-in via LONGMEM_EMBED=1. (g) Always report retrieval quality AND token efficiency together — the best top-1 quality path can be more expensive than a nearly equivalent RRF path. Token estimator: chars.div_ceil(4). (h) The reference fixture is MIT-licensed and pinned by commit; never repackage the upstream code or branded names — attribute in CREDITS.md and use neutral file names like memory_quality.rs / build-memory-quality-fixture.mjs / benchmark/COMPARISON.md.',
-  'memory-quality,benchmark,lessons,rrf,fts5,embeddings,freshness,lexical-weighting,longmemeval,locomo,token-efficiency,non-negotiable',
-  10, 'principle', 1747008000000, 'long', 1.0, 'memory', 'principle'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%'
-  AND d.content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747008000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MEMORY-QUALITY BENCHMARK STATE (2026-05-12):%'
-  AND (
-       d.content LIKE 'CHUNK 50.4 (2026-05-11):%'
-    OR d.content LIKE 'Memory module map:%'
-    OR d.content LIKE 'Hybrid 6-signal search weights live in src-tauri/src/memory/store.rs%'
-    OR d.content LIKE 'RAG pipeline:%'
-  );
-
--- ────────────────────────────────────────────────────────────────────
--- DO NOT add new round-by-round entries here. Append durable lessons
--- to MEMORY-QUALITY DURABLE LESSONS above and per-round detail to
--- benchmark/COMPARISON.md + rules/completion-log.md.
--- (round-by-round BENCH-AM/BENCH-LCM narratives consolidated 2026-05-12)
--- ────────────────────────────────────────────────────────────────────
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable): The canonical VS Code MCP profile for TerranSoul is `terransoul-brain-mcp` with `type: stdio`, `command: ${workspaceFolder}/target-mcp/release/terransoul.exe`, `args: ["--mcp-stdio"]`, `env.TERRANSOUL_MCP_DATA_DIR: ${workspaceFolder}/mcp-data`. Stdio is mandatory because VS Code substitutes `${env:VAR}` from its own process env at MCP-loader time; if the OS user env var is empty (cold VS Code session, fresh clone, locked-down shell) any HTTP profile with `Authorization: Bearer ${env:TERRANSOUL_MCP_TOKEN_MCP}` produces an empty bearer, the server returns 401, and the loader spins forever showing "Starting MCP servers terransoul-brain-mcp-http... Skip?". The HTTP fallback profile (`terransoul-brain-mcp-http` on :7423) was therefore removed from `.vscode/mcp.json`. Only release/dev HTTP profiles remain (`terransoul-brain` :7421, `terransoul-brain-dev` :7422) and they are useful only when the actual TerranSoul desktop app is running and `TERRANSOUL_MCP_TOKEN`/`_DEV` are set as OS user env vars. The tray / pet-mode runtime is `terransoul.exe --mcp-tray` (full Tauri/Vue UI with main window hidden, system-tray icon visible, MCP HTTP server bound to 7423, WebView2 user-data dir = EBWebView-mcp); it is launched by `npm run mcp` via `scripts/copilot-start-mcp.mjs` and is the recommended desktop pet-mode session for AI coding agents. Do not reintroduce duplicate stdio entries (`terransoul-brain-stdio`) or HTTP variants on :7423 unless explicitly needed for an external HTTP-only client.',
-  'mcp,vs-code,stdio,startup,tray,pet-mode,oauth-dcr,must-not-forget,non-negotiable',
-  10, 'procedure', 1747008000000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable): Every local development session MUST run TerranSoul MCP via `npm run mcp` (which invokes `node scripts/copilot-start-mcp.mjs` and spawns `target-mcp/release/terransoul.exe --mcp-tray`). The `--mcp-tray` flag goes through the full Tauri builder, hides the main window, and shows a visible system-tray icon on Windows/macOS/Linux so the developer has a real UI handle to confirm MCP is alive and to quit it cleanly. NEVER launch the MCP binary directly with `--mcp-http`: that flag dispatches to `run_mcp_http()` which bypasses Tauri entirely (just axum + tokio), gives no tray icon, no UI surface, and no visible proof the brain is running — making it indistinguishable from a stale/zombie process for the user. If an agent finds a `terransoul.exe --mcp-http` process, it must `Stop-Process` that PID and restart via `npm run mcp` so the tray appears. Verified working 2026-05-12 with PID 58472, tray icon confirmed visible by user. Documented in rules/agent-mcp-bootstrap.md.',
-  'mcp,local-run,tray,mcp-tray,mcp-http,must-not-forget,non-negotiable,bootstrap',
-  10, 'procedure', 1747094400000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MCP SHARED TRAY PROXY (2026-05-12): Supersedes prior stdio-only startup guidance. Copilot, Claude, Cursor, Codex, and other local agents must share an already-open TerranSoul MCP server instead of spawning one brain per session. Priority is release app on 7421, MCP tray on 7423, then dev app on 7422 because dev and tray can run at the same time and coding agents should prefer the shared tray over a dev app when release is absent. `.vscode/mcp.json` uses `node scripts/mcp-tray-proxy.mjs` as the `terransoul-brain-mcp` stdio command; the proxy reads token files itself and forwards JSON-RPC to the first authenticated server, so no `TERRANSOUL_MCP_TOKEN_MCP` env var or VS Code restart is required. `terransoul --mcp-stdio` also proxies to an authenticated release/tray/dev HTTP server before creating local AppState, preserving older Claude/Codex/Cursor configs. `scripts/copilot-start-mcp.mjs` now reuses authenticated release/tray/dev and only builds/starts `target-mcp --mcp-tray` when no usable server is open; it does not kill an existing tray merely because source mtimes changed.',
-  'mcp,tray,stdio-proxy,copilot,claude,cursor,codex,multi-session,startup,must-not-forget,non-negotiable',
-  10, 'procedure', 1778544000000, 'long', 1.0, 'mcp', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'CI APT CACHE FOR TAURI WEBKIT (2026-05-12): Superseded cache-only guidance after cold-cache runs still took about 20 minutes. TerranSoul GitHub Actions must not use Windows runners to avoid Linux Tauri/WebKit setup because Windows Actions minutes are too expensive. Keep the Rust gate on ubuntu-24.04, but guard it with change detection so non-backend pushes skip the WebKit apt/cache step entirely; use workflow_dispatch for explicit full runs. The Rust job still needs Ubuntu Tauri/WebKit development packages when backend code changes because the crate depends on Tauri/Wry even for library clippy/tests, so keep `awalsh128/cache-apt-pkgs-action@v1` only on that guarded Linux job.',
-  'ci,github-actions,apt,tauri,webkit,cache,workflow,performance,linux-only',
-  8, 'procedure', 1778544000000, 'long', 1.0, 'ci', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CI APT CACHE FOR TAURI WEBKIT (2026-05-12):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12): LoCoMo adversarial queries regressed -2.6pp R@10 (64.3 → 61.7) when upgrading nomic-embed-text → mxbai-embed-large because stronger semantic embeddings retrieve wrong-entity documents when the query swaps a named entity (e.g. "What did Caroline realize after her charity race?" when the corpus attributes the realization to Melanie — both characters have near-identical charity-race chunks). Fix implemented in `src-tauri/src/bin/longmemeval_ipc.rs` `best_hits()`: (1) added `contents_lower: HashMap<i64,String>` to `IndexState` populated in `add_sessions`; (2) added `proper_noun_tokens(query)` extractor that picks capitalized non-stopword tokens >=3 chars (stoplist includes sentence-starter function words like What/Who/When/Did/Does/The/Is/Are/...); (3) after 4-way weighted RRF fusion but before the final sort, multiply each candidate score by 0.35 if its lowercased content contains NONE of the query proper nouns. The penalty is multiplicative (not a hard filter) so single_hop/multi_hop queries that paraphrase entities ("the runner" vs "Melanie") still surface their targets when no candidate has a proper-noun match. Only the `best` mode (LONGMEM_EMBED=1, default for BENCH-LCM runs) carries this defense; lexical-only `search` and `rrf` modes are unaffected because they do not exhibit the regression. Reproduce with `node scripts/locomo-mteb.mjs run --systems=rrf --embed --limit=0`. Pre-fix baseline: overall 63.6 / adversarial 61.7. Target: overall >=64 / adversarial >=64 without single_hop regression below 72.',
-  'bench-lcm-6,locomo,adversarial,proper-noun,wrong-entity,rrf,best-hits,longmemeval_ipc,mxbai,regression,fix,procedure',
-  9, 'procedure', 1747094400000, 'long', 1.0, 'benchmark', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1747094400000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%'
-  AND d.content LIKE 'MEMORY-QUALITY DURABLE LESSONS (2026-05-12):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'related_to', 1.0, 'seed', 1747094400000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
-  AND d.content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supersedes', 1.0, 'seed', 1778544000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%'
-  AND (
-       d.content LIKE 'MCP STARTUP — VS CODE PROFILES (2026-05-12, durable):%'
-    OR d.content LIKE 'MCP LOCAL-RUN RULE — TRAY MODE ONLY (2026-05-12, durable):%'
-  );
-
-
--- BENCH-LCM-6 smoke validation + BENCH-LCM-7 follow-up rule (2026-05-12)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12): 100-query LoCoMo slice across all 5 tasks with `node scripts/locomo-mteb.mjs run --systems=rrf --limit=100 --embed` confirms the proper-noun penalty fix recovers adversarial R@10 from 61.7% (LCM-5 baseline, 250-q) to **66.5%** (+4.8pp), exceeding the >=64% target. Other-task deltas are slice-composition noise (100q != 250q). Next: BENCH-LCM-7 must confirm on a 250-query slice before promoting to a full 1655-query run that replaces the LCM-5 adversarial cell. New durable workflow rule: ALWAYS run a 100-query smoke slice first to validate the directional change; 250-query slices are too high for iteration. Output artefact: `target-copilot-bench/bench-results/locomo_mteb_terransoul_489q.{json,md}`.',
-  'benchmark,locomo,mteb,workflow',
-  5,
-  'procedure',
-  1778544000000,
+  'TerranSoul bench resume pattern (BENCH-SCALE-3, 2026-05-16): any ' ||
+  'long-running bench that talks to longmemeval-ipc can become ' ||
+  'resume-safe by combining four primitives. (1) Expose a `count` op ' ||
+  'on the IPC server that returns MemoryStore::count() — general, ' ||
+  'reusable across all bench harnesses. (2) Make the corpus ' ||
+  'DETERMINISTIC (mulberry32 seed 0x5ca1e1 in locomo-ivfpq.mjs) so row ' ||
+  'N is identical between runs and can be safely skipped. (3) Add a ' ||
+  '`--resume` flag that preserves the bench store dir (gate the ' ||
+  '`rmSync` on `!resume && !reuseStore`), queries the count, and ' ||
+  'slices `corpus.slice(count)` before ingest; `--reuse-store` and ' ||
+  '`--resume` are mutually exclusive (full-skip vs partial-skip). ' ||
+  '(4) Register SIGINT + SIGTERM handlers that flush the progress ' ||
+  'snapshot and exit 130/143; SQLite WAL keeps the on-disk store ' ||
+  'valid through any signal. Build phase resumes by detecting ' ||
+  'sidecar files (idempotent). Query phase resumes via a per-query ' ||
+  'JSONL checkpoint (skip query ids already present). The ingest ' ||
+  'helper must accept {total, offset} so progress percentages and ' ||
+  'question_id namespacing (`scale-${globalOff}`) stay globally ' ||
+  'correct after a resume.',
+  'seed:lesson-bench-resume-pattern-2026-05-16',
+  'procedural',
   'long',
-  1.0,
-  'bench',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
-);
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'BENCH SMOKE-SLICE RULE (2026-05-12, durable, per user request): For any retrieval/RAG benchmark loop (BENCH-LCM, BENCH-AM, BENCH-TOP1, future memory-quality phases), always run a **100-query** smoke slice first to validate that a fix produces the expected directional change on the affected task(s). Only promote to a 250-query confirmation run after the 100-query slice passes, and only then to a full (1655-query LoCoMo / 500-question LongMemEval-S / full agentmemory fixture) run. 250-query slices are too high for iteration — they waste 30-60min per cycle when a 100-query slice would have answered the question. Codified in `rules/milestones.md` Phase BENCH-LCM "Smoke-slice rule" block.',
-  'benchmark,locomo,mteb,workflow',
-  5,
-  'procedure',
-  1778544000000,
-  'long',
-  1.0,
-  'bench',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'supports', 1.0, 'seed', 1778544000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%'
-  AND d.content LIKE 'BENCH-LCM-6 ADVERSARIAL PROPER-NOUN DEFENSE (2026-05-12):%';
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'derived_from', 1.0, 'seed', 1778544000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'BENCH SMOKE-SLICE RULE (2026-05-12,%'
-  AND d.content LIKE 'BENCH-LCM-6 SMOKE VALIDATION (2026-05-12):%';
-
--- Dev startup + seed schema guardrail (2026-05-13)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'DEV MODE MCP-SAFE STARTUP AND SEEDING (2026-05-13): Never use broad `taskkill /IM terransoul.exe /F` in npm dev scripts because it kills the MCP tray at target-mcp/release/terransoul.exe and drops agent brain context. Use `node scripts/kill-dev-terransoul.mjs` so only regular target/debug or target/release dev builds are stopped while target-mcp stays alive. Dev debug launches intentionally wipe the app-data dev directory for a fresh-install experience, then `seed_mcp_data` must apply mcp-data/shared/memory-seed.sql into the canonical SQLite schema. Seed blocks must use current columns (`memory_type`, `cognitive_kind`, `rel_type`, `confidence`, `source`, `edge_source`) and never legacy `kind`, `source_path`, `source_kind`, `edge_kind`, or `weight` columns.',
-  'dev,mcp,process-lifecycle,seeding,sqlite,guardrail',
-  9,
-  'procedure',
-  1778620800000,
-  'long',
-  1.0,
-  'development',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'DEV MODE MCP-SAFE STARTUP AND SEEDING (2026-05-13):%'
-);
-
--- MCP tray-first frontend build guardrail (2026-05-12)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12): `npm run mcp` must not block MCP server availability on `vite build`. Start or reuse the release app, then MCP tray, then dev MCP in that priority before doing frontend work. For tray mode, `scripts/copilot-start-mcp.mjs` should spawn `scripts/mcp-frontend-build.mjs` in the background and write `mcp-data/frontend-build-status.json`. The tray reads that status and disables `Show UI` as `Building UI...` until ready. On Windows, do not spawn `npx.cmd` directly for this helper; run local `node_modules/vite/bin/vite.js` with `process.execPath` and pipe stdout/stderr into `mcp-data/frontend-build.log` so spawn errors update status instead of leaving stale `building`.',
-  'mcp,tray,startup,frontend-build,vite,windows,performance,guardrail',
-  9,
-  'procedure',
-  1778580000000,
-  'long',
-  1.0,
-  'development',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'extends', 1.0, 'seed', 1778580000000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'MCP TRAY-FIRST FRONTEND BUILD (2026-05-12):%'
-  AND d.content LIKE 'MCP SHARED TRAY PROXY (2026-05-12):%';
-
--- CI warning-clean gate guardrail (2026-05-13)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'CI WARNING-CLEAN GATES (2026-05-13): TerranSoul CI should finish with zero errors and zero warnings across frontend lint/build/test and Rust clippy/test gates. Do not mute broad categories of warnings when the import graph or test harness can be fixed directly. For Vite `dynamic import will not move module into another chunk` noise, prefer making imports consistent when the module is already statically in the app bundle. For Vitest, expected fallback paths such as browser-only Tauri calls, jsdom WebGL absence, and invalid-token fallback tests must stay quiet in `import.meta.env.MODE === test` while preserving runtime diagnostics outside tests. When `mcp-data/shared/` changes, validate the Postgres CI branch against a local `pgvector/pgvector:pg16` service if available. Keep MCP running; use a separate cargo target dir for CI checks.',
-  'ci,frontend,lint,vite,vitest,rust,postgres,warning-clean,guardrail',
-  9,
-  'procedure',
-  1778620800000,
-  'long',
-  1.0,
-  'ci',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'CI WARNING-CLEAN GATES (2026-05-13):%'
-);
-
-INSERT OR IGNORE INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at, edge_source)
-SELECT s.id, d.id, 'extends', 1.0, 'seed', 1778620800000, 'seed'
-FROM memories s, memories d
-WHERE s.content LIKE 'CI WARNING-CLEAN GATES (2026-05-13):%'
-  AND d.content LIKE 'CI APT CACHE FOR TAURI WEBKIT (2026-05-12):%';
-
--- 2026-05-13: BrainGraphViewport.vue renamed to MemoryGraph3D.vue and is now an internal
--- subcomponent of MemoryGraph.vue (which exposes mode '2d' | '3d' and persists the
--- choice to localStorage). MemoryView.vue only knows about MemoryGraph; the 3D path is
--- private. The MemoryGraph3D internals still use the .brain-graph-viewport CSS class
--- and data-testid="brain-graph-viewport" for backwards compatibility with capture scripts.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'MEMORY GRAPH COMPONENT TOPOLOGY (2026-05-13): MemoryGraph.vue is the single public graph component used by MemoryView.vue. It exposes mode 2d (Canvas2D + d3-force-3d 2D forces) and mode 3d, persisted in localStorage key memory-graph-mode. The 3D mode delegates to MemoryGraph3D.vue (renamed from BrainGraphViewport.vue) which contains Three.js InstancedMesh nodes, d3-force-3d 3D simulation, orbit camera, raycasting tooltip, universe planet sub-mode (click a memory_type planet to fly in, breadcrumb + Esc to exit), GraphControlPanel and SelectedNodesPanel. Do not reintroduce BrainGraphViewport.vue or a separate 3D toggle in MemoryView.', 'architecture,memory-graph,component,rename', 4, 'fact', strftime('%s','now')*1000, 'long', 1.0, 700, 'architecture', 1.0, 'session:2026-05-13-memory-graph-merge'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'MEMORY GRAPH COMPONENT TOPOLOGY (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'EMBED-QUEUE LOCAL-LLM RATE-LIMIT FIX (2026-05-13): src-tauri/src/memory/embedding_queue.rs previously treated any all-None batch from embed_batch_for_mode as HTTP 429 and triggered a 30-60-120-240-480s exponential pause cascade (consecutive_rate_limits + INITIAL_PAUSE_SECS << n, capped at MAX_PAUSE_SECS). For local providers (Ollama, LM Studio) there is no rate limit; an all-None batch means the resolved model is not embedding-capable, the embed model is not pulled, or the local server is unreachable, so the cascade silently stalled the queue and hid the real cause. Fix added provider_can_rate_limit(category) returning true only for Some("paid") | Some("free"); the worker loop now sets batch_rate_limited only when that gate passes, and local-provider failures fall through to per-entry record_failure (which has its own bounded backoff via compute_backoff). The "(rate-limited)" log suffix was replaced with a diagnostic "(local provider returned no embeddings — check that an embedding-capable model is configured and the local server is reachable)" for the local-all-None case. Regression test: provider_can_rate_limit_only_for_cloud.', 'rule,embed-queue,rate-limit,local-llm,ollama,bug-fix,diagnostic-logs', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 360, 'brain', 1.0, 'session:2026-05-13-embed-queue-fix'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'EMBED-QUEUE LOCAL-LLM RATE-LIMIT FIX (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: HEURISTIC SENTINEL DOWNGRADE (2026-05-13): When an upstream API collapses many error modes into one sentinel value (e.g. embed_batch_for_mode returning Vec<Option<Vec<f32>>> where None can mean network error, 4xx, 429, JSON parse failure, or unsupported-model allow-list hit), downstream code MUST NOT reinterpret the sentinel as one specific cause without first gating on whether that cause is even possible for the current provider/category. The correct long-term fix is a typed error from source (e.g. EmbedError::RateLimited only set on observed HTTP 429); the minimum safe interim fix is a category gate at the consumer.', 'rule,error-handling,sentinel-values,api-design,heuristics', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 200, 'architecture', 1.0, 'session:2026-05-13-embed-queue-fix'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: HEURISTIC SENTINEL DOWNGRADE (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'CHAT-PARITY-4 AUTO-DETECT CONTRADICTIONS IN CHAT INGEST (2026-05-13): src-tauri/src/commands/memory.rs::extract_memories_from_session now auto-opens memory_conflicts rows when chat-extracted facts semantically negate existing high-cosine (≥ 0.85) memories. Gated by AppSettings.auto_detect_conflicts (default false; opt-in because each near-duplicate ingest costs one OllamaAgent::check_contradiction LLM round-trip and chat sessions extract many facts per turn). Pattern: snapshot pre_max_id = SELECT COALESCE(MAX(id), 0) FROM memories BEFORE save_facts_refined/save_facts, then post-save SELECT id, content FROM memories WHERE id > ?1 ORDER BY id ASC enumerates newly-inserted rows. For each: embed → store.find_duplicate(emb, 0.85) → check_contradiction(dup, new) → record_contradiction_if(...). The pure helper memory::conflicts::record_contradiction_if(store, new_id, dup_id, &result) returns None if !result.contradicts || new_id == dup_id (the second guard handles find_duplicate returning the just-inserted row when its own embedding round-trips through the ANN index). Explicit add_memory Tauri command keeps unconditional auto-detect from Chunk 17.2; this flag only controls the chat-extracted path.', 'chat-parity,contradictions,memory-conflicts,auto-detect,ingest,opt-in,rule', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 480, 'brain', 1.0, 'session:2026-05-13-chat-parity-4'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'CHAT-PARITY-4 AUTO-DETECT CONTRADICTIONS IN CHAT INGEST (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: AGGREGATE-COUNT SAVE API + PRE-MAX-ID SNAPSHOT (2026-05-13): When a sync save API only returns aggregate counts (e.g. memory::refine::save_facts_refined returns RefineStats::total_writes(), memory::brain_memory::save_facts returns count) but downstream code needs per-row post-processing on the newly-inserted rows, snapshot SELECT COALESCE(MAX(id), 0) FROM memories BEFORE the save and enumerate WHERE id > ?1 ORDER BY id ASC after. Avoids modifying the save API or threading a Vec<i64> of inserted ids through every caller. Race-safe iff the snapshot, save, and enumeration share the same lock (state.memory_store Mutex serialises against any other writer). Used by CHAT-PARITY-4 auto-detect-contradictions wiring; same pattern is reusable for any future chat-extracted post-pass (e.g. cognitive-kind reclassification, embedding warm-up).', 'rule,api-design,sync-save,post-processing,sqlite,concurrency', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 240, 'architecture', 1.0, 'session:2026-05-13-chat-parity-4'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: AGGREGATE-COUNT SAVE API + PRE-MAX-ID SNAPSHOT (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: FIND_DUPLICATE SELF-PAIR GUARD (2026-05-13): MemoryStore::find_duplicate(query_embedding, threshold) can return the just-inserted row id when its own embedding round-trips through the HNSW ANN index, because the post-add embed worker may have already populated set_embedding before the caller queries. Any code that consumes the result for relationship-creation (memory_conflicts, memory_edges, parent_id, derived_from) MUST guard if new_id == dup_id { return None; } before opening a self-loop row. The pure helper memory::conflicts::record_contradiction_if encapsulates this guard for the contradiction case; mirror the pattern for any future "find a near-duplicate, then do X with the pair" code.', 'rule,find_duplicate,ann-index,self-loop,memory-conflicts,memory-edges', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 200, 'brain', 1.0, 'session:2026-05-13-chat-parity-4'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: FIND_DUPLICATE SELF-PAIR GUARD (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'EMBED-QUEUE PER-CALL FAILURE DIAGNOSTICS (2026-05-13): src-tauri/src/brain/ollama_agent.rs::embed_text_batch now emits exactly one [brain/embed] eprintln! per failed call showing the resolved embed model AND the specific failure mode: network error (with "Is Ollama running on <url>?" hint), HTTP <status> with body preview (200 chars), JSON parse error, or "200 but `embeddings` array is missing/empty" with response preview. Suppression: a local mut first_failure_logged bool gates the four failure paths so a 32-text batch produces ONE log line, not 32. The unsupported-set early-return also logs once with a reset hint. Pairs with the existing aggregate "[embed-queue] batch: 0 embedded, N failed (local provider returned no embeddings — ...)" line from EMBED-QUEUE-RATE-LIMIT-FIX-1 to give the user immediately actionable diagnosis (which model was tried + why it failed) without log spam.', 'rule,diagnostics,observability,embed-queue,ollama,logging,bug-fix', 8, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 320, 'brain', 1.0, 'session:2026-05-13-embed-diagnostics'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'EMBED-QUEUE PER-CALL FAILURE DIAGNOSTICS (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'DOCKER DESKTOP TRAY-MODE AUTO-START (2026-05-13): src-tauri/src/brain/docker_ollama.rs::start_docker_desktop must launch Docker Desktop in tray/minimized mode so the dashboard window does not steal focus from TerranSoul or pop up over the user''s work during auto-start. Per-OS strategy: Windows uses cmd /C start "" /MIN "<exe path>" (the /MIN switch starts the process minimized; Docker Desktop''s tray icon stays available for manual reopen). macOS uses open -gja Docker (-g = no foreground activation, -j = launch hidden; menu-bar icon still appears). Linux uses systemctl start docker (already headless). Do NOT spawn the Docker Desktop.exe directly via Command::new — that bypasses /MIN handling and pops the dashboard. Podman is daemon-less / CLI-only (podman --version, podman machine start, podman run); install_podman only installs the MSI/CLI, never auto-launched Podman Desktop, so no tray-mode wrapping is needed for the Podman path.', 'rule,docker-desktop,podman,auto-start,tray,ux,windows,macos,linux', 8, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 380, 'desktop-integration', 1.0, 'session:2026-05-13-docker-tray'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'DOCKER DESKTOP TRAY-MODE AUTO-START (2026-05-13)%');
-
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'CHAT-PARITY-5 COGNITIVE-KIND BOOST IN CHAT RETRIEVAL (2026-05-13): commands::chat::retrieve_prompt_memories now applies a multiplicative ×1.15 boost on candidates whose memory::cognitive_kind::classify result matches the query intent''s preferred kind (intent_prefers_kind helper: Procedural→Procedural, Episodic→Episodic, Factual→Semantic, Semantic→Semantic|Judgment, Unknown→none, Negative→never preferred). Stage runs AFTER temporal filter (CHAT-PARITY-3) and BEFORE the LCM-8 cross-encoder rerank, so both the no-brain fallback path and the rerank pool see the kind-biased ordering. Pure-logic, no LLM hop. Position-derived base score (n - i) means the boost can displace at most ~1 rank — safe under intent misclassification. No-op on QueryIntent::Unknown so heuristic-uncertain queries fall back to RRF + cascade order. Tests: intent_prefers_kind_matrix (truth table), retrieve_prompt_memories_kind_boost_promotes_procedural_for_how_to_query (positive), retrieve_prompt_memories_kind_boost_no_op_on_unknown_intent (negative).', 'chat-parity,retrieval,cognitive-kind,query-intent,ranking,boost,rule', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 460, 'brain', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'CHAT-PARITY-5 COGNITIVE-KIND BOOST IN CHAT RETRIEVAL (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: PURE-LOGIC RANKING SIGNALS BELONG IN THE CHAT PIPELINE, NOT THE STORE (2026-05-13): When adding a new retrieval ranking signal that is pure-logic (no LLM, no I/O), prefer composing it as a post-pipeline reorder over Vec<MemoryEntry> in commands::chat::retrieve_prompt_memories rather than threading it through MemoryStore::hybrid_search_rrf_with_intent or other SQL-layer surfaces. Rationale: the chat pipeline already drops RRF scores after cascade expansion (only ordered Vec<MemoryEntry> survives), so the boost works on a position-derived score (n - i) bounded to ~1 rank of displacement. This makes the boost composable with all upstream stages (RRF, cascade, temporal filter) and cheap to test hermetically. Always include a no-op test (e.g. QueryIntent::Unknown leaves order intact). Used by CHAT-PARITY-5 cognitive-kind boost wiring; reusable for future ranking signals (recency rebalancing, source-trust boosting, persona-tag matching).', 'rule,ranking,retrieval,chat-pipeline,architecture,composition', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 280, 'architecture', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: PURE-LOGIC RANKING SIGNALS BELONG IN THE CHAT PIPELINE%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: SQL STRING-LITERAL ESCAPING DOES NOT EXTEND ACROSS SELECT-LIST EXPRESSIONS (2026-05-13): When appending INSERT INTO memories ... SELECT ''literal'', strftime(...), ... blocks to mcp-data/shared/memory-seed.sql, the strftime call is a SEPARATE column expression in the SELECT list — its quotes must use single quotes: strftime(''%s'',''now'')*1000 is WRONG (SQLite parses this as string-concat with an empty-string operator and errors with 
-ear "''": syntax error). The correct form is strftime(''%s'',''now'')*1000 inside a doubled-up shell context, but in raw SQL on disk it is strftime followed by single-quote-percent-s-single-quote-comma-single-quote-now-single-quote. The doubled-quote form is correct ONLY when the strftime call is itself inside a SQL string literal (e.g. ''SELECT '' || strftime(''%s'') || '' END''). Symptom: memory::seed_migrations::tests::compiled_seed_applies_to_canonical_schema and 2 sibling tests fail with "near \"''\": syntax error". Fix: global String.Replace over the seed file. Always run cargo test --lib memory::seed_migrations::tests after appending seed entries.', 'rule,sql,seed,escaping,sqlite,bug-fix,memory-seed', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 360, 'brain', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: SQL STRING-LITERAL ESCAPING DOES NOT EXTEND ACROSS SELECT-LIST EXPRESSIONS%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'CHAT-PARITY-5 COGNITIVE-KIND BOOST IN CHAT RETRIEVAL (2026-05-13): commands::chat::retrieve_prompt_memories now applies a multiplicative ×1.15 boost on candidates whose memory::cognitive_kind::classify result matches the query intent''s preferred kind (intent_prefers_kind helper: Procedural→Procedural, Episodic→Episodic, Factual→Semantic, Semantic→Semantic|Judgment, Unknown→none, Negative→never preferred). Stage runs AFTER temporal filter (CHAT-PARITY-3) and BEFORE the LCM-8 cross-encoder rerank, so both the no-brain fallback path and the rerank pool see the kind-biased ordering. Pure-logic, no LLM hop. Position-derived base score (n - i) means the boost can displace at most ~1 rank — safe under intent misclassification. No-op on QueryIntent::Unknown so heuristic-uncertain queries fall back to RRF + cascade order. Tests: intent_prefers_kind_matrix (truth table), retrieve_prompt_memories_kind_boost_promotes_procedural_for_how_to_query (positive), retrieve_prompt_memories_kind_boost_no_op_on_unknown_intent (negative).', 'chat-parity,retrieval,cognitive-kind,query-intent,ranking,boost,rule', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 460, 'brain', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'CHAT-PARITY-5 COGNITIVE-KIND BOOST IN CHAT RETRIEVAL (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: PURE-LOGIC RANKING SIGNALS BELONG IN THE CHAT PIPELINE, NOT THE STORE (2026-05-13): When adding a new retrieval ranking signal that is pure-logic (no LLM, no I/O), prefer composing it as a post-pipeline reorder over Vec<MemoryEntry> in commands::chat::retrieve_prompt_memories rather than threading it through MemoryStore::hybrid_search_rrf_with_intent or other SQL-layer surfaces. Rationale: the chat pipeline already drops RRF scores after cascade expansion (only ordered Vec<MemoryEntry> survives), so the boost works on a position-derived score (n - i) bounded to ~1 rank of displacement. This makes the boost composable with all upstream stages (RRF, cascade, temporal filter) and cheap to test hermetically. Always include a no-op test (e.g. QueryIntent::Unknown leaves order intact). Used by CHAT-PARITY-5 cognitive-kind boost wiring; reusable for future ranking signals (recency rebalancing, source-trust boosting, persona-tag matching).', 'rule,ranking,retrieval,chat-pipeline,architecture,composition', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 280, 'architecture', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: PURE-LOGIC RANKING SIGNALS BELONG IN THE CHAT PIPELINE%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: SQL STRING-LITERAL ESCAPING DOES NOT EXTEND ACROSS SELECT-LIST EXPRESSIONS (2026-05-13): When appending INSERT INTO memories ... SELECT ''literal'', strftime(...), ... blocks to mcp-data/shared/memory-seed.sql, the strftime call is a SEPARATE column expression in the SELECT list — its quotes must use single quotes: strftime(''%s'',''now'')*1000 is WRONG (SQLite parses this as string-concat with an empty-string operator and errors with 
-ear "''": syntax error). The correct form is strftime(''%s'',''now'')*1000 inside a doubled-up shell context, but in raw SQL on disk it is strftime followed by single-quote-percent-s-single-quote-comma-single-quote-now-single-quote. The doubled-quote form is correct ONLY when the strftime call is itself inside a SQL string literal (e.g. ''SELECT '' || strftime(''%s'') || '' END''). Symptom: memory::seed_migrations::tests::compiled_seed_applies_to_canonical_schema and 2 sibling tests fail with "near \"''\": syntax error". Fix: global String.Replace over the seed file. Always run cargo test --lib memory::seed_migrations::tests after appending seed entries.', 'rule,sql,seed,escaping,sqlite,bug-fix,memory-seed', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 360, 'brain', 1.0, 'session:2026-05-13-chat-parity-5'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: SQL STRING-LITERAL ESCAPING DOES NOT EXTEND ACROSS SELECT-LIST EXPRESSIONS%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'BENCH-PARITY-3 TEMPORAL FILTER WIRED INTO LOCOMO BENCH (2026-05-13): src-tauri/src/bin/longmemeval_ipc.rs now ships two new modes — rrf_temporal and rrf_temporal_rerank — that mirror the chat-path temporal stage from CHAT-PARITY-3. Both call memory::temporal::filter_entries_in_query_range(entries, query, now_ms) AFTER the optional KG cascade and BEFORE the rerank/limit step; parse_time_range returns None on non-temporal queries so the stage is a strict no-op outside the temporal_reasoning task. Bench memories now stamp created_at from IpcSession.date via the new parse_session_date_ms helper (reuses memory::temporal::ymd_to_ms, promoted to pub) so the filter actually narrows against historical wall-clock timestamps instead of all-equal now_ms() stamps. New NewMemory.created_at: Option<i64> field (#[serde(default)]) plumbed through MemoryStore::add + add_many; all existing ..Default::default() callers continue to use wall-clock now_ms() unchanged. JS harness scripts/locomo-mteb.mjs registers both new modes in ALL_SYSTEMS, EMB_SYSTEMS, and rrf_temporal_rerank in RERANK_SYSTEMS. CI gate green at 2833 passed / 0 failed (baseline 2829 + 4 new tests). Closes the last open chunk in the brain-doc 2026-05-13 parity audit — chat and bench now exercise the same temporal pipeline on the same wall-clock-stamped data.', 'bench-parity,locomo,temporal,rrf,longmemeval-ipc,chat-bench-parity,brain-design,rule', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 480, 'brain', 1.0, 'session:2026-05-13-bench-parity-3'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'BENCH-PARITY-3 TEMPORAL FILTER WIRED INTO LOCOMO BENCH (2026-05-13)%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: ADD OPTIONAL FIELDS TO NewMemory VIA #[serde(default)] Option<T> FOR BACKWARD-COMPATIBLE OVERRIDES (2026-05-13): When a downstream ingest pipeline needs to override a field that NewMemory previously derived from environment (e.g. created_at from now_ms()), add the override as `#[serde(default)] pub <field>: Option<T>` on NewMemory and consume it in MemoryStore::add / add_many via `let value = m.<field>.unwrap_or_else(<existing default>)`. Because NewMemory derives Default, every existing struct-literal caller using `..Default::default()` continues to compile and behave identically — only callers that build the literal exhaustively need updating. Rule observed during BENCH-PARITY-3 wiring of created_at: ~20 NewMemory call sites kept working unchanged; only 5 exhaustive literals (in commands::context_folder, memory::obsidian_sync, memory::audit tests, memory::store tests) needed `created_at: None` added.', 'rule,architecture,backward-compat,api-design,new-memory,override-pattern', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 280, 'architecture', 1.0, 'session:2026-05-13-bench-parity-3'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: ADD OPTIONAL FIELDS TO NewMemory VIA #[serde(default)] Option<T>%');
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: REUSE memory::temporal HELPERS ACROSS CHAT AND BENCH SURFACES (2026-05-13): When a chat-path retrieval stage parses time expressions or filters by created_at window, lift the pure logic into memory::temporal as a `pub fn` taking `(entries: Vec<MemoryEntry>, query: &str, now_ms: i64) -> Vec<MemoryEntry>` (or a thin variant) so the LoCoMo bench harness can call the same helper from src-tauri/src/bin/longmemeval_ipc.rs. Two payoffs: (1) any future fix to parse_time_range or ymd_to_ms surfaces in both chat and bench simultaneously instead of leaking past the bench; (2) the bench can promote/regress temporal-aware modes (rrf_temporal vs rrf) using the production code path, not a re-implementation. Used by BENCH-PARITY-3 (filter_entries_in_query_range + ymd_to_ms promoted to pub); reusable for future temporal-knowledge-graph point-in-time queries, recency rebalancing, decay-window filters.', 'rule,architecture,bench-parity,temporal,chat-bench-parity,code-reuse', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 260, 'architecture', 1.0, 'session:2026-05-13-bench-parity-3'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: REUSE memory::temporal HELPERS ACROSS CHAT AND BENCH SURFACES%');
-
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: GATE embed_batch_for_mode CALLS ON brain_mode+active_brain (2026-05-14): brain::cloud_embeddings::embed_batch_for_mode returns vec![None; texts.len()] silently when both brain_mode AND active_brain are None — bypassing every per-failure diagnostic in OllamaAgent::embed_text_batch (HTTP status, network error, JSON parse, empty embeddings). Any caller that dispatches through embed_batch_for_mode (worker loops, seeders, ingest pipelines, future cloud embedders) MUST gate on +''+rain_mode.is_none() && active_brain.is_none()+''+ BEFORE invoking the dispatch — otherwise the silent fallback leaves only unactionable aggregate counts in the log. Pattern: mirror the existing mcp-seed-embedded bail-out in src-tauri/src/lib.rs around L1007. EMBED-QUEUE-NO-BRAIN-GATE (2026-05-14) applied this to embedding_queue worker loop via a throttled bool that resets when a brain becomes available so deconfigure/reconfigure still logs once.', 'rule,architecture,embedding,diagnostics,silent-fallback,gate-on-config', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 240, 'architecture', 1.0, 'session:2026-05-14-embed-queue-no-brain-gate'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: GATE embed_batch_for_mode CALLS%');
-
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, confidence, token_count, category, decay_score, session_id)
-SELECT 'RULE: AUDIT PRODUCTION CODE FOR COMPARISON-MILESTONE TOGGLES BEFORE BENCH RUNS (2026-05-14): When a benchmark milestone names two retrieval modes to compare (e.g. ''single-index vs sharded'', ''with-rerank vs without'', ''with-HyDE vs without''), run a read-only audit FIRST to confirm both modes exist as runtime-selectable behaviour in production code. If only one exists and the other is hypothetical, the milestone is implicitly asking for a toggle to be built, not just a bench to be run. BENCH-SCALE-2 (2026-05-14) example: ''compare single-index vs sharded'' had no matching MemoryStore::set_shard_mode API until the toggle was added \u2014 production always routed through 15 shards via select_shards_for_query with no opt-out. Pattern for the toggle: enum with Default impl that preserves production semantics, Cell field on the store, set_/get_ accessors, short-circuit BEFORE any expensive work (router cache/load/rebuild), plus an env-var bridge in the bench bin (LONGMEM_<NAME>) and a CLI flag in the JS harness that plumbs the env through child_process spawn. ALWAYS include the toggle value in the JSON report, markdown header, AND output filename so back-to-back comparison arms do not overwrite each other (the SCALE-1b overwrite footgun).', 'rule,architecture,bench,benchmark,toggle,scale,pattern', 9, 'procedure', strftime('%s','now')*1000, 'long', 1.0, 320, 'architecture', 1.0, 'session:2026-05-14-bench-scale-2-harness'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: AUDIT PRODUCTION CODE FOR COMPARISON-MILESTONE TOGGLES%');
-
--- HYBRID-DOC drift-audit rule (2026-05-14)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-SELECT 'RULE: README and agent-instruction NUMBERS go stale faster than feature claims. Counts (X tests, Y Tauri commands, Z MCP tools, default embedding model) drift every chunk; feature claims drift only when scope changes. Future docs-audit chunks must re-derive hard counts from source FIRST (PowerShell: Select-String -Pattern ''^\s*#\[tauri::command\]'' over src-tauri, count "name":\s* in ai_integrations/mcp/tools.rs, etc.) before reading the existing claim. Tag any number unchanged for 30+ days as presumptive drift. The 2026-05-14 HYBRID-DOC-1 audit caught: 150+ Tauri commands -> actual 349; 1075+ cargo tests -> actual 2836; 1164 vitest -> actual 1738+; 21 MCP tools -> actual 35; nomic-embed-text default -> actually mxbai-embed-large since BENCH-LCM-5.', 'rule,docs,audit,drift,pattern,counts,hybrid-doc', 9, 'principle', 1779148800000, 'long', 1.0, 175, 'development'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'RULE: README and agent-instruction NUMBERS go stale%');
-
--- HYBRID-DOC fix-now batching lesson (2026-05-14)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-SELECT 'LESSON: When an audit chunk produces a drift list, split it the same day into (a) a fix-now batch executable as a single multi_replace_string_in_file pass and (b) a backlog tag for genuine scope-creep items. Do not let "we have a list" become its own deferred-work folder. HYBRID-DOC-1 produced 12 findings; HYBRID-DOC-3 closed 8 the same chunk, skipped 2 with documented reason (D9 docs/DESIGN.md is a visual design-system doc not architecture; D11 marketplace tutorial is scope-not-drift), and 0 deferred. Pattern: audit -> fix-batch -> close, in one chunk.', 'lesson,docs,audit,batching,workflow,hybrid-doc', 8, 'principle', 1779148800000, 'long', 1.0, 130, 'development'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'LESSON: When an audit chunk produces a drift list%');
-
--- benchmark/ folder canonical layout (2026-05-14)
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, token_count, category)
-SELECT 'FACT: The canonical benchmark folder layout (as of 2026-05-14) is benchmark/<system>/<task>/ — top-level benchmark/README.md is the TOC, benchmark/COMPARISON.md is the cross-system matrix, benchmark/terransoul/README.md is the round timeline, and benchmark/terransoul/{longmemeval-s,locomo-mteb,locomo-at-scale,agentmemory-quality}/README.md are per-task round indexes. Reference-system numbers live under benchmark/agentmemory/README.md (pinned commit ae8f061c) and benchmark/mempalace/README.md. Raw JSON artefacts stay in target-copilot-bench/bench-results/ (already git-tracked via .gitignore exception) and per-task READMEs link to them in place — do not duplicate (some files exceed 10 MB). benchmark/scripts/README.md and benchmark/fixtures/README.md document runners and dataset provenance.', 'fact,benchmark,layout,folder-structure,terransoul,agentmemory,mempalace', 7, 'fact', 1779148800000, 'long', 1.0, 175, 'benchmark'
-WHERE NOT EXISTS (SELECT 1 FROM memories WHERE content LIKE 'FACT: The canonical benchmark folder layout%');
--- ====================================================================
--- TOP1-1 lesson (2026-05-14): cross-system benchmark methodology axis
--- ====================================================================
-
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'TOP1-1 METHODOLOGY-AXIS RULE (2026-05-14): Cross-system memory benchmarks must split on the methodology axis (retrieval R@10 / NDCG@10 / MRR vs end-to-end LLM-as-Judge F1/J) BEFORE declaring a winner. Mem0/Zep/LangMem/A-Mem/MemGPT publish LoCoMo end-to-end J from a gpt-4o-mini judge (Chhikara et al. 2025, arXiv:2504.19413, Table 1). TerranSoul/agentmemory/MemPalace publish retrieval-only R@10 / NDCG@10. These two metric families measure different things and must never be placed in the same ranked cell. A missing measurement is a methodology gap (open the harness chunk, e.g. TOP1-2 LoCoMo J-eval harness), not a quality regression. Mem0 paper Table 1 baselines (SH/MH/OD/T J): Mem0 67.13/51.15/72.93/55.51; Mem0_g 65.71/47.19/75.71/58.13; Zep 61.70/41.35/76.60/49.31; LangMem 62.23/47.92/71.12/23.43; full-context overall J ~72.90.',
-  'rule,benchmark,methodology,locomo,mem0,zep,langmem,retrieval-vs-qa,top1-1',
-  10, 'rule', 1747180800000, 'long', 1.0, 'benchmark', 'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'TOP1-1 METHODOLOGY-AXIS RULE (2026-05-14):%'
-);
-
--- INTEGRATE-1 / INTEGRATE-2 (2026-05-14) — Companion AI ecosystem policy.
--- TerranSoul is a personal assistant, not a walled garden. Recommend companion AI apps
--- (Hermes Desktop / Hermes Agent / OpenClaw) when a turn is heavier than TerranSoul
--- should answer alone, but install must be detect-and-link, guided, with OS UAC consent.
--- NEVER silently install third-party software. NEVER list a companion without a
--- verified upstream URL + license + concrete TerranSoul workflow.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'INTEGRATE COMPANION POLICY (2026-05-14): TerranSoul is a personal assistant, not a walled garden. Companion AI apps (Hermes Desktop fathah/hermes-desktop MIT Electron; Hermes Agent NousResearch/hermes-agent MIT Python CLI; OpenClaw openclaw-bridge plugin; Temporal.io = design reference NOT integration) are detect-and-link only. Install policy: guided installer with explicit user click + OS UAC. No silent install, no bundled redistribution, no background install. Hermes Agent already wired via setup_hermes_mcp / setup_hermes_mcp_stdio writing marker-managed block into ~/.hermes/cli-config.yaml. ChatView suggest-hook for Hermes gates on (token_count >= TS_HERMES_HINT_TOKENS default 4000) AND (intent in {deep_research, long_running_workflow, full_ide_coding}) AND (app_settings.hermes_hint_enabled default true). Never list a companion without verified upstream URL + license + concrete TerranSoul workflow.',
-  'integration,companion,hermes,openclaw,temporal,policy,install,detect-and-link,uac,consent',
-  9,
-  'rule',
-  strftime('%s', 'now'),
-  'core',
-  1.0,
-  'integration',
-  'procedural'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'INTEGRATE COMPANION POLICY (2026-05-14):%'
-);
--- Phase INFRA rule (2026-05-14) — README pillar honesty.
--- "Why TerranSoul is different" pillars must stay synced with milestone status.
--- No pillar moves from "design target" to "shipped" in README until its
--- INFRA-N chunk's acceptance evidence is logged in completion-log.md.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'INFRA README PILLAR HONESTY RULE (2026-05-14): The README "Why TerranSoul is different" pillars (hybrid-RAG-6-signals, agent fleet, scale-to-infinity, knowledge sharing, resilience, five-nines availability, CAP-aware sync, durable workflows, companion ecosystem) MUST stay synced with rules/milestones.md Phase INFRA chunk status. No pillar moves from "design target" to "shipped" in README until its INFRA-N chunk acceptance evidence is in completion-log.md. Five-nines = 99.999% local uptime SLO, ~5 min unplanned downtime per quarter, measured via heartbeat telemetry. CAP profile: P mandatory, AppSettings.cap_profile_default = Availability (CRDT) | Consistency (hive relay linearizable log, quorum=2). AP path uses existing CRDT merge; CP path blocks offline writes for legal/financial/shared-team facts. Cross-instance knowledge sharing today is push-bundle; subscribe contract + multi-tenant ACL leak test deferred to SCALE-INF-1. Agent fleet supervision is ad-hoc today; formal typed supervision (restart policy, exponential backoff, max_restarts in window) deferred to ACTOR-MODEL-1.',
-  'rule,readme,infra,resilience,cap,scale,actor-model,honesty,five-nines',
-  9,
-  'rule',
-  strftime('%s', 'now'),
-  'core',
-  1.0,
-  'integration',
-  'principle'
-WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'INFRA README PILLAR HONESTY RULE (2026-05-14):%'
-);
--- AI memory in five scenes pointer (2026-05-14) — narrative framing for the brain.
--- Cognee's "AI memory in five scenes" article is reused as a five-scene mental
--- model (base LLM -> classic RAG -> personal-context RAG -> GraphRAG -> hybrid
--- memory at scale) to onboard new contributors and non-technical users to
--- TerranSoul's brain. Mapping doc lives at docs/ai-memory-five-scenes-terransoul.md
--- and is linked from the README right after the "Why Hybrid RAG" section.
--- The article is credited in CREDITS.md; no prose, examples, or imagery copied.
-INSERT INTO memories (content, tags, importance, memory_type, created_at, tier, decay_score, category, cognitive_kind)
-SELECT
-  'AI MEMORY FIVE-SCENES MAPPING (2026-05-14): cognee.ai "AI memory in five scenes" framing is reused (not copied) as the canonical onboarding lens for TerranSoul brain architecture. Scene 1 (kid in library / three employees) -> three brain modes (Free API / Paid API / Local Ollama) with shared BrainGateway. Scene 2 (movie guru) -> persona traits + observation + cognitive_kind axis + privacy ACL. Scene 3 (exam prep) -> chunking.rs / late_chunking.rs / contextualize.rs / ann_index.rs (HNSW usearch, mxbai-embed-large default, nomic-embed-text fallback) + FTS5. Scene 4 (job hunt / GraphRAG) -> memory_edges + entity resolution (Phase 6) + multi_hop_search_memories + auto_tag.rs + graph_rag.rs + conflicts.rs + versioning.rs. Scene 5 (CTO at party / hybrid in production) -> RRF fusion.rs + 4 retrievers + per-shard HNSW (15 logical shards, persisted shard_router.json) + IVF-PQ disk_backed_ann.rs + query_intent.rs router + per-query-class HyDE + cross-encoder reranker.rs + kg_cache + search_cache + LoCoMo-MTEB / LongMemEval-S / agentmemory bench harnesses + brain_health metrics + availability SLO. Use this mapping when explaining where on the AI-memory progression curve TerranSoul sits and which subsystem owns a given memory feature.',
-  'brain,rag,graphrag,architecture,onboarding,cognee,five-scenes,mapping,credits',
   8,
-  'note',
-  strftime('%s', 'now'),
-  'long',
-  1.0,
-  'architecture',
-  'semantic'
+  strftime('%s','now'),
+  strftime('%s','now')
 WHERE NOT EXISTS (
-  SELECT 1 FROM memories WHERE content LIKE 'AI MEMORY FIVE-SCENES MAPPING (2026-05-14):%'
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-bench-resume-pattern-2026-05-16'
 );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-bench-resume-pattern-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul scoped vs global CSS specificity (THEME-COCKPIT-1c, ' ||
+  '2026-05-16): when spreading a global utility class like ' ||
+  '`.ts-cockpit-card` across components that use `<style scoped>`, ' ||
+  'the scoped rules win on equal specificity because Vue rewrites ' ||
+  'their selectors to include a `[data-v-…]` attribute. The global ' ||
+  'utility cannot paint border/background/box-shadow until the ' ||
+  'scoped chrome is moved out of the way. Two safe fixes, both used ' ||
+  'in this chunk: (a) split the scoped rule into a layout-only block ' ||
+  '(flex/gap/padding) plus a fallback under ' ||
+  '`:not(.ts-cockpit-card)` for the legacy chrome (see ' ||
+  'SettingsView .sv-section); (b) flip conflicting properties in the ' ||
+  'component CSS to match what the utility expects — e.g. drop ' ||
+  '`overflow: visible` so the utility''s `overflow: hidden` clips ' ||
+  'its off-canvas halo blob cleanly (see MemoryView .mv-session-panel ' ||
+  '/ .mv-audit-panel). Never use `!important`; never bump specificity ' ||
+  'with id selectors. Pattern applies to any future cockpit/HUD ' ||
+  'utility rollout.',
+  'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GraphRAG hierarchical community summaries (GRAPHRAG-1a, ' ||
+  '2026-05-16): the dual-level GraphRAG store now carries multiple ' ||
+  'community-detection levels in memory_communities.level. ' ||
+  'Patterns: (1) Super-graph construction — aggregate base-edge ' ||
+  'weights between *distinct* level-k communities using a canonical ' ||
+  '(min(a,b), max(a,b)) key, then re-run greedy modularity on the ' ||
+  'super-graph, then flatten the super-assignment back to original ' ||
+  'node ids. Singleton super-communities (no inter-community edges ' ||
+  'from them) need a fresh id beyond the super-assignment range so ' ||
+  'they still appear in the next level as their own group. ' ||
+  '(2) Convergence guard — stop the recursion when the next level ' ||
+  'has >= the current community count: more iterations would only ' ||
+  'renumber, never coarsen. Also stop when the super-edge set is ' ||
+  'empty (everything is already a singleton). ' ||
+  '(3) Idempotent summaries — key carryover on ' ||
+  '(level, sorted_member_ids). When detect_and_store_hierarchy runs ' ||
+  'a second time, communities whose member set matches a prior ' ||
+  'community at the same level reuse the existing summary + ' ||
+  'embedding without calling the brain. ' ||
+  '(4) Lock discipline for brain orchestration — never hold ' ||
+  'memory_store.lock() across an .await. The Tauri command ' ||
+  'graph_rag_build_hierarchy snapshots (id, level, member_ids) and ' ||
+  'per-member content under the lock, drops the lock, calls ' ||
+  'brain_memory::complete_via_mode, then reacquires the lock to call ' ||
+  'set_community_summary. ' ||
+  '(5) Test brittleness — one-sided greedy modularity is sloppy on ' ||
+  'bridged weighted graphs. Tests should assert structural ' ||
+  'invariants (disconnected halves must stay disjoint at every ' ||
+  'level; deepest level must have strictly fewer communities than ' ||
+  'level 0), not exact micro-cluster identity. ' ||
+  'API: detect_communities_weighted(&[(i64,i64,f64)]) is the ' ||
+  'reusable core; detect_communities_hierarchical(&[MemoryEdge], ' ||
+  'max_levels) returns Vec<HashMap<i64,usize>>; ' ||
+  'MAX_HIERARCHY_LEVELS = 5; graph_rag_search now accepts ' ||
+  'Option<i32> level filter via graph_rag_search_at_level.',
+  'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GRAPHRAG-1b structured entity extraction (2026-05-16): ' ||
+  'the ingest pipeline now has an optional structured entity/relationship ' ||
+  'extraction step gated by AppSettings.graph_extract_enabled (default ' ||
+  'off). When enabled, each newly-saved memory is processed by the ' ||
+  'active brain provider via a typed JSON-schema prompt that extracts ' ||
+  'entities (name + type + description) and relationships (source + ' ||
+  'target + type + confidence). Entities are materialised as memories ' ||
+  'rows tagged semantic:entity with source_hash = entity:<lowercase_name> ' ||
+  'for deduplication. Relationships become memory_edges with ' ||
+  'edge_source = graphrag:extraction. The extraction is idempotent: ' ||
+  'memories that already have graphrag:extraction outgoing edges are ' ||
+  'skipped on re-runs. Lock discipline: LLM call happens without the ' ||
+  'memory_store lock; materialisation acquires a brief lock per entry. ' ||
+  'Tauri command: graph_extract_entities(limit: Option<usize>) for ' ||
+  'manual batch extraction. Module: src-tauri/src/memory/extraction.rs.',
+  'seed:lesson-graphrag-1b-entity-extraction-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1b-entity-extraction-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1b-entity-extraction-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GRAPHRAG-1c global vs local query routing (2026-05-16): ' ||
+  'the query-intent classifier now has a second axis, QueryScope ' ||
+  '(global/local/mixed), classified by classify_scope() in ' ||
+  'query_intent.rs. Global queries (summarize, overview, what topics) ' ||
+  'route to top-level community summaries via graph_rag_search_at_level ' ||
+  'at max hierarchy level. Local queries (what did, who said, find, ' ||
+  'tell me about) route to keyword search + cascade_expand entity-walk. ' ||
+  'Mixed (ambiguous or no signal) uses the standard dual-level RRF ' ||
+  'fusion. New MemoryStore method: graph_rag_search_routed(query, emb, ' ||
+  'limit, scope). New Tauri command: graph_rag_search_routed with ' ||
+  'optional scope_override. FullClassification struct combines both ' ||
+  'intent and scope axes via classify_full(). Module: query_intent.rs, ' ||
+  'graph_rag.rs.',
+  'seed:lesson-graphrag-1c-query-routing-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1c-query-routing-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1c-query-routing-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul decorative HUD chrome + dead-utility prevention ' ||
+  '(THEME-COCKPIT-1d, 2026-05-17): the `.ts-cockpit-label` and ' ||
+  '`.ts-cockpit-crumb` utilities defined in src/style.css during ' ||
+  'THEME-COCKPIT-1a sat dead for a sprint because nothing in any ' ||
+  'view referenced them. Rule: whenever a UI primitive lands in ' ||
+  'src/style.css, prefer landing it together with at least one ' ||
+  'adoption site in the same chunk, or file a follow-up chunk ' ||
+  'immediately so dead-code utilities do not accumulate. ' ||
+  'THEME-COCKPIT-1d retroactively adopted `.ts-cockpit-label` ' ||
+  'across SettingsView (5 numbered kickers 01-05) and MemoryView ' ||
+  '(session + audit panel kickers). Decorative HUD chrome (numbered ' ||
+  'kickers, corner reticles, tracked-caps prefixes) must carry ' ||
+  '`aria-hidden=true` so it does not pollute the ' ||
+  'accessibility tree alongside the real `<h2>` heading or `<p>` ' ||
+  'hint. Pattern applies to any future HUD primitive: define ' ||
+  'utility in global stylesheet, adopt in at least one view in the ' ||
+  'same chunk, mark non-semantic chrome aria-hidden.',
+  'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17',
+  'procedural',
+  'long',
+  7,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );

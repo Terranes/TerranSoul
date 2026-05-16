@@ -9,7 +9,7 @@
 //! prompts for consent, not TerranSoul.
 
 use crate::integrations::companions::{
-    self, CompanionApp, CompanionOs, DetectStatus, GuidedInstallOutcome,
+    self, CompanionApp, CompanionOs, DetectStatus, GuidedInstallOutcome, UpdateCheckResult,
 };
 
 /// Return the entire companion registry (purely synthesised, no I/O).
@@ -34,6 +34,27 @@ pub async fn companions_detect_one(id: String) -> Result<DetectStatus, String> {
         &app,
         companions::spawn_detect_status_real,
     ))
+}
+
+/// Detect + GitHub Releases lookup combined.
+///
+/// Lets the marketplace render a NuGet-style "Update available" badge:
+/// runs the same detect command as [`companions_detect_one`] and, when
+/// the companion declares `github_repo`, fetches the latest release tag
+/// and compares versions. Network errors are surfaced as `note` rather
+/// than failing the call \u2014 the UI still shows the installed-version pill.
+#[tauri::command]
+pub async fn companions_check_update(id: String) -> Result<UpdateCheckResult, String> {
+    let Some(app) = companions::get(&id) else {
+        return Ok(UpdateCheckResult {
+            id: id.clone(),
+            installed_version: None,
+            latest: None,
+            update_available: false,
+            note: Some(format!("unknown companion id: {id}")),
+        });
+    };
+    Ok(companions::check_update_real(&app).await)
 }
 
 /// Open the companion's official upstream URL in the user's default browser.
@@ -218,5 +239,15 @@ mod tests {
             .await
             .expect("ok");
         assert!(matches!(status, DetectStatus::Unknown { .. }));
+    }
+
+    #[tokio::test]
+    async fn companions_check_update_unknown_id_returns_note() {
+        let result = companions_check_update("nope-not-real".into())
+            .await
+            .expect("ok");
+        assert!(result.note.as_deref().unwrap_or("").contains("unknown"));
+        assert!(!result.update_available);
+        assert!(result.latest.is_none());
     }
 }

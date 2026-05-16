@@ -1650,13 +1650,13 @@ This is intentional: neither side ever silently destroys content the other side 
 
 ## 8. SQLite Schema
 
-### Current Canonical Schema (V21)
+### Current Canonical Schema (V22)
 
 Collapsed the pre-release migration runner into a single canonical
 initializer at `src-tauri/src/memory/schema.rs`. Fresh SQLite databases are
 created directly at the current version, and `schema_version` records one
 canonical row rather than a historical migration ledger. Incremental upgrade
-guards bring existing databases forward (V14→V15→…→V21).
+guards bring existing databases forward (V14→V15→…→V22).
 
 **Schema version history (post-V15 additions):**
 
@@ -1665,9 +1665,643 @@ guards bring existing databases forward (V14→V15→…→V21).
 | V15 | Baseline (memories, edges, versions, conflicts, devices, sync, pending_embeddings) | — |
 | V16–V20 | Embedding queue, ANN flush, metrics, capacity eviction, maintenance state | Various |
 | V21 | FTS5 keyword index + paged graph infra (Chunk 48.5 / 48.6) | `memories_fts` (external-content FTS5), composite covering indexes `(src_id, rel_type)` / `(dst_id, rel_type)` on `memory_edges`, `memory_graph_clusters` |
+| V22 | Memory sources registry (BRAIN-REPO-RAG-1a) | `memory_sources` (id, kind ∈ {self,repo,topic}, label, repo_url, repo_ref, created_at, last_synced_at) — seeded with one `id='self'` row |
+
+#### V22 — `memory_sources` registry
+
+The v22 migration adds a typed registry of "brain origins" the user can
+flip between in the Memory panel and (in later chunks) in MCP queries.
+It is intentionally metadata-only at this milestone — per-repo content
+lives in separate SQLite files under `mcp-data/repos/<source_id>/` and is
+materialized by chunks 1b–1c.
+
+```sql
+CREATE TABLE memory_sources (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('self','repo','topic')),
+  label TEXT NOT NULL,
+  repo_url TEXT,
+  repo_ref TEXT,
+  created_at INTEGER NOT NULL,
+  last_synced_at INTEGER
+);
+-- Seeded row: ('self','self','TerranSoul',NULL,NULL,<now>,NULL)
+```
+
+Application-layer invariants enforced in `memory::sources`:
+
+- The `'self'` row may not be deleted via the public API.
+- A second `kind='self'` row may not be created (the seeded singleton is
+  the only one).
+- Listing orders the singleton first, then alphabetises remaining rows
+  by `lower(label)` so the Memory panel pill bar is stable.
+
+The frontend Pinia store `src/stores/memory-sources.ts` mirrors these
+invariants and persists the active source id under the localStorage key
+`terransoul.memory-sources.active.v1` so the user's last selection
+survives reloads. A sentinel id `"__all__"` is reserved for the
+cross-source aggregate view that lands in BRAIN-REPO-RAG-1c.
+
+#### Per-repo ingest layout (BRAIN-REPO-RAG-1b-i)
+
+Each registered `kind='repo'` source owns an isolated directory under
+`<data_dir>/repos/<source_id>/`:
+
+```
+repos/<source_id>/
+├── checkout/        # gix shallow clone (depth=1)
+├── memories.db      # per-repo SQLite (WAL) — repo_chunks table
+├── ann.usearch      # per-repo HNSW vector index (populated by 1b-ii)
+└── manifest.json    # source_id, repo_url, repo_ref, head_commit,
+                    # last_synced_at, stats, manifest_version
+```
+
+`repo_chunks` schema (per-repo DB, not the main brain DB):
+
+```sql
+CREATE TABLE repo_chunks (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_id     TEXT    NOT NULL,
+  file_path     TEXT    NOT NULL,    -- POSIX-style relative path
+  parent_symbol TEXT,                -- enclosing fn/class (1b-ii AST chunker)
+  kind          TEXT    NOT NULL CHECK (kind IN ('text','code')),
+  byte_start    INTEGER NOT NULL,
+  byte_end      INTEGER NOT NULL,
+  content       TEXT    NOT NULL,
+  content_hash  TEXT    NOT NULL,    -- sha256 from chunking::Chunk.hash
+  embedding     BLOB,                -- NULL in 1b-i; populated by 1b-ii
+  created_at    INTEGER NOT NULL
+);
+```
+
+The ingest pipeline (`memory::repo_ingest::ingest_repo`) runs synchronously
+under `tokio::task::spawn_blocking`:
+
+1. **Clone** — `gix::prepare_clone(url, dest).with_shallow(Shallow::DepthAtRemote(1))`
+   then `fetch_then_checkout` → `main_worktree`. Anonymous HTTPS only;
+   OAuth device flow lands in 1c.
+2. **Walk** — `ignore::WalkBuilder` honours `.gitignore`,
+   `.git/info/exclude`, `.terransoulignore`, plus per-source
+   `include_globs`/`exclude_globs` via `OverrideBuilder`
+   (precedence: user-includes → repo ignores → user-excludes → defaults).
+   `.git/` is always skipped. Per-file 10 MiB cap (configurable).
+3. **Secret scan** — regex set (PEM private-key headers, AWS access
+   keys, GitHub PATs, Slack/Google API keys, generic 20+ char
+   `api_key=...`); compiled once via `OnceLock`; window is the first
+   256 KiB to bound scan cost. Hits skip the file and increment
+   `manifest.stats.files_skipped_secret`.
+4. **Binary skip** — NUL-byte heuristic in first 8 KiB + UTF-8 decode.
+5. **Chunk** — text chunker reuses `memory::chunking::split_markdown`
+   (text-splitter 0.30); byte spans recovered by linear cursor scan.
+   AST chunking via tree-sitter is 1b-ii.
+6. **Persist** — `RepoStore::insert_chunks` in 256-row batches inside
+   a transaction. `embedding` left NULL in 1b-i.
+7. **Manifest** — `serde_json::to_vec_pretty` to `manifest.json`,
+   recording head commit (12-hex), counts, and `manifest_version=1`.
+
+Tauri commands (feature-gated `#[cfg(feature = "repo-rag")]`,
+desktop default):
+
+- `repo_add_source(request, label)` — registers a `memory_sources` row
+  with `kind='repo'` and runs the first ingest.
+- `repo_sync(request)` — re-clones and rebuilds `repo_chunks` for an
+  existing source (1b-i is replace-on-sync; incremental sync via
+  `content_hash` lands in 1b-ii).
+- `repo_remove_source(source_id)` — deletes both the
+  `<data_dir>/repos/<source_id>/` directory and the `memory_sources`
+  row. Idempotent.
+
+#### AST annotation + incremental sync + progress events (BRAIN-REPO-RAG-1b-ii-a)
+
+The 1b-ii-a slice extends the 1b-i pipeline with three orthogonal
+capabilities while leaving the embed/HNSW path (`vectors.usearch`) for
+1b-ii-b:
+
+1. **AST `parent_symbol` annotation** — `ast_annotate_chunks(file_rel, content, &mut chunks)`
+   in `memory::repo_ingest` reuses
+   `coding::parser_registry::create_parser` and the `pub(crate)`
+   extractors `coding::symbol_index::extract_rust_symbols` /
+   `extract_ts_symbols` (each returns `(Vec<Symbol>, Vec<CodeEdge>)`).
+   Because `Symbol` carries 1-based `line` / `end_line` (not byte
+   offsets), the annotator builds a single byte→line table per file
+   and binary-searches each chunk's `byte_start` to its line. Symbols
+   are sorted by smallest span first so the innermost enclosing symbol
+   wins, and each code chunk's `parent_symbol` is set to
+   `"<kind>::<parent?>::<name>"` (e.g. `function::ingest_repo`,
+   `method::Foo::bar`). Wired for `.rs` and `.ts/.tsx`; optional
+   parsers (`parser-python` / `parser-go` / `parser-java` / `parser-c`)
+   extend coverage automatically through `detect_language`.
+2. **Incremental sync** — a new `repo_files(source_id, file_path,
+   file_hash, last_synced_at, chunk_count)` table (composite primary
+   key on `(source_id, file_path)`) lets each sync skip unchanged
+   files. The per-file hash is SHA-256 hex of the full file body
+   (`file_hash_hex(content)`); SHA-256 is already a brain-side dep via
+   `memory::chunking`. Files matching `existing_file_hashes()` are
+   skipped (`stats.files_skipped_unchanged++`); changed files have
+   their existing `repo_chunks` rows deleted by `file_path` before the
+   new chunks land; vanished files trigger `RepoStore::prune_missing`
+   which drops both their `repo_chunks` and `repo_files` rows
+   (`stats.files_pruned`). **Invariant:** per-file hash upserts are
+   deferred into a `pending_hashes: Vec<(rel, hash, count)>` and
+   applied only **after** the chunk buffer flushes, so an error
+   mid-pipeline can never strand a hash ahead of its rows.
+3. **Streaming progress events** — `IngestPhase ∈ {Clone, Walk,
+   ScanSecrets, Chunk, Embed, Persist, Done}` (the `Embed` variant is
+   reserved for 1b-ii-b) plus `IngestProgress { source_id, phase,
+   processed, total, message }` and an `IngestSink: Sync` trait. The
+   public `ingest_repo(data_dir, options)` signature is preserved as a
+   thin wrapper over `ingest_repo_with(data_dir, options, &dyn
+   IngestSink)` using a `SilentSink` no-op. The Tauri command path
+   (1b-ii-b) will provide an `AppHandle`-backed sink that emits
+   `"task-progress"` events using the existing `TaskProgressEvent`
+   shape (Supertonic-1c precedent in `commands/ingest.rs`).
+
+A test-only seam `ingest_from_checkout_for_tests(data_dir, options,
+checkout, sink)` bypasses gix to exercise the walk → scan → chunk →
+AST → persist → incremental → prune flow against a hand-rolled tempdir,
+proving 1b-ii-a end-to-end without requiring a git binary. The real
+`file://` integration test lands with 1b-ii-b alongside the embed pass.
+
+#### Embed pass + per-repo HNSW + Tauri progress sink (BRAIN-REPO-RAG-1b-ii-b)
+
+1b-ii-b consumes the `Embed` variant reserved by 1b-ii-a and completes
+the per-repo ingest backend:
+
+1. **`embed_repo_with_fn(data_dir, source_id, dimensions, embed_fn,
+   sink)`** in `memory::repo_ingest` is a sync function that walks
+   `repo_chunks` rows whose `embedding IS NULL`
+   (`RepoStore::pending_embedding_rows`), persists each f32 vector as
+   little-endian bytes via `RepoStore::set_embedding`, and adds it to a
+   per-repo HNSW index opened at
+   `<data_dir>/repos/<source_id>/vectors.usearch` through
+   `AnnIndex::open(repo_root, dimensions)`. Default dimension is 1024
+   to match `mxbai-embed-large`. Dim-mismatch and `None` returns from
+   `embed_fn` are counted as `RepoEmbedStats::chunks_failed` without
+   aborting — important because cloud embedding providers can
+   rate-limit mid-batch and we want partial progress preserved.
+2. **Tauri wiring** in `commands/repos.rs` uses a `TauriIngestSink`
+   that maps each `IngestProgress` into a `TaskProgressEvent` and
+   emits it on the `"task-progress"` channel (Supertonic-1c precedent
+   in `commands/ingest.rs`). `sync_inner` now runs two
+   `tokio::task::spawn_blocking` stages back-to-back: first the
+   clone/walk/chunk ingest, then the embed pass. The embed closure
+   snapshots `state.brain_mode` + `state.active_brain` *before* the
+   blocking hop (so the `std::sync::Mutex` is never held across an
+   `await`) and drives `cloud_embeddings::embed_for_mode` through
+   `tokio::runtime::Handle::current().block_on(...)` inside the
+   blocking thread. When `brain_mode` is `None` the closure
+   short-circuits to `None` so the ingest still completes (zero
+   embeddings, zero failures).
+3. **`RepoSyncResponse.embedStats`** — the friendly response shape
+   serialises `RepoEmbedStats { chunksEmbedded, chunksFailed }` next to
+   the existing ingest stats so the Memory panel can show
+   "embedded *N* of *M* chunks" alongside file counts.
+
+The `embed_repo_with_fn` design intentionally takes `FnMut(&str) ->
+Option<Vec<f32>>` rather than a sync wrapper over `embed_for_mode`
+directly. That keeps the function pure-Rust + provider-agnostic and
+lets tests pass deterministic mock embedders (1024-dim zero vectors,
+length-encoded vectors, etc.) without spinning up Ollama or a network
+client.
+
+#### Source-scoped retrieval backend (BRAIN-REPO-RAG-1c-a)
+
+1c-a lights up source-scoped hybrid search on top of the 1b-ii-b
+per-repo SQLite + HNSW. Cross-source `All` fan-out, chat-prompt
+citations, frontend `@source-id` mentions, and `BrainGateway`/MCP
+tool registration land in the queued 1c-b slice.
+
+1. **`RepoStore::hybrid_search(query, _query_embedding, ann_matches,
+   limit)`** fuses three independent rankings via Reciprocal Rank
+   Fusion with `k = 60`:
+   - **Vector** — caller-supplied `ann_matches: &[(i64, f32)]`,
+     typically pre-fetched from
+     `AnnIndex::open(<repo_root>, dim).search(emb, limit * 5)`. Keeping
+     `AnnIndex` out of the method signature keeps it dep-free and
+     deterministically testable with synthetic `(id, score)` pairs
+     drawn from real chunk ids.
+   - **Keyword** — case-insensitive `LOWER(content) LIKE %term%` per
+     whitespace-split token (≥ 2 chars), capped at 500 candidates,
+     ranked by hit count then id. There is intentionally no FTS5
+     virtual table on `repo_chunks` yet — LIKE keeps the surface lean
+     and the schema unchanged from 1b.
+   - **Recency** — `ORDER BY created_at DESC, id DESC LIMIT 100`.
+
+   Because `repo_chunks` has no `tier` / `importance` / `decay_score`
+   columns, the 6-signal main-brain formula in `memory/store.rs`
+   (`vector 0.40 / keyword 0.20 / recency 0.15 / importance 0.10 /
+   decay 0.10 / tier 0.05`) is *not* reused. Hits hydrate to
+   `RepoSearchHit { id, source_id, file_path, parent_symbol, kind,
+   byte_start, byte_end, content, score: f64 }`.
+
+2. **Three Tauri commands** in `commands/repos.rs`, all gated by
+   `#[cfg(feature = "repo-rag")]` and registered in
+   `lib.rs::generate_handler!`:
+   - `repo_search(source_id, query, limit?)` snapshots `brain_mode` +
+     `active_brain` before the blocking hop, awaits `embed_for_mode`
+     (vector signal silently skipped when no brain is configured),
+     then runs two `spawn_blocking` stages — first the per-repo
+     `AnnIndex.search`, then `RepoStore::hybrid_search`.
+   - `repo_list_files(source_id)` returns `SELECT DISTINCT file_path
+     ORDER BY file_path`.
+   - `repo_read_file(source_id, file_path)` prefers a direct
+     `std::fs::read_to_string` from `<repo_root>/checkout/<file_path>`
+     after `canonicalize()` + `starts_with(checkout_root)` guards
+     against symlink / `..` escapes; falls back to chunk reassembly
+     (ordered by `byte_start, id`) when the checkout has been removed.
+     Rejects empty / absolute / `..`-containing paths up-front.
 
 > See [`docs/billion-scale-retrieval-design.md`](billion-scale-retrieval-design.md)
 > for the full billion-scale scaling plan that motivated V21.
+
+#### BrainGateway MCP surface for per-repo retrieval (BRAIN-REPO-RAG-1c-b-i)
+
+1c-b-i promotes the three Tauri commands shipped in 1c-a to first-class
+`BrainGateway` trait methods + identically-named MCP tools so external
+AI coding agents reach indexed repositories through MCP, not just the
+Tauri frontend. Cross-source `All` fan-out, prompt-assembler citations,
+`@source-id` chat-composer mentions, and frontend vitest are deferred
+to 1c-b-ii.
+
+1. **Wire-stable request/response types** are defined in
+   `ai_integrations/gateway.rs`:
+   `RepoSearchRequest { source_id, query, limit }`,
+   `RepoListFilesRequest { source_id }`,
+   `RepoReadFileRequest { source_id, file_path }`, and a wire-stable
+   `gateway::RepoSearchHit` that mirrors
+   `memory::repo_ingest::RepoSearchHit`. Keeping the wire type at the
+   gateway layer lets the `BrainGateway` trait stay feature-flag-free —
+   builds without `--features repo-rag` still compile and simply return
+   `GatewayError::NotConfigured` from the impl bodies.
+
+2. **Three new `BrainGateway` trait methods** — `repo_search`,
+   `repo_list_files`, `repo_read_file`. Each `AppStateGateway`
+   implementation mirrors the validated `commands::repos` pattern:
+   `require_read(caps)?` → `validate_source_id` → snapshot
+   `brain_mode` + `active_brain` → `embed_for_mode` (best-effort) →
+   `spawn_blocking` per-repo `AnnIndex.search` → `spawn_blocking`
+   `RepoStore.hybrid_search`. `repo_read_file` prefers the on-disk
+   checkout (`canonicalize()` + `starts_with(checkout_root)` symlink
+   guard) and falls back to SQLite chunk reassembly, rejecting `..`,
+   absolute prefixes, and OS-absolute paths as `InvalidArgument`.
+
+3. **Three new MCP tools** — `repo_search`, `repo_list_files`,
+   `repo_read_file` — registered unconditionally alongside the
+   existing `brain_*` tools in `ai_integrations/mcp/tools.rs`.
+   Capability gating happens server-side via `require_read` inside
+   each gateway method, matching the existing brain-tool pattern.
+   Dispatch arms forward `args["source_id"]`, `args["query"]`,
+   `args["file_path"]`, `args["limit"]` into the trait calls.
+
+#### Cross-source All-mode fan-out (BRAIN-REPO-RAG-1c-b-ii-a)
+
+1c-b-ii-a lands the backend half of cross-source retrieval: a single
+gateway call ranks chunks from the main TerranSoul brain and every
+indexed repo memory source, RRF-merged so the chat layer can pull
+"everything I know about X" in one round-trip. Frontend prompt-assembler
+grouping, `@source-id` chat-composer mentions, citation rendering, and
+vitest are deferred to 1c-b-ii-b.
+
+1. **Wire-stable types** in `ai_integrations/gateway.rs`:
+   `CrossSourceSearchRequest { query, limit }` and `MultiSourceHit`
+   tagging every row with `source_id` (`"self"` for the main brain,
+   otherwise the `memory_sources` repo id), `source_label`, `local_id`,
+   `content`, RRF fused `score`, optional `file_path` /
+   `parent_symbol` (repo hits) and optional `tier` (main brain). This
+   single response shape lets the chat assembler group + cite by source
+   without re-querying.
+
+2. **`BrainGateway::cross_source_search` trait method** + an
+   `AppStateGateway` impl that:
+   - snapshots `brain_mode` + `active_brain` once, computes the query
+     embedding via `cloud_embeddings::embed_for_mode` (best-effort),
+   - clamps `limit` to `1..=100` (default 10) and per-source recall to
+     `(limit * 5).clamp(20, 100)`,
+   - runs `MemoryStore::hybrid_search_rrf` for the `'self'` bucket,
+   - enumerates repo sources via
+     `memory::sources::list_sources(store.conn()).filter(kind == Repo)`
+     under `#[cfg(feature = "repo-rag")]` (empty under
+     `#[cfg(not)]`) and, per repo, runs `AnnIndex.search` +
+     `RepoStore.hybrid_search` inside `spawn_blocking`,
+   - **fuses cross-source rankings** by assigning each
+     `(source_id, local_id)` pair a stable `usize` index into a flat
+     arena and passing per-source `Vec<usize>` rankings to
+     `crate::memory::fusion::reciprocal_rank_fuse` at
+     `DEFAULT_RRF_K = 60`. The arena indirection is mandatory because
+     `reciprocal_rank_fuse<T: Copy + Eq + Hash + Ord>` rejects compound
+     `(String, i64)` keys (`String` is not `Copy`).
+   - returns `Vec<MultiSourceHit>` truncated to `limit`, sorted desc
+     by fused RRF score with the score stamped onto each hit. A single
+     misbehaving repo (missing store, embedding pass off, dim mismatch)
+     downgrades to zero contribution rather than failing the call.
+
+3. **Tauri command `cross_source_search`** lives in
+   `commands/cross_source.rs` (not feature-gated; the gateway impl
+   handles `repo-rag` cfg internally) and is registered in
+   `lib.rs::generate_handler!`. **MCP tool `cross_source_search`** is
+   registered unconditionally next to `repo_search` /
+   `repo_list_files` / `repo_read_file`. Tool-list length bumps from
+   38 → 39 (21 → 22 brain-only).
+
+#### Cross-source chat wiring (BRAIN-REPO-RAG-1c-b-ii-b)
+
+1c-b-ii-b wires the backend fan-out into the desktop chat surface for
+the browser streaming path (path 2). Path 1 (Tauri/Rust backend
+streaming) still uses single-source RAG; folding cross-source into
+path 1 is rolled into chunk `1d` along with the Aider-style repo map
+and final Brain Documentation Sync pass.
+
+1. **TS wire type `MultiSourceHit`** in `src/types/index.ts` mirrors
+   the Rust `gateway::MultiSourceHit` shape, and `Message` gains an
+   optional `sources: MultiSourceHit[]` so each assistant turn carries
+   the rows that contributed to its `[LONG-TERM MEMORY]` block.
+2. **`useMemoryStore().crossSourceSearch(query, limit)`** wraps the
+   new Tauri command and falls back to `hybridSearch` results wrapped
+   as `self`-source hits when Tauri is unavailable, keeping pure-browser
+   builds (Vercel etc.) graceful.
+3. **Prompt assembler helpers** in `src/stores/conversation.ts`:
+   - `parseSourceMentions(text)` extracts `@source-id` tokens using
+     the regex `/(?:^|\s)@([A-Za-z0-9_.-][A-Za-z0-9_./-]*)/g`. The
+     `(?:^|\s)` boundary is mandatory so email addresses
+     (`me@example.com`) are not misinterpreted as source mentions.
+     Returns `{ cleaned, mentioned[] }` with trailing sentence
+     punctuation stripped and first-appearance dedup.
+   - `groupHitsBySource(hits)` groups by `source_id` preserving
+     first-appearance ordering (which the backend RRF ranking implies
+     is most-relevant first per source).
+   - `formatCrossSourceContextPack(hits)` — multi-source emits
+     `── 🧠 TerranSoul ──` / `── 📦 owner/repo ──` headers; repo hits
+     render as `[file_path::parent_symbol] content`; single-source
+     collapses to the legacy `formatRetrievedContextPack` shape so
+     existing prompt-shape assertions keep passing without
+     modification.
+4. **`sendMessage` browser path** routes through `crossSourceSearch`
+   when the user mentions `@source-id` tokens OR the active source is
+   the cross-source `All` view (`ALL_SOURCES_ID` sentinel). Mentions
+   are one-turn overrides — they filter the result set after the
+   fan-out but never mutate the active source registry (matching the
+   Continue `@codebase` precedent).
+5. **Citation footer** in `src/components/ChatMessageList.vue`: a
+   `<details class="sources-footer">` block rendered when
+   `item.msg.sources?.length > 0`. The `<summary>` shows per-source
+   badges (`🧠`/`📦` + label + count); the expanded list shows each
+   contributing row's `[file_path::parent_symbol]` (or `tier` for
+   brain hits) plus a truncated content preview. All styling via
+   `var(--ts-*)` design tokens.
+
+Test coverage: 14 new cases in `src/stores/cross-source-rag.test.ts`
+(mention parsing edges, grouping order, single- vs multi-source
+rendering, repo hits with/without `parent_symbol`) plus 1 integration
+case in `src/stores/conversation.test.ts` that stubs
+`invoke('cross_source_search')` end-to-end and asserts both the
+grouped prompt block and the `MultiSourceHit[]` payload on the
+assistant message. Total: **1962/1962 vitest cases pass**.
+
+#### Aider-style repo map + signatures (BRAIN-REPO-RAG-1d)
+
+Two compression-mode MCP surfaces inspired by Aider's `RepoMap` and
+Repomix's signature-only view let an external coding agent pull a
+compass of an indexed repository — or drill into a single file —
+without consuming the entire context budget on raw chunk content.
+
+1. **`RepoStore::build_repo_map(budget_tokens)`** in
+   `src-tauri/src/memory/repo_ingest.rs` runs `SELECT file_path,
+   COUNT(*) FROM repo_chunks GROUP BY file_path ORDER BY 2 DESC`,
+   then greedily packs file blocks into a `tokens × 4` character
+   budget. Each block uses the Aider shape:
+
+   ```
+   src/file_a.rs:
+   ⋮
+   │fn alpha()
+   │fn beta()
+   │struct Foo
+   ```
+
+   The leading `⋮` marks the file boundary; each `│`-prefixed line
+   is one of up to `REPO_MAP_MAX_SYMBOLS_PER_FILE = 8` unique
+   `parent_symbol`s (HashSet dedup, earliest occurrence wins),
+   rendered as `signature_preview` — the first
+   `REPO_MAP_SIGNATURE_LINES = 3` non-blank trimmed lines of the
+   chunk content. Budget bounds: `64..=16_384` tokens, default
+   `1024`. Budget `0` returns `""`; tiny budgets always keep at
+   least the top file.
+
+   **Importance proxy, not PageRank.** Aider runs PageRank over a
+   symbol call-graph; TerranSoul has no per-repo `repo_edges` table
+   yet (the main brain ships `code_symbols` / `code_edges` in
+   `coding/symbol_index.rs`, but those operate on `code_repos`, not
+   on per-repo memory sources). Chunk count per file is a robust
+   proxy for "this file has more named symbols", and a future
+   slice will add per-repo call-graph extraction so a true PageRank
+   score can replace it.
+
+2. **`RepoStore::build_file_signatures(file_path)`** is a thin
+   wrapper over the same `render_file_block` helper, drilling into
+   a single file with the same compressed shape — useful as a
+   follow-up after the agent picks a high-signal file from the
+   repo map.
+
+3. **Gateway + Tauri + MCP surface.** Both methods are exposed as
+   `BrainGateway::repo_map` / `repo_signatures` trait methods with
+   `RepoMapRequest { source_id, budget_tokens: Option<usize> }` and
+   `RepoSignaturesRequest { source_id, file_path }` wire types.
+   `AppStateGateway` clamps `budget_tokens` to `64..=16_384` (default
+   `1024`), validates `source_id` against the registry, rejects
+   path-traversal in `file_path` (empty, `..`, leading `/`, `\`,
+   absolute), and runs the SQLite work in `spawn_blocking`. Tauri
+   commands `repo_map` and `repo_signatures` in
+   `commands/repos.rs` wire the gateway through `lib.rs::
+   generate_handler!`; identically-named MCP tools live in
+   `ai_integrations/mcp/tools.rs`, bringing the MCP tool count to
+   **24 brain-only + 17 code = 41 total**. When the `repo-rag`
+   Cargo feature is disabled, both methods return
+   `GatewayError::NotConfigured("repo-rag feature is not enabled
+   in this build")`.
+
+4. **`repo-scholar-quest` skill** in `src/stores/skill-tree.ts`
+   (tier `advanced`, requires `rag-knowledge`) activates when
+   `brain.brainMode !== null && useMemorySourcesStore().repoSources.length > 0`.
+   Combos: `paid-brain` → "Repo Sage"; `rag-knowledge` → "Polyglot
+   Librarian".
+
+Test coverage: 2 new `RepoStore` unit tests (ranking + budget
+respect, dedup + Aider shape), 5 updated MCP test counts (22→24
+brain tools, 39→41 total, code-tool slice index shifted +2), 76/76
+skill-tree cases still pass.
+
+#### Private-repo OAuth device flow (BRAIN-REPO-RAG-1e)
+
+GitHub's RFC 8628 device authorization grant is wired in so users can
+ingest private repositories without typing a token into a form.
+
+1. **Token store.** `src-tauri/src/memory/repo_oauth.rs` defines
+   `RepoOAuthToken { access_token, token_type, scope, created_at,
+   expires_at }` and persists it to `<data_dir>/oauth/github.json` via
+   atomic `.json.tmp` + rename. The `oauth/` directory and the file are
+   hardened: Unix uses `PermissionsExt` 0o700 / 0o600; non-Unix uses
+   `permissions.set_readonly(true)` as a best-effort match for
+   VS Code/npm/pip posture (full ACL tightening via `icacls` is
+   intentionally deferred to keep the path dependency-free).
+2. **Debug safety.** `RepoOAuthToken::redacted()` is the only
+   serialisation that touches the token; it returns
+   `"<redacted N chars>"` and is the format used in any future
+   logging.
+3. **URL injection.** `inject_https_token(remote_url, token)` rewrites
+   `https://github.com/...` → `https://x-access-token:<token>@github.com/...`
+   (GitHub's documented HTTPS auth pattern). SSH URLs, non-GitHub
+   URLs, and empty tokens pass through unchanged. URLs that already
+   contain userinfo get their stale credentials replaced, not
+   duplicated. `repo_ingest::ingest_repo_with` loads the token (if
+   present) and passes the injected URL to `shallow_clone` — gix's
+   credentials cascade is deliberately bypassed to keep the surface
+   simple and identical across every git client.
+4. **Tauri commands** (feature-gated on `repo-rag`):
+   - `repo_oauth_github_start(scopes)` → `DeviceCodeResponse` (reuses
+     `crate::coding::request_device_code` from the self-improve
+     scaffolding).
+   - `repo_oauth_github_poll(device_code)` → `DevicePollResult`. On
+     `Success`, persists the token (under `spawn_blocking`).
+   - `repo_oauth_github_status()` → `RepoOAuthStatus { linked,
+     token_type, scope, created_at, expires_at, expired }`. Never
+     exposes the token itself.
+   - `repo_oauth_github_clear()` → idempotent removal.
+5. **Frontend.** `src/components/RepoOAuthDialog.vue` walks the user
+   through the device flow: surfaces `verification_uri` + `user_code`,
+   polls every `interval` seconds, and shows linked/scope/expired
+   status once authorized. Wrappers in
+   `src/stores/memory-sources.ts` (`startGitHubOAuth`,
+   `pollGitHubOAuth`, `fetchGitHubOAuthStatus`, `clearGitHubOAuth`)
+   keep the token entirely backend-side.
+
+Test coverage: 5 new Rust unit tests in `memory::repo_oauth::tests`
+(roundtrip persistence under `oauth/`, redaction never leaks the
+token, idempotent clear, expiry semantics, URL rewriting only
+affects GitHub HTTPS forms including stale-credential replacement),
+4 new vitest cases in `src/stores/memory-sources.test.ts` covering
+the four store wrappers (start caches device code, poll refreshes
+status on success, poll short-circuits with `error` when no device
+code is active, clear wipes local state and invokes the backend).
+
+#### Per-source knowledge-graph visualization (BRAIN-REPO-RAG-2a)
+
+Before 2a, the 2D `MemoryGraph` and 3D `MemoryGalaxy` components only
+ever rendered personal memories from the main brain — repo-RAG sources
+were retrievable from chat but invisible in every graph view. 2a closes
+that gap by projecting repo chunks into the unified graph as additional
+nodes whenever the user is in the **All sources** view.
+
+Pipeline:
+
+1. **Backend projection** —
+   `RepoStore::recent_chunks(limit)` in
+   `src-tauri/src/memory/repo_ingest.rs` exposes the most recent rows
+   from a per-repo SQLite, prioritising AST-annotated parents
+   (`ORDER BY (parent_symbol IS NULL) ASC, created_at DESC, id DESC`)
+   so meaningful function/class boundaries surface first.
+2. **Cross-source fan-out** —
+   `cross_source_graph_nodes(per_source_limit?)` in
+   `src-tauri/src/commands/repos.rs` lists every non-`self` row from
+   `memory_sources`, opens each `RepoStore`, takes up to
+   `per_source_limit` (default 64, clamped to `[1, 512]`) recent chunks,
+   and emits a unified `CrossSourceGraphNode { graphId, sourceId,
+   sourceLabel, localId, content, filePath, parentSymbol, createdAt }`
+   wire payload plus `perSourceCounts: [sourceId, label, count][]` for
+   the legend.
+3. **Collision-free numeric IDs** — personal memory ids are positive
+   `INTEGER` autoincrement values; the projection hands out negative
+   `graphId`s `-1, -2, -3, …` per repo chunk so d3-force's numeric node
+   identity stays unique across sources without forcing a string-id
+   migration through the existing 2D / 3D pipelines. The id space stays
+   well inside JS `2^53` and never overlaps any real `memories.id`.
+4. **Store wrapper** —
+   `useMemoryStore.fetchCrossSourceGraph(perSourceLimit?)` invokes the
+   Tauri command and returns `{ nodes, perSourceCounts }`. When the
+   `repo-rag` feature is disabled (no command registered) the wrapper
+   returns an empty payload so non-RAG builds remain functional.
+5. **MemoryView trigger** — `MemoryView.vue` watches
+   `sourcesStore.isAllView`; when active it calls
+   `fetchCrossSourceGraph()`, projects each `CrossSourceGraphNode` into a
+   minimal `MemoryEntry` (preserving the optional `source_id`,
+   `source_label`, `file_path`, `parent_symbol` fields added to the
+   shared type), and concatenates them onto `displayedMemories` before
+   passing the merged list to `<MemoryGraph :memories>`. The personal
+   `store.edges` are passed through unchanged — cross-source edges are
+   deferred to a follow-up chunk.
+6. **Color + provenance surfacing** —
+   `MemoryGraph.vue` extends its theme with `repo: tok('--ts-warning',
+   '#d4a14a')` and uses that hue for any node whose `sourceId` is set
+   (otherwise it falls back to the tag/community palette). The
+   right-side `SelectedNodesPanel` shows `📦 <sourceLabel> · <filePath>::<parentSymbol>`
+   for repo nodes so the inspector reads as a code-aware browser.
+   `MemoryGalaxy.vue` mirrors the recolouring with a `REPO_NODE_COLOR`
+   warning hue applied wherever individual memory nodes are placed.
+
+Test coverage: 1 new Rust unit test
+(`repo_ingest::tests::repo_recent_chunks_prefers_parent_symbol_rows_and_respects_limit`)
+locks in the projection's ordering, source-scoping, and limit clamping.
+TypeScript additions are covered by the existing `vue-tsc` gate and the
+fail-soft empty payload in `fetchCrossSourceGraph` keeps the
+non-RAG/feature-off path well-typed.
+
+#### Deep-scan ingest visibility + debug log (BRAIN-REPO-RAG-2b)
+
+Before 2b the repo-RAG ingest pipeline silently dropped four classes of
+files — over-cap (`files_skipped_size`), binary
+(`files_skipped_binary`), unchanged-since-last-sync
+(`files_skipped_unchanged`), and likely-secret
+(`files_skipped_secret`). Counters were incremented inside the
+`ingest_repo_with` orchestrator (and the test-only
+`ingest_from_checkout_for_tests` twin), but the `IngestSink::progress`
+channel only fired on walk / scan-secrets / chunk / persist phase
+boundaries, so users running a Memory-panel repo scan saw nothing for
+skipped files — a deep-scan-visibility hole.
+
+2b makes every per-file decision visible end-to-end:
+
+1. **Phase enum extension** — `IngestPhase` (in `repo_ingest.rs`) gains
+   `Skip` (per-file skip events) and `Summary` (one final event before
+   `Done` carrying the run-counter line
+   `scanned=N indexed=N skipped_size=N skipped_binary=N skipped_unchanged=N skipped_secret=N pruned=N chunks=N`).
+2. **Typed skip reasons** — `IngestProgress` gains
+   `skip_reason: Option<&'static str>` with the four allowed values
+   `"too_large" | "binary" | "unchanged" | "secret"`. Both ingest loops
+   were rewritten so the relative path is computed *before* the size
+   check, then every skip branch calls
+   `emit_skip(processed, total, rel, reason)` before `continue`-ing.
+3. **Generic event field** — `TaskProgressEvent` (in
+   `src-tauri/src/tasks/manager.rs`) gains an optional
+   `log_line: Option<String>` field annotated
+   `#[serde(default, skip_serializing_if = "Option::is_none")]` so the
+   wire payload stays back-compat for every other task kind. All 12
+   existing struct-literal sites across `commands/brain.rs`,
+   `commands/ingest.rs`, and `commands/repos.rs` were updated to set
+   `log_line: None`.
+4. **Server-side log formatting** — `TauriIngestSink::progress` in
+   `commands/repos.rs` formats every event into a stable log line
+   (`skip[<reason>]: <rel>` for skips, `summary: <counters>` for the
+   summary, `<phase> (<p>/<t>): <msg>` for normal phases) and emits it
+   alongside the existing progress fields.
+5. **Frontend ring buffer** — `useTaskStore` (in `src/stores/tasks.ts`)
+   keeps a per-task ring buffer `taskLogs: Map<string, string[]>` capped
+   at `TASK_LOG_MAX_LINES = 500`; the `task-progress` listener appends
+   each `log_line` and `clearTaskLog(id)` flushes a buffer. This works
+   for every task kind, not just repo-RAG.
+6. **Debug-log UI** — `TaskProgressBar.vue` renders a collapsible
+   "Debug log (N lines)" disclosure under each running task with sticky
+   skip/index counter chips (`indexed`, `skip-size`, `skip-binary`,
+   `skip-unchanged`, `skip-secret`) coloured via `--ts-accent` /
+   `--ts-warning` / `--ts-accent-error` design tokens. The open `<pre>`
+   panel uses `--ts-font-mono` and auto-scrolls as new lines arrive.
+
+Test coverage: 1 new Rust unit test
+(`memory::repo_ingest::tests::ingest_emits_skip_and_summary_events_for_every_decision`)
+builds a fixture with one indexed file + one secret file + one binary
+file + one over-cap file (forced by `max_file_bytes: 1024`), asserts
+every skip class fires a `Skip` event with the correct `skip_reason`,
+and asserts `Summary` precedes `Done`. 3 new vitest cases in
+`src/stores/tasks.test.ts` cover the per-task buffer, ring-buffer
+eviction at the cap, and `clearTaskLog` removal semantics.
 
 ```sql
 CREATE TABLE schema_version (

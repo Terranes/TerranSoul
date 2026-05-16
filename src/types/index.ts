@@ -32,6 +32,41 @@ export interface Message {
   thinkingContent?: string;
   /** Optional label for the collapsible thinking/status block. */
   thinkingLabel?: string;
+  /**
+   * RAG citations attached to this turn — populated by the frontend
+   * prompt assembler when cross-source retrieval runs (BRAIN-REPO-RAG-1c-b-ii-b).
+   * Each entry is a row that contributed to the `[LONG-TERM MEMORY]` block,
+   * tagged with the `source_id` it came from so the UI can render grouped
+   * source badges and per-citation references.
+   */
+  sources?: MultiSourceHit[];
+}
+
+/**
+ * One retrieval hit from the cross-source `cross_source_search` Tauri
+ * command (BRAIN-REPO-RAG-1c-b-ii-a backend). Mirrors the Rust
+ * `MultiSourceHit` struct in `ai_integrations/gateway.rs`. Field names
+ * use snake_case to match the serde wire format.
+ */
+export interface MultiSourceHit {
+  /** Source registry id — `'self'` for the TerranSoul brain or `owner/repo` for a repo. */
+  source_id: string;
+  /** Human-friendly label for the source (e.g. `'TerranSoul'` or `'owner/repo'`). */
+  source_label: string;
+  /** Row id within the source's own store. Not unique across sources. */
+  local_id: number;
+  /** Retrieved text content. */
+  content: string;
+  /** RRF-fused score (higher is more relevant). */
+  score: number;
+  /** Repository file path (repo hits only). */
+  file_path?: string | null;
+  /** Enclosing symbol (function/class/etc.) for repo hits only. */
+  parent_symbol?: string | null;
+  /** Memory tier (`'short'` / `'working'` / `'long'`) for `'self'` hits only. */
+  tier?: string | null;
+  /** Comma-separated tags. */
+  tags: string;
 }
 
 export interface QuestChoice {
@@ -247,6 +282,35 @@ export interface MemoryEntry {
   parent_id: number | null;
   token_count: number;
   confidence: number;
+  /** BRAIN-REPO-RAG-2a: optional source provenance for graph rendering. */
+  source_id?: string;
+  source_label?: string;
+  file_path?: string;
+  parent_symbol?: string;
+}
+
+/**
+ * BRAIN-REPO-RAG-2a wire type: a repo-sourced graph node projected from
+ * `repo_chunks` into the unified knowledge-graph view. `graphId` is the
+ * stable numeric id usable as a d3-force node id (negative for repo
+ * chunks; positive memory ids belong to the personal brain).
+ */
+export interface CrossSourceGraphNode {
+  graphId: number;
+  sourceId: string;
+  sourceLabel: string;
+  localId: number;
+  content: string;
+  filePath: string | null;
+  parentSymbol: string | null;
+  createdAt: number;
+}
+
+/** BRAIN-REPO-RAG-2a wire type: cross-source projection payload. */
+export interface CrossSourceGraph {
+  nodes: CrossSourceGraphNode[];
+  /** `[sourceId, label, count]` tuples, one per non-self repo source. */
+  perSourceCounts: Array<[string, string, number]>;
 }
 
 export interface CompactMemoryResult {
@@ -734,6 +798,10 @@ export interface VoiceProviderInfo {
   description: string;
   kind: 'local' | 'cloud';
   requires_api_key: boolean;
+  /** Whether the provider's runtime/model is already installed locally. Defaults to `true` for providers that need no install step. */
+  installed?: boolean;
+  /** Whether the provider requires an explicit install/download step before it can be used (e.g. on-device neural TTS that ships a model). */
+  requires_install?: boolean;
 }
 
 /** Persisted voice configuration. */

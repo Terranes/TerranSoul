@@ -114,6 +114,8 @@ export interface AppSettings {
   karaoke_dialog_enabled?: boolean;
   /** When true, verbose debug messages are printed (e.g. chat-rewarm timings). Default false. */
   debug_logging?: boolean;
+  /** When true (default), show a dismissable Hermes Desktop suggestion when a turn is heavy enough. */
+  hermes_hint_enabled?: boolean;
 }
 
 /** Reasoning effort level for extended-thinking models. */
@@ -172,9 +174,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   bgm_volume: 0.15,
   bgm_track_id: 'prelude',
   bgm_custom_tracks: [],
-  auto_tag: false,
-  contextual_retrieval: false,
-  late_chunking: false,
+  auto_tag: true,
+  contextual_retrieval: true,
+  late_chunking: true,
   lan_enabled: false,
   lan_auth_mode: 'token_required',
   mobile_notifications_enabled: true,
@@ -205,6 +207,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   reasoning_effort: 'off',
   karaoke_dialog_enabled: true,
   debug_logging: false,
+  hermes_hint_enabled: true,
 };
 
 const KARAOKE_DIALOG_STORAGE_KEY = 'ts.karaokeDialogEnabled';

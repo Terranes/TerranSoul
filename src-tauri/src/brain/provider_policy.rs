@@ -482,9 +482,14 @@ fn task_default_model_free(
 }
 
 /// For local Ollama, select the appropriate model for each task.
+///
+/// `mxbai-embed-large` is the default embedder per BENCH-LCM-5
+/// (2026-05-12): +3.7pp R@10 overall on LoCoMo vs `nomic-embed-text`.
+/// Users can override via the embedding-model picker; `nomic-embed-text`
+/// remains in `EMBED_MODEL_FALLBACKS` as the lightweight 768d fallback.
 fn task_default_model_ollama(kind: TaskKind, chat_model: &str) -> &str {
     match kind {
-        TaskKind::Embeddings => "nomic-embed-text",
+        TaskKind::Embeddings => "mxbai-embed-large",
         _ => chat_model,
     }
 }
@@ -767,13 +772,16 @@ mod tests {
     }
 
     #[test]
-    fn ollama_embeddings_defaults_to_nomic() {
+    fn ollama_embeddings_defaults_to_mxbai() {
+        // BENCH-LCM-5 (2026-05-12): mxbai-embed-large promoted as the
+        // default local Ollama embedder (+3.7pp R@10 overall on LoCoMo
+        // vs nomic-embed-text). nomic remains in EMBED_MODEL_FALLBACKS.
         let policy = ProviderPolicy::default();
         let brain_mode = super::super::BrainMode::LocalOllama {
             model: "gemma3:4b".to_string(),
         };
         let resolved = resolve_for_task(&policy, TaskKind::Embeddings, Some(&brain_mode));
-        assert_eq!(resolved.model, "nomic-embed-text");
+        assert_eq!(resolved.model, "mxbai-embed-large");
     }
 
     #[test]

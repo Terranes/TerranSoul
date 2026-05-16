@@ -56,7 +56,7 @@ describe('PetContextMenu — panel items', () => {
       document.querySelectorAll('.pet-ctx-inline-sub .ctx-label'),
     ).map((el) => el.textContent);
     expect(subLabels).toContain('Brain');
-    expect(subLabels).toContain('Memory');
+    expect(subLabels).toContain('Knowledge');
     expect(subLabels).toContain('Quests');
     expect(subLabels).toContain('Marketplace');
     expect(subLabels).toContain('Voice');

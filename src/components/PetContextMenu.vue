@@ -288,7 +288,7 @@ const panelsOpen = ref(false);
 
 const PANEL_ENTRIES = [
   { id: 'brain', icon: '🧠', label: 'Brain' },
-  { id: 'memory', icon: '💡', label: 'Memory' },
+  { id: 'memory', icon: '💡', label: 'Knowledge' },
   { id: 'skills', icon: '⭐', label: 'Quests' },
   { id: 'marketplace', icon: '🏪', label: 'Marketplace' },
   { id: 'voice', icon: '🎙', label: 'Voice' },

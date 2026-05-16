@@ -59,3 +59,4 @@ scripts/*.py
 test_output.txt
 test_output_combined.txt
 /recording
+mcp-data/shared/memory-seed.sql

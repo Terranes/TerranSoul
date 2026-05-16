@@ -21,6 +21,7 @@ export interface MemoryCleanupReport {
   deleted: number;
 }
 import type {
+  CrossSourceGraph,
   EdgeDirection,
   EdgeStats,
   MemoryEdge,
@@ -29,6 +30,7 @@ import type {
   MemoryStats,
   MemoryTier,
   Message,
+  MultiSourceHit,
   NewMemory,
   ProgressiveMemorySearchResponse,
 } from '../types';
@@ -194,6 +196,42 @@ export const useMemoryStore = defineStore('memory', () => {
     } catch {
       return browserHybridSearch(query, limit);
     }
+  }
+
+  /**
+   * Cross-source hybrid search across the TerranSoul brain (`'self'`) and
+   * every registered repo source, RRF-merged (k=60) on the backend
+   * (BRAIN-REPO-RAG-1c-b-ii-a). Each hit carries its `source_id` /
+   * `source_label` so the chat prompt assembler can group + cite by
+   * source. Falls back to a self-only `hybridSearch` when the Tauri
+   * command is unavailable (browser-only mode), wrapping each row in a
+   * `MultiSourceHit` with `source_id: 'self'`.
+   */
+  async function crossSourceSearch(
+    query: string,
+    limit = 5,
+  ): Promise<MultiSourceHit[]> {
+    try {
+      const result = await invoke<MultiSourceHit[]>('cross_source_search', {
+        query,
+        limit,
+      });
+      if (Array.isArray(result)) return result;
+    } catch {
+      /* Fall through to browser-only fallback below. */
+    }
+    const fallback = await hybridSearch(query, limit);
+    return fallback.map((entry) => ({
+      source_id: 'self',
+      source_label: 'TerranSoul',
+      local_id: entry.id,
+      content: entry.content,
+      score: 0,
+      file_path: null,
+      parent_symbol: null,
+      tier: entry.tier ?? null,
+      tags: entry.tags ?? '',
+    }));
   }
 
   async function progressiveSearch(
@@ -528,6 +566,25 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke<number>('backfill_embeddings');
   }
 
+  /**
+   * BRAIN-REPO-RAG-2a: Fetch a projection of cross-source repo chunks
+   * suitable for rendering in the unified knowledge graph. Each repo
+   * source contributes up to `perSourceLimit` recent chunks (preferring
+   * AST-annotated parents). Returns an empty list with no per-source
+   * counts when the `repo-rag` Tauri feature is disabled (invoke fails).
+   */
+  async function fetchCrossSourceGraph(
+    perSourceLimit?: number,
+  ): Promise<CrossSourceGraph> {
+    try {
+      return await invoke<CrossSourceGraph>('cross_source_graph_nodes', {
+        perSourceLimit: perSourceLimit ?? null,
+      });
+    } catch {
+      return { nodes: [], perSourceCounts: [] };
+    }
+  }
+
   return {
     memories,
     stats,
@@ -539,6 +596,7 @@ export const useMemoryStore = defineStore('memory', () => {
     search,
     semanticSearch,
     hybridSearch,
+    crossSourceSearch,
     progressiveSearch,
     addMemory,
     updateMemory,
@@ -580,5 +638,7 @@ export const useMemoryStore = defineStore('memory', () => {
     applyJudgments,
     // Embedding management (Chunk 44.2)
     backfillEmbeddings,
+    // BRAIN-REPO-RAG-2a: cross-source knowledge-graph projection
+    fetchCrossSourceGraph,
   };
 });

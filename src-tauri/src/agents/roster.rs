@@ -30,6 +30,11 @@ pub enum CliKind {
     Codex,
     Claude,
     Gemini,
+    /// Hermes Desktop agent runner (Electron app). The binary name
+    /// resolves via `$PATH`; on Windows the installer typically adds
+    /// `hermes-agent` to PATH. Each dispatch becomes one Hermes
+    /// "staff" visible in Hermes Desktop's UI.
+    Hermes,
     Custom,
 }
 
@@ -40,8 +45,42 @@ impl CliKind {
             CliKind::Codex => "codex",
             CliKind::Claude => "claude",
             CliKind::Gemini => "gemini",
+            CliKind::Hermes => "hermes-agent",
             CliKind::Custom => "",
         }
+    }
+
+    /// Resolve the executable to pass into [`Command::new`].
+    ///
+    /// For most CLI kinds this is just the binary name and we trust
+    /// `$PATH` resolution. Hermes Desktop's NSIS installer drops the
+    /// binary into `%LOCALAPPDATA%\Programs\hermes-desktop\` but does
+    /// **not** add that folder to PATH, so a bare `Command::new("hermes-agent")`
+    /// fails with "program not found". This helper falls back to the
+    /// known install location when PATH lookup would fail.
+    ///
+    /// Returns the resolved path (absolute when a fallback was used) or
+    /// just `name` itself for normal `$PATH` resolution.
+    pub fn resolve_executable(self, name: &str) -> std::path::PathBuf {
+        // Only Hermes has a known-install-not-on-PATH problem on Windows.
+        // For everything else, defer to $PATH so users can override.
+        if self != CliKind::Hermes {
+            return std::path::PathBuf::from(name);
+        }
+        // If PATH already resolves it, prefer that (user may have installed
+        // a different build, or symlinked into ~/.local/bin on Linux).
+        if path_lookup(name).is_some() {
+            return std::path::PathBuf::from(name);
+        }
+        // Fallback to the well-known installer locations per platform.
+        for candidate in hermes_install_candidates() {
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+        // Last resort: return the bare name. spawn() will fail with a
+        // clear "not found" error that the caller surfaces.
+        std::path::PathBuf::from(name)
     }
 
     /// Validate that a user-provided custom binary name is safe to pass
@@ -193,7 +232,79 @@ fn validate_id(id: &str) -> Result<(), String> {
     Ok(())
 }
 
-// ── Persistence layer ────────────────────────────────────────────────────
+/// Look up `name` on `$PATH`, returning the first match. Mirrors the
+/// behaviour of [`std::process::Command::new`] without adding a new
+/// crate dependency. On Windows, `PATHEXT` extensions are tried.
+fn path_lookup(name: &str) -> Option<PathBuf> {
+    // Absolute / relative paths bypass PATH entirely.
+    if name.contains('/') || name.contains('\\') {
+        let p = PathBuf::from(name);
+        return p.is_file().then_some(p);
+    }
+    let path_var = std::env::var_os("PATH")?;
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.BAT;.CMD;.COM".to_string())
+            .split(';')
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    for dir in std::env::split_paths(&path_var) {
+        let bare = dir.join(name);
+        if bare.is_file() {
+            return Some(bare);
+        }
+        if cfg!(windows) {
+            for ext in &exts {
+                let candidate = dir.join(format!("{name}{ext}"));
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Known install locations for `hermes-agent` across platforms. Used by
+/// [`CliKind::resolve_executable`] when the binary isn't on PATH (the
+/// NSIS installer for Hermes Desktop on Windows installs into
+/// `%LOCALAPPDATA%\Programs\hermes-desktop\` without touching PATH).
+fn hermes_install_candidates() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    #[cfg(windows)]
+    {
+        if let Ok(local) = std::env::var("LOCALAPPDATA") {
+            out.push(
+                PathBuf::from(local)
+                    .join("Programs")
+                    .join("hermes-desktop")
+                    .join("hermes-agent.exe"),
+            );
+        }
+    }
+    #[cfg(target_os = "macos")]
+    {
+        out.push(PathBuf::from(
+            "/Applications/Hermes Agent.app/Contents/MacOS/hermes-agent",
+        ));
+        if let Ok(home) = std::env::var("HOME") {
+            out.push(
+                PathBuf::from(home)
+                    .join("Applications/Hermes Agent.app/Contents/MacOS/hermes-agent"),
+            );
+        }
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        out.push(PathBuf::from("/opt/hermes-desktop/hermes-agent"));
+        out.push(PathBuf::from("/usr/local/bin/hermes-agent"));
+    }
+    out
+}
 
 /// The on-disk agent roster rooted at `<data_dir>/agents/`.
 #[derive(Debug, Clone)]
@@ -414,7 +525,21 @@ pub fn group_by_kind(agents: &[AgentProfile]) -> HashMap<AgentBackendKind, Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    // Cargo runs tests in parallel by default. The Hermes resolver tests
+    // below mutate process-wide env vars (`PATH`, `LOCALAPPDATA`) which
+    // are visible to every other test in the binary. Without
+    // serialization, one test's temporary install dir leaks into the
+    // other's assertion window and causes a spurious failure (e.g.
+    // `resolve_executable_returns_bare_name_when_nothing_found`
+    // observes a leftover `hermes-agent.exe` in LOCALAPPDATA set by
+    // `resolve_executable_finds_hermes_install_when_not_on_path`).
+    // A module-local mutex serializes them without pulling in the
+    // `serial_test` crate. Use `lock().unwrap_or_else(|e| e.into_inner())`
+    // so a panic inside one test doesn't poison the lock for the next.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_native() -> AgentProfile {
         AgentProfile {
@@ -499,6 +624,121 @@ mod tests {
             p.validate().is_err(),
             "kind=Codex with binary=claude must fail"
         );
+    }
+
+    #[test]
+    fn hermes_kind_has_known_binary() {
+        assert_eq!(CliKind::Hermes.default_binary(), "hermes-agent");
+        // A Hermes-backed profile validates with the canonical binary.
+        let p = AgentProfile {
+            id: "hermes-staff".into(),
+            display_name: "Hermes Staff".into(),
+            vrm_model_id: "shinra".into(),
+            brain_backend: BrainBackend::ExternalCli {
+                kind: CliKind::Hermes,
+                binary: "hermes-agent".into(),
+                extra_args: vec![],
+            },
+            working_folder: Some(PathBuf::from(".")),
+            capabilities: vec!["delegate".into()],
+            created_at: 1,
+            last_active_at: 1,
+        };
+        assert!(p.validate().is_ok());
+
+        // Mismatched binary for Hermes must fail like other builtins.
+        let mut bad = p.clone();
+        if let BrainBackend::ExternalCli { binary, .. } = &mut bad.brain_backend {
+            *binary = "codex".into();
+        }
+        assert!(bad.validate().is_err());
+    }
+
+    #[test]
+    fn resolve_executable_passes_through_for_path_kinds() {
+        // Codex / Claude / Gemini / Custom always defer to $PATH.
+        assert_eq!(
+            CliKind::Codex.resolve_executable("codex"),
+            PathBuf::from("codex")
+        );
+        assert_eq!(
+            CliKind::Claude.resolve_executable("claude"),
+            PathBuf::from("claude")
+        );
+        assert_eq!(
+            CliKind::Custom.resolve_executable("my-tool"),
+            PathBuf::from("my-tool")
+        );
+    }
+
+    #[test]
+    fn resolve_executable_finds_hermes_install_when_not_on_path() {
+        // Build a fake install layout and point LOCALAPPDATA at it. On
+        // non-Windows targets the lookup table is platform-specific so
+        // this test is Windows-only — on macOS/Linux the analogous paths
+        // (`/Applications/...`, `/opt/hermes-desktop`) require root to
+        // create and are skipped.
+        #[cfg(windows)]
+        {
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let tmp = TempDir::new().unwrap();
+            let fake = tmp.path().join("Programs").join("hermes-desktop");
+            std::fs::create_dir_all(&fake).unwrap();
+            let exe = fake.join("hermes-agent.exe");
+            std::fs::write(&exe, b"").unwrap();
+
+            // Stash the real PATH/LOCALAPPDATA and replace them with a
+            // PATH that definitely does NOT resolve hermes-agent.
+            let prev_local = std::env::var_os("LOCALAPPDATA");
+            let prev_path = std::env::var_os("PATH");
+            // SAFETY: tests in this module are single-threaded by default
+            // and we restore the env vars before returning.
+            unsafe {
+                std::env::set_var("LOCALAPPDATA", tmp.path());
+                std::env::set_var("PATH", "");
+            }
+
+            let resolved = CliKind::Hermes.resolve_executable("hermes-agent");
+            assert_eq!(resolved, exe, "should fall back to %LOCALAPPDATA% install");
+
+            // Restore.
+            unsafe {
+                match prev_local {
+                    Some(v) => std::env::set_var("LOCALAPPDATA", v),
+                    None => std::env::remove_var("LOCALAPPDATA"),
+                }
+                match prev_path {
+                    Some(v) => std::env::set_var("PATH", v),
+                    None => std::env::remove_var("PATH"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn resolve_executable_returns_bare_name_when_nothing_found() {
+        // With an empty PATH and no install fallback, Hermes should
+        // return the bare name and let spawn() surface the clear
+        // "not found" error.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_path = std::env::var_os("PATH");
+        let prev_local = std::env::var_os("LOCALAPPDATA");
+        // SAFETY: see note in the previous test.
+        unsafe {
+            std::env::set_var("PATH", "");
+            std::env::remove_var("LOCALAPPDATA");
+        }
+        let resolved = CliKind::Hermes.resolve_executable("hermes-agent");
+        assert_eq!(resolved, PathBuf::from("hermes-agent"));
+        unsafe {
+            match prev_path {
+                Some(v) => std::env::set_var("PATH", v),
+                None => std::env::remove_var("PATH"),
+            }
+            if let Some(v) = prev_local {
+                std::env::set_var("LOCALAPPDATA", v);
+            }
+        }
     }
 
     #[test]

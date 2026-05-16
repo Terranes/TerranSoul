@@ -66,7 +66,7 @@ describe('BrainSetupView', () => {
     const wrapper = mount(BrainSetupView);
     await flushPromises();
 
-    await wrapper.get('button.btn-primary').trigger('click');
+    await wrapper.get('button.bp-btn--primary').trigger('click');
     await flushPromises();
 
     await wrapper.get('#free-model-select').setValue('poolside/laguna-xs.2:free');
@@ -74,7 +74,7 @@ describe('BrainSetupView', () => {
     await wrapper.get('input[type="password"]').setValue('or-test-key');
 
     const connectButton = wrapper
-      .findAll('button.btn-primary')
+      .findAll('button.bp-btn--primary')
       .find((button) => button.text().includes('Connect provider'));
     expect(connectButton).toBeTruthy();
     await connectButton!.trigger('click');

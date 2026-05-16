@@ -36,6 +36,7 @@ interface CompanionApp {
   linux_install: ShellCommand | null;
   detect: ShellCommand | null;
   requires_elevation: boolean;
+  github_repo: string | null;
 }
 
 type DetectStatus =
@@ -44,8 +45,23 @@ type DetectStatus =
   | { type: 'unknown'; reason: string }
   | null;
 
+interface LatestReleaseInfo {
+  version: string;
+  tag: string;
+  html_url: string;
+}
+
+interface UpdateCheckResult {
+  id: string;
+  installed_version: string | null;
+  latest: LatestReleaseInfo | null;
+  update_available: boolean;
+  note: string | null;
+}
+
 const companions = ref<CompanionApp[]>([]);
 const detectStatus = ref<Record<string, DetectStatus>>({});
+const updateStatus = ref<Record<string, UpdateCheckResult | null>>({});
 const lastAction = ref<Record<string, string>>({});
 const loadError = ref<string | null>(null);
 const isLoading = ref(false);
@@ -90,6 +106,29 @@ async function detect(id: string): Promise<void> {
     lastAction.value[id] = 'Detect failed';
   } finally {
     busyCompanionId.value = null;
+  }
+  // Update check piggy-backs on Detect so the user always sees both the
+  // installed pill and the "Update available" badge after one click.
+  void checkUpdate(id);
+}
+
+async function checkUpdate(id: string): Promise<void> {
+  try {
+    const result = await invoke<UpdateCheckResult>('companions_check_update', { id });
+    updateStatus.value[id] = result;
+    // Mirror the installed version into detectStatus so the pill stays
+    // accurate even if the user only clicked "Check for updates".
+    if (result.installed_version && !detectStatus.value[id]) {
+      detectStatus.value[id] = { type: 'installed', version: result.installed_version };
+    }
+  } catch (err) {
+    updateStatus.value[id] = {
+      id,
+      installed_version: null,
+      latest: null,
+      update_available: false,
+      note: `Update check failed: ${err instanceof Error ? err.message : String(err)}`,
+    };
   }
 }
 
@@ -163,11 +202,23 @@ function installedVersion(id: string): string {
   return status && status.type === 'installed' ? status.version : '';
 }
 
+function updateAvailable(id: string): boolean {
+  return updateStatus.value[id]?.update_available === true;
+}
+
+function latestVersion(id: string): string {
+  return updateStatus.value[id]?.latest?.version ?? '';
+}
+
+function updateNote(id: string): string {
+  return updateStatus.value[id]?.note ?? '';
+}
+
 onMounted(() => {
   void loadCompanions();
 });
 
-defineExpose({ loadCompanions, detect, install, openOfficialPage });
+defineExpose({ loadCompanions, detect, install, openOfficialPage, checkUpdate });
 </script>
 
 <template>
@@ -211,6 +262,13 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
         <header class="cp-card-head">
           <strong>{{ app.display_name }}</strong>
           <span
+            v-if="updateAvailable(app.id)"
+            class="cp-badge cp-badge-update"
+            :data-testid="`companion-update-badge-${app.id}`"
+          >
+            update available → v{{ latestVersion(app.id) }}
+          </span>
+          <span
             v-if="app.requires_elevation"
             class="cp-badge cp-badge-elev"
           >
@@ -250,6 +308,17 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
             Detect
           </button>
           <button
+            v-if="updateAvailable(app.id)"
+            type="button"
+            class="cp-btn cp-btn-primary"
+            :disabled="busyCompanionId === app.id"
+            :data-testid="`companion-update-${app.id}`"
+            @click="install(app.id)"
+          >
+            Update to v{{ latestVersion(app.id) }}
+          </button>
+          <button
+            v-else
             type="button"
             class="cp-btn cp-btn-primary"
             :disabled="busyCompanionId === app.id"
@@ -268,6 +337,14 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
             Open page
           </button>
         </div>
+
+        <p
+          v-if="updateNote(app.id) && !updateAvailable(app.id)"
+          class="cp-action-line cp-action-line-muted"
+          :data-testid="`companion-update-note-${app.id}`"
+        >
+          {{ updateNote(app.id) }}
+        </p>
 
         <p
           v-if="lastAction[app.id]"
@@ -395,6 +472,14 @@ defineExpose({ loadCompanions, detect, install, openOfficialPage });
 .cp-badge-elev {
   border-color: var(--ts-warning, #c80);
   color: var(--ts-warning, #c80);
+}
+.cp-badge-update {
+  border-color: var(--ts-accent, #5b8def);
+  color: var(--ts-accent, #5b8def);
+  background: color-mix(in srgb, var(--ts-accent, #5b8def) 12%, transparent);
+}
+.cp-action-line-muted {
+  font-style: italic;
 }
 .cp-badge-ref {
   border-color: var(--ts-text-muted);

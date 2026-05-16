@@ -3,6 +3,17 @@
 .mv-header h2 { margin: 0; font-size: 1.25rem; white-space: nowrap; }
 .mv-header-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
 .mv-feedback { padding: 0.5rem 1rem; background: var(--ts-success-bg); color: var(--ts-success); border-radius: 6px; margin: 0; }
+.mv-feedback--error { background: var(--ts-danger-bg, rgba(229, 57, 53, 0.12)); color: var(--ts-danger, #e53935); }
+.mv-desc-inline { color: var(--ts-text-muted); font-weight: 400; font-size: 0.85em; }
+
+/* ── Source picker (BRAIN-REPO-RAG-1a) ── */
+.mv-source-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; padding: 0.4rem 0.6rem; background: var(--ts-bg-surface); border: 1px solid var(--ts-border); border-radius: 8px; }
+.mv-source-pill { appearance: none; cursor: pointer; padding: 0.3rem 0.7rem; border-radius: 999px; border: 1px solid var(--ts-border); background: transparent; color: var(--ts-text-primary); font-size: 0.85rem; font-weight: 500; transition: background 0.12s ease, border-color 0.12s ease, color 0.12s ease; }
+.mv-source-pill:hover { background: var(--ts-bg-elevated, rgba(255,255,255,0.04)); }
+.mv-source-pill.is-active { background: var(--ts-accent-blue, #4e8df5); border-color: var(--ts-accent-blue, #4e8df5); color: var(--ts-text-on-accent, #fff); }
+.mv-source-pill--add { border-style: dashed; color: var(--ts-text-muted); }
+.mv-source-pill--add:hover { color: var(--ts-text-primary); }
+.mv-source-hint { font-size: 0.78rem; color: var(--ts-text-muted); margin-left: auto; padding: 0 0.3rem; }
 
 /* ── Stats dashboard ── */
 .mv-stats { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -108,8 +119,10 @@
 .mv-decay-bar { width: 40px; height: 6px; background: var(--ts-bg-base); border-radius: 3px; overflow: hidden; margin-left: auto; }
 .mv-decay-fill { display: block; height: 100%; background: var(--ts-success); border-radius: 3px; transition: width 0.3s ease; }
 
-.mv-session-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: visible; min-height: 0; }
+.mv-session-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding: 1rem; }
 .mv-session-hint { color: var(--ts-text-muted); font-size: 0.85rem; margin: 0; }
+/* Numbered HUD kicker above session/audit panel hints (THEME-COCKPIT-1d). */
+.mv-panel-kicker { margin: 0 0 -0.25rem; }
 .mv-session-list { list-style: none; margin: 0; padding: 0; flex: 0 0 auto; min-height: 0; overflow-y: visible; display: flex; flex-direction: column; gap: 0.4rem; }
 .mv-session-msg { display: flex; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--ts-bg-surface); font-size: 0.85rem; color: var(--ts-text-primary); }
 .mv-session-msg.user { background: rgba(96, 165, 250, 0.10); }
@@ -130,7 +143,7 @@
 .btn-danger { padding: 0.35rem 0.75rem; background: var(--ts-error-bg); color: var(--ts-error); border: none; border-radius: 6px; cursor: pointer; }
 
 /* ── Audit tab (chunk 33B.4) ── */
-.mv-audit-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; overflow: visible; min-height: 0; }
+.mv-audit-panel { flex: 1; display: flex; flex-direction: column; gap: 0.5rem; min-height: 0; padding: 1rem; }
 .mv-audit-hint { color: var(--ts-text-muted); font-size: 0.85rem; margin: 0; }
 .mv-audit-toolbar { display: flex; gap: 0.5rem; align-items: center; }
 .mv-audit-search { flex: 1; background: var(--ts-bg-input); border: 1px solid var(--ts-border-medium); border-radius: 6px; padding: 0.4rem 0.75rem; color: var(--ts-text-primary); outline: none; }

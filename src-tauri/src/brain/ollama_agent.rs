@@ -12,6 +12,7 @@ use tokio::sync::Mutex;
 
 use crate::agent::stub_agent::Sentiment;
 use crate::agent::AgentProvider;
+use crate::brain::embedding_registry;
 use crate::memory::late_chunking::CharSpan;
 
 pub const OLLAMA_BASE_URL: &str = "http://127.0.0.1:11434";
@@ -86,10 +87,12 @@ fn spawn_chat_model_rewarm(reason: &'static str) {
         };
         // 1-token streamed chat forces Ollama to load the weights and warm
         // the same streaming endpoint used by the first real user reply.
+        // num_ctx MUST match the real chat path (streaming.rs ~line 1217)
+        // — a mismatch forces Ollama to reload the model on first chat.
         let body = serde_json::json!({
             "model": model,
             "messages": [{ "role": "user", "content": "Hi" }],
-            "options": { "num_predict": 1, "num_ctx": 1024, "num_batch": 512 },
+            "options": { "num_predict": 1, "num_ctx": 2048, "num_batch": 512 },
             "stream": true,
             "think": false,
             "keep_alive": "30m",
@@ -727,9 +730,26 @@ impl OllamaAgent {
             Err(_) => return None,
         };
 
+        // Clamp input to the model's safe character budget so Ollama
+        // never returns HTTP 400 `the input length exceeds the context
+        // length`. The catalogue's `max_tokens` × 2 chars/token is
+        // conservative for code/JSON and CJK input. When the model is
+        // unknown to the catalogue, we send the text untouched and let
+        // the server be the authority.
+        let (input_for_embed, truncated) =
+            embedding_registry::truncate_for_model(&embed_model, text);
+        if truncated {
+            eprintln!(
+                "[brain/embed] input truncated to model budget \
+                 (model='{embed_model}', original_chars={}, kept_chars={}).",
+                text.chars().count(),
+                input_for_embed.chars().count()
+            );
+        }
+
         let body = serde_json::json!({
             "model": embed_model,
-            "input": text,
+            "input": input_for_embed,
             // Unload the embed model immediately after this single embed so
             // the chat model can stay resident in VRAM. Without this, the
             // embed model stays loaded for 5 min by default and the next
@@ -824,6 +844,10 @@ impl OllamaAgent {
         // Subsequent failures inside this same call are silent — the queue
         // already prints the aggregate "0 embedded, N failed" line.
         let mut first_failure_logged = false;
+        // Same idea for truncation: log the first truncated input per call
+        // (with original/kept char counts) and stay silent for the rest so
+        // a 500-chunk ingest doesn't flood stderr.
+        let mut first_truncation_logged = false;
 
         for chunk in texts.chunks(batch_size) {
             // Filter out empty texts but track indices for reassembly.
@@ -839,9 +863,30 @@ impl OllamaAgent {
                 continue;
             }
 
+            // Apply the same per-model character budget the single-shot
+            // path uses, so a batch never trips the model's context
+            // ceiling on one offending entry and fails the whole call.
+            let trimmed_inputs: Vec<&str> = batch_texts
+                .iter()
+                .map(|t| {
+                    let (slice, was_truncated) =
+                        embedding_registry::truncate_for_model(&embed_model, t);
+                    if was_truncated && !first_truncation_logged {
+                        eprintln!(
+                            "[brain/embed] batch input truncated to model budget \
+                             (model='{embed_model}', original_chars={}, kept_chars={}).",
+                            t.chars().count(),
+                            slice.chars().count()
+                        );
+                        first_truncation_logged = true;
+                    }
+                    slice
+                })
+                .collect();
+
             let body = serde_json::json!({
                 "model": embed_model,
-                "input": batch_texts,
+                "input": trimmed_inputs,
                 // Unload the embed model immediately after the batch so the
                 // chat model isn’t evicted from VRAM by lingering keep-alive.
                 "keep_alive": 0,
@@ -1123,7 +1168,12 @@ struct EmbedModelChoice {
 }
 
 const EMBED_MODEL_TTL: Duration = Duration::from_secs(60);
-const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
+/// Default Ollama embedding model. Promoted from `nomic-embed-text` to
+/// `mxbai-embed-large` by BENCH-LCM-5 (2026-05-12, +3.7pp R@10 overall
+/// on LoCoMo). 1024d, sentence-level, max 512 tokens. Users can switch
+/// back via the embedding-model picker; the fallback chain still
+/// includes `nomic-embed-text` as a lightweight 768d alternative.
+const PREFERRED_EMBED_MODEL: &str = "mxbai-embed-large";
 
 /// Ordered fallback chain of dedicated embedding models, tried in this order
 /// when [`PREFERRED_EMBED_MODEL`] is unavailable. Per
@@ -1131,12 +1181,12 @@ const PREFERRED_EMBED_MODEL: &str = "nomic-embed-text";
 ///
 /// Each entry must be the **bare model name** as published in the Ollama
 /// library (no `:tag` suffix) — `model_exists` matches by name prefix.
-/// Order is from most-recommended (768d, fast, well-tested) → larger /
-/// alternative (1024d, slower) → tiny last-resort.
+/// Order is from preferred-similar (1024d alternatives) → lightweight
+/// long-context fallback (768d, 8192 tokens) → tiny last-resort.
 const EMBED_MODEL_FALLBACKS: &[&str] = &[
-    "mxbai-embed-large",      // 1024d, strong general-purpose
     "snowflake-arctic-embed", // 1024d / 768d depending on tag
     "bge-m3",                 // 1024d, multilingual
+    "nomic-embed-text",       // 768d, fast, 8192 tokens long-context
     "all-minilm",             // 384d, tiny last-resort
 ];
 
@@ -1146,7 +1196,7 @@ const EMBED_MODEL_FALLBACKS: &[&str] = &[
 const LATE_CHUNK_MODEL_FALLBACKS: &[&str] = &[
     "jina-embeddings-v3",
     "bge-m3",
-    "mxbai-embed-large",
+    "nomic-embed-text",
     PREFERRED_EMBED_MODEL,
 ];
 
@@ -1165,11 +1215,12 @@ fn unsupported_models() -> &'static Mutex<HashSet<String>> {
 ///
 /// Resolution chain (Chunk 16.9b — embedding-model fallback):
 ///
-/// 1. **`nomic-embed-text`** — preferred (768d, fast, well-tested).
-/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order — `mxbai`,
-///    `snowflake-arctic`, `bge-m3`, `all-minilm`. The first one present
-///    in `/api/tags` wins. Models already in the unsupported set are
-///    skipped.
+/// 1. **`mxbai-embed-large`** — preferred (1024d, sentence-level,
+///    promoted by BENCH-LCM-5 2026-05-12).
+/// 2. **Fallback chain** in [`EMBED_MODEL_FALLBACKS`] order —
+///    `snowflake-arctic`, `bge-m3`, `nomic-embed-text`, `all-minilm`.
+///    The first one present in `/api/tags` wins. Models already in the
+///    unsupported set are skipped.
 /// 3. **`model_hint`** — the active chat model (probably non-embedding;
 ///    `embed_text` will mark it unsupported on the first call).
 ///

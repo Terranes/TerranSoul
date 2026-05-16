@@ -1,5 +1,14 @@
 <template>
-  <div class="skill-tree-view">
+  <div
+    class="bp-shell skill-tree-view"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <AppBreadcrumb
+      here="QUESTS"
+      @navigate="emit('navigate', $event)"
+    />
+
     <!-- ── Progress Header ── -->
     <header class="st-header">
       <div class="st-title-row">
@@ -231,6 +240,7 @@ import { computed } from 'vue';
 import { useSkillTreeStore, type SkillTier, type SkillNode } from '../stores/skill-tree';
 import QuestDialog from '../components/QuestDialog.vue';
 import BrainStatSheet from '../components/BrainStatSheet.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
 
 const emit = defineEmits<{
   navigate: [target: string];
@@ -303,8 +313,6 @@ function formatActivation(ts: number): string {
 .skill-tree-view {
   width: 100%;
   padding: var(--ts-space-lg);
-  max-width: 800px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: var(--ts-space-lg);

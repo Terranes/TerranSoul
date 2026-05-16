@@ -1,0 +1,70 @@
+# TerranSoul — Cargo workspace root (WORKSPACE-0)
+#
+# Modular-monolithic foundation. Phase 0 groups the existing `src-tauri`
+# binary crate together with `crates/hive-relay` into a single workspace
+# with **zero behavior change** — no source files moved, no APIs changed,
+# no rebuild forced. The artifacts target dir is pinned to
+# `src-tauri/target/` via `.cargo/config.toml` so all existing tooling
+# (CodeQL excludes, the persistent MCP build at `target-mcp/`, IDE caches,
+# CI workflows) continues to work unchanged.
+#
+# Future phases (WORKSPACE-1, WORKSPACE-2, …) will progressively extract
+# leaf modules from `src-tauri/src/` (identity, resilience, routing,
+# memory, brain, persona, link, ai_integrations, …) into their own member
+# crates so editing one no longer recompiles the whole tree. Each phase
+# will ship green (cargo build + tests pass) before the next begins.
+#
+# See `rules/completion-log.md` for the WORKSPACE-0 entry that documents
+# the migration choices in full detail.
+
+[workspace]
+resolver = "2"
+members = [
+    "src-tauri",
+    "crates/hive-relay",
+]
+
+# ── Shared dependency declarations ───────────────────────────────────────
+# Intentionally empty in Phase 0. WORKSPACE-1+ will populate as leaf crates
+# are extracted and shared dependencies emerge. Members that don't opt into
+# `{ workspace = true }` keep their existing pinned versions untouched, so
+# adding entries here later is always non-breaking for current members.
+[workspace.dependencies]
+
+# ── Profile tables ───────────────────────────────────────────────────────
+# Cargo only honours `[profile.*]` blocks in the **workspace root** manifest.
+# These were previously in `src-tauri/Cargo.toml`; moving them here keeps
+# the same compile-time behaviour now that `src-tauri` is a workspace member.
+
+[profile.dev.package.scrypt]
+opt-level = 3
+
+# Dev-build speedups (verified safe, no linker change required).
+# `debug = "line-tables-only"` keeps backtraces (file:line) but drops the
+# heavy DWARF type/variable tables — roughly -70 % debuginfo size, which
+# directly translates to smaller PDBs and faster relinks. The full
+# `debug = true` setting is rarely useful for Tauri dev because most
+# debugging happens via tracing/println or the WebView devtools.
+#
+# `split-debuginfo = "unpacked"` writes one PDB per rlib instead of a
+# single monolithic PDB. The linker can then skip already-emitted PDBs on
+# incremental builds, which is the single biggest contributor to the
+# 30–60 s "linking terransoul.exe" pause at the tail of `tauri dev`.
+#
+# Build-override skips debuginfo entirely on `build.rs` scripts and proc
+# macros — they don't need backtraces and recompile rarely.
+[profile.dev]
+debug = "line-tables-only"
+split-debuginfo = "unpacked"
+incremental = true
+
+[profile.dev.build-override]
+debug = false
+opt-level = 0
+codegen-units = 256
+
+# Heavy deps that never need debuginfo locally: shave more off the link
+# step by stripping debug from third-party crates without touching the
+# workspace's own debug info. opt-level=0 keeps build time low.
+[profile.dev.package."*"]
+debug = false

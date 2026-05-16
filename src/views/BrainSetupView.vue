@@ -1,5 +1,14 @@
 <template>
-  <div class="brain-setup">
+  <div
+    class="bp-shell brain-setup"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────────────── -->
+    <AppBreadcrumb
+      here="BRAIN SETUP"
+      @navigate="emit('navigate', $event)"
+    />
+
     <!-- Step indicator -->
     <div class="bs-steps">
       <div
@@ -13,11 +22,20 @@
     </div>
 
     <!-- ── Step 0: Choose brain tier ── -->
-    <div
+    <section
       v-if="step === 0"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>🧠 Choose how to power your Brain</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Brain Tier
+          </div>
+          <h2 class="bp-module-title">
+            🧠 Choose how to power your Brain
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         TerranSoul needs an AI brain for conversations. Choose how you'd like to connect it.
       </p>
@@ -55,20 +73,29 @@
         </div>
       </div>
       <button
-        class="btn-primary"
+        class="bp-btn bp-btn--primary"
         :disabled="!selectedTier"
         @click="goToTierStep"
       >
         Next →
       </button>
-    </div>
+    </section>
 
     <!-- ── Step 1A: Free API setup (auto-select provider) ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedTier === 'free'"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>☁️ Free Cloud API</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Configure
+          </div>
+          <h2 class="bp-module-title">
+            ☁️ Free Cloud API
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         Select a free LLM provider. These use OpenAI-compatible APIs with generous free tiers.
       </p>
@@ -111,7 +138,7 @@
       </div>
       <a
         v-if="selectedFreeProviderAuthUrl"
-        class="btn-primary bs-auth-link"
+        class="bp-btn bp-btn--primary bs-auth-link"
         :href="selectedFreeProviderAuthUrl"
         target="_blank"
         rel="noopener"
@@ -120,7 +147,7 @@
       </a>
       <button
         type="button"
-        class="btn-secondary bs-manual-toggle"
+        class="bp-btn bp-btn--ghost bs-manual-toggle"
         :aria-expanded="manualFreeKeyOpen"
         @click="manualFreeKeyOpen = !manualFreeKeyOpen"
       >
@@ -140,27 +167,36 @@
       </div>
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!selectedProvider || (selectedFreeProviderRequiresKey && !freeApiKeyInput.trim())"
           @click="activateFreeApi"
         >
           Connect provider →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 1B: Paid API setup ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedTier === 'paid'"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>💳 Paid Cloud API</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Configure
+          </div>
+          <h2 class="bp-module-title">
+            💳 Paid Cloud API
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         Pick a familiar provider, then authorize it with your API key.
       </p>
@@ -178,7 +214,7 @@
       </div>
       <a
         v-if="selectedPaidProvider.authUrl"
-        class="btn-primary bs-auth-link"
+        class="bp-btn bp-btn--primary bs-auth-link"
         :href="selectedPaidProvider.authUrl"
         target="_blank"
         rel="noopener"
@@ -187,7 +223,7 @@
       </a>
       <button
         type="button"
-        class="btn-secondary bs-manual-toggle"
+        class="bp-btn bp-btn--ghost bs-manual-toggle"
         :aria-expanded="manualPaidKeyOpen"
         @click="manualPaidKeyOpen = !manualPaidKeyOpen"
       >
@@ -228,27 +264,36 @@
       </div>
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!paidApiKey || !paidModel"
           @click="activatePaidApi"
         >
           Connect {{ selectedPaidProvider?.shortLabel ?? 'Provider' }} →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 1C: Local LLM setup — Provider selection ── -->
-    <div
+    <section
       v-else-if="step === 1 && selectedTier === 'local'"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>🖥 Choose Local Provider</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Provider
+          </div>
+          <h2 class="bp-module-title">
+            🖥 Choose Local Provider
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         Which local runtime do you want to use? Each provides an OpenAI-compatible server.
       </p>
@@ -284,27 +329,36 @@
       </div>
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 0"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!localRuntime"
           @click="localRuntime === 'lm_studio' ? (step = 10) : (step = 2)"
         >
           Next →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 1C-2: Local Ollama setup — Hardware analysis ── -->
-    <div
+    <section
       v-else-if="step === 2 && selectedTier === 'local'"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>🖥 Local LLM Setup — Ollama</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">03</span> Hardware
+          </div>
+          <h2 class="bp-module-title">
+            🖥 Local LLM Setup — Ollama
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         We'll analyse your hardware and recommend the best model for your machine.
       </p>
@@ -333,27 +387,36 @@
       </p>
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 1"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!brain.systemInfo"
           @click="step = 3"
         >
           Next →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 3: Choose local model ── -->
-    <div
+    <section
       v-else-if="step === 3"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>Choose your Brain</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">04</span> Model
+          </div>
+          <h2 class="bp-module-title">
+            Choose your Brain
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         Based on your {{ formatRam(brain.systemInfo?.total_ram_mb ?? 0) }} of RAM, we recommend:
       </p>
@@ -382,20 +445,20 @@
       </ul>
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 2"
         >
           ← Back
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           :disabled="!selectedModel"
           @click="step = 4"
         >
           Next →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 4: Check / install Ollama ── -->
     <BrainSetupOllamaStep
@@ -405,11 +468,20 @@
     />
 
     <!-- ── Step 5: Download model ── -->
-    <div
+    <section
       v-else-if="step === 5"
-      class="bs-card"
+      class="bp-module bs-card"
     >
-      <h2>Download {{ selectedModel }}</h2>
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">06</span> Download
+          </div>
+          <h2 class="bp-module-title">
+            Download {{ selectedModel }}
+          </h2>
+        </div>
+      </header>
       <p class="bs-desc">
         This will download the model via Ollama. It may take several minutes depending on
         your connection speed.
@@ -437,27 +509,27 @@
 
       <div class="bs-nav">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost"
           @click="step = 4"
         >
           ← Back
         </button>
         <button
           v-if="!modelAlreadyInstalled && !brain.isPulling"
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           @click="doPull"
         >
           ⬇ Download model
         </button>
         <button
           v-if="modelAlreadyInstalled || pullDone"
-          class="btn-primary"
+          class="bp-btn bp-btn--primary"
           @click="finishLocal"
         >
           Next →
         </button>
       </div>
-    </div>
+    </section>
 
     <!-- ── Step 10: LM Studio configuration ── -->
     <BrainSetupLmStudioStep
@@ -467,14 +539,23 @@
     />
 
     <!-- ── Step 6 (or done): Brain connected ── -->
-    <div
+    <section
       v-else-if="step === 6 || step === 99"
-      class="bs-card bs-done"
+      class="bp-module bs-card bs-done"
     >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">✓</span> Complete
+          </div>
+          <h2 class="bp-module-title">
+            Brain connected!
+          </h2>
+        </div>
+      </header>
       <div class="bs-done-icon">
         🎉
       </div>
-      <h2>Brain connected!</h2>
       <p v-if="selectedTier === 'free'">
         Using <strong>{{ selectedProviderName }}</strong> (free cloud API).
         TerranSoul is ready to chat — no setup required!
@@ -488,12 +569,12 @@
         TerranSoul will use it for all future conversations, memory extraction, and smart recall.
       </p>
       <button
-        class="btn-primary"
+        class="bp-btn bp-btn--primary"
         @click="emit('done')"
       >
         Start chatting →
       </button>
-    </div>
+    </section>
   </div>
 </template>
 
@@ -508,8 +589,12 @@ import {
 } from '../stores/brain';
 import BrainSetupOllamaStep from './BrainSetupOllamaStep.vue';
 import BrainSetupLmStudioStep from './BrainSetupLmStudioStep.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
 
-const emit = defineEmits<{ (e: 'done'): void }>();
+const emit = defineEmits<{
+  done: [];
+  navigate: [target: string];
+}>();
 
 const brain = useBrainStore();
 const step = ref(0);

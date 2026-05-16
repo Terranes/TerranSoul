@@ -73,6 +73,11 @@ pub struct TaskProgressEvent {
     pub processed_items: usize,
     pub total_items: usize,
     pub error: Option<String>,
+    /// BRAIN-REPO-RAG-2b: optional human-readable log line appended to the
+    /// frontend's per-task debug log ring buffer. `None` for legacy events
+    /// (skipped during serialization to keep payloads small).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log_line: Option<String>,
 }
 
 impl From<&TaskInfo> for TaskProgressEvent {
@@ -86,6 +91,7 @@ impl From<&TaskInfo> for TaskProgressEvent {
             processed_items: t.processed_items,
             total_items: t.total_items,
             error: t.error.clone(),
+            log_line: None,
         }
     }
 }

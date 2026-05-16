@@ -1,217 +1,275 @@
 <template>
-  <div
-    class="audio-controls-panel-overlay"
-    @click.stop.self="$emit('close')"
+  <PanelShell
+    variant="overlay-fixed"
+    title="🎛️ Audio Controls"
+    test-id="audio-controls-panel"
+    card-class="audio-controls-panel__card"
+    :on-close="handleClose"
+    @close="handleClose"
   >
-    <div
-      class="audio-controls-panel"
-      @click.stop
+    <!-- ── System Volume ─────────────────────────────────────────────── -->
+    <section
+      class="ac-section"
+      data-testid="audio-system-section"
     >
-      <div class="panel-header">
-        <h3>🎛️ Audio Controls</h3>
+      <header class="ac-section-head">
+        <h4>🔊 System Volume</h4>
         <button
-          class="close-btn"
-          aria-label="Close"
-          @click="$emit('close')"
+          class="ac-icon-btn"
+          :class="{ 'ac-icon-btn--muted': systemMuted }"
+          :title="systemMuted ? 'Unmute' : 'Mute'"
+          type="button"
+          data-testid="audio-system-mute"
+          @click="toggleSystemMute"
         >
-          &times;
+          {{ systemMuted ? '🔇' : '🔊' }}
         </button>
+      </header>
+      <div class="ac-slider-row">
+        <span class="ac-slider-icon">🔈</span>
+        <input
+          type="range"
+          class="ac-slider"
+          min="0"
+          max="100"
+          :value="Math.round(systemVolume * 100)"
+          :disabled="systemMuted"
+          aria-label="System volume"
+          @input="handleSystemVolumeChange"
+        >
+        <span class="ac-slider-icon">🔊</span>
+        <span class="ac-slider-value">{{ Math.round(systemVolume * 100) }}%</span>
       </div>
+    </section>
 
-      <div class="panel-body">
-        <!-- System Volume -->
-        <div class="control-section">
-          <div class="section-header">
-            <h4>🔊 System Volume</h4>
-            <button 
-              class="mute-btn" 
-              :class="{ muted: systemMuted }"
-              :title="systemMuted ? 'Unmute' : 'Mute'"
-              @click="toggleSystemMute"
-            >
-              {{ systemMuted ? '🔇' : '🔊' }}
-            </button>
-          </div>
-          <div class="volume-control">
-            <span class="volume-icon">🔈</span>
-            <input
-              type="range"
-              class="volume-slider"
-              min="0"
-              max="100"
-              :value="Math.round(systemVolume * 100)"
-              :disabled="systemMuted"
-              @input="handleSystemVolumeChange"
-            >
-            <span class="volume-icon">🔊</span>
-            <span class="volume-display">{{ Math.round(systemVolume * 100) }}%</span>
-          </div>
-        </div>
-
-        <!-- Background Music -->
-        <div class="control-section">
-          <div class="section-header">
-            <h4>🎵 Background Music</h4>
-            <button 
-              class="mute-btn" 
-              :class="{ muted: bgmMuted }"
-              :title="bgmMuted ? 'Unmute BGM' : 'Mute BGM'"
-              @click="toggleBgmMute"
-            >
-              {{ bgmMuted ? '🔇' : '🎵' }}
-            </button>
-          </div>
-          <div class="volume-control">
-            <span class="volume-icon">🔈</span>
-            <input
-              type="range"
-              class="volume-slider"
-              min="0"
-              max="100"
-              :value="Math.round(bgmVolume * 100)"
-              :disabled="bgmMuted"
-              @input="handleBgmVolumeChange"
-            >
-            <span class="volume-icon">🔊</span>
-            <span class="volume-display">{{ Math.round(bgmVolume * 100) }}%</span>
-          </div>
-          <div class="bgm-track-selector">
-            <label for="bgm-track-select">Track:</label>
-            <select
-              id="bgm-track-select"
-              class="track-select"
-              :value="bgmTrackId"
-              @change="handleTrackChange"
-            >
-              <option
-                v-for="track in bgmTracks"
-                :key="track.id"
-                :value="track.id"
-              >
-                {{ track.name }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Microphone Input -->
-        <div class="control-section">
-          <div class="section-header">
-            <h4>🎤 Microphone</h4>
-            <button 
-              class="mute-btn" 
-              :class="{ muted: micMuted }"
-              :title="micMuted ? 'Unmute Microphone' : 'Mute Microphone'"
-              @click="toggleMicMute"
-            >
-              {{ micMuted ? '🎤' : '🎙️' }}
-            </button>
-          </div>
-          <div class="mic-device-selector">
-            <label for="mic-device-select">Device:</label>
-            <select
-              id="mic-device-select"
-              class="device-select"
-              :value="selectedMicDevice"
-              :disabled="!micDevices.length"
-              @change="handleMicDeviceChange"
-            >
-              <option value="">
-                Default System Microphone
-              </option>
-              <option
-                v-for="device in micDevices"
-                :key="device.deviceId"
-                :value="device.deviceId"
-              >
-                {{ device.label || `Microphone ${device.deviceId.slice(0, 8)}...` }}
-              </option>
-            </select>
-          </div>
-          <div class="mic-level-display">
-            <span class="mic-level-label">Level:</span>
-            <div class="mic-level-bar">
-              <div 
-                class="mic-level-fill" 
-                :style="{ width: `${micLevel * 100}%` }"
-              />
-            </div>
-            <span class="mic-level-text">{{ Math.round(micLevel * 100) }}%</span>
-          </div>
-        </div>
-
-        <!-- Speaker Output -->
-        <div class="control-section">
-          <div class="section-header">
-            <h4>🔈 Speaker Output</h4>
-          </div>
-          <div class="speaker-device-selector">
-            <label for="speaker-device-select">Device:</label>
-            <select
-              id="speaker-device-select"
-              class="device-select"
-              :value="selectedSpeakerDevice"
-              :disabled="!speakerDevices.length"
-              @change="handleSpeakerDeviceChange"
-            >
-              <option value="">
-                Default System Speaker
-              </option>
-              <option
-                v-for="device in speakerDevices"
-                :key="device.deviceId"
-                :value="device.deviceId"
-              >
-                {{ device.label || `Speaker ${device.deviceId.slice(0, 8)}...` }}
-              </option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Audio Test -->
-        <div class="control-section">
-          <div class="section-header">
-            <h4>🧪 Audio Test</h4>
-          </div>
-          <div class="test-controls">
-            <button
-              class="test-btn"
-              :disabled="testingAudio"
-              @click="testSpeakers"
-            >
-              {{ testingAudio ? '⏸️ Testing...' : '▶️ Test Speakers' }}
-            </button>
-            <button 
-              class="test-btn" 
-              :disabled="testingMic || !selectedMicDevice" 
-              @click="testMicrophone"
-            >
-              {{ testingMic ? '⏸️ Recording...' : '🎤 Test Microphone' }}
-            </button>
-          </div>
-        </div>
+    <!-- ── Background Music ─────────────────────────────────────────── -->
+    <section
+      class="ac-section"
+      data-testid="audio-bgm-section"
+    >
+      <header class="ac-section-head">
+        <h4>🎵 Background Music</h4>
+        <button
+          class="ac-icon-btn"
+          :class="{ 'ac-icon-btn--muted': bgmMuted }"
+          :title="bgmMuted ? 'Unmute BGM' : 'Mute BGM'"
+          type="button"
+          data-testid="audio-bgm-mute"
+          @click="toggleBgmMute"
+        >
+          {{ bgmMuted ? '🔇' : '🎵' }}
+        </button>
+      </header>
+      <div class="ac-slider-row">
+        <span class="ac-slider-icon">🔈</span>
+        <input
+          type="range"
+          class="ac-slider"
+          min="0"
+          max="100"
+          :value="Math.round(bgmVolume * 100)"
+          :disabled="bgmMuted"
+          aria-label="Background music volume"
+          @input="handleBgmVolumeChange"
+        >
+        <span class="ac-slider-icon">🔊</span>
+        <span class="ac-slider-value">{{ Math.round(bgmVolume * 100) }}%</span>
       </div>
-    </div>
-  </div>
+      <label
+        for="ac-bgm-track"
+        class="ac-field"
+      >
+        <span class="ac-field-label">Track</span>
+        <select
+          id="ac-bgm-track"
+          class="ac-select"
+          :value="bgmTrackId"
+          data-testid="audio-bgm-track"
+          @change="handleTrackChange"
+        >
+          <option
+            v-for="track in bgmTracks"
+            :key="track.id"
+            :value="track.id"
+          >
+            {{ track.name }}
+          </option>
+        </select>
+      </label>
+    </section>
+
+    <!-- ── Microphone Input ─────────────────────────────────────────── -->
+    <section
+      class="ac-section"
+      data-testid="audio-mic-section"
+    >
+      <header class="ac-section-head">
+        <h4>🎤 Microphone</h4>
+        <button
+          class="ac-icon-btn"
+          :class="{ 'ac-icon-btn--muted': micMuted }"
+          :title="micMuted ? 'Resume monitoring' : 'Pause monitoring'"
+          type="button"
+          data-testid="audio-mic-mute"
+          @click="toggleMicMute"
+        >
+          {{ micMuted ? '🎤' : '🎙️' }}
+        </button>
+      </header>
+      <label
+        for="ac-mic-device"
+        class="ac-field"
+      >
+        <span class="ac-field-label">Device</span>
+        <select
+          id="ac-mic-device"
+          class="ac-select"
+          :value="selectedMicDevice"
+          :disabled="!micDevices.length"
+          data-testid="audio-mic-device"
+          @change="handleMicDeviceChange"
+        >
+          <option value="">
+            Default System Microphone
+          </option>
+          <option
+            v-for="device in micDevices"
+            :key="device.deviceId"
+            :value="device.deviceId"
+          >
+            {{ device.label || `Microphone ${device.deviceId.slice(0, 8)}…` }}
+          </option>
+        </select>
+      </label>
+      <div class="ac-meter-row">
+        <span class="ac-meter-label">Level</span>
+        <div
+          class="ac-meter-track"
+          role="meter"
+          :aria-valuenow="Math.round(micLevel * 100)"
+          aria-valuemin="0"
+          aria-valuemax="100"
+        >
+          <div
+            class="ac-meter-fill"
+            :style="{ width: `${micLevel * 100}%` }"
+          />
+        </div>
+        <span class="ac-meter-value">{{ Math.round(micLevel * 100) }}%</span>
+      </div>
+      <button
+        class="ac-test-btn"
+        :disabled="testingMic"
+        type="button"
+        data-testid="audio-mic-test"
+        @click="testMicrophone"
+      >
+        {{ testingMic ? '⏺ Recording…' : '🎤 Test microphone (3s record + playback)' }}
+      </button>
+    </section>
+
+    <!-- ── Speaker Output ───────────────────────────────────────────── -->
+    <section
+      class="ac-section"
+      data-testid="audio-speaker-section"
+    >
+      <header class="ac-section-head">
+        <h4>🔈 Speaker Output</h4>
+      </header>
+      <label
+        for="ac-speaker-device"
+        class="ac-field"
+      >
+        <span class="ac-field-label">Device</span>
+        <select
+          id="ac-speaker-device"
+          class="ac-select"
+          :value="selectedSpeakerDevice"
+          :disabled="!speakerDevices.length"
+          data-testid="audio-speaker-device"
+          @change="handleSpeakerDeviceChange"
+        >
+          <option value="">
+            Default System Speaker
+          </option>
+          <option
+            v-for="device in speakerDevices"
+            :key="device.deviceId"
+            :value="device.deviceId"
+          >
+            {{ device.label || `Speaker ${device.deviceId.slice(0, 8)}…` }}
+          </option>
+        </select>
+      </label>
+      <p
+        v-if="!supportsSinkId"
+        class="ac-hint"
+      >
+        ⚠️ Your browser cannot route to a specific output device. The system
+        default will be used.
+      </p>
+      <button
+        class="ac-test-btn"
+        :disabled="testingSpeakers"
+        type="button"
+        data-testid="audio-speaker-test"
+        @click="testSpeakers"
+      >
+        {{ testingSpeakers ? '▶️ Playing…' : '▶️ Test speakers (440 Hz tone)' }}
+      </button>
+    </section>
+
+    <!-- ── Voice (TTS + ASR) link-out ───────────────────────────────── -->
+    <section
+      class="ac-section ac-section--link"
+      data-testid="audio-voice-link-section"
+    >
+      <header class="ac-section-head">
+        <h4>🗣️ Voice (TTS + ASR)</h4>
+      </header>
+      <p class="ac-hint">
+        Voice provider selection, per-provider 🔊 Test buttons, and API keys
+        live in the dedicated Voice Setup view.
+      </p>
+      <button
+        class="ac-link-btn"
+        type="button"
+        data-testid="audio-open-voice-setup"
+        @click="openVoiceSetup"
+      >
+        Configure voice providers →
+      </button>
+    </section>
+  </PanelShell>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue';
+import { ref, onMounted, onUnmounted, computed } from 'vue';
 import { BGM_TRACKS } from '../composables/useBgmPlayer';
+import PanelShell from './ui/PanelShell.vue';
 
-// Self-contained dialog: holds its own audio-state refs and emits updates
-// to the parent (CharacterViewport). Initial values are reasonable defaults;
-// the parent's reactive store is the single source of truth and applies the
-// emitted updates. No props are needed.
+/*
+ * AudioControlsPanel — system-level audio controls (volume, BGM, mic/speaker
+ * device pickers + test buttons). Voice provider selection (TTS/ASR) lives
+ * in `src/views/VoiceSetupView.vue`; this panel surfaces a link-out button
+ * via the `navigate` emit so the user has one canonical place for provider
+ * config.
+ *
+ * Migrated to `PanelShell` chrome (UI-AUDIO-PANEL-1) so it matches every
+ * other overlay panel (SystemInfoPanel, ModelPanel) in close-button
+ * placement, backdrop blur, and keyboard semantics.
+ */
+
 const emit = defineEmits<{
   close: [];
+  navigate: [target: string];
   'update:systemVolume': [volume: number];
   'update:bgmVolume': [volume: number];
   'update:bgmTrackId': [trackId: string];
   'update:bgmEnabled': [enabled: boolean];
 }>();
 
-// Audio state
+// ── Audio state (local refs; parent applies updates via emitted events) ──
 const systemVolume = ref(1.0);
 const bgmVolume = ref(0.15);
 const bgmTrackId = ref('prelude');
@@ -219,58 +277,61 @@ const systemMuted = ref(false);
 const bgmMuted = ref(false);
 const micMuted = ref(false);
 const micLevel = ref(0);
-const testingAudio = ref(false);
+const testingSpeakers = ref(false);
 const testingMic = ref(false);
 
-// Device lists
 const micDevices = ref<MediaDeviceInfo[]>([]);
 const speakerDevices = ref<MediaDeviceInfo[]>([]);
 const selectedMicDevice = ref('');
 const selectedSpeakerDevice = ref('');
 
-// BGM tracks
 const bgmTracks = BGM_TRACKS;
 
-// Audio monitoring
+const supportsSinkId = computed(() => {
+  if (typeof HTMLAudioElement === 'undefined') return false;
+  return 'setSinkId' in HTMLAudioElement.prototype;
+});
+
+// ── Audio monitoring plumbing ──────────────────────────────────────────
 let audioContext: AudioContext | null = null;
 let micStream: MediaStream | null = null;
 let micAnalyser: AnalyserNode | null = null;
 let micMonitoringInterval: number | null = null;
 
 async function loadAudioDevices() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+    return;
+  }
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
-    micDevices.value = devices.filter(device => device.kind === 'audioinput');
-    speakerDevices.value = devices.filter(device => device.kind === 'audiooutput');
+    micDevices.value = devices.filter((d) => d.kind === 'audioinput');
+    speakerDevices.value = devices.filter((d) => d.kind === 'audiooutput');
   } catch (error) {
     console.warn('Failed to enumerate audio devices:', error);
   }
 }
 
 function handleSystemVolumeChange(e: Event) {
-  const volume = parseInt((e.target as HTMLInputElement).value) / 100;
+  const volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
   systemVolume.value = volume;
   emit('update:systemVolume', volume);
 }
 
 function handleBgmVolumeChange(e: Event) {
-  const volume = parseInt((e.target as HTMLInputElement).value) / 100;
+  const volume = parseInt((e.target as HTMLInputElement).value, 10) / 100;
   bgmVolume.value = volume;
   emit('update:bgmVolume', volume);
 }
 
 function handleTrackChange(e: Event) {
   const trackId = (e.target as HTMLSelectElement).value;
+  bgmTrackId.value = trackId;
   emit('update:bgmTrackId', trackId);
 }
 
 function toggleSystemMute() {
   systemMuted.value = !systemMuted.value;
-  if (systemMuted.value) {
-    emit('update:systemVolume', 0);
-  } else {
-    emit('update:systemVolume', 0.8); // Restore to reasonable level
-  }
+  emit('update:systemVolume', systemMuted.value ? 0 : Math.max(systemVolume.value, 0.8));
 }
 
 function toggleBgmMute() {
@@ -279,7 +340,7 @@ function toggleBgmMute() {
     emit('update:bgmVolume', 0);
     emit('update:bgmEnabled', false);
   } else {
-    emit('update:bgmVolume', 0.15); // Restore to default level
+    emit('update:bgmVolume', Math.max(bgmVolume.value, 0.15));
     emit('update:bgmEnabled', true);
   }
 }
@@ -287,17 +348,15 @@ function toggleBgmMute() {
 function toggleMicMute() {
   micMuted.value = !micMuted.value;
   if (micMuted.value) {
-    stopMicMonitoring();
+    void stopMicMonitoring();
   } else {
-    startMicMonitoring();
+    void startMicMonitoring();
   }
 }
 
 async function handleMicDeviceChange(e: Event) {
   const deviceId = (e.target as HTMLSelectElement).value;
   selectedMicDevice.value = deviceId;
-  
-  // Restart mic monitoring with new device
   if (!micMuted.value) {
     await stopMicMonitoring();
     await startMicMonitoring();
@@ -307,448 +366,357 @@ async function handleMicDeviceChange(e: Event) {
 function handleSpeakerDeviceChange(e: Event) {
   const deviceId = (e.target as HTMLSelectElement).value;
   selectedSpeakerDevice.value = deviceId;
-  // Note: Changing speaker device requires browser API support (setSinkId)
+  // Actually routing audio to the chosen sink requires `audioElement.setSinkId`,
+  // which is gated on Chromium and a few other engines. We surface the hint
+  // via `supportsSinkId` instead of silently failing.
 }
 
 async function startMicMonitoring() {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+    return;
+  }
   try {
     const constraints: MediaStreamConstraints = {
-      audio: selectedMicDevice.value ? { deviceId: selectedMicDevice.value } : true
+      audio: selectedMicDevice.value ? { deviceId: selectedMicDevice.value } : true,
     };
-    
     micStream = await navigator.mediaDevices.getUserMedia(constraints);
-    
+
     if (!audioContext) {
       audioContext = new AudioContext();
     }
-    
+
     micAnalyser = audioContext.createAnalyser();
     micAnalyser.fftSize = 2048;
-    
+
     const source = audioContext.createMediaStreamSource(micStream);
     source.connect(micAnalyser);
-    
+
     const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
-    
-    function updateMicLevel() {
-      if (micAnalyser) {
-        micAnalyser.getByteFrequencyData(dataArray);
-        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-        micLevel.value = Math.min(1, average / 128);
-      }
-    }
-    
-    micMonitoringInterval = window.setInterval(updateMicLevel, 100);
-    
+
+    micMonitoringInterval = window.setInterval(() => {
+      if (!micAnalyser) return;
+      micAnalyser.getByteFrequencyData(dataArray);
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+      const average = sum / dataArray.length;
+      micLevel.value = Math.min(1, average / 128);
+    }, 100);
   } catch (error) {
     console.warn('Failed to start microphone monitoring:', error);
   }
 }
 
 async function stopMicMonitoring() {
-  if (micMonitoringInterval) {
+  if (micMonitoringInterval !== null) {
     clearInterval(micMonitoringInterval);
     micMonitoringInterval = null;
   }
-  
   if (micStream) {
-    micStream.getTracks().forEach(track => track.stop());
+    micStream.getTracks().forEach((track) => track.stop());
     micStream = null;
   }
-  
   micAnalyser = null;
   micLevel.value = 0;
 }
 
 async function testSpeakers() {
-  if (testingAudio.value) return;
-  
-  testingAudio.value = true;
+  if (testingSpeakers.value) return;
+  testingSpeakers.value = true;
   try {
-    const context = audioContext || new AudioContext();
+    const context = audioContext ?? new AudioContext();
+    audioContext = context;
     const oscillator = context.createOscillator();
     const gainNode = context.createGain();
-    
     oscillator.connect(gainNode);
     gainNode.connect(context.destination);
-    
-    oscillator.frequency.value = 440; // A4 note
+    oscillator.frequency.value = 440;
     gainNode.gain.value = 0.1;
-    
     oscillator.start();
-    
     setTimeout(() => {
       oscillator.stop();
-      testingAudio.value = false;
+      testingSpeakers.value = false;
     }, 1000);
-    
   } catch (error) {
     console.warn('Speaker test failed:', error);
-    testingAudio.value = false;
+    testingSpeakers.value = false;
   }
 }
 
 async function testMicrophone() {
-  if (testingMic.value || !selectedMicDevice.value) return;
-  
+  if (testingMic.value) return;
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) return;
   testingMic.value = true;
-  
   try {
-    // Record for 3 seconds then play back
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { deviceId: selectedMicDevice.value }
+      audio: selectedMicDevice.value ? { deviceId: selectedMicDevice.value } : true,
     });
-    
     const mediaRecorder = new MediaRecorder(stream);
     const chunks: BlobPart[] = [];
-    
+
     mediaRecorder.ondataavailable = (e) => {
       chunks.push(e.data);
     };
-    
+
     mediaRecorder.onstop = async () => {
-      const blob = new Blob(chunks, { type: 'audio/wav' });
+      const blob = new Blob(chunks, { type: 'audio/webm' });
       const audio = new Audio(URL.createObjectURL(blob));
-      await audio.play();
+      try {
+        await audio.play();
+      } catch (err) {
+        console.warn('Playback failed:', err);
+      }
       testingMic.value = false;
     };
-    
+
     mediaRecorder.start();
-    
     setTimeout(() => {
       mediaRecorder.stop();
-      stream.getTracks().forEach(track => track.stop());
+      stream.getTracks().forEach((track) => track.stop());
     }, 3000);
-    
   } catch (error) {
     console.warn('Microphone test failed:', error);
     testingMic.value = false;
   }
 }
 
+function openVoiceSetup() {
+  emit('navigate', 'voice');
+  emit('close');
+}
+
+function handleClose() {
+  emit('close');
+}
+
 onMounted(async () => {
   await loadAudioDevices();
-  
-  // Request microphone permission for device enumeration
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    stream.getTracks().forEach(track => track.stop());
-    await loadAudioDevices(); // Reload to get device labels
-  } catch {
-    // Permission denied, that's ok
+  // Request mic permission once to populate device labels (browsers hide
+  // labels until permission is granted). Failure is non-fatal.
+  if (typeof navigator !== 'undefined' && navigator.mediaDevices?.getUserMedia) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+      await loadAudioDevices();
+    } catch {
+      // permission denied — keep going with anonymous device IDs
+    }
   }
-  
-  // Start mic monitoring if not muted
   if (!micMuted.value) {
     await startMicMonitoring();
   }
 });
 
 onUnmounted(() => {
-  stopMicMonitoring();
+  void stopMicMonitoring();
   if (audioContext) {
-    audioContext.close();
+    void audioContext.close();
     audioContext = null;
   }
 });
 </script>
 
 <style scoped>
-.audio-controls-panel-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  background: var(--ts-bg-backdrop);
+:deep(.audio-controls-panel__card) {
+  width: min(560px, 100%);
+  max-height: min(86vh, calc(100dvh - 32px));
+}
+
+.ac-section {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(4px);
+  flex-direction: column;
+  gap: var(--ts-space-sm);
+  padding: var(--ts-space-md) var(--ts-space-lg);
+  border-bottom: 1px solid var(--ts-border);
 }
 
-.audio-controls-panel {
-  width: min(520px, 90vw);
-  max-height: 85vh;
-  background: var(--ts-bg-panel);
-  border: 1px solid var(--ts-accent-glow);
-  border-radius: 12px;
-  overflow: hidden;
-  backdrop-filter: blur(20px);
-  box-shadow: var(--ts-shadow-lg);
+.ac-section:last-child {
+  border-bottom: none;
 }
 
-.panel-header {
+.ac-section-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--ts-accent-glow);
+  gap: var(--ts-space-sm);
 }
 
-.panel-header h3 {
+.ac-section-head h4 {
   margin: 0;
-  font-size: 1.1rem;
-  font-weight: 700;
-  color: var(--ts-text-primary);
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--ts-text-secondary);
-  cursor: pointer;
-  font-size: 1.5rem;
-  padding: 4px;
-  border-radius: 4px;
-  transition: color 0.2s ease, background 0.2s ease;
-}
-
-.close-btn:hover {
-  color: var(--ts-text-primary);
-  background: var(--ts-bg-hover);
-}
-
-.panel-body {
-  padding: 20px;
-  max-height: calc(85vh - 80px);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.control-section {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.section-header h4 {
-  margin: 0;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  color: var(--ts-accent-violet);
+  color: var(--ts-text-primary);
 }
 
-.mute-btn {
-  background: none;
-  border: 1px solid var(--ts-accent-glow);
-  border-radius: 8px;
-  padding: 8px 12px;
-  color: var(--ts-accent-violet);
-  cursor: pointer;
-  font-size: 1rem;
-  transition: all 0.2s ease;
-}
-
-.mute-btn:hover {
-  background: var(--ts-accent-glow);
-  border-color: var(--ts-accent);
-}
-
-.mute-btn.muted {
-  background: var(--ts-error-bg);
-  border-color: rgba(239, 68, 68, 0.5);
-  color: var(--ts-error);
-}
-
-.volume-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.volume-icon {
-  font-size: 0.9rem;
-  opacity: 0.7;
-}
-
-.volume-slider {
-  flex: 1;
-  height: 6px;
-  -webkit-appearance: none;
+.ac-icon-btn {
   appearance: none;
-  background: var(--ts-bg-hover);
-  border-radius: 3px;
-  outline: none;
-  cursor: pointer;
-  transition: background 0.2s ease;
-}
-
-.volume-slider:hover {
-  background: var(--ts-border-strong);
-}
-
-.volume-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
-  background: var(--ts-accent-violet);
-  border-radius: 50%;
-  cursor: pointer;
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-.volume-slider::-webkit-slider-thumb:hover {
-  background: #c4b5fd;
-  transform: scale(1.1);
-}
-
-.volume-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: var(--ts-accent-violet);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
-  transition: background 0.2s ease, transform 0.1s ease;
-}
-
-.volume-slider::-moz-range-thumb:hover {
-  background: #c4b5fd;
-  transform: scale(1.1);
-}
-
-.volume-display {
-  font-size: 0.8rem;
-  color: var(--ts-text-secondary);
-  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
-  min-width: 40px;
-  text-align: right;
-}
-
-.bgm-track-selector,
-.mic-device-selector,
-.speaker-device-selector {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.bgm-track-selector label,
-.mic-device-selector label,
-.speaker-device-selector label {
-  font-size: 0.8rem;
-  color: var(--ts-text-secondary);
-  min-width: 60px;
-}
-
-.track-select,
-.device-select {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--ts-accent-glow);
-  border-radius: 8px;
-  background: var(--ts-bg-input);
+  background: transparent;
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-md);
   color: var(--ts-text-primary);
-  font-size: 0.8rem;
+  font-size: 1rem;
+  line-height: 1;
+  padding: 4px 10px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast);
 }
 
-.track-select:hover,
-.device-select:hover {
-  border-color: var(--ts-accent);
+.ac-icon-btn:hover {
   background: var(--ts-bg-hover);
+  border-color: var(--ts-accent);
 }
 
-.track-select:focus,
-.device-select:focus {
-  outline: none;
-  border-color: var(--ts-accent-violet);
-  box-shadow: 0 0 0 2px rgba(124, 111, 255, 0.2);
+.ac-icon-btn--muted {
+  background: color-mix(in srgb, var(--ts-accent-warm, #e09b3d) 18%, transparent);
+  border-color: var(--ts-accent-warm, #e09b3d);
 }
 
-.mic-level-display {
+.ac-slider-row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--ts-space-sm);
 }
 
-.mic-level-label {
-  font-size: 0.8rem;
+.ac-slider {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ac-slider-icon {
+  font-size: 0.85rem;
   color: var(--ts-text-secondary);
-  min-width: 60px;
 }
 
-.mic-level-bar {
-  flex: 1;
-  height: 8px;
-  background: var(--ts-bg-hover);
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.mic-level-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #10b981, #fbbf24, #ef4444);
-  border-radius: 4px;
-  transition: width 0.1s ease;
-}
-
-.mic-level-text {
-  font-size: 0.8rem;
+.ac-slider-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
   color: var(--ts-text-secondary);
-  font-family: 'SF Mono', 'Monaco', 'Cascadia Code', monospace;
-  min-width: 40px;
+  min-width: 3em;
   text-align: right;
 }
 
-.test-controls {
+.ac-field {
   display: flex;
-  gap: 12px;
+  align-items: center;
+  gap: var(--ts-space-sm);
 }
 
-.test-btn {
-  flex: 1;
-  padding: 10px 16px;
-  border: 1px solid var(--ts-accent-glow);
-  border-radius: 8px;
-  background: var(--ts-bg-input);
-  color: var(--ts-accent-violet);
+.ac-field-label {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  color: var(--ts-text-secondary);
+  min-width: 4em;
+}
+
+.ac-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  appearance: none;
+  background: var(--ts-bg-elevated);
+  color: var(--ts-text-primary);
+  border: 1px solid var(--ts-border);
+  border-radius: var(--ts-radius-sm);
+  padding: 6px 10px;
+  font-size: 0.9rem;
   cursor: pointer;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: all 0.2s ease;
 }
 
-.test-btn:hover:not(:disabled) {
-  background: var(--ts-accent-glow);
-  border-color: var(--ts-accent);
-}
-
-.test-btn:disabled {
-  opacity: 0.5;
+.ac-select:disabled {
+  opacity: 0.55;
   cursor: not-allowed;
 }
 
-/* Mobile adjustments */
+.ac-meter-row {
+  display: flex;
+  align-items: center;
+  gap: var(--ts-space-sm);
+}
+
+.ac-meter-label {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  color: var(--ts-text-secondary);
+  min-width: 4em;
+}
+
+.ac-meter-track {
+  flex: 1 1 auto;
+  height: 8px;
+  background: var(--ts-bg-elevated);
+  border-radius: var(--ts-radius-pill);
+  overflow: hidden;
+  border: 1px solid var(--ts-border);
+}
+
+.ac-meter-fill {
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    var(--ts-accent) 0%,
+    var(--ts-accent-warm, #e09b3d) 100%
+  );
+  transition: width 80ms linear;
+}
+
+.ac-meter-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.85rem;
+  color: var(--ts-text-secondary);
+  min-width: 3em;
+  text-align: right;
+}
+
+.ac-test-btn,
+.ac-link-btn {
+  appearance: none;
+  background: var(--ts-bg-elevated);
+  border: 1px solid var(--ts-border);
+  color: var(--ts-text-primary);
+  border-radius: var(--ts-radius-md);
+  padding: 8px 14px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background var(--ts-transition-fast), border-color var(--ts-transition-fast);
+  text-align: center;
+}
+
+.ac-test-btn:hover:not(:disabled),
+.ac-link-btn:hover {
+  background: var(--ts-bg-hover);
+  border-color: var(--ts-accent);
+  color: var(--ts-accent);
+}
+
+.ac-test-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ac-link-btn {
+  font-weight: 600;
+}
+
+.ac-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ts-text-secondary);
+}
+
+.ac-section--link {
+  background: color-mix(in srgb, var(--ts-accent) 6%, transparent);
+}
+
 @media (max-width: 640px) {
-  .audio-controls-panel {
-    width: 95vw;
-    max-height: 90vh;
+  .ac-section {
+    padding: var(--ts-space-sm) var(--ts-space-md);
   }
-  
-  .panel-header,
-  .panel-body {
-    padding: 12px 16px;
+  .ac-field,
+  .ac-meter-row {
+    flex-wrap: wrap;
   }
-  
-  .volume-control,
-  .bgm-track-selector,
-  .mic-device-selector,
-  .speaker-device-selector,
-  .mic-level-display {
-    gap: 8px;
-  }
-  
-  .test-controls {
-    flex-direction: column;
+  .ac-field-label,
+  .ac-meter-label {
+    flex: 1 1 100%;
   }
 }
 </style>

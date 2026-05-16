@@ -32,30 +32,10 @@
 
 ## Next Chunk
 
-All active phases complete. Remaining chunks are deferred (user-gated on budget/priority):
-
-- **BENCH-SCALE-2 run** — harness shipped, actual two-arm 1M-doc run pending. Deferred: "Finish the entire chunks left except Phase BENCH-SCALE."
-- **BENCH-SCALE-3** — IVF-PQ disk-backed bench (Phase BENCH-SCALE, deferred).
-- **TOP1-2** — paid gpt-4o-mini end-to-end harness (requires API budget).
-- **INTEGRATE-2/3/4 code follow-ups** — doc-shipped; code follow-ups remain scoped but not user-prioritised.
-
----
-
-## Phase INTEGRATE — remaining code follow-ups
-
-| Chunk | Status | Scope |
-|---|---|---|
-| INTEGRATE-2 | code-follow-up pending | **Hermes suggest-hook in ChatView.** Dismissable hint fires when `turn_token_estimate ≥ 4000` AND `intent ∈ {deep_research, long_running_workflow, full_ide_coding}` AND `hermes_hint_enabled = true`. |
-| INTEGRATE-3 | code-follow-up pending | **OpenClaw status in companions registry.** Detect upstream OpenClaw CLI, offer guided install, show "active plugin" badge in BrainView. |
-| INTEGRATE-4 | code-follow-up pending | **Temporal.io optional bridge spec.** Only if user provides a concrete use case for outsourcing a workflow to a Temporal worker. |
-
----
-
-## Phase TOP1 — remaining
-
-| Chunk | Status | Scope |
-|---|---|---|
-| TOP1-2 | not-started | **Paid gpt-4o-mini end-to-end harness.** Requires paid API budget for Mem0-paper parity or explicit local-judge variant decision. Scoped in `benchmark/COMPARISON.md` § "TOP1-2 scope". |
+**BENCH-SCALE-3** remains code-done / run-in-flight. Pick the next chunk from
+`rules/backlog.md` (claim verification / contradiction-aware
+indexing, AppBreadcrumb → ts-cockpit-crumb unification, brain-orb
+hero adoption, etc.) and add a `not-started` row to start work.
 
 ---
 
@@ -65,6 +45,5 @@ Goal: validate that LoCoMo R@10 survives when relevant docs are buried in a 1M-d
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-SCALE-2 | harness-shipped, run-pending | **Sharded-HNSW scale bench.** Execute the two-arm 1M comparison per `docs/billion-scale-retrieval-design.md` § Phase 2 (router-routed vs all-shards). Report deltas on R@10 / NDCG@10 / MRR / p50 / p95 / p99 / ingest time / peak RSS. |
-| BENCH-SCALE-3 | not-started | **IVF-PQ disk-backed bench.** Phase 3 targets >100M with m=96, nbits=8 PQ. Re-run LoCoMo-at-scale bench at 10M and report the PQ accuracy/latency trade against full-precision HNSW. |
+| BENCH-SCALE-3 | runner-built, run-in-flight | **IVF-PQ disk-backed bench.** Phase 3 code complete (codebook training + IVF-PQ build + ADC search path + `build_ivf_pq_indexes` Tauri command). Runner shipped: `scripts/locomo-ivfpq.mjs` (cargo-run `longmemeval-ipc --features bench-million`, deterministic mulberry32 corpus, on-disk MemoryStore, progress writer, **`--resume` + SIGINT/SIGTERM safety net** added 2026-05-16). Live 10M ingest run in flight (~23%+; ETA ~83h remaining). IPC `op: count` exists for any future bench needing partial-resume. |
 

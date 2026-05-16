@@ -17,6 +17,7 @@
         @overlay-open="handleViewportOverlayOpen"
         @set-display-mode="(mode: 'desktop' | 'chatbox') => $emit('set-display-mode', mode)"
         @toggle-pet-mode="$emit('toggle-pet-mode')"
+        @navigate="(target: string) => $emit('navigate', target)"
       />
     </div>
 
@@ -297,6 +298,14 @@
       :options="upgradeOptions"
       @accept="handleUpgradeAccept"
       @dismiss="showUpgradeDialog = false"
+    />
+
+    <!-- Hermes Desktop suggest-hook (INTEGRATE-2) -->
+    <HermesHint
+      :intent="hermesHintIntent"
+      :visible="showHermesHint"
+      @dismiss="dismissHermesHint"
+      @navigate="navigateToCompanions"
     />
 
     <!-- FF-style Knowledge Quest chain dialog -->
@@ -582,6 +591,7 @@ import type { CharacterState, Message } from '../types';
 import type { MemoryEdge, MemoryEntry } from '../types';
 import type { AvatarStateMachine } from '../renderer/avatar-state';
 import { assessCapacity, resetCapacityTracking } from '../utils/capacity-detector';
+import { shouldShowHermesHint, type HermesHintIntent } from '../utils/hermes-hint';
 import { copyChatHistory, readClipboardText } from '../utils/chat-history-clipboard';
 import { BRAIN_WIKI_HELP_TEXT, parseBrainWikiSlashCommand } from '../utils/slash-commands';
 import type { UpgradeOption } from '../components/UpgradeDialog.vue';
@@ -598,6 +608,7 @@ import TaskProgressBar from '../components/TaskProgressBar.vue';
 import TaskControls from '../components/TaskControls.vue';
 import AgentThreadPicker from '../components/AgentThreadPicker.vue';
 import UpgradeDialog from '../components/UpgradeDialog.vue';
+import HermesHint from '../components/HermesHint.vue';
 import QuestChoiceOverlay from '../components/QuestChoiceOverlay.vue';
 import KnowledgeQuestDialog from '../components/KnowledgeQuestDialog.vue';
 import BrowserAuthPanel from '../components/BrowserAuthPanel.vue';
@@ -753,6 +764,45 @@ const showUpgradeDialog = ref(false);
 let lastUserQuery = '';
 /** Only suggest once per session unless dismissed. */
 let upgradeAlreadySuggested = false;
+
+// ── Hermes suggest-hook state (INTEGRATE-2) ───────────────────────
+const showHermesHint = ref(false);
+const hermesHintIntent = ref<HermesHintIntent>('deep_research');
+/** Only show once per session. */
+let hermesHintShownThisSession = false;
+
+function dismissHermesHint(): void {
+  showHermesHint.value = false;
+  try { window.localStorage.setItem('ts.hermesHintDismissed', '1'); } catch { /* no-op */ }
+}
+
+function navigateToCompanions(): void {
+  showHermesHint.value = false;
+  emit('navigate', 'marketplace');
+}
+
+/** Check Hermes hint conditions after an assistant response. */
+function checkHermesHint(userMessage: string, assistantResponse: string): void {
+  if (hermesHintShownThisSession) return;
+
+  // Quick check: if user previously dismissed hint this browser session, skip.
+  try {
+    if (window.localStorage.getItem('ts.hermesHintDismissed') === '1') return;
+  } catch { /* no-op */ }
+
+  const check = shouldShowHermesHint(
+    userMessage,
+    assistantResponse,
+    settingsStore.settings.hermes_hint_enabled ?? true,
+    false, // hermesConfigured check is deferred — once they dismiss, we never show again
+  );
+
+  if (check.show && check.intent) {
+    hermesHintIntent.value = check.intent;
+    showHermesHint.value = true;
+    hermesHintShownThisSession = true;
+  }
+}
 
 const currentUpgradeModel = computed(() => {
   if (brain.brainMode?.mode === 'free_api') {
@@ -1385,6 +1435,9 @@ async function handleSend(message: string) {
         upgradeAlreadySuggested = true;
       }
     }
+
+    // Hermes suggest-hook: suggest Hermes Desktop for heavyweight turns.
+    checkHermesHint(lastUserQuery, lastMsg.content);
   }
 
   setTimeout(() => {

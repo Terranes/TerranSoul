@@ -118,7 +118,6 @@ describe('usePersonaStore', () => {
         pitch: 'low',
         style: 'whisper',
         englishAccent: 'british',
-        chineseDialect: 'none',
         voiceName: 'en-GB-RyanNeural',
       },
     });

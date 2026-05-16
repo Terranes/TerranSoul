@@ -497,7 +497,7 @@ watch(
   grid-template-columns: 1fr 1fr;
   gap: var(--ts-space-md, 12px);
 }
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .cw-grid { grid-template-columns: 1fr; }
 }
 
@@ -519,7 +519,7 @@ watch(
   border: none;
   padding: 0;
 }
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .cw-sliders { grid-template-columns: 1fr; }
 }
 .cw-slider {

@@ -86,7 +86,7 @@ pub fn catalogue() -> Vec<EmbeddingModelEntry> {
             dimensions: 768,
             provider: EmbedProvider::Ollama,
             max_tokens: 8192,
-            description: "Fast 768d general-purpose. Recommended for local use.".to_string(),
+            description: "Fast 768d general-purpose, 8192-token context. Lightweight fallback for long-doc ingest.".to_string(),
         },
         EmbeddingModelEntry {
             id: "mxbai-embed-large".to_string(),
@@ -94,7 +94,7 @@ pub fn catalogue() -> Vec<EmbeddingModelEntry> {
             dimensions: 1024,
             provider: EmbedProvider::Ollama,
             max_tokens: 512,
-            description: "Strong 1024d, sentence-level. Good for short texts.".to_string(),
+            description: "Strong 1024d, sentence-level. Recommended default (promoted by BENCH-LCM-5: +3.7pp R@10 on LoCoMo vs nomic).".to_string(),
         },
         EmbeddingModelEntry {
             id: "snowflake-arctic-embed".to_string(),
@@ -176,6 +176,64 @@ pub fn catalogue() -> Vec<EmbeddingModelEntry> {
 /// Look up a model by ID in the catalogue.
 pub fn find_model(id: &str) -> Option<EmbeddingModelEntry> {
     catalogue().into_iter().find(|m| m.id == id)
+}
+
+// ---------------------------------------------------------------------------
+// Input-length budgeting
+// ---------------------------------------------------------------------------
+
+/// Conservative chars-per-token ratio for budgeting embed inputs.
+///
+/// Real-world ratios vary: English prose averages ~4 chars/token under
+/// BERT/WordPiece tokenizers, but code/JSON/CJK drops to ~2–2.5. We pick
+/// `3` as a balanced floor: a 512-token model gets a 1536-char ceiling,
+/// which covers all but the most token-dense scripts (pure CJK or dense
+/// code). The previous value of 2 truncated too aggressively — a 1179-char
+/// English input (~295 real tokens) was cut despite being well within the
+/// 512-token budget.
+const CHARS_PER_TOKEN_SAFE: usize = 3;
+
+/// Return the maximum input length in *characters* that is safe to send to
+/// the named embedding model. Returns `None` when the model is unknown
+/// (callers should not truncate in that case — the model server is the
+/// authority).
+///
+/// Accepts both bare ids (`"mxbai-embed-large"`) and Ollama-tagged ids
+/// (`"mxbai-embed-large:latest"`); the tag suffix is stripped before
+/// the catalogue lookup.
+///
+/// The character cap is a `3 ×` factor on declared token budget so a single
+/// truncated request never trips the model's actual `max_tokens` ceiling
+/// for any common script (ASCII, accented Latin, CJK, code, mixed JSON).
+pub fn max_input_chars(model_id: &str) -> Option<usize> {
+    let bare = model_id.split(':').next().unwrap_or(model_id);
+    let entry = find_model(bare)?;
+    if entry.max_tokens == 0 {
+        return None;
+    }
+    Some(entry.max_tokens.saturating_mul(CHARS_PER_TOKEN_SAFE))
+}
+
+/// Truncate `text` to at most `max_input_chars(model_id)` *characters*
+/// (not bytes), preserving valid UTF-8. When the model is unknown or the
+/// text already fits, the original slice is returned unchanged.
+///
+/// Returns `(slice, was_truncated)`.
+pub fn truncate_for_model<'a>(model_id: &str, text: &'a str) -> (&'a str, bool) {
+    let Some(cap) = max_input_chars(model_id) else {
+        return (text, false);
+    };
+    if text.chars().count() <= cap {
+        return (text, false);
+    }
+    // Find the byte offset of the (cap+1)-th char so we slice on a UTF-8
+    // boundary without allocating.
+    let cut = text
+        .char_indices()
+        .nth(cap)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
+    (&text[..cut], true)
 }
 
 // ---------------------------------------------------------------------------
@@ -307,6 +365,55 @@ mod tests {
     #[test]
     fn find_model_unknown_returns_none() {
         assert!(find_model("nonexistent-model").is_none());
+    }
+
+    #[test]
+    fn max_input_chars_accepts_tagged_id() {
+        // mxbai-embed-large has max_tokens = 512 → cap = 512 × 3 = 1536.
+        let cap = max_input_chars("mxbai-embed-large:latest").unwrap();
+        assert_eq!(cap, 1536);
+    }
+
+    #[test]
+    fn max_input_chars_unknown_model_is_none() {
+        assert!(max_input_chars("not-a-real-model").is_none());
+    }
+
+    #[test]
+    fn truncate_for_model_clamps_long_input() {
+        // 5_000 char input on mxbai-embed-large (cap 1536) → truncated.
+        let big: String = "a".repeat(5_000);
+        let (slice, truncated) = truncate_for_model("mxbai-embed-large", &big);
+        assert!(truncated, "expected truncation for 5_000-char input");
+        assert_eq!(slice.chars().count(), 1536);
+    }
+
+    #[test]
+    fn truncate_for_model_preserves_short_input() {
+        let small = "hello world";
+        let (slice, truncated) = truncate_for_model("mxbai-embed-large", small);
+        assert!(!truncated);
+        assert_eq!(slice, small);
+    }
+
+    #[test]
+    fn truncate_for_model_unknown_model_passthrough() {
+        let text = "x".repeat(100_000);
+        let (slice, truncated) = truncate_for_model("not-a-real-model", &text);
+        assert!(!truncated);
+        assert_eq!(slice.len(), text.len());
+    }
+
+    #[test]
+    fn truncate_for_model_utf8_safe_on_multibyte() {
+        // 2_000 CJK chars (each 3 bytes in UTF-8) on mxbai (cap 1536).
+        // The slice must end on a valid char boundary, not mid-codepoint.
+        let big: String = "漢".repeat(2_000);
+        let (slice, truncated) = truncate_for_model("mxbai-embed-large", &big);
+        assert!(truncated);
+        assert_eq!(slice.chars().count(), 1536);
+        // Round-trip — confirms the slice is valid UTF-8.
+        assert_eq!(slice.chars().count() * 3, slice.len());
     }
 
     #[test]

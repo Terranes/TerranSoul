@@ -242,6 +242,79 @@ describe('conversation store — brain configured (browser-side free API)', () =
     expect(systemPrompt).toContain('million-user Vercel browser RAG');
   });
 
+  it('renders grouped cross-source citations when @source-id is mentioned (BRAIN-REPO-RAG-1c-b-ii-b)', async () => {
+    configureBrowserProvider();
+
+    // Resolve `cross_source_search`, reject everything else so the
+    // remaining Tauri-dependent calls (memory persistence, browser-RAG
+    // sync) fall back to their browser-side paths without affecting the
+    // prompt assembler we're testing.
+    mockInvoke.mockImplementation(async (cmd: string, args: unknown) => {
+      if (cmd === 'cross_source_search') {
+        const limit = (args as { limit?: number })?.limit ?? 5;
+        return [
+          {
+            source_id: 'self',
+            source_label: 'TerranSoul',
+            local_id: 1,
+            content: 'user is debugging the runtime loop',
+            score: 0.9,
+            file_path: null,
+            parent_symbol: null,
+            tier: 'long',
+            tags: '',
+          },
+          {
+            source_id: 'owner/repo',
+            source_label: 'owner/repo',
+            local_id: 42,
+            content: 'spawn the tokio runtime and block on shutdown',
+            score: 0.82,
+            file_path: 'src/lib.rs',
+            parent_symbol: 'main',
+            tier: null,
+            tags: '',
+          },
+        ].slice(0, limit);
+      }
+      throw new Error(`no tauri command stub: ${cmd}`);
+    });
+
+    let systemPrompt = '';
+    mockStreamChat.mockImplementation(
+      (
+        _baseUrl: string,
+        _model: string,
+        _apiKey: string | null,
+        _history: unknown[],
+        callbacks: { onDone: (text: string) => void },
+        prompt?: string,
+      ) => {
+        systemPrompt = prompt ?? '';
+        callbacks.onDone('Citation rendered.');
+        return new AbortController();
+      },
+    );
+
+    const store = useConversationStore();
+    await store.sendMessage('@self @owner/repo how does main start the runtime?');
+
+    // Prompt assembler grouped the hits by source with explicit per-source headers.
+    expect(systemPrompt).toContain('── 🧠 TerranSoul ──');
+    expect(systemPrompt).toContain('── 📦 owner/repo ──');
+    expect(systemPrompt).toContain('- [src/lib.rs::main] spawn the tokio runtime and block on shutdown');
+    expect(systemPrompt).toContain('cross-source memory/RAG store');
+
+    // Citation footer payload is attached to the assistant message so
+    // ChatMessageList can render the per-source badges.
+    const assistantMsg = store.messages[1];
+    expect(assistantMsg.role).toBe('assistant');
+    expect(assistantMsg.sources).toBeDefined();
+    expect(assistantMsg.sources).toHaveLength(2);
+    expect(assistantMsg.sources![0].source_id).toBe('self');
+    expect(assistantMsg.sources![1].source_id).toBe('owner/repo');
+  });
+
   it('streams chunks to streamingText during generation', async () => {
     configureBrowserProvider();
 

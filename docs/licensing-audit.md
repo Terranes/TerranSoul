@@ -53,7 +53,58 @@ zero-network libraries over SaaS integrations.
 spot-checked subset. Re-run the scan whenever a dependency version
 changes.
 
-## 🚫 Removed (commercial blockers)
+## � Conditional clearance (use-based / RAIL-family licenses)
+
+Some downloadable assets — primarily on-device ML model weights — ship
+under **use-based** licenses that permit commercial use *with*
+behavioural restrictions on downstream applications. These are not
+classic FOSS licenses and require us to (a) comply with the restriction
+list, (b) propagate the same restrictions to end users, and (c) attribute
+the upstream model card. They are cleared for TerranSoul only on the
+conditions recorded here.
+
+### Supertonic TTS — model weights (`Supertone/supertonic-3`)
+
+- **Upstream:** <https://github.com/supertone-inc/supertonic> +
+  <https://huggingface.co/Supertone/supertonic-3>
+- **Sample code license:** MIT (the upstream `rust/`, `py/`, `cpp/` etc.
+  example directories). Cleared without restriction.
+- **Model weights license:** **OpenRAIL-M v1** (Open Responsible AI
+  License — Model). Use-based; commercial use permitted with the
+  upstream model card's restriction list.
+- **Cleared on conditions** (see
+  [docs/supertonic-integration-research.md](supertonic-integration-research.md)
+  for full analysis):
+  1. End-user consent dialog in TerranSoul's first-run TTS install UX
+     names the OpenRAIL-M restrictions in plain English and links to the
+     upstream model card. Implemented in chunk **TTS-SUPERTONIC-1c**.
+  2. Restrictions propagate to derivative use: a short notice appears in
+     the running app's About / Credits surface.
+  3. Attribution to Supertone Inc. + the three arXiv papers
+     (arXiv:2503.23108, arXiv:2509.11084, arXiv:2509.19091) lives in
+     [`CREDITS.md`](../CREDITS.md).
+  4. Model weights are **not** bundled in the Tauri installer — they are
+     downloaded on first use after explicit user consent. The ~300 MB
+     download size is disclosed before any bytes flow.
+- **Headline use restrictions** (canonical OpenRAIL-M v1 surface; the
+  upstream model card is authoritative): no discrimination/harassment,
+  no mass surveillance, no malicious mis-/disinformation, no
+  CSAM/non-consensual intimate imagery, no automated legal/medical/
+  financial advice without human review, and the same restrictions must
+  travel with any redistribution.
+- **Training framework note:** Supertonic was trained with PyTorch
+  (BSD-3-Clause). PyTorch is **not** redistributed by Supertonic and is
+  **not** a runtime dependency for TerranSoul (we load ONNX assets via
+  the `ort` crate). PyTorch's license therefore does not apply to
+  TerranSoul.
+
+> **Policy:** any future on-device model that ships under a RAIL-family
+> license (OpenRAIL, BigScience RAIL, CreativeML OpenRAIL-M, etc.) goes
+> in this section and follows the same four-condition template. Models
+> under non-commercial-only licenses (e.g. Llama 2 ≤7B research-only,
+> CC BY-NC) belong in the **🚫 Removed** section below — not here.
+
+## �🚫 Removed (commercial blockers)
 
 The following integrations were present in earlier builds but removed
 on 2026-04-24 because they fail the strict commercial-use bar:

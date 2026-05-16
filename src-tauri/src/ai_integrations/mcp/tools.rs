@@ -230,6 +230,78 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
                 }
             }
         }),
+        json!({
+            "name": "repo_search",
+            "description": "Per-repo hybrid search (vector + keyword + recency, RRF k=60) scoped to one indexed code repository registered as a memory source (kind='repo'). Returns ranked chunks with file path, byte range, symbol context, and content.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Memory source id (e.g. 'repo_my-project'). List via brain_list_recent or the desktop UI." },
+                    "query": { "type": "string", "description": "Natural-language or code-fragment query" },
+                    "limit": { "type": "integer", "description": "Max results (1-100, default 10)" }
+                },
+                "required": ["source_id", "query"]
+            }
+        }),
+        json!({
+            "name": "repo_list_files",
+            "description": "List every file path indexed for a repo memory source, sorted. Useful before calling repo_read_file or repo_search to discover the project layout.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Memory source id for the repo" }
+                },
+                "required": ["source_id"]
+            }
+        }),
+        json!({
+            "name": "repo_read_file",
+            "description": "Read one file from an indexed repo. Prefers the on-disk per-repo checkout; falls back to chunk reassembly from the per-repo SQLite store. Path must be repo-relative; '..' and absolute paths are rejected.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Memory source id for the repo" },
+                    "file_path": { "type": "string", "description": "Repo-relative file path (e.g. 'src/main.rs')" }
+                },
+                "required": ["source_id", "file_path"]
+            }
+        }),
+        json!({
+            "name": "cross_source_search",
+            "description": "Cross-source 'All' fan-out hybrid search: ranks chunks from the main TerranSoul brain AND every indexed repo memory source, merged with Reciprocal Rank Fusion (k=60). Each hit is tagged with its originating source_id ('self' for the main brain, otherwise the repo id) so the caller can group and cite results by source.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Natural-language or code-fragment query" },
+                    "limit": { "type": "integer", "description": "Max results (1-100, default 10)" }
+                },
+                "required": ["query"]
+            }
+        }),
+        json!({
+            "name": "repo_map",
+            "description": "Aider-style repository map for a repo memory source: a token-budgeted plain-text overview that ranks files by tree-sitter chunk count (importance heuristic) and surfaces each file's top symbols with a 3-line signature preview. Read this BEFORE calling repo_search to understand the project layout without consuming the whole context window.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Memory source id for the repo" },
+                    "budget_tokens": { "type": "integer", "description": "Soft cap on rendered map size in tokens (chars/4 estimate). Defaults to 1024, bounded 64..=16384." }
+                },
+                "required": ["source_id"]
+            }
+        }),
+        json!({
+            "name": "repo_signatures",
+            "description": "Tree-sitter signature-only preview for one file inside a repo memory source. Returns each top-level definition's signature line(s) without the body — drop-in compressed alternative to repo_read_file when you only need to know what a file declares.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_id": { "type": "string", "description": "Memory source id for the repo" },
+                    "file_path": { "type": "string", "description": "Repo-relative file path (e.g. 'src/main.rs')" }
+                },
+                "required": ["source_id", "file_path"]
+            }
+        }),
     ];
 
     if caps.code_read {
@@ -467,6 +539,106 @@ pub async fn dispatch(
                 // Checklist mode — actual state comes from router annotation
                 Ok("Checklist rendered by compliance gate (see response annotation).".to_string())
             }
+        }
+
+        // ─── Repo RAG tools (BRAIN-REPO-RAG-1c-b-i) ───────────────────
+        "repo_search" => {
+            let source_id = args["source_id"]
+                .as_str()
+                .ok_or_else(|| "missing required param: source_id".to_string())?
+                .to_string();
+            let query = args["query"]
+                .as_str()
+                .ok_or_else(|| "missing required param: query".to_string())?
+                .to_string();
+            let limit = args["limit"].as_u64().map(|n| n as usize);
+            let req = RepoSearchRequest {
+                source_id,
+                query,
+                limit,
+            };
+            gw.repo_search(caps, req)
+                .await
+                .map(|hits| serde_json::to_string(&hits).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "repo_list_files" => {
+            let source_id = args["source_id"]
+                .as_str()
+                .ok_or_else(|| "missing required param: source_id".to_string())?
+                .to_string();
+            gw.repo_list_files(caps, RepoListFilesRequest { source_id })
+                .await
+                .map(|files| serde_json::to_string(&files).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "repo_read_file" => {
+            let source_id = args["source_id"]
+                .as_str()
+                .ok_or_else(|| "missing required param: source_id".to_string())?
+                .to_string();
+            let file_path = args["file_path"]
+                .as_str()
+                .ok_or_else(|| "missing required param: file_path".to_string())?
+                .to_string();
+            gw.repo_read_file(
+                caps,
+                RepoReadFileRequest {
+                    source_id,
+                    file_path,
+                },
+            )
+            .await
+            .map(|s| serde_json::to_string(&s).unwrap_or_default())
+            .map_err(|e| e.to_string())
+        }
+        "cross_source_search" => {
+            let query = args["query"]
+                .as_str()
+                .ok_or_else(|| "missing required param: query".to_string())?
+                .to_string();
+            let limit = args["limit"].as_u64().map(|n| n as usize);
+            gw.cross_source_search(caps, CrossSourceSearchRequest { query, limit })
+                .await
+                .map(|hits| serde_json::to_string(&hits).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "repo_map" => {
+            let source_id = args["source_id"]
+                .as_str()
+                .ok_or_else(|| "missing required param: source_id".to_string())?
+                .to_string();
+            let budget_tokens = args["budget_tokens"].as_u64().map(|n| n as usize);
+            gw.repo_map(
+                caps,
+                RepoMapRequest {
+                    source_id,
+                    budget_tokens,
+                },
+            )
+            .await
+            .map(|s| serde_json::to_string(&s).unwrap_or_default())
+            .map_err(|e| e.to_string())
+        }
+        "repo_signatures" => {
+            let source_id = args["source_id"]
+                .as_str()
+                .ok_or_else(|| "missing required param: source_id".to_string())?
+                .to_string();
+            let file_path = args["file_path"]
+                .as_str()
+                .ok_or_else(|| "missing required param: file_path".to_string())?
+                .to_string();
+            gw.repo_signatures(
+                caps,
+                RepoSignaturesRequest {
+                    source_id,
+                    file_path,
+                },
+            )
+            .await
+            .map(|s| serde_json::to_string(&s).unwrap_or_default())
+            .map_err(|e| e.to_string())
         }
 
         // ─── Code-intelligence tools (native symbol index) ────────────
@@ -1999,14 +2171,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 18);
+        assert_eq!(defs.len(), 24);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 35);
+        assert_eq!(defs.len(), 41);
     }
 
     #[test]
@@ -2045,6 +2217,12 @@ mod tests {
             "brain_wiki_digest_text",
             "brain_review_gaps",
             "brain_session_checklist",
+            "repo_search",
+            "repo_list_files",
+            "repo_read_file",
+            "cross_source_search",
+            "repo_map",
+            "repo_signatures",
         ];
         assert_eq!(names, expected);
     }
@@ -2053,7 +2231,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[18..]
+        let code_names: Vec<&str> = defs[24..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();

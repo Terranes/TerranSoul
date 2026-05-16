@@ -89,12 +89,22 @@
         v-if="panelOnly === 'brain'"
         @navigate="handleSkillNavigate"
       />
-      <MemoryView v-if="panelOnly === 'memory'" />
-      <MarketplaceView v-if="panelOnly === 'marketplace'" />
-      <MobilePairingView v-if="panelOnly === 'mobile'" />
+      <MemoryView
+        v-if="panelOnly === 'memory'"
+        @navigate="handleSkillNavigate"
+      />
+      <MarketplaceView
+        v-if="panelOnly === 'marketplace'"
+        @navigate="handleSkillNavigate"
+      />
+      <MobilePairingView
+        v-if="panelOnly === 'mobile'"
+        @navigate="handleSkillNavigate"
+      />
       <VoiceSetupView
         v-if="panelOnly === 'voice'"
         @done="() => {}"
+        @navigate="handleSkillNavigate"
       />
     </main>
   </div>
@@ -195,33 +205,13 @@
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
-        <nav class="mobile-bottom-nav">
-          <!-- Build-mode indicator — first item in the tab row.
-                 MCP mode takes priority over DEV. -->
-          <span
-            v-if="windowStore.isMcpMode"
-            class="mobile-mcp-indicator"
-            title="MCP mode"
-          >MCP</span>
-          <span
-            v-else-if="windowStore.isDevBuild"
-            class="mobile-dev-indicator"
-            title="Development build"
-          >DEV</span>
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :class="['mobile-tab', { active: activeTab === tab.id }]"
-            @click="activeTab = tab.id"
-          >
-            <span
-              class="mobile-tab-icon"
-            >
-              <AppTabIcon :name="tab.id" />
-            </span>
-            <span class="mobile-tab-label">{{ tab.label }}</span>
-          </button>
-        </nav>
+        <MobileBottomNav
+          :tabs="tabs"
+          :active-tab="activeTab"
+          :is-mcp-mode="windowStore.isMcpMode"
+          :is-dev-build="windowStore.isDevBuild"
+          @update:active-tab="activeTab = $event"
+        />
 
         <!-- Main area -->
         <main
@@ -243,14 +233,43 @@
             v-if="activeTab === 'brain'"
             @navigate="handleSkillNavigate"
           />
-          <MemoryView v-if="activeTab === 'memory'" />
-          <MarketplaceView v-if="activeTab === 'marketplace'" />
-          <MobilePairingView v-if="activeTab === 'mobile'" />
+          <MemoryView
+            v-if="activeTab === 'memory'"
+            @navigate="handleSkillNavigate"
+          />
+          <MarketplaceView
+            v-if="activeTab === 'marketplace'"
+            @navigate="handleSkillNavigate"
+          />
+          <MobilePairingView
+            v-if="activeTab === 'mobile'"
+            @navigate="handleSkillNavigate"
+          />
           <VoiceSetupView
             v-if="activeTab === 'voice'"
             @done="activeTab = 'chat'"
+            @navigate="handleSkillNavigate"
+          />
+          <SettingsView
+            v-if="activeTab === 'settings'"
+            @navigate="handleSkillNavigate"
           />
         </main>
+
+        <!-- Global top-right action cluster (settings gear + notifications
+             bell). Visible on every tab. Replaces the legacy standalone
+             NotificationBubble + per-view gear buttons. -->
+        <AppChromeActions
+          @open-settings="settingsModalOpen = true"
+        />
+
+        <!-- Quick-settings modal triggered by the gear bubble.
+             Distinct from the Settings nav-tab which opens the full
+             SettingsView panel. -->
+        <SettingsModal
+          v-model:open="settingsModalOpen"
+          @open-full-settings="activeTab = 'settings'"
+        />
 
         <!-- Floating quest progress bubble — chat tab only so it doesn't
              overlap Memory, Marketplace, Voice, or Skill-tree pages. -->
@@ -263,6 +282,10 @@
 
         <!-- Combo unlock notifications (Chunk 131) -->
         <ComboToast />
+
+        <!-- Hermes job tracking + general notifications panel.
+             The notifications bell now lives inside AppChromeActions above. -->
+        <NotificationPanel />
 
         <!-- Quest reward ceremony overlay (Chunk 132) -->
         <QuestRewardCeremony />
@@ -283,6 +306,7 @@ import { useSkillTreeStore } from './stores/skill-tree';
 import { usePersonaStore } from './stores/persona';
 import { useSettingsStore } from './stores/settings';
 import { useMobileNotificationsStore } from './stores/mobile-notifications';
+import { useNotificationsStore } from './stores/notifications';
 import { useTheme } from './composables/useTheme';
 import ChatView from './views/ChatView.vue';
 import BrowserLandingView from './views/BrowserLandingView.vue';
@@ -293,15 +317,20 @@ import BrainView from './views/BrainView.vue';
 // BrainSetupView removed — FirstLaunchWizard handles initial brain config
 import VoiceSetupView from './views/VoiceSetupView.vue';
 import SkillTreeView from './views/SkillTreeView.vue';
+import SettingsView from './views/SettingsView.vue';
 import PetOverlayView from './views/PetOverlayView.vue';
 import QuestBubble from './components/QuestBubble.vue';
 import ComboToast from './components/ComboToast.vue';
+import AppChromeActions from './components/ui/AppChromeActions.vue';
+import SettingsModal from './components/SettingsModal.vue';
+import NotificationPanel from './components/NotificationPanel.vue';
 import QuestRewardCeremony from './components/QuestRewardCeremony.vue';
 import SplashScreen from './components/SplashScreen.vue';
 import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 import FloatingBadge from './components/ui/FloatingBadge.vue';
 import BackgroundScene from './components/BackgroundScene.vue';
 import AppTabIcon from './components/AppTabIcon.vue';
+import MobileBottomNav from './components/MobileBottomNav.vue';
 import McpActivityPanel from './components/McpActivityPanel.vue';
 
 const brain = useBrainStore();
@@ -311,8 +340,9 @@ const skillTree = useSkillTreeStore();
 const persona = usePersonaStore();
 const settingsStore = useSettingsStore();
 const mobileNotifications = useMobileNotificationsStore();
+const notifications = useNotificationsStore();
 useTheme(); // applies saved theme to html[data-theme] at startup
-const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile'>('chat');
+const activeTab = ref<'chat' | 'memory' | 'marketplace' | 'voice' | 'skills' | 'brain' | 'mobile' | 'settings'>('chat');
 const appLoading = ref(true);
 const tauriAvailable = ref(false);
 const browserMode = ref(false);
@@ -321,6 +351,7 @@ const browserAppWindowRef = ref<HTMLElement | null>(null);
 const browserDisplayMode = ref<'desktop' | 'chatbox'>('desktop');
 const questConstellationOpen = ref(false);
 const showFirstLaunchWizard = ref(false);
+const settingsModalOpen = ref(false);
 
 
 const hasBrain = computed(() => brain.hasBrain);
@@ -338,10 +369,11 @@ const tabs = [
   { id: 'chat' as const, label: 'Chat' },
   { id: 'skills' as const, label: 'Quests' },
   { id: 'brain' as const, label: 'Brain' },
-  { id: 'memory' as const, label: 'Memory' },
+  { id: 'memory' as const, label: 'Knowledge' },
   { id: 'marketplace' as const, label: 'Market' },
   { id: 'mobile' as const, label: 'Link' },
   { id: 'voice' as const, label: 'Voice' },
+  { id: 'settings' as const, label: 'Settings' },
 ];
 
 function onFirstLaunchDone() {
@@ -381,6 +413,7 @@ function handleSkillNavigate(target: string) {
     voice: 'voice',
     brain: 'brain',
     mobile: 'mobile',
+    settings: 'settings',
     'brain-setup': 'brain',
   };
   const tab = tabMap[target];
@@ -563,6 +596,7 @@ onMounted(async () => {
   await skillTree.initialise();
 
   await mobileNotifications.start();
+  await notifications.initialize();
 
   // Listen for the tray-driven 'window-mode-changed' event so the frontend
   // state stays in sync when the user toggles via the system-tray menu.
@@ -583,6 +617,7 @@ onMounted(async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown);
   mobileNotifications.stop();
+  void notifications.teardown();
 });
 
 

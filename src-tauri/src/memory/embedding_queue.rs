@@ -255,6 +255,47 @@ pub fn queue_status(conn: &Connection) -> SqlResult<EmbeddingQueueStatus> {
     })
 }
 
+/// One row of debug info for the self-healing queue UI — surfaces the actual
+/// `last_error` and retry timing so users can see *why* the worker isn't
+/// draining (e.g. "Ollama refused: model not found", "HTTP 429", etc.).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PendingEmbeddingDebugRow {
+    pub memory_id: i64,
+    pub attempts: u32,
+    pub last_error: Option<String>,
+    pub next_retry_at: u64,
+    /// First ~140 chars of the memory's content (for human identification).
+    pub content_preview: String,
+}
+
+/// Fetch the most-recently-failing rows for the debug log. Ordered by
+/// `attempts DESC, next_retry_at ASC` so the worst offenders show first.
+/// Rows with `attempts = 0` are excluded (those have never been tried).
+pub fn recent_failures(
+    conn: &Connection,
+    limit: usize,
+) -> SqlResult<Vec<PendingEmbeddingDebugRow>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT pe.memory_id, pe.attempts, pe.last_error, pe.next_retry_at,
+                substr(COALESCE(m.content, ''), 1, 140) AS preview
+         FROM pending_embeddings pe
+         LEFT JOIN memories m ON m.id = pe.memory_id
+         WHERE pe.attempts > 0
+         ORDER BY pe.attempts DESC, pe.next_retry_at ASC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map(params![limit as i64], |row| {
+        Ok(PendingEmbeddingDebugRow {
+            memory_id: row.get(0)?,
+            attempts: row.get::<_, i64>(1)? as u32,
+            last_error: row.get(2)?,
+            next_retry_at: row.get::<_, i64>(3)? as u64,
+            content_preview: row.get(4)?,
+        })
+    })?;
+    rows.collect()
+}
+
 /// Scan all memories with NULL embeddings that are NOT in the queue and enqueue them.
 /// This is the "bootstrap" operation for existing databases that already have
 /// unembedded memories from before Chunk 38.2 was deployed.

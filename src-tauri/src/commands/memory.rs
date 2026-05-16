@@ -477,6 +477,33 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
         }
     }
 
+    // GRAPHRAG-1b — auto-fire structured entity/relationship extraction.
+    // Gated by `graph_extract_enabled` (default off). When enabled, newly
+    // saved facts are scanned for named entities and typed relationships
+    // via the active brain provider. Results are materialized as entity
+    // memories + edges. Failures are swallowed — primary save succeeded.
+    if count > 0 {
+        let graph_extract = state
+            .app_settings
+            .lock()
+            .map(|s| s.graph_extract_enabled)
+            .unwrap_or(false);
+        if graph_extract {
+            let brain_mode = state.brain_mode.lock().ok().and_then(|g| g.clone());
+            if let Some(mode) = brain_mode {
+                // Snapshot the most recent N entries under a short lock.
+                let recent: Vec<MemoryEntry> = {
+                    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                    let all = store.get_all().unwrap_or_default();
+                    all.into_iter().rev().take(count).collect()
+                };
+                // Run extraction per entry: LLM call without lock, store
+                // materialisation under brief lock per entry.
+                let _ = run_graph_extraction(&recent, &mode, &state).await;
+            }
+        }
+    }
+
     let _ = enforce_configured_memory_limit(&state);
     Ok(count)
 }
@@ -526,6 +553,110 @@ async fn run_edge_extraction(
         state.kg_cache.invalidate(&endpoints);
     }
     Ok(total_inserted)
+}
+
+/// GRAPHRAG-1b: Run structured entity/relationship extraction on a batch of
+/// memory entries. For each entry, calls the LLM to extract entities +
+/// relationships, then materialises them (entity memories + edges) under a
+/// brief store lock per entry. Idempotent: entries that already have
+/// extraction edges are skipped.
+async fn run_graph_extraction(
+    entries: &[MemoryEntry],
+    brain_mode: &crate::brain::BrainMode,
+    state: &State<'_, AppState>,
+) -> Result<crate::memory::extraction::ExtractionReport, String> {
+    use crate::memory::extraction::{
+        build_extraction_prompt, materialise_edges, materialise_entities,
+        parse_extraction_response, ExtractionReport,
+    };
+
+    let mut total = ExtractionReport {
+        entities_found: 0,
+        entities_created: 0,
+        entities_deduplicated: 0,
+        relationships_found: 0,
+        edges_created: 0,
+        source_edges_created: 0,
+    };
+
+    for entry in entries {
+        // Skip very short entries.
+        if entry.content.len() < 20 {
+            continue;
+        }
+
+        // Check idempotency under a short lock.
+        {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let has_edges: bool = store
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM memory_edges WHERE src_id = ?1 AND edge_source = 'graphrag:extraction'",
+                    [entry.id],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+            if has_edges {
+                continue;
+            }
+        }
+
+        // LLM call — no lock held.
+        let user_prompt = build_extraction_prompt(&entry.content);
+        let reply = crate::memory::brain_memory::complete_via_mode(
+            brain_mode,
+            crate::memory::extraction::EXTRACTION_SYSTEM_PROMPT,
+            &user_prompt,
+            &state.provider_rotator,
+        )
+        .await;
+
+        let reply = match reply {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+
+        let result = match parse_extraction_response(&reply) {
+            Some(r) => r,
+            None => continue,
+        };
+
+        if result.entities.is_empty() {
+            continue;
+        }
+
+        total.entities_found += result.entities.len();
+        total.relationships_found += result.relationships.len();
+
+        // Materialise under a brief lock.
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+
+        let existing_count = result
+            .entities
+            .iter()
+            .filter(|e| {
+                let h = crate::memory::extraction::entity_source_hash(&e.name);
+                store.find_by_source_hash(&h).ok().flatten().is_some()
+            })
+            .count();
+
+        let name_to_id = materialise_entities(&store, &result.entities, entry.id);
+        total.entities_created += result.entities.len().saturating_sub(existing_count);
+        total.entities_deduplicated += existing_count;
+
+        let (edges, source_edges) =
+            materialise_edges(&store, &result.relationships, &name_to_id, entry.id);
+        total.edges_created += edges;
+        total.source_edges_created += source_edges;
+
+        // KG cache invalidation.
+        let endpoints: Vec<i64> = name_to_id.values().copied().collect();
+        drop(store);
+        state.kg_cache.invalidate(&endpoints);
+    }
+
+    Ok(total)
 }
 
 /// Use the active brain to summarize the current session into a single memory entry.
@@ -1864,15 +1995,20 @@ pub async fn graph_rag_detect_communities(state: State<'_, AppState>) -> Result<
 }
 
 /// Dual-level GraphRAG search: entity + community retrieval fused via RRF.
+///
+/// `level` is the optional hierarchy depth (GRAPHRAG-1a). Pass `None` to
+/// consider community summaries at every level; pass `Some(n)` to
+/// restrict the community-side ranking to communities at level `n`.
 #[tauri::command(rename_all = "camelCase")]
 pub async fn graph_rag_search(
     query: String,
     limit: Option<usize>,
+    level: Option<i32>,
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::memory::store::MemoryEntry>, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     let results = store
-        .graph_rag_search(&query, None, limit.unwrap_or(10))
+        .graph_rag_search_at_level(&query, None, limit.unwrap_or(10), level)
         .map_err(|e| format!("graph_rag_search: {e}"))?;
     // Fetch full entries for the result ids.
     let mut entries = Vec::with_capacity(results.len());
@@ -1883,6 +2019,248 @@ pub async fn graph_rag_search(
     }
     Ok(entries)
 }
+
+/// Scope-routed GraphRAG retrieval (GRAPHRAG-1c).
+///
+/// Classifies the query scope automatically (or uses an explicit override)
+/// and routes to the best retrieval path:
+/// - `global` → community summaries at the top hierarchy level
+/// - `local` → entity-walk + cascade expansion
+/// - `mixed` → standard dual-level RRF fusion
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_search_routed(
+    query: String,
+    limit: Option<usize>,
+    scope_override: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::store::MemoryEntry>, String> {
+    use crate::memory::query_intent::{classify_scope, QueryScope};
+
+    let scope = match scope_override.as_deref() {
+        Some("global") => QueryScope::Global,
+        Some("local") => QueryScope::Local,
+        Some("mixed") => QueryScope::Mixed,
+        _ => classify_scope(&query),
+    };
+
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    let results = store
+        .graph_rag_search_routed(&query, None, limit.unwrap_or(10), scope)
+        .map_err(|e| format!("graph_rag_search_routed: {e}"))?;
+    let mut entries = Vec::with_capacity(results.len());
+    for (id, _score) in results {
+        if let Ok(entry) = store.get_by_id(id) {
+            entries.push(entry);
+        }
+    }
+    Ok(entries)
+}
+
+/// Result of a [`graph_rag_build_hierarchy`] run.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct GraphRagHierarchyReport {
+    /// Total communities persisted across all levels.
+    pub total_communities: usize,
+    /// Highest hierarchy level produced (`0` when only the base level
+    /// was detected; up to
+    /// [`crate::memory::graph_rag::MAX_HIERARCHY_LEVELS`]`- 1`).
+    pub max_level: i32,
+    /// Number of communities per level, indexed by level.
+    pub per_level_counts: Vec<usize>,
+    /// How many communities had a fresh LLM summary generated this run.
+    pub summaries_generated: usize,
+    /// How many communities carried an existing summary forward (same
+    /// member set as a previous run, no LLM call needed).
+    pub summaries_carried_over: usize,
+    /// How many communities still have no summary (because the active
+    /// brain mode was unavailable, refused, or the call errored).
+    pub summaries_skipped: usize,
+}
+
+/// Build a hierarchical community structure (GRAPHRAG-1a).
+///
+/// Recurses [`MemoryStore::detect_and_store_hierarchy`] to populate
+/// `memory_communities` at levels `0..max_levels` (capped by
+/// [`crate::memory::graph_rag::MAX_HIERARCHY_LEVELS`]). Then, for every
+/// community that lacks a summary, asks the active brain provider to
+/// write a 1-3 sentence description of the cluster. Idempotent — a
+/// second call on the same graph reuses existing summaries whose member
+/// set has not changed.
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_rag_build_hierarchy(
+    max_levels: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<GraphRagHierarchyReport, String> {
+    let brain_mode = state.brain_mode.lock().map_err(|e| e.to_string())?.clone();
+    let target_levels = max_levels
+        .unwrap_or(crate::memory::graph_rag::MAX_HIERARCHY_LEVELS)
+        .clamp(1, crate::memory::graph_rag::MAX_HIERARCHY_LEVELS);
+
+    // Detect + persist the hierarchy first (carrying any existing summaries
+    // whose member set is unchanged).
+    let communities = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store
+            .detect_and_store_hierarchy(target_levels)
+            .map_err(|e| format!("detect hierarchy: {e}"))?
+    };
+
+    let max_level = communities.iter().map(|c| c.level).max().unwrap_or(0);
+    let level_count = (max_level as usize) + 1;
+    let mut per_level_counts = vec![0_usize; level_count];
+    for c in &communities {
+        let idx = c.level as usize;
+        if idx < per_level_counts.len() {
+            per_level_counts[idx] += 1;
+        }
+    }
+
+    let carried_over = communities
+        .iter()
+        .filter(|c| c.summary.is_some())
+        .count();
+    let mut generated = 0_usize;
+    let mut skipped = 0_usize;
+
+    // Generate summaries for any community without one. We grab a fresh
+    // snapshot of (id, level, member_ids) and the per-id contents now so
+    // the brain call below doesn't hold the memory_store lock across an
+    // .await.
+    let pending: Vec<(i64, i32, Vec<i64>)> = communities
+        .iter()
+        .filter(|c| c.summary.is_none())
+        .map(|c| (c.id, c.level, c.member_ids.clone()))
+        .collect();
+
+    for (community_id, level, member_ids) in pending {
+        let snippets: Vec<String> = {
+            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+            let mut out = Vec::with_capacity(member_ids.len());
+            for mid in &member_ids {
+                if let Ok(entry) = store.get_by_id(*mid) {
+                    out.push(format!(
+                        "- {}",
+                        entry.content.chars().take(280).collect::<String>()
+                    ));
+                }
+            }
+            out
+        };
+
+        if snippets.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        let summary = match brain_mode.as_ref() {
+            Some(mode) => {
+                let system = "You are a concise summarizer. Produce 1-3 sentences \
+                              describing the shared theme of the listed memories. \
+                              Do not enumerate the items; capture the cluster's \
+                              gist.";
+                let prompt = format!(
+                    "Hierarchy level: {}\nMember count: {}\nMemories:\n{}",
+                    level,
+                    member_ids.len(),
+                    snippets.join("\n")
+                );
+                match crate::memory::brain_memory::complete_via_mode(
+                    mode,
+                    system,
+                    &prompt,
+                    &state.provider_rotator,
+                )
+                .await
+                {
+                    Ok(reply) => {
+                        let trimmed = reply.trim().to_string();
+                        if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed)
+                        }
+                    }
+                    Err(_) => None,
+                }
+            }
+            None => None,
+        };
+
+        match summary {
+            Some(text) => {
+                let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+                store
+                    .set_community_summary(community_id, &text, None)
+                    .map_err(|e| format!("set summary: {e}"))?;
+                generated += 1;
+            }
+            None => {
+                skipped += 1;
+            }
+        }
+    }
+
+    Ok(GraphRagHierarchyReport {
+        total_communities: communities.len(),
+        max_level,
+        per_level_counts,
+        summaries_generated: generated,
+        summaries_carried_over: carried_over,
+        summaries_skipped: skipped,
+    })
+}
+
+/// Result of a [`graph_extract_entities`] run.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GraphExtractReport {
+    pub entities_found: usize,
+    pub entities_created: usize,
+    pub entities_deduplicated: usize,
+    pub relationships_found: usize,
+    pub edges_created: usize,
+    pub source_edges_created: usize,
+}
+
+/// GRAPHRAG-1b: Run structured entity / relationship extraction on recent
+/// memories (or all if `limit` is `None`). Requires an active brain mode.
+///
+/// Idempotent — memories that already have `graphrag:extraction` edges are
+/// skipped. Entities are deduplicated by normalised name (`source_hash`).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn graph_extract_entities(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<GraphExtractReport, String> {
+    let brain_mode = state
+        .brain_mode
+        .lock()
+        .map_err(|e| e.to_string())?
+        .clone()
+        .ok_or_else(|| "No brain configured. Enable a brain provider first.".to_string())?;
+
+    let entries: Vec<MemoryEntry> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let all = store.get_all().map_err(|e| e.to_string())?;
+        match limit {
+            Some(n) => all.into_iter().rev().take(n).collect(),
+            None => all,
+        }
+    };
+
+    let report = run_graph_extraction(&entries, &brain_mode, &state).await?;
+
+    Ok(GraphExtractReport {
+        entities_found: report.entities_found,
+        entities_created: report.entities_created,
+        entities_deduplicated: report.entities_deduplicated,
+        relationships_found: report.relationships_found,
+        edges_created: report.edges_created,
+        source_edges_created: report.source_edges_created,
+    })
+}
+
+// ── (legacy) ─────────────────────────────────────────────────────────
 
 // ── Temporal reasoning queries (Chunk 17.3) ──────────────────────────
 
@@ -2361,6 +2739,23 @@ pub async fn run_disk_ann_migration(
     store
         .run_disk_ann_migration_job(
             threshold.unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_ENTRY_THRESHOLD),
+            max_shards
+                .unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN),
+        )
+        .map_err(|e| e.to_string())
+}
+
+/// Build IVF-PQ indexes for shards that have planned sidecars.
+/// This is the Phase 3 execution step: trains coarse + PQ codebooks,
+/// encodes all shard vectors, and writes binary IVF-PQ index files.
+#[tauri::command]
+pub async fn build_ivf_pq_indexes(
+    max_shards: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::ivf_pq::IvfPqBuildStats>, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .build_ivf_pq_indexes(
             max_shards
                 .unwrap_or(crate::memory::disk_backed_ann::DEFAULT_DISK_ANN_MAX_SHARDS_PER_RUN),
         )

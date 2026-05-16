@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import type { Message } from '../types';
+import type { Message, MultiSourceHit } from '../types';
 import { useBrainStore } from './brain';
 import { useStreamingStore } from './streaming';
 import { useProviderHealthStore } from './provider-health';
@@ -10,6 +10,7 @@ import { useTaskStore } from './tasks';
 import { usePersonaStore } from './persona';
 import { useCharismaStore } from './charisma';
 import { useMemoryStore } from './memory';
+import { useMemorySourcesStore, ALL_SOURCES_ID } from './memory-sources';
 import type { DriftReport } from './persona-types';
 import { streamChatCompletion, buildHistory, getSystemPrompt } from '../utils/free-api-client';
 import { parseTags } from '../utils/emotion-parser';
@@ -1242,6 +1243,138 @@ function formatRetrievedContextPack(memoryLines: string[]): string {
     + '[/RETRIEVED CONTEXT]';
 }
 
+/**
+ * Result of parsing `@source-id` mentions from a chat composer message
+ * (BRAIN-REPO-RAG-1c-b-ii-b). Mentions are detected even mid-line and
+ * stripped from the visible message, leaving the cleaned text and a
+ * deduplicated list of mentioned source ids the RAG layer should
+ * consult for this turn (one-turn override that does NOT mutate the
+ * active source).
+ *
+ * Syntax matches Continue's `@codebase` precedent — a leading `@`
+ * followed by a source id token. Source ids are
+ * `[A-Za-z0-9_./-]+` (the same charset accepted by the
+ * `memory_sources.id` column + a slash for `owner/repo`).
+ */
+export interface ParsedSourceMentions {
+  /** The original message with the `@source-id` tokens stripped (whitespace tidied). */
+  cleaned: string;
+  /** Deduplicated, insertion-order list of mentioned source ids (without the leading `@`). */
+  mentioned: string[];
+}
+
+const SOURCE_MENTION_RE = /(?:^|\s)@([A-Za-z0-9_.-][A-Za-z0-9_./-]*)/g;
+
+/**
+ * Extract `@source-id` mentions from a chat message. Mentions outside
+ * word boundaries (e.g. inside an email address `me@example.com`) are
+ * ignored because the regex requires whitespace or start-of-string
+ * before the `@`. Trailing punctuation (`.` `,` `!` `?` `:` `;`) is
+ * stripped from the captured id so users can write `@owner/repo, what
+ * about...` naturally.
+ */
+export function parseSourceMentions(text: string): ParsedSourceMentions {
+  if (!text || typeof text !== 'string') return { cleaned: text ?? '', mentioned: [] };
+  const seen = new Set<string>();
+  const mentioned: string[] = [];
+  let cleaned = text;
+  let match: RegExpExecArray | null;
+  // Reset lastIndex per call since the regex is module-scoped + /g.
+  SOURCE_MENTION_RE.lastIndex = 0;
+  while ((match = SOURCE_MENTION_RE.exec(text)) !== null) {
+    let id = match[1];
+    // Strip trailing sentence punctuation that was greedily captured.
+    id = id.replace(/[.,!?:;]+$/, '');
+    if (!id) continue;
+    if (!seen.has(id)) {
+      seen.add(id);
+      mentioned.push(id);
+    }
+  }
+  if (mentioned.length === 0) return { cleaned: text, mentioned: [] };
+  // Strip the `@source-id` tokens (with the preserved leading whitespace).
+  cleaned = text.replace(SOURCE_MENTION_RE, (_full, raw: string) => {
+    const trimmed = raw.replace(/[.,!?:;]+$/, '');
+    return trimmed ? ' ' : _full;
+  }).replace(/\s+/g, ' ').trim();
+  return { cleaned: cleaned.length > 0 ? cleaned : text, mentioned };
+}
+
+/**
+ * Group an array of `MultiSourceHit` rows by `source_id`, preserving
+ * the order of first appearance for each source (which the backend
+ * RRF-fusion ranking implies is the most-relevant-first order). Used by
+ * both the prompt assembler (to render grouped `[LONG-TERM MEMORY]`
+ * blocks) and the citation footer (to render per-source badges).
+ */
+export function groupHitsBySource(
+  hits: MultiSourceHit[],
+): Array<{ source_id: string; source_label: string; hits: MultiSourceHit[] }> {
+  const order: string[] = [];
+  const byId = new Map<string, { source_id: string; source_label: string; hits: MultiSourceHit[] }>();
+  for (const hit of hits) {
+    let entry = byId.get(hit.source_id);
+    if (!entry) {
+      entry = { source_id: hit.source_id, source_label: hit.source_label, hits: [] };
+      byId.set(hit.source_id, entry);
+      order.push(hit.source_id);
+    }
+    entry.hits.push(hit);
+  }
+  return order.map((id) => byId.get(id)!);
+}
+
+/**
+ * Render a `MultiSourceHit[]` into a grouped `[LONG-TERM MEMORY]` block
+ * with per-source headings (BRAIN-REPO-RAG-1c-b-ii-b). When all hits
+ * come from a single source the output collapses to the legacy
+ * single-source format so existing tests / prompts that assume a flat
+ * bullet list continue to render unchanged.
+ *
+ * Example multi-source output (two sources):
+ *
+ *   [LONG-TERM MEMORY]
+ *   The following facts from your memory were retrieved for this turn:
+ *   ── 🧠 TerranSoul ──
+ *   - user prefers dark mode
+ *   ── 📦 owner/repo ──
+ *   - [src/lib.rs::fn main] entry point starts the runtime
+ *   [/LONG-TERM MEMORY]
+ */
+export function formatCrossSourceContextPack(hits: MultiSourceHit[]): string {
+  if (hits.length === 0) return '';
+  const groups = groupHitsBySource(hits);
+  if (groups.length === 1) {
+    const lines = groups[0].hits.map((h) => `- ${renderHitLine(h)}`);
+    return formatRetrievedContextPack(lines);
+  }
+  const bodyLines: string[] = [];
+  for (const group of groups) {
+    const badge = group.source_id === 'self' ? '🧠' : '📦';
+    bodyLines.push(`── ${badge} ${group.source_label} ──`);
+    for (const hit of group.hits) {
+      bodyLines.push(`- ${renderHitLine(hit)}`);
+    }
+  }
+  return '\n\n[RETRIEVED CONTEXT]\n'
+    + 'Source: TerranSoul cross-source memory/RAG store (brain + linked repos).\n'
+    + 'Contract: These are relevant retrieved records grouped by source, not an exhaustive transcript or complete database. Cite the source when you use a record (e.g. "per 🧠 TerranSoul" or "per 📦 owner/repo"). Say when retrieved context is insufficient.\n'
+    + '[LONG-TERM MEMORY]\n'
+    + 'The following facts from your memory were retrieved for this turn:\n'
+    + bodyLines.join('\n')
+    + '\n[/LONG-TERM MEMORY]\n'
+    + '[/RETRIEVED CONTEXT]';
+}
+
+function renderHitLine(hit: MultiSourceHit): string {
+  if (hit.file_path) {
+    const sym = hit.parent_symbol ? `::${hit.parent_symbol}` : '';
+    return `[${hit.file_path}${sym}] ${hit.content}`;
+  }
+  return hit.content;
+}
+
+
 // Re-export detectLlmCommand for tests
 export { detectLlmCommand };
 
@@ -2100,12 +2233,45 @@ export const useConversationStore = defineStore('conversation', () => {
         );
 
         // RAG: fetch relevant memories from Tauri or browser-native storage.
+        // BRAIN-REPO-RAG-1c-b-ii-b — when the active source is the
+        // cross-source "All" view OR the user message contains explicit
+        // `@source-id` mentions, fan out via `cross_source_search` so
+        // every linked repo contributes to the `[LONG-TERM MEMORY]`
+        // block. Hits are grouped by source for citation. Mentions are
+        // a one-turn override — they do NOT mutate the active source.
         let memoryBlock = '';
+        let memorySources: MultiSourceHit[] = [];
         if (!shouldUseFastChatPath(content)) {
+          const { cleaned, mentioned } = parseSourceMentions(content);
+          const query = cleaned || content;
+          const memoryStore = useMemoryStore();
+          let useCross = mentioned.length > 0;
+          if (!useCross) {
+            try {
+              const sourcesStore = useMemorySourcesStore();
+              useCross = sourcesStore.activeId === ALL_SOURCES_ID;
+            } catch {
+              /* sources store may not be initialised in some tests */
+            }
+          }
           try {
-            const results = await useMemoryStore().hybridSearch(content, 5);
-            if (results && results.length > 0) {
-              memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+            if (useCross) {
+              let hits = await memoryStore.crossSourceSearch(query, 5);
+              if (mentioned.length > 0) {
+                // Restrict the prompt block + citations to the
+                // explicitly @-mentioned sources for this turn.
+                const allow = new Set(mentioned);
+                hits = hits.filter((h) => allow.has(h.source_id));
+              }
+              if (hits.length > 0) {
+                memoryBlock = formatCrossSourceContextPack(hits);
+                memorySources = hits;
+              }
+            } else {
+              const results = await memoryStore.hybridSearch(query, 5);
+              if (results && results.length > 0) {
+                memoryBlock = formatRetrievedContextPack(results.map((m) => `- ${m.content}`));
+              }
             }
           } catch {
             // No memories — continue without RAG.
@@ -2220,6 +2386,7 @@ export const useConversationStore = defineStore('conversation', () => {
               timestamp: Date.now(),
               emoji: parsed.emoji ?? undefined,
               motion: parsed.motion ?? undefined,
+              sources: memorySources.length > 0 ? memorySources : undefined,
             };
             stampAgent(assistantMsg);
             if (warning) applyWarningAsQuest(assistantMsg, warning);

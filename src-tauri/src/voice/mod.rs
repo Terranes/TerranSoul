@@ -2,7 +2,14 @@ pub mod config_store;
 pub mod stub_asr;
 pub mod stub_diarization;
 pub mod stub_tts;
+pub mod supertonic_download;
+pub mod supertonic_manifest;
+pub mod supertonic_paths;
+#[cfg(feature = "tts-supertonic")]
+pub mod supertonic_tts;
 pub mod whisper_api;
+
+use std::path::Path;
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -122,6 +129,22 @@ pub struct VoiceProviderInfo {
     pub kind: String,
     /// Whether the provider requires an API key.
     pub requires_api_key: bool,
+    /// Whether the provider is currently installed and ready to synthesize
+    /// audio. Defaults to `true` for built-in providers; `false` for native
+    /// providers that must download a model before first use (e.g.
+    /// Supertonic). UI surfaces an "Install" button when `installed == false
+    /// && requires_install == true`.
+    #[serde(default = "default_true")]
+    pub installed: bool,
+    /// Whether the provider needs a separate install step before it can
+    /// synthesize audio (e.g. downloading ONNX model files). Mutually
+    /// orthogonal to `requires_api_key`.
+    #[serde(default)]
+    pub requires_install: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 /// A user-defined hotword for ASR boosting.
@@ -187,6 +210,8 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Returns fixed text. For development and testing only.".into(),
             kind: "local".into(),
             requires_api_key: false,
+            installed: true,
+            requires_install: false,
         },
         VoiceProviderInfo {
             id: "web-speech".into(),
@@ -194,6 +219,8 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Browser-native speech recognition. Zero setup, works offline on supported browsers.".into(),
             kind: "local".into(),
             requires_api_key: false,
+            installed: true,
+            requires_install: false,
         },
         VoiceProviderInfo {
             id: "whisper-api".into(),
@@ -201,6 +228,8 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Cloud-based transcription via OpenAI. High accuracy, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
+            installed: true,
+            requires_install: false,
         },
         VoiceProviderInfo {
             id: "groq-whisper".into(),
@@ -208,6 +237,8 @@ pub fn asr_providers() -> Vec<VoiceProviderInfo> {
             description: "Whisper-compatible transcription via Groq. Very fast, generous free tier, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
+            installed: true,
+            requires_install: false,
         },
     ]
 }
@@ -221,6 +252,8 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Returns silence. For development and testing only.".into(),
             kind: "local".into(),
             requires_api_key: false,
+            installed: true,
+            requires_install: false,
         },
         VoiceProviderInfo {
             id: "web-speech".into(),
@@ -228,6 +261,8 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Browser-native SpeechSynthesis. Free, offline-capable, no telemetry, no third-party API.".into(),
             kind: "local".into(),
             requires_api_key: false,
+            installed: true,
+            requires_install: false,
         },
         VoiceProviderInfo {
             id: "openai-tts".into(),
@@ -235,8 +270,43 @@ pub fn tts_providers() -> Vec<VoiceProviderInfo> {
             description: "Cloud-based synthesis via OpenAI. Best quality, requires API key.".into(),
             kind: "cloud".into(),
             requires_api_key: true,
+            installed: true,
+            requires_install: false,
+        },
+        // Supertonic — on-device ONNX TTS (supertone-inc/supertonic, MIT sample
+        // code + OpenRAIL-M model). Compact (~66M params, 5 languages, 10
+        // preset voices) — see `supertonic_manifest` for the pinned download
+        // shape. `installed` is `false` here; callers that have the
+        // `app_data_dir` available should prefer `tts_providers_for` which
+        // flips the flag based on on-disk state.
+        VoiceProviderInfo {
+            id: "supertonic".into(),
+            display_name: "Supertonic (on-device, neural)".into(),
+            description: "On-device neural TTS via ONNX Runtime. 5 languages, 10 preset voices, ~268 MB model. First-run download required.".into(),
+            kind: "local".into(),
+            requires_api_key: false,
+            installed: false,
+            requires_install: true,
         },
     ]
+}
+
+/// Return the TTS provider catalogue with the Supertonic `installed` flag
+/// reflecting on-disk state at `app_data_dir`. UI callers should prefer this
+/// over [`tts_providers`] so the Voice panel can flip Supertonic to "Active"
+/// without an additional round-trip.
+pub fn tts_providers_for(app_data_dir: &Path) -> Vec<VoiceProviderInfo> {
+    let install_dir = supertonic_paths::install_dir(app_data_dir);
+    let installed = supertonic_paths::is_installed(&install_dir);
+    tts_providers()
+        .into_iter()
+        .map(|mut p| {
+            if p.id == "supertonic" {
+                p.installed = installed;
+            }
+            p
+        })
+        .collect()
 }
 
 #[cfg(test)]

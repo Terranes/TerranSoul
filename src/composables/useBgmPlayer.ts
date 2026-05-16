@@ -207,3 +207,31 @@ export function useBgmPlayer(): BgmPlayerHandle {
     loadCustomTracks,
   };
 }
+
+// ── App-wide singleton accessor ──────────────────────────────────────────────
+// `useBgmPlayer()` is a factory (returns a fresh handle each call) so unit
+// tests can isolate state. Production code should share ONE audio element
+// across the whole app — otherwise multiple BGM surfaces (e.g. the inline
+// SettingsPanel inside CharacterViewport + the global SettingsModal) would
+// own independent audio elements and could play overlapping tracks.
+// `getSharedBgmPlayer()` lazily instantiates and caches one handle for the
+// lifetime of the module (i.e. the app session).
+
+let _sharedBgmPlayer: BgmPlayerHandle | null = null;
+
+/** Get (and lazily create) the app-wide shared BGM player handle. All
+ *  production callers should use this instead of `useBgmPlayer()` so the
+ *  same audio element drives every BGM control surface. */
+export function getSharedBgmPlayer(): BgmPlayerHandle {
+  if (!_sharedBgmPlayer) {
+    _sharedBgmPlayer = useBgmPlayer();
+  }
+  return _sharedBgmPlayer;
+}
+
+/** Test-only helper: drop the cached singleton so the next
+ *  `getSharedBgmPlayer()` call returns a fresh instance. */
+export function _resetSharedBgmPlayerForTests(): void {
+  _sharedBgmPlayer = null;
+}
+

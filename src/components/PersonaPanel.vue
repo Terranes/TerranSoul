@@ -153,22 +153,6 @@
               </option>
             </select>
           </label>
-          <label class="pp-field">
-            <span>Chinese dialect</span>
-            <select
-              v-model="draft.voiceProfile.chineseDialect"
-              data-testid="pp-voice-chinese-dialect"
-              @change="markDirty"
-            >
-              <option
-                v-for="option in chineseDialectOptions"
-                :key="option.value"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-          </label>
         </div>
         <label class="pp-field pp-field-block">
           <span>Provider voice</span>
@@ -176,10 +160,20 @@
             v-model="draft.voiceProfile.voiceName"
             type="text"
             maxlength="120"
-            placeholder="e.g. en-US-AnaNeural"
+            list="pp-voice-suggestions"
+            placeholder="Pick a voice or type a custom id"
             data-testid="pp-voice-name"
             @input="markDirty"
           >
+          <datalist id="pp-voice-suggestions">
+            <option
+              v-for="voice in voiceCatalogue"
+              :key="voice.id"
+              :value="voice.id"
+            >
+              {{ voice.label }}
+            </option>
+          </datalist>
         </label>
       </section>
 
@@ -453,7 +447,6 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { usePersonaStore } from '../stores/persona';
 import {
-  PERSONA_CHINESE_DIALECT_OPTIONS,
   PERSONA_ENGLISH_ACCENT_OPTIONS,
   PERSONA_VOICE_AGE_OPTIONS,
   PERSONA_VOICE_GENDER_OPTIONS,
@@ -462,6 +455,7 @@ import {
   migratePersonaVoiceProfile,
   type PersonaTraits,
 } from '../stores/persona-types';
+import { VOICE_CATALOGUE } from '../config/voice-catalogue';
 import { buildPersonaBlock } from '../utils/persona-prompt';
 import PersonaListEditor from './PersonaListEditor.vue';
 import PersonaPackPanel from './PersonaPackPanel.vue';
@@ -480,7 +474,7 @@ const ageOptions = PERSONA_VOICE_AGE_OPTIONS;
 const pitchOptions = PERSONA_VOICE_PITCH_OPTIONS;
 const styleOptions = PERSONA_VOICE_STYLE_OPTIONS;
 const englishAccentOptions = PERSONA_ENGLISH_ACCENT_OPTIONS;
-const chineseDialectOptions = PERSONA_CHINESE_DIALECT_OPTIONS;
+const voiceCatalogue = VOICE_CATALOGUE;
 
 function cloneTraits(t: PersonaTraits): PersonaTraits {
   return {

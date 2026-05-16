@@ -1,24 +1,33 @@
 <template>
-  <div class="memory-view">
+  <div
+    class="bp-shell memory-view"
+    data-density="cozy"
+  >
+    <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
+    <AppBreadcrumb
+      here="KNOWLEDGE GRAPHS"
+      @navigate="emit('navigate', $event)"
+    />
+
     <header class="mv-header">
       <h2>🧠 Memory</h2>
       <div class="mv-header-actions">
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           @click="handleExtract"
         >
           {{ isActing ? 'Working…' : '⬇ Extract from session' }}
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           @click="handleSummarize"
         >
           📄 Summarize session
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           title="Apply time-decay to all memories"
           @click="handleDecay"
@@ -26,7 +35,7 @@
           ⏳ Decay
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           :disabled="isActing"
           title="Remove fully decayed memories"
           @click="handleGC"
@@ -34,13 +43,13 @@
           🧹 GC
         </button>
         <button
-          class="btn-primary"
+          class="bp-btn bp-btn--primary bp-btn--sm"
           @click="showAdd = true"
         >
           ＋ Add memory
         </button>
         <button
-          class="btn-secondary"
+          class="bp-btn bp-btn--ghost bp-btn--sm"
           data-testid="mv-obsidian-export"
           :disabled="isActing"
           @click="showObsidianExport = true"
@@ -50,6 +59,71 @@
       </div>
     </header>
 
+    <!-- ── Memory source picker (BRAIN-REPO-RAG-1a) ────────────────────────── -->
+    <nav
+      class="mv-source-picker"
+      data-testid="mv-source-picker"
+      aria-label="Knowledge source"
+    >
+      <button
+        type="button"
+        class="mv-source-pill"
+        :class="{ 'is-active': sourcesStore.activeId === SELF_SOURCE_ID }"
+        data-testid="mv-source-self"
+        :title="'Built-in TerranSoul brain'"
+        @click="sourcesStore.setActive(SELF_SOURCE_ID)"
+      >
+        🧠 TerranSoul
+      </button>
+      <button
+        v-for="repo in sourcesStore.repoSources"
+        :key="repo.id"
+        type="button"
+        class="mv-source-pill"
+        :class="{ 'is-active': sourcesStore.activeId === repo.id }"
+        :data-testid="`mv-source-${repo.id}`"
+        :title="repo.repo_url ?? repo.label"
+        @click="sourcesStore.setActive(repo.id)"
+      >
+        📦 {{ repo.label }}
+      </button>
+      <button
+        type="button"
+        class="mv-source-pill"
+        :class="{ 'is-active': sourcesStore.isAllView }"
+        data-testid="mv-source-all"
+        title="Search across every source (BRAIN-REPO-RAG-1c)"
+        @click="sourcesStore.setActive(ALL_SOURCES_ID)"
+      >
+        🌐 All sources
+      </button>
+      <button
+        type="button"
+        class="mv-source-pill mv-source-pill--add"
+        data-testid="mv-source-add"
+        title="Register a new repository or topic source"
+        @click="showAddSource = true"
+      >
+        ＋ Add source
+      </button>
+      <button
+        type="button"
+        class="mv-source-pill mv-source-pill--add"
+        data-testid="mv-source-oauth"
+        title="Connect GitHub for private repositories"
+        @click="showRepoOAuth = true"
+      >
+        🔐 GitHub auth
+      </button>
+      <span
+        v-if="!sourcesStore.isAllView && sourcesStore.activeSource && sourcesStore.activeSource.kind === 'repo'"
+        class="mv-source-hint"
+        data-testid="mv-source-empty-hint"
+      >
+        Repo ingest lands in BRAIN-REPO-RAG-1b — this source is registered but not yet indexed.
+      </span>
+    </nav>
+
     <p
       v-if="feedback"
       class="mv-feedback"
@@ -58,92 +132,113 @@
     </p>
 
     <!-- Stats dashboard -->
-    <div
-      v-if="store.stats"
-      class="mv-stats"
-    >
-      <div class="mv-stat">
-        <span class="mv-stat-value">{{ store.stats.total }}</span>
-        <span class="mv-stat-label">Total</span>
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">01</span> Memory Health
+          </div>
+        </div>
+      </header>
+      <div
+        v-if="store.stats"
+        class="mv-stats"
+      >
+        <div class="mv-stat">
+          <span class="mv-stat-value">{{ store.stats.total }}</span>
+          <span class="mv-stat-label">Total</span>
+        </div>
+        <div class="mv-stat tier-short">
+          <span class="mv-stat-value">{{ store.stats.short_count }}</span>
+          <span class="mv-stat-label">Short</span>
+        </div>
+        <div class="mv-stat tier-working">
+          <span class="mv-stat-value">{{ store.stats.working_count }}</span>
+          <span class="mv-stat-label">Working</span>
+        </div>
+        <div class="mv-stat tier-long">
+          <span class="mv-stat-value">{{ store.stats.long_count }}</span>
+          <span class="mv-stat-label">Long</span>
+        </div>
+        <div class="mv-stat">
+          <span class="mv-stat-value">{{ formatTokens(store.stats.total_tokens) }}</span>
+          <span class="mv-stat-label">Tokens</span>
+        </div>
+        <div class="mv-stat">
+          <span class="mv-stat-value">{{ (store.stats.avg_decay ?? 0).toFixed(2) }}</span>
+          <span class="mv-stat-label">Avg Decay</span>
+        </div>
       </div>
-      <div class="mv-stat tier-short">
-        <span class="mv-stat-value">{{ store.stats.short_count }}</span>
-        <span class="mv-stat-label">Short</span>
-      </div>
-      <div class="mv-stat tier-working">
-        <span class="mv-stat-value">{{ store.stats.working_count }}</span>
-        <span class="mv-stat-label">Working</span>
-      </div>
-      <div class="mv-stat tier-long">
-        <span class="mv-stat-value">{{ store.stats.long_count }}</span>
-        <span class="mv-stat-label">Long</span>
-      </div>
-      <div class="mv-stat">
-        <span class="mv-stat-value">{{ formatTokens(store.stats.total_tokens) }}</span>
-        <span class="mv-stat-label">Tokens</span>
-      </div>
-      <div class="mv-stat">
-        <span class="mv-stat-value">{{ (store.stats.avg_decay ?? 0).toFixed(2) }}</span>
-        <span class="mv-stat-label">Avg Decay</span>
-      </div>
-    </div>
-
-    <section class="mv-rag-config">
-      <div class="mv-storage-summary">
-        <strong>Memory configuration</strong>
-        <span>Brain memory &amp; RAG in memory: {{ formatBytes(memoryCacheBytes) }} / {{ formatBytes(maxMemoryMb * 1024 * 1024) }}</span>
-      </div>
-      <label class="mv-storage-control">
-        <span>Maximum in-memory RAG cache</span>
-        <input
-          v-model.number="maxMemoryMb"
-          type="range"
-          min="1"
-          max="1024"
-          step="1"
-          @change="saveMemoryCacheCap"
-        >
-      </label>
-      <label class="mv-storage-number">
-        <input
-          v-model.number="maxMemoryMb"
-          type="number"
-          min="1"
-          max="1024"
-          step="1"
-          @change="saveMemoryCacheCap"
-        >
-        <span>MB</span>
-      </label>
     </section>
 
-    <section class="mv-rag-config">
-      <div class="mv-storage-summary">
-        <strong>Storage configuration</strong>
-        <span>Brain memory &amp; RAG in storage: {{ formatBytes(memoryStorageBytes) }} / {{ formatBytes(maxMemoryGb * 1024 * 1024 * 1024) }}</span>
-      </div>
-      <label class="mv-storage-control">
-        <span>Maximum persistent RAG storage</span>
-        <input
-          v-model.number="maxMemoryGb"
-          type="range"
-          min="1"
-          max="100"
-          step="0.5"
-          @change="saveMemoryCap"
-        >
-      </label>
-      <label class="mv-storage-number">
-        <input
-          v-model.number="maxMemoryGb"
-          type="number"
-          min="1"
-          max="100"
-          step="0.5"
-          @change="saveMemoryCap"
-        >
-        <span>GB</span>
-      </label>
+    <section class="bp-module">
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">02</span> Storage
+          </div>
+          <h2 class="bp-module-title">
+            Cache & persistence
+          </h2>
+        </div>
+      </header>
+      <section class="mv-rag-config">
+        <div class="mv-storage-summary">
+          <strong>Memory configuration</strong>
+          <span>Brain memory &amp; RAG in memory: {{ formatBytes(memoryCacheBytes) }} / {{ formatBytes(maxMemoryMb * 1024 * 1024) }}</span>
+        </div>
+        <label class="mv-storage-control">
+          <span>Maximum in-memory RAG cache</span>
+          <input
+            v-model.number="maxMemoryMb"
+            type="range"
+            min="1"
+            max="1024"
+            step="1"
+            @change="saveMemoryCacheCap"
+          >
+        </label>
+        <label class="mv-storage-number">
+          <input
+            v-model.number="maxMemoryMb"
+            type="number"
+            min="1"
+            max="1024"
+            step="1"
+            @change="saveMemoryCacheCap"
+          >
+          <span>MB</span>
+        </label>
+      </section>
+
+      <section class="mv-rag-config">
+        <div class="mv-storage-summary">
+          <strong>Storage configuration</strong>
+          <span>Brain memory &amp; RAG in storage: {{ formatBytes(memoryStorageBytes) }} / {{ formatBytes(maxMemoryGb * 1024 * 1024 * 1024) }}</span>
+        </div>
+        <label class="mv-storage-control">
+          <span>Maximum persistent RAG storage</span>
+          <input
+            v-model.number="maxMemoryGb"
+            type="range"
+            min="1"
+            max="100"
+            step="0.5"
+            @change="saveMemoryCap"
+          >
+        </label>
+        <label class="mv-storage-number">
+          <input
+            v-model.number="maxMemoryGb"
+            type="number"
+            min="1"
+            max="100"
+            step="0.5"
+            @change="saveMemoryCap"
+          >
+          <span>GB</span>
+        </label>
+      </section>
     </section>
 
     <!-- Tabs -->
@@ -193,7 +288,7 @@
           </span>
         </div>
         <MemoryGraph
-          :memories="store.memories"
+          :memories="graphMemories"
           :edges="store.edges"
           :edge-mode="edgeMode"
           @select="onNodeSelect"
@@ -381,8 +476,12 @@
     <!-- ── Session tab ── -->
     <div
       v-else-if="activeTab === 'Session'"
-      class="mv-session-panel"
+      class="mv-session-panel ts-cockpit-card ts-cockpit-card--compact"
     >
+      <span
+        class="ts-cockpit-label mv-panel-kicker"
+        aria-hidden="true"
+      >01 / Session Stream</span>
       <p class="mv-session-hint">
         Short-term memory — the last 20 messages of the current session that the brain reads
         before every reply.
@@ -411,9 +510,13 @@
     <!-- ── Audit tab (chunk 33B.4) ── -->
     <div
       v-else-if="activeTab === 'Audit'"
-      class="mv-audit-panel"
+      class="mv-audit-panel ts-cockpit-card ts-cockpit-card--compact"
       data-testid="mv-audit-panel"
     >
+      <span
+        class="ts-cockpit-label mv-panel-kicker"
+        aria-hidden="true"
+      >02 / Provenance</span>
       <p class="mv-audit-hint">
         Provenance view — pick a memory entry to see its full edit history and the typed edges
         that connect it to other memories. Edges are colour-coded by source: solid =
@@ -690,6 +793,83 @@
         </div>
       </div>
     </div>
+
+    <!-- ── Add memory-source dialog (BRAIN-REPO-RAG-1a) ──────────────────── -->
+    <div
+      v-if="showAddSource"
+      class="mv-modal-backdrop"
+      data-testid="mv-add-source-dialog"
+      @click.self="showAddSource = false"
+    >
+      <div
+        class="mv-modal"
+        role="dialog"
+        aria-labelledby="mv-add-source-title"
+      >
+        <h3 id="mv-add-source-title">
+          ＋ Add memory source
+        </h3>
+        <p class="mv-desc">
+          Register a repository or topic source. At this milestone we
+          only persist the source metadata — automated clone + indexing
+          ships in BRAIN-REPO-RAG-1b.
+        </p>
+        <label>Label
+          <input
+            v-model="newSourceLabel"
+            placeholder="e.g. terransoul-docs"
+            data-testid="mv-add-source-label"
+            :disabled="newSourceSaving"
+          >
+        </label>
+        <label>Repository URL <span class="mv-desc-inline">(optional)</span>
+          <input
+            v-model="newSourceRepoUrl"
+            placeholder="https://github.com/owner/repo"
+            data-testid="mv-add-source-url"
+            :disabled="newSourceSaving"
+          >
+        </label>
+        <label>Git ref <span class="mv-desc-inline">(branch / tag)</span>
+          <input
+            v-model="newSourceRepoRef"
+            placeholder="main"
+            data-testid="mv-add-source-ref"
+            :disabled="newSourceSaving"
+          >
+        </label>
+        <p
+          v-if="newSourceError"
+          class="mv-feedback mv-feedback--error"
+          data-testid="mv-add-source-error"
+        >
+          {{ newSourceError }}
+        </p>
+        <div class="mv-modal-actions">
+          <button
+            class="bp-btn bp-btn--primary bp-btn--sm"
+            data-testid="mv-add-source-save"
+            :disabled="newSourceSaving || !newSourceLabel.trim()"
+            @click="handleAddSource"
+          >
+            {{ newSourceSaving ? 'Saving…' : 'Save source' }}
+          </button>
+          <button
+            class="bp-btn bp-btn--ghost bp-btn--sm"
+            :disabled="newSourceSaving"
+            @click="showAddSource = false; resetAddSourceForm()"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- BRAIN-REPO-RAG-1e: GitHub OAuth device-flow dialog -->
+    <RepoOAuthDialog
+      :open="showRepoOAuth"
+      @close="showRepoOAuth = false"
+    />
   </div>
 </template>
 
@@ -697,12 +877,80 @@
 import { ref, computed, onMounted, watchEffect } from 'vue';
 import { useMemoryStore } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
+import {
+  useMemorySourcesStore,
+  SELF_SOURCE_ID,
+  ALL_SOURCES_ID,
+} from '../stores/memory-sources';
 import MemoryGraph from '../components/MemoryGraph.vue';
 import GraphNodeCrudPanel from '../components/GraphNodeCrudPanel.vue';
+import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
+import RepoOAuthDialog from '../components/RepoOAuthDialog.vue';
 import type { MemoryEntry, MemoryType, MemoryTier, MemoryProvenance } from '../types';
+
+const emit = defineEmits<{
+  navigate: [target: string];
+}>();
 
 const store = useMemoryStore();
 const settingsStore = useSettingsStore();
+const sourcesStore = useMemorySourcesStore();
+
+// ── Add-source dialog state (BRAIN-REPO-RAG-1a) ──────────────────────────
+const showAddSource = ref(false);
+const showRepoOAuth = ref(false);
+const newSourceLabel = ref('');
+const newSourceRepoUrl = ref('');
+const newSourceRepoRef = ref('main');
+const newSourceError = ref<string | null>(null);
+const newSourceSaving = ref(false);
+
+function slugifySourceId(url: string, label: string): string {
+  // Prefer the repo URL host+path; fall back to label for non-URL sources.
+  const trimmed = url.trim();
+  if (trimmed) {
+    try {
+      const parsed = new URL(trimmed);
+      const path = parsed.pathname.replace(/\.git$/, '').replace(/^\/+|\/+$/g, '');
+      if (parsed.host && path) return `repo:${parsed.host}/${path}`;
+    } catch {
+      /* not a URL — fall through to label slug */
+    }
+  }
+  const slug = label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return slug ? `repo:${slug}` : `repo:source-${Date.now()}`;
+}
+
+function resetAddSourceForm(): void {
+  newSourceLabel.value = '';
+  newSourceRepoUrl.value = '';
+  newSourceRepoRef.value = 'main';
+  newSourceError.value = null;
+}
+
+async function handleAddSource(): Promise<void> {
+  newSourceError.value = null;
+  const label = newSourceLabel.value.trim();
+  if (!label) {
+    newSourceError.value = 'Label is required.';
+    return;
+  }
+  newSourceSaving.value = true;
+  const created = await sourcesStore.createSource({
+    id: slugifySourceId(newSourceRepoUrl.value, label),
+    kind: 'repo',
+    label,
+    repo_url: newSourceRepoUrl.value.trim() || null,
+    repo_ref: newSourceRepoRef.value.trim() || null,
+  });
+  newSourceSaving.value = false;
+  if (created) {
+    showAddSource.value = false;
+    resetAddSourceForm();
+  } else {
+    newSourceError.value = sourcesStore.error ?? 'Failed to create source.';
+  }
+}
 
 type MvTab = 'Graph' | 'List' | 'Session' | 'Audit';
 const activeTab = ref<MvTab>('List');
@@ -827,6 +1075,58 @@ const displayedMemories = computed(() => {
     return true;
   });
 });
+
+// ── BRAIN-REPO-RAG-2a: cross-source knowledge-graph projection ──────────
+// When the "All" pseudo-source is active, fan-out into every connected repo
+// source and merge their recent chunks into the graph as additional nodes.
+const crossSourceNodes = ref<MemoryEntry[]>([]);
+
+function projectRepoNodeToMemoryEntry(
+  node: import('../types').CrossSourceGraphNode,
+): MemoryEntry {
+  return {
+    id: node.graphId,
+    content: node.content,
+    tags: '',
+    importance: 1,
+    memory_type: 'fact',
+    created_at: node.createdAt,
+    last_accessed: null,
+    access_count: 0,
+    tier: 'long' as MemoryTier,
+    decay_score: 0,
+    session_id: null,
+    parent_id: null,
+    token_count: 0,
+    confidence: 1,
+    source_id: node.sourceId,
+    source_label: node.sourceLabel,
+    file_path: node.filePath ?? undefined,
+    parent_symbol: node.parentSymbol ?? undefined,
+  };
+}
+
+watchEffect(async () => {
+  if (sourcesStore.isAllView) {
+    try {
+      const graph = await store.fetchCrossSourceGraph();
+      crossSourceNodes.value = graph.nodes.map(projectRepoNodeToMemoryEntry);
+    } catch {
+      crossSourceNodes.value = [];
+    }
+  } else {
+    crossSourceNodes.value = [];
+  }
+});
+
+/** Memories passed to the graph view: personal + cross-source repo chunks. */
+const graphMemories = computed<MemoryEntry[]>(() => {
+  if (!sourcesStore.isAllView || crossSourceNodes.value.length === 0) {
+    return displayedMemories.value;
+  }
+  return [...displayedMemories.value, ...crossSourceNodes.value];
+});
+
 
 async function doSearch() {
   if (!searchQuery.value.trim()) {
@@ -1074,6 +1374,7 @@ onMounted(async () => {
     loadShortTerm(),
     store.getStats(),
     store.getEdgeStats(),
+    sourcesStore.fetchAll(),
   ]);
 });
 </script>

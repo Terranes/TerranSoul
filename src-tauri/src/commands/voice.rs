@@ -1,5 +1,10 @@
-use tauri::State;
+#[cfg(feature = "tts-supertonic")]
+use std::sync::Arc;
 
+use tauri::{Emitter, State};
+
+use crate::voice::supertonic_download::{self, DownloadProgress};
+use crate::voice::supertonic_paths::{self, InstallStatus};
 use crate::voice::{self, AsrEngine, DiarizationEngine, TtsEngine, VoiceConfig, VoiceProviderInfo};
 use crate::AppState;
 
@@ -11,8 +16,8 @@ pub async fn list_asr_providers() -> Vec<VoiceProviderInfo> {
 
 /// List available TTS providers.
 #[tauri::command]
-pub async fn list_tts_providers() -> Vec<VoiceProviderInfo> {
-    voice::tts_providers()
+pub async fn list_tts_providers(state: State<'_, AppState>) -> Result<Vec<VoiceProviderInfo>, String> {
+    Ok(voice::tts_providers_for(&state.data_dir))
 }
 
 /// Get the current voice configuration.
@@ -299,9 +304,174 @@ pub async fn synthesize_tts(text: String, state: State<'_, AppState>) -> Result<
             // explicit "render in the browser" signal.
             Ok(Vec::new())
         }
+        Some("supertonic") => synthesize_with_supertonic(&trimmed, &state).await,
         Some(id) => Err(format!("Unsupported TTS provider: {id}")),
         None => Err("No TTS provider configured".to_string()),
     }
+}
+
+/// Synthesize a sample sentence with a specific TTS provider WITHOUT changing
+/// the persisted `voice_config`. Used by the Voice panel's per-provider
+/// "Test voice" button so users can audition providers before setting a
+/// default. Returns the WAV audio bytes (or an empty `Vec` for browser-side
+/// providers like `web-speech`, which the frontend renders via
+/// `speechSynthesis.speak()`).
+#[tauri::command(rename_all = "camelCase")]
+pub async fn test_tts_provider(
+    provider_id: String,
+    sample_text: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<u8>, String> {
+    let text = sample_text
+        .unwrap_or_else(|| "Hello, this is a TerranSoul voice test.".to_string());
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("Sample text cannot be empty".to_string());
+    }
+
+    match provider_id.as_str() {
+        "stub" => {
+            let engine = voice::stub_tts::StubTts;
+            engine.synthesize(trimmed).await.map(|r| r.audio)
+        }
+        "web-speech" => {
+            // Browser-side synthesis — frontend falls back to
+            // `speechSynthesis.speak()` when payload is empty.
+            Ok(Vec::new())
+        }
+        "openai-tts" => {
+            Err("OpenAI TTS backend synthesis is not yet implemented. Configure it as the active provider for browser-side playback.".to_string())
+        }
+        "supertonic" => synthesize_with_supertonic(trimmed, &state).await,
+        other => Err(format!("Unknown TTS provider: {other}")),
+    }
+}
+
+// ─── Supertonic install / status / removal / download commands ───────────────
+
+/// Resolve the on-disk install directory for Supertonic. Created on first
+/// download; the path may not yet exist.
+#[tauri::command]
+pub async fn supertonic_install_path(state: State<'_, AppState>) -> Result<String, String> {
+    Ok(supertonic_paths::install_dir(&state.data_dir)
+        .to_string_lossy()
+        .into_owned())
+}
+
+/// Check whether the Supertonic model is installed (all manifest files are
+/// present at expected sizes).
+#[tauri::command]
+pub async fn supertonic_is_installed(state: State<'_, AppState>) -> Result<bool, String> {
+    let dir = supertonic_paths::install_dir(&state.data_dir);
+    Ok(supertonic_paths::is_installed(&dir))
+}
+
+/// Detailed Supertonic install status (used by the consent / settings UI).
+#[tauri::command]
+pub async fn supertonic_status(state: State<'_, AppState>) -> Result<SupertonicStatusPayload, String> {
+    let s = supertonic_paths::status(&state.data_dir);
+    Ok(s.into())
+}
+
+/// Delete every file under the Supertonic install directory. Subsequent
+/// `synthesize_tts` calls with `tts_provider == "supertonic"` will fail
+/// until the user re-downloads the model.
+#[tauri::command]
+pub async fn supertonic_remove(state: State<'_, AppState>) -> Result<(), String> {
+    let dir = supertonic_paths::install_dir(&state.data_dir);
+    supertonic_paths::remove(&dir).map_err(|e| format!("remove install dir: {e}"))?;
+    // Drop any cached loaded engine so the next synthesis attempt sees the
+    // missing files.
+    #[cfg(feature = "tts-supertonic")]
+    {
+        // `OnceCell` has no public clear; we cannot drop the loaded sessions
+        // without taking ownership of the cell. Instead, log a hint — the
+        // next synthesis attempt will error cleanly because the files are
+        // gone, and the user can restart to fully release weights.
+        let _ = &state.supertonic;
+    }
+    Ok(())
+}
+
+/// Stream the full manifest into the install directory, emitting
+/// `supertonic-download-progress` events on the provided `app_handle`.
+/// Returns `()` on success; failure messages include the offending file.
+#[tauri::command]
+pub async fn supertonic_download_model(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let dir = supertonic_paths::install_dir(&state.data_dir);
+    let client = state.ollama_client.clone(); // shares connection pool
+    let app_for_progress = app.clone();
+    let progress = move |payload: DownloadProgress| {
+        let _ = app_for_progress.emit("supertonic-download-progress", &payload);
+    };
+    supertonic_download::download_all(&dir, &client, &progress)
+        .await
+        .map_err(|e| e.to_string())?;
+    let _ = app.emit("supertonic-download-complete", ());
+    Ok(())
+}
+
+/// Serializable mirror of `InstallStatus` for the frontend.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SupertonicStatusPayload {
+    pub install_dir: String,
+    pub installed: bool,
+    pub revision: String,
+    pub manifest_lock_present: bool,
+}
+
+impl From<InstallStatus> for SupertonicStatusPayload {
+    fn from(s: InstallStatus) -> Self {
+        Self {
+            install_dir: s.install_dir.to_string_lossy().into_owned(),
+            installed: s.installed,
+            revision: s.revision.to_string(),
+            manifest_lock_present: s.manifest_lock_present,
+        }
+    }
+}
+
+// ─── Supertonic synthesis path ───────────────────────────────────────────────
+
+#[cfg(feature = "tts-supertonic")]
+async fn synthesize_with_supertonic(
+    text: &str,
+    state: &State<'_, AppState>,
+) -> Result<Vec<u8>, String> {
+    use crate::voice::supertonic_tts::{SupertonicOptions, SupertonicTts};
+
+    let install_dir = supertonic_paths::install_dir(&state.data_dir);
+    if !supertonic_paths::is_installed(&install_dir) {
+        return Err(
+            "Supertonic model is not installed. Run `supertonic_download_model` first.".to_string(),
+        );
+    }
+    let engine: Arc<SupertonicTts> = state
+        .supertonic
+        .get_or_try_init(|| async {
+            let dir = install_dir.clone();
+            let loaded = tokio::task::spawn_blocking(move || {
+                SupertonicTts::load(&dir, SupertonicOptions::default())
+            })
+            .await
+            .map_err(|e| format!("supertonic load join: {e}"))??;
+            Ok::<_, String>(Arc::new(loaded))
+        })
+        .await?
+        .clone();
+    let result = engine.synthesize(text).await?;
+    Ok(result.audio)
+}
+
+#[cfg(not(feature = "tts-supertonic"))]
+async fn synthesize_with_supertonic(
+    _text: &str,
+    _state: &State<'_, AppState>,
+) -> Result<Vec<u8>, String> {
+    Err("Supertonic was not compiled into this build (feature `tts-supertonic` disabled).".to_string())
 }
 
 #[cfg(test)]
@@ -318,8 +488,8 @@ mod tests {
 
     #[test]
     fn list_tts_providers_contains_stub() {
-        let rt = tokio::runtime::Runtime::new().unwrap();
-        let providers = rt.block_on(list_tts_providers());
+        let state = crate::AppState::for_test();
+        let providers = voice::tts_providers_for(&state.data_dir);
         assert!(providers.iter().any(|p| p.id == "stub"));
     }
 

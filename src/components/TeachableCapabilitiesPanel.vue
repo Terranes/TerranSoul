@@ -776,7 +776,7 @@ defineExpose({ categoryLabel });
   background: color-mix(in srgb, var(--ts-accent-violet) 14%, transparent);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .tc-panel {
     max-height: calc(100dvh - 2rem);
   }

@@ -435,7 +435,7 @@ onMounted(() => {
   min-height: 320px;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .si-sessions-body {
     grid-template-columns: 1fr;
   }

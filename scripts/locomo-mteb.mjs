@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Retrieval-only adapter for the MTEB LoCoMo text-retrieval dataset.
+// Retrieval + optional end-to-end QA adapter for the MTEB LoCoMo text-retrieval dataset.
 
 import { spawn } from 'node:child_process';
 import {
@@ -36,6 +36,243 @@ const CTX_SYSTEMS = new Set(['rrf_ctx', 'rrf_ctx_rerank']);
 const KG_SYSTEMS = new Set(['rrf_kg', 'rrf_kg_rerank']);
 const DATA_KINDS = ['corpus', 'queries', 'qrels'];
 const METRIC_KS = [1, 5, 10, 20, 100];
+
+// ── QA Eval (TOP1-2) ──────────────────────────────────────────────────────
+
+const DEFAULT_OLLAMA_HOST = process.env.OLLAMA_HOST || 'http://127.0.0.1:11434';
+const DEFAULT_QA_MODEL = 'gemma3:4b';
+const QA_EVAL_MODES = new Set(['mem0-paper']);
+
+function qaEvalOption() {
+  return option('qa-eval', '');
+}
+
+function generatorModel() {
+  return option('generator', DEFAULT_QA_MODEL);
+}
+
+function judgeModel() {
+  return option('judge', '');
+}
+
+function openaiKey() {
+  return option('openai-key', process.env.OPENAI_API_KEY || '');
+}
+
+function anthropicKey() {
+  return option('anthropic-key', process.env.ANTHROPIC_API_KEY || '');
+}
+
+function isOpenAiModel(model) {
+  return model.startsWith('gpt-') || model.startsWith('o1-') || model.startsWith('o3-');
+}
+
+function isAnthropicModel(model) {
+  return model.startsWith('claude-');
+}
+
+function isClaudeCodeModel(model) {
+  // claude-code (uses CLI default) or claude-code:<model-id>
+  return model === 'claude-code' || model.startsWith('claude-code:');
+}
+
+function claudeCodeBinary() {
+  return option('claude-code-bin', process.env.CLAUDE_CODE_BIN || 'claude');
+}
+
+async function claudeCodeChat(model, prompt) {
+  // model is either "claude-code" (CLI default) or "claude-code:<id>"
+  const subModel = model.startsWith('claude-code:') ? model.slice('claude-code:'.length) : '';
+  const bin = claudeCodeBinary();
+  const args = ['-p', '--output-format', 'text'];
+  if (subModel) args.push('--model', subModel);
+
+  // Windows: claude is distributed as claude.exe (PATH lookup works without
+  // a shell). Avoid shell:true so we don't trip the DEP0190 deprecation warning
+  // and so prompts on stdin aren't reinterpreted by cmd.exe.
+  const spawnBin = process.platform === 'win32' && !bin.toLowerCase().endsWith('.exe') && !bin.toLowerCase().endsWith('.cmd') && !bin.includes('\\') && !bin.includes('/')
+    ? `${bin}.exe`
+    : bin;
+
+  return await new Promise((resolvePromise, rejectPromise) => {
+    let child;
+    try {
+      child = spawn(spawnBin, args, { stdio: ['pipe', 'pipe', 'pipe'] });
+    } catch (err) {
+      rejectPromise(new Error(`Failed to launch Claude Code CLI ('${spawnBin}'): ${err.message}. Install from https://docs.anthropic.com/en/docs/claude-code or set --claude-code-bin / CLAUDE_CODE_BIN.`));
+      return;
+    }
+
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk.toString('utf8'); });
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString('utf8'); });
+    child.on('error', (err) => {
+      rejectPromise(new Error(`Claude Code CLI failed to start: ${err.message}. Is 'claude' on PATH? Run 'claude login' first.`));
+    });
+    child.on('close', (code) => {
+      if (code !== 0) {
+        rejectPromise(new Error(`Claude Code CLI exited with code ${code}: ${stderr.trim() || stdout.trim() || '<no output>'}`));
+        return;
+      }
+      resolvePromise(stdout.trim());
+    });
+
+    child.stdin.write(prompt);
+    child.stdin.end();
+  });
+}
+
+async function ollamaChat(model, prompt, host = DEFAULT_OLLAMA_HOST) {
+  const response = await fetch(`${host}/api/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, prompt, stream: false, options: { temperature: 0 } }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Ollama generate failed (${response.status}): ${body}`);
+  }
+  const data = await response.json();
+  return data.response ?? '';
+}
+
+async function openaiChat(model, prompt, apiKey) {
+  const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'user', content: prompt }],
+      temperature: 0,
+      max_tokens: 512,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`OpenAI chat failed (${response.status}): ${body}`);
+  }
+  const data = await response.json();
+  return data.choices?.[0]?.message?.content ?? '';
+}
+
+async function anthropicChat(model, prompt, apiKey) {
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model,
+      max_tokens: 512,
+      temperature: 0,
+      messages: [{ role: 'user', content: prompt }],
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`Anthropic chat failed (${response.status}): ${body}`);
+  }
+  const data = await response.json();
+  // Anthropic returns content as array of blocks; concatenate text blocks.
+  if (Array.isArray(data.content)) {
+    return data.content
+      .filter((b) => b && b.type === 'text' && typeof b.text === 'string')
+      .map((b) => b.text)
+      .join('');
+  }
+  return '';
+}
+
+async function llmCall(model, prompt, apiKey) {
+  if (isClaudeCodeModel(model)) {
+    // Claude Code CLI handles auth via `claude login`; no API key needed.
+    return claudeCodeChat(model, prompt);
+  }
+  if (isAnthropicModel(model)) {
+    const key = apiKey?.anthropic ?? anthropicKey();
+    if (!key) throw new Error(`Anthropic API key required for model ${model}; set --anthropic-key or ANTHROPIC_API_KEY (or use --judge=claude-code to route through the Claude Code CLI instead)`);
+    return anthropicChat(model, prompt, key);
+  }
+  if (isOpenAiModel(model)) {
+    const key = apiKey?.openai ?? (typeof apiKey === 'string' ? apiKey : openaiKey());
+    if (!key) throw new Error(`OpenAI API key required for model ${model}; set --openai-key or OPENAI_API_KEY`);
+    return openaiChat(model, prompt, key);
+  }
+  return ollamaChat(model, prompt);
+}
+
+function buildGeneratorPrompt(question, contextTexts) {
+  const context = contextTexts.map((doc, i) => `[${i + 1}] ${doc}`).join('\n\n');
+  return `You are a helpful assistant. Answer the question using ONLY the provided context from past conversations. Be concise and factual. If the context doesn't contain enough information to answer, say "I cannot determine the answer from the available context."
+
+Context:
+${context}
+
+Question: ${question}
+
+Answer:`;
+}
+
+function buildJudgePrompt(question, referenceContext, generatedAnswer) {
+  return `You are an impartial judge evaluating the quality of an AI assistant's answer about past conversations.
+
+Question: ${question}
+
+Reference context (ground truth passages that contain the correct answer):
+${referenceContext}
+
+Generated answer:
+${generatedAnswer}
+
+Rate the generated answer on a scale of 0 to 10:
+- 10: Perfectly correct and complete, captures all key information
+- 7-9: Mostly correct, minor omissions or imprecisions
+- 4-6: Partially correct, captures some key information but misses important details
+- 1-3: Mostly incorrect or irrelevant
+- 0: Completely wrong or refuses to answer when the information is clearly available
+
+Respond with ONLY a single integer from 0 to 10.`;
+}
+
+function parseJudgeScore(raw) {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/^(\d{1,2})\b/);
+  if (!match) return null;
+  const score = parseInt(match[1], 10);
+  return score >= 0 && score <= 10 ? score : null;
+}
+
+function buildCorpusIndex(corpus) {
+  const index = new Map();
+  for (const row of corpus) {
+    index.set(row.id, sessionText(row));
+  }
+  return index;
+}
+
+function lookupRetrievedTexts(retrievedIds, corpusIndex, maxDocs = 10) {
+  const texts = [];
+  for (const id of retrievedIds.slice(0, maxDocs)) {
+    const text = corpusIndex.get(id);
+    if (text) texts.push(text);
+  }
+  return texts;
+}
+
+function lookupReferenceContext(qrels, corpusIndex) {
+  const texts = [];
+  for (const [corpusId] of qrels) {
+    const text = corpusIndex.get(corpusId);
+    if (text) texts.push(text);
+  }
+  return texts.join('\n---\n');
+}
 
 function command() {
   const raw = process.argv[2];
@@ -79,17 +316,18 @@ function listOption(name, fallback) {
 }
 
 function printHelp() {
-  console.log(`TerranSoul MTEB LoCoMo retrieval adapter
+  console.log(`TerranSoul MTEB LoCoMo retrieval + QA adapter
 
 Usage:
   npm run brain:locomo:prepare
   npm run brain:locomo:sample
   npm run brain:locomo:run -- --tasks=single_hop,multi_hop --systems=search,rrf
+  npm run brain:locomo:run -- --qa-eval=mem0-paper --systems=rrf_rerank --judge=gpt-4o-mini
 
 Commands:
   prepare   Download pinned MTEB LoCoMo parquet files into target-copilot-bench/locomo-mteb
   sample    Run a small single_hop smoke pass (default: 10 queries)
-  run       Run retrieval-only scoring through TerranSoul MemoryStore
+  run       Run retrieval scoring (and optionally QA eval) through TerranSoul MemoryStore
   help      Print this help
 
 Options:
@@ -102,7 +340,16 @@ Options:
   --no-download       Fail if a parquet file is missing instead of downloading it
   --force-download    Re-download parquet files even if they already exist
 
-This is a retrieval benchmark over MTEB qrels. It is not LoCoMo end-to-end QA accuracy.
+QA Eval Options (TOP1-2):
+  --qa-eval=mem0-paper  Enable end-to-end QA evaluation with LLM-as-Judge
+  --generator=<model>   Generator model (default: gemma3:4b; local Ollama, OpenAI gpt-*, Anthropic claude-*, or claude-code)
+  --judge=<model>       Judge model (default: same as generator; e.g. gpt-4o-mini, claude-sonnet-4-6, or claude-code)
+  --openai-key=<key>    OpenAI API key (or set OPENAI_API_KEY env var)
+  --anthropic-key=<key> Anthropic API key (or set ANTHROPIC_API_KEY env var)
+  --claude-code-bin=<p> Path to Claude Code CLI binary (default: 'claude' on PATH; or set CLAUDE_CODE_BIN). Use --judge=claude-code or claude-code:<model-id> to route through the CLI — no API key required, auth via 'claude login'.
+
+Without --qa-eval, this is a retrieval benchmark over MTEB qrels.
+With --qa-eval=mem0-paper, it adds LLM-as-Judge QA scoring (J-score) per the Mem0 paper methodology.
 `);
 }
 
@@ -574,6 +821,223 @@ async function run(options) {
   }
 }
 
+// ── QA Eval Runner (TOP1-2) ────────────────────────────────────────────────
+
+async function runQaTask(client, task, options) {
+  const data = await loadTaskData(task, options);
+  const corpusIndex = buildCorpusIndex(data.corpus);
+  const gen = options.qaGenerator;
+  const judge = options.qaJudge;
+  const key = options.qaApiKey;
+
+  console.log(
+    `[locomo-qa] ${task}: corpus=${data.corpus.length.toLocaleString('en-US')} queries=${data.queries.length}/${data.allQueryCount} generator=${gen} judge=${judge}`,
+  );
+
+  await client.send({ op: 'reset' });
+  await client.send({
+    op: 'add_sessions',
+    question_id: `locomo-${task}`,
+    sessions: sessionPayloads(data.corpus),
+  });
+
+  const system = options.systems[0]; // QA eval uses the first (best) retrieval system
+  const perQuery = [];
+  let scoreSum = 0;
+  let judgeFailures = 0;
+
+  for (let index = 0; index < data.queries.length; index += 1) {
+    const query = data.queries[index];
+    const qrels = data.qrels.get(query.id);
+
+    // 1. Retrieve
+    const result = await searchQuery(client, system, query.text, options.topK);
+    const retrievalMetrics = scoreQuery(result.retrievedIds, qrels);
+
+    // 2. Generate answer from retrieved context
+    const retrievedTexts = lookupRetrievedTexts(result.retrievedIds, corpusIndex, 10);
+    let generatedAnswer = '';
+    const genStart = performance.now();
+    try {
+      const genPrompt = buildGeneratorPrompt(query.text, retrievedTexts);
+      generatedAnswer = await llmCall(gen, genPrompt, key);
+    } catch (err) {
+      console.error(`[locomo-qa] generator error for query ${query.id}: ${err.message}`);
+      generatedAnswer = 'ERROR: generation failed';
+    }
+    const genLatencyMs = performance.now() - genStart;
+
+    // 3. Judge: compare generated answer against reference context
+    const referenceContext = lookupReferenceContext(qrels, corpusIndex);
+    let jScore = 0;
+    const judgeStart = performance.now();
+    try {
+      const judgePrompt = buildJudgePrompt(query.text, referenceContext, generatedAnswer);
+      const judgeRaw = await llmCall(judge, judgePrompt, key);
+      const parsed = parseJudgeScore(judgeRaw);
+      if (parsed !== null) {
+        jScore = parsed;
+      } else {
+        console.warn(`[locomo-qa] judge returned unparseable score for query ${query.id}: "${judgeRaw.slice(0, 100)}"`);
+        judgeFailures += 1;
+      }
+    } catch (err) {
+      console.error(`[locomo-qa] judge error for query ${query.id}: ${err.message}`);
+      judgeFailures += 1;
+    }
+    const judgeLatencyMs = performance.now() - judgeStart;
+
+    scoreSum += jScore;
+    perQuery.push({
+      task,
+      system,
+      query_id: query.id,
+      query: query.text,
+      generated_answer: generatedAnswer.slice(0, 500),
+      j_score: jScore,
+      gen_latency_ms: genLatencyMs,
+      judge_latency_ms: judgeLatencyMs,
+      latency_ms: result.latencyMs,
+      retrieved_tokens: result.retrievedTokens,
+      retrieved_ids: result.retrievedIds,
+      gold_ids: [...qrels.keys()],
+      ...retrievalMetrics,
+    });
+
+    const processed = index + 1;
+    if (processed % 25 === 0 || processed === data.queries.length) {
+      const avgJ = scoreSum / processed;
+      const avgR10 = avg(perQuery.map(r => r.recall_at_10));
+      console.log(
+        `[locomo-qa] ${task}/${system} ${processed}/${data.queries.length}: J=${(avgJ * 10).toFixed(1)} R@10=${pct(avgR10)} (${judgeFailures} judge failures)`,
+      );
+    }
+  }
+
+  const avgJScore = perQuery.length > 0 ? avg(perQuery.map(r => r.j_score)) * 10 : 0;
+  return {
+    system,
+    task,
+    queries: perQuery.length,
+    avg_j_score: avgJScore,
+    judge_failures: judgeFailures,
+    recall_at_10: avg(perQuery.map(r => r.recall_at_10)),
+    ndcg_at_10: avg(perQuery.map(r => r.ndcg_at_10)),
+    per_query: perQuery,
+  };
+}
+
+function qaMarkdownReport(report) {
+  const lines = [];
+  lines.push('# TerranSoul LoCoMo End-to-End QA Report (TOP1-2)');
+  lines.push('');
+  lines.push(`Date: ${report.generated_at}`);
+  lines.push(`Dataset: ${report.dataset} @ ${report.revision}`);
+  lines.push(`Retrieval system: ${report.retrieval_system}`);
+  lines.push(`Generator: ${report.generator}`);
+  lines.push(`Judge: ${report.judge}`);
+  lines.push(`QA eval mode: ${report.qa_eval}`);
+  lines.push(`Top K: ${report.top_k}`);
+  lines.push('');
+  lines.push('## J-Score Results (0-100 scale)');
+  lines.push('');
+  lines.push('| Task | Queries | J-score | R@10 | NDCG@10 | Judge failures |');
+  lines.push('|---|---:|---:|---:|---:|---:|');
+  for (const row of report.by_task) {
+    lines.push(
+      `| ${row.task} | ${row.queries} | ${row.avg_j_score.toFixed(1)} | ${pct(row.recall_at_10)} | ${pct(row.ndcg_at_10)} | ${row.judge_failures} |`,
+    );
+  }
+  if (report.overall) {
+    lines.push(
+      `| **overall** | ${report.overall.queries} | **${report.overall.avg_j_score.toFixed(1)}** | ${pct(report.overall.recall_at_10)} | ${pct(report.overall.ndcg_at_10)} | ${report.overall.judge_failures} |`,
+    );
+  }
+  lines.push('');
+  lines.push('## Mem0-paper baselines (gpt-4o-mini judge, Chhikara et al. 2025)');
+  lines.push('');
+  lines.push('| System | single_hop | multi_hop | open_domain | temporal |');
+  lines.push('|---|---:|---:|---:|---:|');
+  lines.push('| Mem0 | 67.13 | 51.15 | 72.93 | 55.51 |');
+  lines.push('| Mem0_g | 65.71 | 47.19 | 75.71 | 58.13 |');
+  lines.push('| Zep | 61.70 | 41.35 | 76.60 | 49.31 |');
+  lines.push('| LangMem | 62.23 | 47.92 | 71.12 | 23.43 |');
+  lines.push('| OpenAI memory | 63.79 | 42.92 | 62.29 | 21.71 |');
+  lines.push('| full-context | ~72.90 | — | — | — |');
+  lines.push('');
+  lines.push('## Methodology');
+  lines.push('');
+  lines.push('Per query: (1) retrieve top-K from TerranSoul MemoryStore, (2) prompt the generator');
+  lines.push('for a concise answer using retrieved context, (3) prompt the judge to rate the');
+  lines.push('generated answer 0-10 against the qrel-mapped reference context, (4) J-score =');
+  lines.push('mean(judge_scores) × 10 → 0-100 scale.');
+  lines.push('');
+  lines.push('This mirrors the Mem0 paper\'s LLM-as-Judge methodology (Chhikara et al. 2025,');
+  lines.push('arXiv:2504.19413, Appendix A). When judge=gpt-4o-mini, scores are directly');
+  lines.push('comparable to the Mem0-paper baselines. Local-judge scores (e.g. gemma3:4b) are');
+  lines.push('directionally comparable but not strictly equivalent.');
+  return `${lines.join('\n')}\n`;
+}
+
+function writeQaReports(report, options) {
+  mkdirSync(options.outDir, { recursive: true });
+  const suffix = report.limit > 0 ? `_${report.total_queries}q` : '';
+  const judge = report.judge.replace(/[/:]/g, '-');
+  const jsonPath = resolve(options.outDir, `locomo_qa_${judge}${suffix}.json`);
+  const mdPath = resolve(options.outDir, `locomo_qa_${judge}${suffix}.md`);
+  writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf8');
+  writeFileSync(mdPath, qaMarkdownReport(report), 'utf8');
+  console.log(`[locomo-qa] wrote ${jsonPath}`);
+  console.log(`[locomo-qa] wrote ${mdPath}`);
+}
+
+async function runQaEval(options) {
+  await ensureParquetFiles(options.tasks, options);
+  const embed = needsEmbedding(options.systems);
+  const rerank = needsRerank(options.systems);
+  const hyde = needsHyde(options.systems);
+  const contextualize = needsContextualize(options.systems);
+  const kg = needsKg(options.systems);
+  const client = new JsonlClient({ embed, rerank, hyde, contextualize, kg });
+  try {
+    const byTask = [];
+    for (const task of options.tasks) {
+      const taskResult = await runQaTask(client, task, options);
+      byTask.push(taskResult);
+    }
+
+    const allPerQuery = byTask.flatMap(t => t.per_query);
+    const overall = {
+      system: byTask[0]?.system ?? options.systems[0],
+      task: 'overall',
+      queries: allPerQuery.length,
+      avg_j_score: allPerQuery.length > 0 ? avg(allPerQuery.map(r => r.j_score)) * 10 : 0,
+      judge_failures: byTask.reduce((sum, t) => sum + t.judge_failures, 0),
+      recall_at_10: avg(allPerQuery.map(r => r.recall_at_10)),
+      ndcg_at_10: avg(allPerQuery.map(r => r.ndcg_at_10)),
+    };
+
+    return {
+      benchmark: 'LoCoMo end-to-end QA (LLM-as-Judge)',
+      generated_at: new Date().toISOString(),
+      dataset: DATASET_REPO,
+      revision: DATASET_REV,
+      qa_eval: options.qaEval,
+      generator: options.qaGenerator,
+      judge: options.qaJudge,
+      retrieval_system: options.systems[0],
+      tasks: options.tasks,
+      top_k: options.topK,
+      limit: options.limit,
+      total_queries: allPerQuery.length,
+      overall,
+      by_task: byTask,
+    };
+  } finally {
+    await client.close();
+  }
+}
+
 async function main() {
   const cmd = command();
   if (cmd === 'help' || hasFlag('help')) {
@@ -598,7 +1062,15 @@ async function main() {
     outDir: resolve(REPO_ROOT, option('out-dir', DEFAULT_OUT_DIR)),
     noDownload: hasFlag('no-download'),
     forceDownload: hasFlag('force-download'),
+    qaEval: qaEvalOption(),
+    qaGenerator: generatorModel(),
+    qaJudge: judgeModel() || generatorModel(),
+    qaApiKey: { openai: openaiKey(), anthropic: anthropicKey() },
   };
+
+  if (options.qaEval && !QA_EVAL_MODES.has(options.qaEval)) {
+    throw new Error(`unknown --qa-eval mode: ${options.qaEval}; use one of: ${[...QA_EVAL_MODES].join(', ')}`);
+  }
 
   if (cmd === 'prepare') {
     await ensureParquetFiles(options.tasks, options);
@@ -609,10 +1081,16 @@ async function main() {
   }
 
   console.log(
-    `[locomo] tasks=${options.tasks.join(',')} systems=${options.systems.join(',')} limit=${options.limit || 'all'} top_k=${options.topK}`,
+    `[locomo] tasks=${options.tasks.join(',')} systems=${options.systems.join(',')} limit=${options.limit || 'all'} top_k=${options.topK}${options.qaEval ? ` qa-eval=${options.qaEval} generator=${options.qaGenerator} judge=${options.qaJudge}` : ''}`,
   );
-  const report = await run(options);
-  writeReports(report, options);
+
+  if (options.qaEval) {
+    const qaReport = await runQaEval(options);
+    writeQaReports(qaReport, options);
+  } else {
+    const report = await run(options);
+    writeReports(report, options);
+  }
 }
 
 main().catch(err => {

@@ -184,7 +184,6 @@ describe('character store — IPC integration', () => {
         pitch: 'very_high',
         style: 'whisper',
         englishAccent: 'british',
-        chineseDialect: 'sichuanese',
         voiceName: 'en-GB-SoniaNeural',
       },
     });

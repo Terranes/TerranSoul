@@ -139,7 +139,7 @@ describe('BrainView', () => {
     const w = mount(BrainView);
     await flushPromises();
 
-    await w.find('[data-testid="bv-lan-enabled-toggle"]').setValue(true);
+    await w.find('[data-testid="bv-lan-enabled-toggle"]').trigger('click');
 
     expect(mockInvoke).toHaveBeenCalledWith('save_app_settings', {
       settings: expect.objectContaining({ lan_enabled: true }),
@@ -306,5 +306,47 @@ describe('BrainView', () => {
     expect(local).toBeTruthy();
     expect(local!.classes()).toContain('active');
     expect(local!.text()).toContain('LM Studio');
+  });
+
+  it('shows OpenClaw active badge when openclaw-bridge plugin is active', async () => {
+    mockInvoke.mockImplementation((cmd: string) => {
+      if (cmd === 'plugin_list') {
+        return Promise.resolve([
+          {
+            manifest: {
+              id: 'openclaw-bridge',
+              display_name: 'OpenClaw Bridge',
+              version: '0.1.0',
+              description: 'Legal AI assistant bridge',
+              kind: 'agent',
+              install_method: 'manual',
+              capabilities: [],
+              activation_events: [],
+              contributes: { commands: [], views: [], settings: [], themes: [], slash_commands: [], memory_hooks: [] },
+              api_version: 1,
+              dependencies: [],
+            },
+            state: 'active',
+            installed_at: Date.now(),
+            last_active_at: Date.now(),
+          },
+        ]);
+      }
+      return makeInvokeMock()(cmd);
+    });
+    const w = mount(BrainView);
+    await flushPromises();
+
+    const badge = w.find('[data-testid="bv-openclaw-active-badge"]');
+    expect(badge.exists()).toBe(true);
+    expect(badge.text()).toBe('OpenClaw active');
+  });
+
+  it('hides OpenClaw active badge when no openclaw-bridge plugin', async () => {
+    mockInvoke.mockImplementation(makeInvokeMock());
+    const w = mount(BrainView);
+    await flushPromises();
+
+    expect(w.find('[data-testid="bv-openclaw-active-badge"]').exists()).toBe(false);
   });
 });

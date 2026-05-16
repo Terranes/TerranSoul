@@ -605,25 +605,14 @@ impl AnnIndex {
     }
 
     /// Simple k-means clustering for PQ codebook generation.
-    /// This is a lightweight implementation; production may use more sophisticated methods.
+    /// Delegates to the full Lloyd's k-means implementation in `ivf_pq`.
     fn kmeans_cluster(vectors: &[Vec<f32>], k: usize, dim: usize) -> Result<Vec<f32>, String> {
         if vectors.is_empty() {
             return Ok(vec![0.0; dim * k]);
         }
 
-        // Initialize centroids: randomly select k vectors from input
-        let mut centroids = vec![0.0; dim * k];
-        let step = (vectors.len() / k).max(1);
-        for i in 0..k {
-            let vec_idx = (i * step) % vectors.len();
-            let centroid_start_idx = i * dim;
-            let centroid_end_idx = centroid_start_idx + dim;
-            if vec_idx < vectors.len() && vectors[vec_idx].len() >= dim {
-                centroids[centroid_start_idx..centroid_end_idx]
-                    .copy_from_slice(&vectors[vec_idx][..dim]);
-            }
-        }
-
+        let refs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();
+        let (centroids, _iters) = super::ivf_pq::kmeans_train_pub(&refs, k, dim)?;
         Ok(centroids)
     }
 
@@ -1459,7 +1448,19 @@ mod tests {
         // Should have 3 centroids × 3 dimensions = 9 values
         assert_eq!(centroids.len(), 9);
 
-        // First centroid should be copied from first vector
-        assert_eq!(centroids[0..3], vec![1.0, 0.0, 0.0]);
+        // With 3 inputs and k=3, each centroid should converge to one input vector.
+        // Verify all 3 input vectors are represented (order may vary).
+        let c0 = &centroids[0..3];
+        let c1 = &centroids[3..6];
+        let c2 = &centroids[6..9];
+        let inputs: Vec<&[f32]> = vectors.iter().map(|v| v.as_slice()).collect();
+        for input in &inputs {
+            let found = [c0, c1, c2].iter().any(|c| {
+                c.iter()
+                    .zip(input.iter())
+                    .all(|(a, b)| (a - b).abs() < 1e-5)
+            });
+            assert!(found, "Input {:?} not found in centroids", input);
+        }
     }
 }

@@ -7,6 +7,7 @@ import { useSettingsStore } from './settings';
 import { usePersonaStore } from './persona';
 import { useConversationStore } from './conversation';
 import { useMemoryStore } from './memory';
+import { useMemorySourcesStore } from './memory-sources';
 import { streamChatCompletion, type ChatMessage } from '../utils/free-api-client';
 import type { QuestChoice } from '../types';
 import { DEFAULT_THEME_ID } from '../config/themes';
@@ -876,6 +877,44 @@ const SKILL_NODES: SkillNode[] = [
     ],
   },
   {
+    id: 'repo-scholar-quest',
+    name: 'Repo Scholar',
+    tagline: 'Index a code repository as a private knowledge source',
+    description: 'Add a Git repository as a separate memory source. TerranSoul clones it shallowly, walks .gitignore-aware, scans for secrets, chunks code by tree-sitter AST + prose by markdown headings, and stores everything in a per-repo SQLite + HNSW index. Cross-source chat surfaces repo hits alongside your main brain with @source-id mentions and a citations footer.',
+    icon: '📦',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: [
+      'Per-repo hybrid search (vector + keyword + recency, RRF k=60)',
+      'Aider-style repo map + signature-only previews via MCP',
+      '@source-id chat mentions for one-turn context overrides',
+      'Cross-source citations footer on every assistant message',
+    ],
+    rewardIcons: ['📦', '🗺️', '@', '📑'],
+    questSteps: [
+      { label: 'Open the Memory tab', action: 'navigate', target: 'memory' },
+      { label: 'Click ＋ Add source and provide a repo URL', action: 'configure', target: 'memory_add_repo' },
+      { label: 'Wait for clone + ingest to finish', action: 'info' },
+      { label: 'Ask a question with @repo-id mention in chat', action: 'navigate', target: 'chat' },
+    ],
+    category: 'brain',
+    recommended: true,
+    combos: [
+      {
+        withSkills: ['paid-brain'],
+        name: 'Repo Sage',
+        description: 'Repo Scholar + premium brain = research-grade answers grounded in your codebase.',
+        icon: '🧙',
+      },
+      {
+        withSkills: ['rag-knowledge'],
+        name: 'Polyglot Librarian',
+        description: 'Repo Scholar + RAG = cross-source retrieval across your prose memories and code repos.',
+        icon: '📚',
+      },
+    ],
+  },
+  {
     id: 'quest-daily-brief',
     name: 'Morning Report',
     tagline: 'Daily memory digest of commitments and deadlines',
@@ -1570,6 +1609,11 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
       }
       case 'scholar-quest':
         return false; // Chain quest — manually completed via KnowledgeQuestDialog
+      case 'repo-scholar-quest': {
+        // Auto-active when brain is configured + at least one repo memory source exists.
+        const repoSources = useMemorySourcesStore();
+        return brain.brainMode !== null && repoSources.repoSources.length > 0;
+      }
       case 'quest-daily-brief': {
         // Auto-active when: brain configured + at least one memory exists
         const memStoreForBrief = useMemoryStore();

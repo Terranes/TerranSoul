@@ -142,14 +142,24 @@ flat once 1% of the corpus has been ingested and the router has
 rebuilt at least once. Disagreement on recall surfaces a routing bug;
 disagreement on latency surfaces a fan-out bug.
 
-### Phase 3 — Disk-backed ANN (PQ / IVF-PQ) (◐ Kickoff shipped — Chunk 49.1)
+### Phase 3 — Disk-backed ANN (PQ / IVF-PQ) (✅ Code shipped — Chunk BENCH-SCALE-3a)
 
 - ✅ Kickoff planner surface (`memory/disk_backed_ann.rs` +
   `MemoryStore::disk_ann_plan`) reports per-shard migration candidates by
   threshold and ANN index-file presence for deterministic rollout sequencing.
+- ✅ IVF-PQ full implementation (`memory/ivf_pq.rs`):
+  - Proper k-means with Lloyd's algorithm + k-means++ initialization
+  - IVF coarse quantizer training (nlist centroids on full corpus)
+  - PQ codebook training on residual subspaces (256 centroids × pq_m subquantizers)
+  - PQ encoding (residual → pq_m bytes per vector)
+  - ADC (Asymmetric Distance Computation) search with nprobe cell probing
+  - Custom binary file format for fast load/save
+- ✅ Integration: `build_ivf_pq_for_shard()` consumes sidecars → builds indexes;
+  `search_ivf_pq()` provides the search path; `build_ivf_pq_indexes` Tauri command.
+- ⏳ Remaining: actual 10M+ corpus bench run (~40h wall clock on dedicated hardware).
 
 - For shards > N million entries, build IVF-PQ indexes (target m=96, nbits=8)
-  using a Rust binding to FAISS or `usearch`'s pq mode.
+  using the pure-Rust IVF-PQ implementation in `memory/ivf_pq.rs`.
 - Memory-map shard files; only the active centroid lists are paged into RAM.
 - Refresh PQ codebooks during nightly compaction.
 

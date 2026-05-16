@@ -39,7 +39,7 @@ Read the following files for full project context (in order of priority):
 
 - **Tech:** Vue 3 + Tauri 2 + Rust + Three.js/VRM + SQLite + Ollama
 - **Frontend:** `src/` — Vue 3.5 + TypeScript 5.x, Pinia stores, Vite 6
-- **Backend:** `src-tauri/src/` — Rust async (Tokio), 349 Tauri commands
+- **Backend:** `src-tauri/src/` — Rust async (Tokio), 354 Tauri commands
 - **Tests:** `npx vitest run` (frontend), `cargo test` (backend), `cargo clippy -- -D warnings`
 - **CI Gate:** `npx vitest run && npx vue-tsc --noEmit && cd src-tauri && cargo clippy -- -D warnings && cargo test`
 - **MCP Brain:** mandatory every session; reuse release `:7421`, MCP tray `:7423`, or dev `:7422` in that order, otherwise start the tray with `npm run mcp`

@@ -18,7 +18,7 @@
 //   p99 retrieval latency <= 200ms
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -29,9 +29,17 @@ const REPO_ROOT = resolve(__dirname, '..');
 const DEFAULT_DATA_DIR = resolve(REPO_ROOT, 'target-copilot-bench', 'locomo-mteb');
 const DEFAULT_OUT_DIR = resolve(REPO_ROOT, 'target-copilot-bench', 'bench-results');
 const DEFAULT_TARGET_DIR = resolve(REPO_ROOT, 'target-copilot-bench');
+// BENCH-SCALE-3 (2026-05-15): on-disk MemoryStore root for the IVF-PQ arm.
+const DEFAULT_STORE_DIR = resolve(REPO_ROOT, 'target-copilot-bench', 'scale-store');
 const ALL_TASKS = ['single_hop', 'multi_hop', 'temporal_reasoning', 'open_domain', 'adversarial'];
-const ALL_SYSTEMS = new Set(['rrf', 'rrf_rerank']);
+// BENCH-SCALE-3 (2026-05-15): `ivfpq` is a pure vector-only retrieval path
+// (disk-backed IVF-PQ + ADC). Requires `LONGMEM_DATA_DIR` so the store can
+// persist the IVF-PQ index files, and a post-ingest `build_ivf_pq` IPC op.
+// `--systems=ivfpq` flips both on for the IVF-PQ arm; the `rrf` / `rrf_rerank`
+// arms continue to use in-memory HNSW + lexical RRF as before.
+const ALL_SYSTEMS = new Set(['rrf', 'rrf_rerank', 'ivfpq']);
 const RERANK_SYSTEMS = new Set(['rrf_rerank']);
+const IVFPQ_SYSTEMS = new Set(['ivfpq']);
 // BENCH-SCALE-2 (2026-05-14): valid `--shard-mode` values. Plumbed into
 // the spawned `longmemeval-ipc` process via `LONGMEM_SHARD_MODE` to compare
 // router-routed (production default) vs all-shards probe at 1M+ docs.
@@ -75,7 +83,7 @@ Usage:
 
 Options:
   --task=<name>         Target task (default: adversarial; one of ${ALL_TASKS.join(',')})
-  --systems=<csv>       Systems: rrf, rrf_rerank (default: rrf_rerank)
+  --systems=<csv>       Systems: rrf, rrf_rerank, ivfpq (default: rrf_rerank)
   --scale=<n>           Total corpus size including target + distractors (default: 1000000)
   --limit=<n>           Queries to score; 0 means all (default: 100)
   --top-k=<n>           Retrieval depth requested (default: 100)
@@ -84,6 +92,13 @@ Options:
                         for BENCH-SCALE-2). Plumbed via LONGMEM_SHARD_MODE. (default: routed)
   --data-dir=<path>     LoCoMo parquet dir (default: target-copilot-bench/locomo-mteb)
   --out-dir=<path>      Report dir (default: target-copilot-bench/bench-results)
+  --store-dir=<path>    BENCH-SCALE-3: on-disk MemoryStore root (default:
+                        target-copilot-bench/scale-store). Required when --systems includes
+                        ivfpq; plumbed via LONGMEM_DATA_DIR. Wiped on every run for determinism.
+  --nlist=<n>           BENCH-SCALE-3 IVF-PQ coarse quantizer cells (default: 4096)
+  --pq-m=<n>            BENCH-SCALE-3 IVF-PQ subquantizers; must divide embed dim 1024 (default: 128)
+  --pq-nbits=<n>        BENCH-SCALE-3 IVF-PQ bits per PQ code (default: 8 → 256 centroids/subspace)
+  --nprobe=<n>          BENCH-SCALE-3 IVF-PQ cells probed per query (default: 32; higher = recall, slower)
 
 The harness ingests in batches of ${INGEST_BATCH_SIZE}. mxbai-embed-large is the assumed
 embedder (set LONGMEM_EMBED_MODEL=mxbai-embed-large in the environment).
@@ -276,7 +291,7 @@ function buildScaleCorpus({ targetCorpus, otherCorpora, qrels, scale, seed }) {
 // ----- IPC client (mirrors locomo-mteb.mjs) --------------------------------
 
 class JsonlClient {
-  constructor({ embed = true, rerank = false, shardMode = 'routed' } = {}) {
+  constructor({ embed = true, rerank = false, shardMode = 'routed', storeDir = null } = {}) {
     this.nextId = 1;
     this.pending = new Map();
     this.buffer = '';
@@ -288,6 +303,10 @@ class JsonlClient {
       // the spawned `longmemeval-ipc` process. The bench bin maps this to
       // `MemoryStore::set_shard_mode` via `IndexState::shard_mode_from_env`.
       LONGMEM_SHARD_MODE: shardMode,
+      // BENCH-SCALE-3 (2026-05-15): point the spawned IPC at a disk-backed
+      // MemoryStore so IVF-PQ has a `data_dir` to persist sidecars/indexes.
+      // Without this the store is in-memory and `build_ivf_pq` returns built=0.
+      ...(storeDir ? { LONGMEM_DATA_DIR: storeDir } : {}),
     };
     this.proc = spawn('cargo', [
       'run',
@@ -429,9 +448,15 @@ function ms(v) { return `${v.toFixed(2)}ms`; }
 
 // ----- run ----------------------------------------------------------------
 
-async function searchQuery(client, system, query, topK) {
+async function searchQuery(client, system, query, topK, ivfPqOpts = null) {
   const start = performance.now();
-  const resp = await client.send({ op: 'search', query, mode: system, limit: topK });
+  const payload = { op: 'search', query, mode: system, limit: topK };
+  // BENCH-SCALE-3 (2026-05-15): the `ivfpq` IPC mode reads `nprobe` from the
+  // request payload (defaults to 32 inside the binary when absent).
+  if (IVFPQ_SYSTEMS.has(system) && ivfPqOpts && Number.isInteger(ivfPqOpts.nprobe)) {
+    payload.nprobe = ivfPqOpts.nprobe;
+  }
+  const resp = await client.send(payload);
   const lat = performance.now() - start;
   const ids = (resp.results ?? []).map(r => r.session_id).filter(Boolean);
   return { latencyMs: lat, retrievedIds: ids };
@@ -468,7 +493,23 @@ async function run(opts) {
   }
 
   const rerank = opts.systems.some(s => RERANK_SYSTEMS.has(s));
-  const client = new JsonlClient({ embed: true, rerank, shardMode: opts.shardMode });
+  const wantsIvfPq = opts.systems.some(s => IVFPQ_SYSTEMS.has(s));
+  // BENCH-SCALE-3 (2026-05-15): the IVF-PQ arm needs `LONGMEM_DATA_DIR` so the
+  // store persists shard sidecars + IVF-PQ index files. Wipe + recreate the
+  // store dir on every run so corpus state never leaks between scales/tasks.
+  if (wantsIvfPq) {
+    if (existsSync(opts.storeDir)) {
+      rmSync(opts.storeDir, { recursive: true, force: true });
+    }
+    mkdirSync(opts.storeDir, { recursive: true });
+    console.log(`[scale] IVF-PQ store dir: ${opts.storeDir} (wiped + recreated)`);
+  }
+  const client = new JsonlClient({
+    embed: true,
+    rerank,
+    shardMode: opts.shardMode,
+    storeDir: wantsIvfPq ? opts.storeDir : null,
+  });
   let report;
   try {
     await client.send({ op: 'reset' });
@@ -476,6 +517,26 @@ async function run(opts) {
     const ing = await ingestBatched(client, built.corpus);
     const ingestSecs = (performance.now() - ingestStart) / 1000;
     console.log(`[scale] ingest done: inserted=${ing.inserted} embedded=${ing.embedded} took=${ingestSecs.toFixed(1)}s`);
+
+    // BENCH-SCALE-3 (2026-05-15): build IVF-PQ indexes per populated shard
+    // before any `ivfpq` query runs. Uses the IPC `build_ivf_pq` op which
+    // calls MemoryStore::build_ivf_pq_indexes_with_params. Defaults are
+    // tuned for 1024-dim mxbai-embed-large.
+    let ivfPqBuildSecs = 0;
+    let ivfPqStats = null;
+    if (wantsIvfPq) {
+      const buildStart = performance.now();
+      ivfPqStats = await client.send({
+        op: 'build_ivf_pq',
+        nlist: opts.nlist,
+        pq_m: opts.pqM,
+        pq_nbits: opts.pqNbits,
+        threshold: 1,
+        max_shards: 0,
+      });
+      ivfPqBuildSecs = (performance.now() - buildStart) / 1000;
+      console.log(`[scale] IVF-PQ built ${ivfPqStats.built ?? 0} shard(s) in ${ivfPqBuildSecs.toFixed(1)}s (nlist=${opts.nlist}, pq_m=${opts.pqM}, pq_nbits=${opts.pqNbits})`);
+    }
 
     const filteredQueries = target.queries.filter(q => target.qrels.has(q.id));
     const limited = opts.limit > 0 ? filteredQueries.slice(0, opts.limit) : filteredQueries;
@@ -488,7 +549,7 @@ async function run(opts) {
       for (let i = 0; i < limited.length; i++) {
         const q = limited[i];
         const qrels = target.qrels.get(q.id);
-        const r = await searchQuery(client, system, q.text, opts.topK);
+        const r = await searchQuery(client, system, q.text, opts.topK, { nprobe: opts.nprobe });
         latencies.push(r.latencyMs);
         perQuery.push({
           query_id: q.id,
@@ -541,6 +602,13 @@ async function run(opts) {
       shard_mode: opts.shardMode,
       ingest_seconds: ingestSecs,
       embedded_total: ing.embedded,
+      // BENCH-SCALE-3 (2026-05-15): record IVF-PQ build cost + params so
+      // downstream readers can attribute the wall-clock overhead correctly.
+      ivf_pq_build_seconds: ivfPqBuildSecs,
+      ivf_pq_params: wantsIvfPq
+        ? { nlist: opts.nlist, pq_m: opts.pqM, pq_nbits: opts.pqNbits, nprobe: opts.nprobe }
+        : null,
+      ivf_pq_build_stats: ivfPqStats,
       systems_results: systemReports,
     };
   } finally {
@@ -551,7 +619,12 @@ async function run(opts) {
   // BENCH-SCALE-2 (2026-05-14): include shard-mode in the filename so a
   // back-to-back router-routed vs all-shards comparison run does not
   // overwrite the earlier report (SCALE-1b hit this overwrite footgun).
-  const tag = `scale_${built.corpus.length}_${opts.task}_${opts.limit || 'all'}q_${opts.shardMode}`;
+  // BENCH-SCALE-3 (2026-05-15): also include a systems suffix when ivfpq
+  // is in the mix, so HNSW (`rrf`) and IVF-PQ runs never overwrite.
+  const systemsTag = opts.systems.some(s => IVFPQ_SYSTEMS.has(s))
+    ? `_${opts.systems.join('-')}`
+    : '';
+  const tag = `scale_${built.corpus.length}_${opts.task}_${opts.limit || 'all'}q_${opts.shardMode}${systemsTag}`;
   const jsonPath = resolve(opts.outDir, `locomo_${tag}.json`);
   const mdPath = resolve(opts.outDir, `locomo_${tag}.md`);
   writeFileSync(jsonPath, JSON.stringify(report, null, 2), 'utf8');
@@ -597,7 +670,7 @@ async function main() {
   if (!ALL_TASKS.includes(task)) throw new Error(`unknown task ${task}`);
   const systems = listOption('systems', ['rrf_rerank']);
   for (const s of systems) {
-    if (!ALL_SYSTEMS.has(s)) throw new Error(`unknown system ${s}; use rrf or rrf_rerank`);
+    if (!ALL_SYSTEMS.has(s)) throw new Error(`unknown system ${s}; use rrf, rrf_rerank, or ivfpq`);
   }
   const shardMode = option('shard-mode', 'routed').toLowerCase();
   if (!ALL_SHARD_MODES.has(shardMode)) {
@@ -612,6 +685,11 @@ async function main() {
     topK: numberOption('top-k', 100),
     dataDir: option('data-dir', DEFAULT_DATA_DIR),
     outDir: option('out-dir', DEFAULT_OUT_DIR),
+    storeDir: option('store-dir', DEFAULT_STORE_DIR),
+    nlist: numberOption('nlist', 4096),
+    pqM: numberOption('pq-m', 128),
+    pqNbits: numberOption('pq-nbits', 8),
+    nprobe: numberOption('nprobe', 32),
   };
   for (const t of ALL_TASKS) {
     for (const k of ['corpus', 'queries', 'qrels']) {

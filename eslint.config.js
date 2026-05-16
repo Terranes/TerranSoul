@@ -170,12 +170,14 @@ export default [
   {
     files: [
       'src/components/CharacterViewport.vue',
+      'src/components/ChatMessageList.vue',
       'src/components/GraphNodeCrudPanel.vue',
       'src/components/MemoryGraph.vue',
-      'src/components/MemoryGraph3D.vue',
+      'src/components/MemoryGalaxy.vue',
       'src/components/ModelPanel.vue',
       'src/components/SkillConstellation.vue',
       'src/components/KnowledgeQuestDialog.vue',
+      'src/components/SettingsPanel.vue',
       'src/views/BrainView.vue',
       'src/views/ChatView.vue',
       'src/views/MarketplaceView.vue',
