@@ -114,7 +114,7 @@ rand_distr = { version = "0.5", optional = true }
 # Minimal feature set: blocking HTTP transport via reqwest (already a dep),
 # enough for `gix::prepare_clone` + shallow `depth=1` fetch.
 # `ignore` — battle-tested gitignore walker (powers ripgrep/fd).
-gix = { version = "0.66", default-features = false, features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls", "worktree-mutation", "max-performance-safe"], optional = true }
+gix = { version = "0.83", default-features = false, features = ["blocking-network-client", "blocking-http-transport-reqwest-rust-tls", "worktree-mutation", "max-performance-safe"], optional = true }
 ignore = { version = "0.4", optional = true }
 
 [features]
