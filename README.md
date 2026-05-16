@@ -36,16 +36,7 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 ## TerranSoul in five scenes — how graph, RAG and memory show up in a regular day
 
-[TerranSoul in five scenes](https://terransyn.github.io/TerranSoul/) is the public, non-technical primer for the memory stack: raw model answers, personal context, vector retrieval, knowledge graphs, and production hybrid memory.
-
-**TerranSoul is built for production hybrid memory.** Concretely:
-
-- **Personal-context construction** (Scene 2) is shipped via persona traits, observation history, decay, and the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`).
-- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
-- **Typed knowledge graph + multi-hop** (Scene 4) is shipped via the `memory_edges` table, entity resolution, and `multi_hop_search_memories`.
-- **Production discipline** (Scene 5) is shipped via RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
-
-The "Why Hybrid RAG" section below explains the technical architecture. The five-scenes primer explains the user-facing shape of the same system.
+If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.
 
 > Read the Pages version: <https://terransyn.github.io/TerranSoul/>.
 
