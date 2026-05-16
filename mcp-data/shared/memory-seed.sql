@@ -443,7 +443,7 @@ SELECT
   'seed:lesson-theme-cockpit-1a-2026-05-16',
   'procedural',
   'long',
-  0.85,
+  8,
   strftime('%s','now'),
   strftime('%s','now')
 WHERE NOT EXISTS (
@@ -486,7 +486,7 @@ SELECT
   'seed:lesson-theme-cockpit-1a-2026-05-16',
   'procedural',
   'long',
-  0.85,
+  8,
   strftime('%s','now'),
   strftime('%s','now')
 WHERE NOT EXISTS (
@@ -527,7 +527,7 @@ SELECT
   'seed:lesson-theme-cockpit-1b-2026-05-16',
   'procedural',
   'long',
-  0.85,
+  8,
   strftime('%s','now'),
   strftime('%s','now')
 WHERE NOT EXISTS (
@@ -570,7 +570,7 @@ SELECT
   'seed:lesson-bench-resume-pattern-2026-05-16',
   'procedural',
   'long',
-  0.85,
+  8,
   strftime('%s','now'),
   strftime('%s','now')
 WHERE NOT EXISTS (
