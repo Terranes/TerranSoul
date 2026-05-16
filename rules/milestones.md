@@ -32,46 +32,10 @@
 
 ## Next Chunk
 
-The next active chunk is **GRAPHRAG-1a** (hierarchical Leiden community
-summaries). **THEME-COCKPIT-1c** landed 2026-05-16 (cockpit compact
-variant spread to SettingsView sections and MemoryView Session/Audit
-panels; ChatView brain-card and SplashScreen intentionally left bare;
-Knowledge Graph canvas left bare to avoid reticle clutter; see
-completion log). **THEME-COCKPIT-1b** landed 2026-05-16 (mood-driven
-palette accent on `.bp-shell[data-accent]`). **BENCH-SCALE-3** remains
-code-done / run-in-flight (IVF-PQ 10M-doc runner with `--resume` +
-SIGINT/SIGTERM safety net; ~24% complete).
-
----
-
-## Phase THEME-COCKPIT — sci-fi HUD cockpit aesthetic
-
-Goal: match the visual quality of the user-authored `Brain Panel.html`
-reference (deep navy cards with layered cyan glow, corner reticles,
-numbered tracked-caps section labels, breadcrumb header, brain-orb hero).
-
-| Chunk | Status | Scope |
-|---|---|---|
-| THEME-COCKPIT-1a | done 2026-05-16 | **Tokens + utility primitives landed.** App-wide `--ts-shadow-glow` / `--ts-shadow-inset` strengthened to reference values. New tokens `--ts-glow-cyan{,-soft,-strong}`, `--ts-shadow-cockpit{,-hover,-selected}`, `--ts-cockpit-bg`, `--ts-cockpit-reticle`. New utility classes `.ts-cockpit-card` (with `::before` corner reticles, `::after` cyan halo blob, hover + `[data-selected]/.is-active` states, compact variant, light-theme overrides for corporate/pastel), `.ts-cockpit-label`, `.ts-cockpit-crumb`. CSS-only; vue-tsc clean. See completion log. |
-| THEME-COCKPIT-1b | done 2026-05-16 | **Brain panel view port — completed via existing port + mood-driven palette swap.** Discovery found the brain panel already uses `.bp-*` classes (`.bp-shell`, `.bp-cockpit`, `.bp-module`, `.bp-prov`, etc.) backed by `src/styles/brain-panel.css` (1249 lines, aliased to `--ts-*` tokens). Cockpit hero already has the layered radial halo + corner-reticle `::before`. Gap that remained was mood-driven palette: ported the reference's `[data-accent="violet|green|amber"]` shell variants (plus `pink`) and `[data-backdrop="false"]` opt-out into `brain-panel.css`. Added `accentKey` computed in `BrainView.vue` that maps `moodKey` → `green` (free) / `violet` (paid) / `amber` (local) / `''` (none), bound on `.bp-shell[:data-accent="accentKey"]` so every cockpit border/glow/active-state cascades to the active brain mode without component edits. vue-tsc clean. |
-| THEME-COCKPIT-1c | done 2026-05-16 | **Audit + spread the pattern.** Walked Knowledge Graphs, Settings, Memory, Chat root and the splash; per-container decisions in completion log. Adopted `.ts-cockpit-card.ts-cockpit-card--compact` on SettingsView's five `.sv-section` blocks and MemoryView's `.mv-session-panel` + `.mv-audit-panel`. Left Knowledge Graph canvas, MemoryView List tab, ChatView brain-card setup overlay, and SplashScreen bare. SettingsView `.sv-section` scoped CSS dropped border/bg under `:not(.ts-cockpit-card)` so cockpit chrome wins without specificity hacks. MemoryView panel overflow flipped from `visible` to default to let cockpit halo clip cleanly; added 1rem internal padding so content clears the corner reticles. 1969 vitest tests pass; vue-tsc clean. |
-
----
-
-## Phase GRAPHRAG — Cross-system brain comparison
-
-Goal: study `microsoft/graphrag` (community-summary GraphRAG, global vs
-local search) and adopt the top 1–3 concrete improvements that fit
-TerranSoul's local-first, single-user constraints. **GRAPHRAG-1
-research + comparison doc landed 2026-05-16 — see
-[`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) and the
-completion-log entry. Sub-chunks below carry the adoptions.**
-
-| Chunk | Status | Scope |
-|---|---|---|
-| GRAPHRAG-1a | not-started | **Hierarchical community summaries.** Recurse `memory::graph_rag::detect_communities` so `memory_communities.level` carries levels 0..N (N capped at 4). Generate per-level LLM summaries through the active brain provider. New Tauri command `graph_rag_build_hierarchy`. Extend `graph_rag_search` to accept an optional `level` parameter and fetch community hits at that depth. Tests: multi-level detection, summary generation idempotency, level filter in search. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 1. |
-| GRAPHRAG-1b | not-started | **Structured entity / relationship extraction at ingest.** New `memory::extraction::extract_entities_relationships(text, kind)` step in the ingest pipeline that calls the brain with a typed JSON-schema prompt (entity name + type + description, relationship src/dst/type/description), then materialises results as `memories` rows (cognitive_kind=`semantic`) + `memory_edges` rows. Behind a `BrainConfig.graph_extract_enabled` toggle (default off for offline-only sessions). Tests: schema validation, deduplication against existing entities, edge confidence assignment. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 2. |
-| GRAPHRAG-1c | not-started | **Global vs Local query routing.** Extend the existing query-intent classifier (Chunk 16.6b) with a `scope ∈ {global, local, mixed}` axis. Route `global` queries to top-level community summaries (requires GRAPHRAG-1a), `local` queries to entity-walk + hybrid_search_rrf, and `mixed` queries to the current dual-level RRF fusion. Tests: scope classification accuracy on a fixture set, retrieval shape per scope. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 3. Depends on GRAPHRAG-1a. |
+**BENCH-SCALE-3** remains code-done / run-in-flight. Pick the next chunk from
+`rules/backlog.md` (claim verification / contradiction-aware
+indexing, AppBreadcrumb → ts-cockpit-crumb unification, brain-orb
+hero adoption, etc.) and add a `not-started` row to start work.
 
 ---
 

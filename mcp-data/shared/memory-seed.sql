@@ -629,3 +629,180 @@ WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1c-scoped-vs-global-2026-0
   );
 
 
+
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GraphRAG hierarchical community summaries (GRAPHRAG-1a, ' ||
+  '2026-05-16): the dual-level GraphRAG store now carries multiple ' ||
+  'community-detection levels in memory_communities.level. ' ||
+  'Patterns: (1) Super-graph construction — aggregate base-edge ' ||
+  'weights between *distinct* level-k communities using a canonical ' ||
+  '(min(a,b), max(a,b)) key, then re-run greedy modularity on the ' ||
+  'super-graph, then flatten the super-assignment back to original ' ||
+  'node ids. Singleton super-communities (no inter-community edges ' ||
+  'from them) need a fresh id beyond the super-assignment range so ' ||
+  'they still appear in the next level as their own group. ' ||
+  '(2) Convergence guard — stop the recursion when the next level ' ||
+  'has >= the current community count: more iterations would only ' ||
+  'renumber, never coarsen. Also stop when the super-edge set is ' ||
+  'empty (everything is already a singleton). ' ||
+  '(3) Idempotent summaries — key carryover on ' ||
+  '(level, sorted_member_ids). When detect_and_store_hierarchy runs ' ||
+  'a second time, communities whose member set matches a prior ' ||
+  'community at the same level reuse the existing summary + ' ||
+  'embedding without calling the brain. ' ||
+  '(4) Lock discipline for brain orchestration — never hold ' ||
+  'memory_store.lock() across an .await. The Tauri command ' ||
+  'graph_rag_build_hierarchy snapshots (id, level, member_ids) and ' ||
+  'per-member content under the lock, drops the lock, calls ' ||
+  'brain_memory::complete_via_mode, then reacquires the lock to call ' ||
+  'set_community_summary. ' ||
+  '(5) Test brittleness — one-sided greedy modularity is sloppy on ' ||
+  'bridged weighted graphs. Tests should assert structural ' ||
+  'invariants (disconnected halves must stay disjoint at every ' ||
+  'level; deepest level must have strictly fewer communities than ' ||
+  'level 0), not exact micro-cluster identity. ' ||
+  'API: detect_communities_weighted(&[(i64,i64,f64)]) is the ' ||
+  'reusable core; detect_communities_hierarchical(&[MemoryEdge], ' ||
+  'max_levels) returns Vec<HashMap<i64,usize>>; ' ||
+  'MAX_HIERARCHY_LEVELS = 5; graph_rag_search now accepts ' ||
+  'Option<i32> level filter via graph_rag_search_at_level.',
+  'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1a-hierarchical-summaries-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GRAPHRAG-1b structured entity extraction (2026-05-16): ' ||
+  'the ingest pipeline now has an optional structured entity/relationship ' ||
+  'extraction step gated by AppSettings.graph_extract_enabled (default ' ||
+  'off). When enabled, each newly-saved memory is processed by the ' ||
+  'active brain provider via a typed JSON-schema prompt that extracts ' ||
+  'entities (name + type + description) and relationships (source + ' ||
+  'target + type + confidence). Entities are materialised as memories ' ||
+  'rows tagged semantic:entity with source_hash = entity:<lowercase_name> ' ||
+  'for deduplication. Relationships become memory_edges with ' ||
+  'edge_source = graphrag:extraction. The extraction is idempotent: ' ||
+  'memories that already have graphrag:extraction outgoing edges are ' ||
+  'skipped on re-runs. Lock discipline: LLM call happens without the ' ||
+  'memory_store lock; materialisation acquires a brief lock per entry. ' ||
+  'Tauri command: graph_extract_entities(limit: Option<usize>) for ' ||
+  'manual batch extraction. Module: src-tauri/src/memory/extraction.rs.',
+  'seed:lesson-graphrag-1b-entity-extraction-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1b-entity-extraction-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1b-entity-extraction-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul GRAPHRAG-1c global vs local query routing (2026-05-16): ' ||
+  'the query-intent classifier now has a second axis, QueryScope ' ||
+  '(global/local/mixed), classified by classify_scope() in ' ||
+  'query_intent.rs. Global queries (summarize, overview, what topics) ' ||
+  'route to top-level community summaries via graph_rag_search_at_level ' ||
+  'at max hierarchy level. Local queries (what did, who said, find, ' ||
+  'tell me about) route to keyword search + cascade_expand entity-walk. ' ||
+  'Mixed (ambiguous or no signal) uses the standard dual-level RRF ' ||
+  'fusion. New MemoryStore method: graph_rag_search_routed(query, emb, ' ||
+  'limit, scope). New Tauri command: graph_rag_search_routed with ' ||
+  'optional scope_override. FullClassification struct combines both ' ||
+  'intent and scope axes via classify_full(). Module: query_intent.rs, ' ||
+  'graph_rag.rs.',
+  'seed:lesson-graphrag-1c-query-routing-2026-05-16',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1c-query-routing-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1c-query-routing-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'TerranSoul decorative HUD chrome + dead-utility prevention ' ||
+  '(THEME-COCKPIT-1d, 2026-05-17): the `.ts-cockpit-label` and ' ||
+  '`.ts-cockpit-crumb` utilities defined in src/style.css during ' ||
+  'THEME-COCKPIT-1a sat dead for a sprint because nothing in any ' ||
+  'view referenced them. Rule: whenever a UI primitive lands in ' ||
+  'src/style.css, prefer landing it together with at least one ' ||
+  'adoption site in the same chunk, or file a follow-up chunk ' ||
+  'immediately so dead-code utilities do not accumulate. ' ||
+  'THEME-COCKPIT-1d retroactively adopted `.ts-cockpit-label` ' ||
+  'across SettingsView (5 numbered kickers 01-05) and MemoryView ' ||
+  '(session + audit panel kickers). Decorative HUD chrome (numbered ' ||
+  'kickers, corner reticles, tracked-caps prefixes) must carry ' ||
+  '`aria-hidden=true` so it does not pollute the ' ||
+  'accessibility tree alongside the real `<h2>` heading or `<p>` ' ||
+  'hint. Pattern applies to any future HUD primitive: define ' ||
+  'utility in global stylesheet, adopt in at least one view in the ' ||
+  'same chunk, mark non-semantic chrome aria-hidden.',
+  'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17',
+  'procedural',
+  'long',
+  7,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );

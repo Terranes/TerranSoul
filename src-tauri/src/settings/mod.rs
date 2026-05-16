@@ -223,6 +223,15 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub auto_extract_edges: bool,
 
+    /// GRAPHRAG-1b: When `true`, the ingest pipeline runs structured
+    /// entity/relationship extraction on each newly-saved memory via the
+    /// active brain provider. Extracted entities become `memories` rows
+    /// (tagged `semantic:entity`), and relationships become `memory_edges`.
+    /// Default `false` — the extraction adds one LLM round-trip per memory
+    /// and is only useful when a brain provider is configured.
+    #[serde(default)]
+    pub graph_extract_enabled: bool,
+
     /// When `true`, chat retrieval expands the RRF top-K via 1-2 hop BFS
     /// over `memory_edges` (`memory::cascade::cascade_expand`) before the
     /// optional cross-encoder rerank. Neighbours arrive with decayed
@@ -694,6 +703,7 @@ impl Default for AppSettings {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            graph_extract_enabled: false,
             enable_kg_boost: false,
             auto_detect_conflicts: false,
             expanded_blendshapes: false,
@@ -885,6 +895,7 @@ mod tests {
             mobile_notification_threshold_ms: DEFAULT_MOBILE_NOTIFICATION_THRESHOLD_MS,
             mobile_notification_poll_ms: DEFAULT_MOBILE_NOTIFICATION_POLL_MS,
             auto_extract_edges: true,
+            graph_extract_enabled: false,
             enable_kg_boost: false,
             auto_detect_conflicts: false,
             expanded_blendshapes: false,

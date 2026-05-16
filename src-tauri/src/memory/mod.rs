@@ -23,6 +23,7 @@ pub mod edge_crdt_sync;
 pub mod edges;
 pub mod embedding_queue;
 pub mod eviction;
+pub mod extraction;
 pub mod fusion;
 pub mod gap_detection;
 pub mod graph_page;

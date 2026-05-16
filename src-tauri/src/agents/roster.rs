@@ -525,7 +525,21 @@ pub fn group_by_kind(agents: &[AgentProfile]) -> HashMap<AgentBackendKind, Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
     use tempfile::TempDir;
+
+    // Cargo runs tests in parallel by default. The Hermes resolver tests
+    // below mutate process-wide env vars (`PATH`, `LOCALAPPDATA`) which
+    // are visible to every other test in the binary. Without
+    // serialization, one test's temporary install dir leaks into the
+    // other's assertion window and causes a spurious failure (e.g.
+    // `resolve_executable_returns_bare_name_when_nothing_found`
+    // observes a leftover `hermes-agent.exe` in LOCALAPPDATA set by
+    // `resolve_executable_finds_hermes_install_when_not_on_path`).
+    // A module-local mutex serializes them without pulling in the
+    // `serial_test` crate. Use `lock().unwrap_or_else(|e| e.into_inner())`
+    // so a panic inside one test doesn't poison the lock for the next.
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     fn sample_native() -> AgentProfile {
         AgentProfile {
@@ -666,6 +680,7 @@ mod tests {
         // create and are skipped.
         #[cfg(windows)]
         {
+            let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
             let tmp = TempDir::new().unwrap();
             let fake = tmp.path().join("Programs").join("hermes-desktop");
             std::fs::create_dir_all(&fake).unwrap();
@@ -705,6 +720,7 @@ mod tests {
         // With an empty PATH and no install fallback, Hermes should
         // return the bare name and let spawn() surface the clear
         // "not found" error.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let prev_path = std::env::var_os("PATH");
         let prev_local = std::env::var_os("LOCALAPPDATA");
         // SAFETY: see note in the previous test.

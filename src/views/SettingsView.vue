@@ -23,8 +23,10 @@
     <section
       class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-view-mode"
-    >
-      <h2 class="sv-section-title">
+    >      <span
+        class="ts-cockpit-label sv-section-kicker"
+        aria-hidden="true"
+      >01 / View Mode</span>      <h2 class="sv-section-title">
         View Mode
       </h2>
       <p class="sv-section-help">
@@ -71,8 +73,10 @@
     <section
       class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-appearance"
-    >
-      <h2 class="sv-section-title">
+    >      <span
+        class="ts-cockpit-label sv-section-kicker"
+        aria-hidden="true"
+      >02 / Appearance</span>      <h2 class="sv-section-title">
         Appearance
       </h2>
       <p class="sv-section-help">
@@ -86,8 +90,10 @@
     <section
       class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-character"
-    >
-      <h2 class="sv-section-title">
+    >      <span
+        class="ts-cockpit-label sv-section-kicker"
+        aria-hidden="true"
+      >03 / Character</span>      <h2 class="sv-section-title">
         Character
       </h2>
       <p class="sv-section-help">
@@ -132,8 +138,10 @@
     <section
       class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-persona"
-    >
-      <h2 class="sv-section-title">
+    >      <span
+        class="ts-cockpit-label sv-section-kicker"
+        aria-hidden="true"
+      >04 / Persona</span>      <h2 class="sv-section-title">
         Persona — {{ activeCharacterName }}
       </h2>
       <p class="sv-section-help">
@@ -148,8 +156,10 @@
     <section
       class="sv-section ts-cockpit-card ts-cockpit-card--compact"
       data-testid="settings-section-quick-links"
-    >
-      <h2 class="sv-section-title">
+    >      <span
+        class="ts-cockpit-label sv-section-kicker"
+        aria-hidden="true"
+      >05 / Deep Configuration</span>      <h2 class="sv-section-title">
         Deep Configuration
       </h2>
       <p class="sv-section-help">
@@ -309,6 +319,11 @@ function onModelChange(e: Event) {
   font-weight: 600;
   color: var(--ts-text-bright);
   margin: 0;
+}
+
+/* Numbered HUD kicker that sits above each section title (THEME-COCKPIT-1d). */
+.sv-section-kicker {
+  margin-bottom: calc(-1 * var(--ts-space-xs, 4px));
 }
 
 .sv-section-help {

@@ -153,7 +153,7 @@ use commands::{
         get_edges_for_memory, get_memories, get_memories_by_tier, get_memory_history,
         get_memory_metrics, get_memory_provenance, get_memory_stats, get_relevant_memories,
         get_schema_info, get_search_cache_stats, get_short_term_memory, get_top_degree_nodes,
-        graph_rag_detect_communities, graph_rag_search, graph_totals, hybrid_search_memories,
+        graph_rag_detect_communities, graph_rag_build_hierarchy, graph_extract_entities, graph_rag_search, graph_rag_search_routed, graph_totals, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories, judgment_add, judgment_apply,
         judgment_list, list_memory_conflicts, list_memory_edges, list_relation_types,
         matryoshka_search_memories, memory_graph_page, multi_hop_search_memories, obsidian_sync,
@@ -1837,6 +1837,12 @@ pub fn run() {
             // GraphRAG community detection + dual-level search (Chunk 16.6)
             graph_rag_detect_communities,
             graph_rag_search,
+            // Scope-routed retrieval (GRAPHRAG-1c)
+            graph_rag_search_routed,
+            // Hierarchical community summaries (GRAPHRAG-1a)
+            graph_rag_build_hierarchy,
+            // Structured entity/relationship extraction (GRAPHRAG-1b)
+            graph_extract_entities,
             // Temporal reasoning queries (Chunk 17.3)
             temporal_query,
             daily_brief_query,

@@ -1,3 +1,266 @@
+# Chunk THEME-COCKPIT-1d — numbered HUD kickers across cockpit cards
+
+**Date:** 2026-05-17
+**Status:** Done
+
+## Goal
+
+Bring the `.ts-cockpit-label` global utility (defined in
+`src/style.css` since THEME-COCKPIT-1a, but unused) to life by
+adopting the numbered tracked-caps "NN / SECTION" HUD kicker pattern
+from the `Brain Panel.html` reference across the cockpit-card
+surfaces that landed in THEME-COCKPIT-1c.
+
+## Files touched
+
+- `src/views/SettingsView.vue` — added a
+  `<span class="ts-cockpit-label sv-section-kicker" aria-hidden="true">`
+  as the first child of each of the 5 `.sv-section.ts-cockpit-card`
+  blocks. Labels: "01 / View Mode", "02 / Appearance",
+  "03 / Character", "04 / Persona", "05 / Deep Configuration".
+  Added a scoped `.sv-section-kicker` rule that pulls the kicker close
+  to the `<h2>` below it (`margin-bottom: calc(-1 * var(--ts-space-xs, 4px))`).
+- `src/views/MemoryView.vue` — added
+  `<span class="ts-cockpit-label mv-panel-kicker" aria-hidden="true">`
+  kickers above the hints in `.mv-session-panel` (label "01 / Session
+  Stream") and `.mv-audit-panel` (label "02 / Provenance"). Both
+  panels already use `display: flex; flex-direction: column` so the
+  kicker sits cleanly above the hint paragraph.
+- `src/views/MemoryView.css` — added `.mv-panel-kicker { margin: 0 0
+  -0.25rem; }` to mirror the SettingsView kicker spacing.
+- `rules/milestones.md` — removed all THEME-COCKPIT-1a/1b/1c/1d rows
+  (1a–1c already done; 1d done in this chunk). Dropped the entire
+  THEME-COCKPIT phase heading since it has no remaining rows. Also
+  dropped the empty GRAPHRAG phase heading (its 1a/1b/1c chunks all
+  landed 2026-05-16). Updated the **Next Chunk** header to reflect
+  the empty queue.
+- `rules/completion-log.md` — this entry.
+- `mcp-data/shared/memory-seed.sql` — durable lesson.
+
+## Decorative-only semantics
+
+The kickers carry `aria-hidden="true"`. The existing `<h2
+class="sv-section-title">` and `<p class="mv-*-hint">` elements
+remain the canonical heading/description in the accessibility tree.
+Screen readers therefore skip the numbered prefix, which is purely
+HUD chrome — matching the reference HTML's intent.
+
+## CI gate
+
+- `npx vue-tsc --noEmit` → clean.
+- `npx vitest run` → **1969 / 1969 pass across 154 files** (no test
+  changes; chunk is pure CSS/markup).
+- Rust unchanged; no cargo gate required.
+
+## Durable lesson
+
+The `.ts-cockpit-label` / `.ts-cockpit-crumb` utilities from
+THEME-COCKPIT-1a sat dead for a sprint because nothing referenced
+them. Whenever a UI primitive lands in `style.css`, prefer landing it
+**together with** at least one adoption site in the same chunk — or
+file a follow-up chunk immediately so dead-code utilities don't
+accumulate. Decorative HUD chrome must carry `aria-hidden="true"` so
+it does not pollute the accessibility tree alongside the real
+heading. Synced to MCP memory seed
+(`seed:lesson-theme-cockpit-1d-decorative-kickers-2026-05-17`).
+
+---
+
+# Chunk GRAPHRAG-1c — global vs local query routing
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Add a `scope ∈ {global, local, mixed}` axis to the query-intent
+classifier. Route `global` queries to top-level community summaries,
+`local` queries to entity-walk + cascade expansion, and `mixed` queries
+to the standard dual-level RRF fusion (unchanged default).
+
+## Files touched
+
+- `src-tauri/src/memory/query_intent.rs` — Added `QueryScope` enum
+  (Global/Local/Mixed) with serde, `classify_scope()` heuristic
+  (global/local indicators), `FullClassification` struct combining
+  intent + scope, `classify_full()` convenience fn. 16 new tests.
+- `src-tauri/src/memory/graph_rag.rs` — Added
+  `graph_rag_search_routed()` method on `MemoryStore` that dispatches by
+  scope (global→`graph_rag_search_at_level` at max level,
+  local→keyword search + `cascade_expand`, mixed→`graph_rag_search`).
+  Added `max_community_level()` helper. 4 new tests.
+- `src-tauri/src/commands/memory.rs` — Added `graph_rag_search_routed`
+  Tauri command with optional `scope_override` parameter.
+- `src-tauri/src/lib.rs` — Registered `graph_rag_search_routed` in
+  imports and `invoke_handler!`.
+- `rules/milestones.md` — Marked GRAPHRAG-1c done, updated next chunk.
+- `rules/completion-log.md` — This entry.
+
+## Test results
+
+- `query_intent` tests: 39 pass (16 new scope tests)
+- `graph_rag` tests: 15 pass (4 new routed tests)
+- Full suite: 3017 pass, 0 fail, clippy clean
+
+---
+
+# Chunk GRAPHRAG-1b — structured entity/relationship extraction at ingest
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Add a structured entity/relationship extraction step to the memory ingest
+pipeline. When `graph_extract_enabled` is on, each newly-saved memory is
+processed by the active brain provider to extract named entities (person,
+place, organization, concept, event, object) and their relationships.
+Entities are materialized as `memories` rows (tagged `semantic:entity`),
+relationships as `memory_edges` with `edge_source = "graphrag:extraction"`.
+Deduplication by `source_hash = "entity:<normalised_name>"`. New Tauri
+command `graph_extract_entities` for manual batch extraction.
+
+## Files touched
+
+- `src-tauri/src/memory/extraction.rs` — **New module.** Core extraction
+  logic: `EXTRACTION_SYSTEM_PROMPT` (JSON-schema typed prompt),
+  `parse_extraction_response` (tolerant of markdown fences + preamble),
+  `entity_source_hash` (canonical dedup key), `normalise_entity_type`
+  (maps variants to 7 canonical types), `materialise_entities` (dedup via
+  `find_by_source_hash`, creates entity memories tagged
+  `semantic:entity,entity:<type>,entity-name:<name>`),
+  `materialise_edges` (relationship edges + "mentions" source edges with
+  `edge_source = "graphrag:extraction"`), `extract_from_memory` (single-entry
+  LLM pipeline), `extract_from_batch` (idempotent batch runner with
+  `has_extraction_edges` guard), `ExtractionReport` struct.
+- `src-tauri/src/memory/mod.rs` — registered `pub mod extraction`.
+- `src-tauri/src/settings/mod.rs` — added `graph_extract_enabled: bool`
+  (default `false`, `#[serde(default)]`) to `AppSettings` with doc comment.
+- `src-tauri/src/settings/config_store.rs` — added field to 3 test fixtures.
+- `src-tauri/src/commands/settings.rs` — added field to 2 test fixtures.
+- `src-tauri/src/commands/memory.rs` — added `run_graph_extraction` async
+  helper (per-entry: idempotency check under short lock → LLM call without
+  lock → materialise under brief lock → KG cache invalidation); wired
+  auto-fire into `extract_memories_from_session` (gated by
+  `graph_extract_enabled`); added `graph_extract_entities` Tauri command
+  with `GraphExtractReport` result type.
+- `src-tauri/src/lib.rs` — registered `graph_extract_entities` in imports
+  and `invoke_handler!`.
+
+## Tests
+
+12 new tests in `memory::extraction::tests`:
+- `parse_extraction_response_valid_json`
+- `parse_extraction_response_with_markdown_fences`
+- `parse_extraction_response_with_preamble_text`
+- `parse_extraction_response_returns_none_for_garbage`
+- `parse_extraction_response_handles_empty_result`
+- `entity_source_hash_normalises_names`
+- `normalise_entity_type_maps_variants`
+- `materialise_entities_deduplicates`
+- `materialise_edges_creates_relationships_and_mentions`
+- `materialise_edges_skips_self_loops`
+- `build_extraction_prompt_truncates_long_content`
+- `has_extraction_edges_returns_false_initially`
+
+Full suite: **2998 passed / 0 failed** (includes 12 new). Clippy clean.
+
+## Design decisions
+
+- **Default off** (`graph_extract_enabled = false`) — extraction adds one
+  LLM round-trip per memory so it's opt-in until a brain is configured.
+- **Deduplication** via `source_hash = "entity:<lowercase name>"` — the
+  existing `find_by_source_hash` method on `MemoryStore` prevents duplicate
+  entity rows across multiple extraction runs.
+- **Idempotent re-runs** — `has_extraction_edges` checks for any outgoing
+  edge with `edge_source = 'graphrag:extraction'` before calling the LLM.
+- **Lock discipline** — never holds `memory_store.lock()` across an `.await`;
+  the LLM call happens with no lock, materialisation acquires a brief lock.
+- **Provenance** — all extraction edges carry `edge_source = "graphrag:extraction"`
+  and `source = EdgeSource::Llm` (or `Auto` for "mentions" links) so they
+  can be filtered/deleted independently.
+- **Entity as memory** — entities are stored as `memories` rows (not a
+  separate table) so they participate in existing vector search, RRF,
+  community detection, etc. without schema changes.
+
+---
+
+# Chunk GRAPHRAG-1a — hierarchical community summaries
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Make `memory_communities.level` carry 0..N (N capped at 4 → 5 total
+levels). Generate per-level LLM summaries via the active brain provider.
+New Tauri command `graph_rag_build_hierarchy`. Extend `graph_rag_search`
+with an optional `level` filter.
+
+## Files touched
+
+- `src-tauri/src/memory/graph_rag.rs` — extracted core greedy-modularity
+  into `pub fn detect_communities_weighted(&[(i64,i64,f64)])`; added
+  `pub const MAX_HIERARCHY_LEVELS: usize = 5`; added
+  `pub fn detect_communities_hierarchical(edges, max_levels)` which
+  builds super-graphs from canonicalized (min,max) community-pair
+  aggregations and stops when super-edges empty OR next-level count is
+  not strictly smaller (convergence guard); added
+  `MemoryStore::detect_and_store_hierarchy(max_levels)` which snapshots
+  existing `(level, sorted_member_ids) → (summary, embedding)` for
+  carry-over so identical clusters reuse summaries without LLM cost;
+  added `MemoryStore::set_community_summary(id, summary, embedding)`;
+  added `MemoryStore::graph_rag_search_at_level(query, embedding, limit,
+  level_filter: Option<i32>)` which retains only communities at the
+  requested level; old `graph_rag_search` is now a thin wrapper.
+- `src-tauri/src/commands/memory.rs` — extended Tauri `graph_rag_search`
+  with `level: Option<i32>`; added `GraphRagHierarchyReport`
+  (total/max_level/per_level_counts/summaries_generated/carried_over/skipped)
+  and `graph_rag_build_hierarchy(max_levels: Option<usize>)` that
+  detects the hierarchy then, for each unsummarized community,
+  snapshots member content under lock, drops the lock, calls
+  `brain_memory::complete_via_mode`, and persists the summary.
+- `src-tauri/src/lib.rs` — registered `graph_rag_build_hierarchy` in the
+  imports and `invoke_handler!` list.
+
+## Tests
+
+7 new tests in `memory::graph_rag::tests`:
+`detect_communities_hierarchical_returns_multiple_levels` (structural
+disjoint-halves invariant + coarsening),
+`detect_communities_hierarchical_respects_level_cap` (clamp 0→1,
+15→`MAX_HIERARCHY_LEVELS`),
+`detect_communities_hierarchical_handles_empty_graph`,
+`detect_and_store_hierarchy_persists_multiple_levels_and_carries_summaries`
+(seed summaries → re-run → verify carry-over),
+`set_community_summary_updates_one_row`,
+`graph_rag_search_filters_by_level` (L0 micro + L1 macro fixtures →
+verify level filter routes hits correctly). Full suite: 2986 passed.
+Clippy clean.
+
+## Durable lessons
+
+- **Super-graph construction:** aggregate base-edge weights between
+  *distinct* level-k communities via a canonicalized `(min(a,b),max(a,b))`
+  key, then re-run modularity on supernodes, then flatten back to
+  original node ids. Singleton super-communities (no inter-community
+  edges) need a fresh id beyond the super-assignment range so they
+  still appear in the next level as their own group.
+- **Convergence guard:** stop hierarchical recursion when the next level
+  has `>=` the current count — it would only renumber, not coarsen.
+- **Idempotency by member-set:** key carry-over on
+  `(level, sorted_member_ids)`. Identical clusters at the same level
+  reuse summary + embedding without re-calling the brain.
+- **Lock discipline for brain orchestration:** snapshot ids + per-member
+  content under the `memory_store` mutex, drop the lock, then `.await`
+  the LLM. Never hold the lock across `.await`.
+- **One-sided greedy modularity is sloppy on bridged graphs.** Tests
+  that assert exact micro-clusters at level 0 are brittle — instead
+  assert structural invariants (disjoint halves must stay disjoint,
+  deeper levels must have strictly fewer communities than level 0).
+
+---
+
 # Chunk THEME-COCKPIT-1c — spread cockpit pattern across views
 
 **Date:** 2026-05-16

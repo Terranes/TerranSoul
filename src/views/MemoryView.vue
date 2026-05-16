@@ -478,6 +478,10 @@
       v-else-if="activeTab === 'Session'"
       class="mv-session-panel ts-cockpit-card ts-cockpit-card--compact"
     >
+      <span
+        class="ts-cockpit-label mv-panel-kicker"
+        aria-hidden="true"
+      >01 / Session Stream</span>
       <p class="mv-session-hint">
         Short-term memory — the last 20 messages of the current session that the brain reads
         before every reply.
@@ -509,6 +513,10 @@
       class="mv-audit-panel ts-cockpit-card ts-cockpit-card--compact"
       data-testid="mv-audit-panel"
     >
+      <span
+        class="ts-cockpit-label mv-panel-kicker"
+        aria-hidden="true"
+      >02 / Provenance</span>
       <p class="mv-audit-hint">
         Provenance view — pick a memory entry to see its full edit history and the typed edges
         that connect it to other memories. Edges are colour-coded by source: solid =

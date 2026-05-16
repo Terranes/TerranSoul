@@ -18,7 +18,12 @@ const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname).replac
 const LOG_DIR = path.join(ROOT, 'target-copilot-bench');
 const PROGRESS_MD = path.join(ROOT, 'benchmark', 'progress.md');
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-const IDLE_GIVE_UP_MS = 30 * 60 * 1000; // 30 minutes of no log growth -> stop
+// 2026-05-16: the previous 30-minute idle cap fired a false positive when a
+// slow embedding batch paused log writes briefly. Bump to 6 hours and also
+// gate the stop on BOTH `mtime` and `size` being unchanged for the whole
+// window — a partially-buffered append still bumps size even when mtime
+// hasn't been flushed to disk.
+const IDLE_GIVE_UP_MS = 6 * 60 * 60 * 1000; // 6 hours of no log growth -> stop
 
 const LIVE_LOG_HEADER = '## Live log';
 
@@ -32,7 +37,8 @@ function findLatestLog() {
     )
     .map((f) => {
       const full = path.join(LOG_DIR, f);
-      return { name: f, full, mtime: statSync(full).mtimeMs };
+      const st = statSync(full);
+      return { name: f, full, mtime: st.mtimeMs, size: st.size };
     })
     .sort((a, b) => b.mtime - a.mtime);
   return files[0] ?? null;
@@ -134,14 +140,24 @@ async function pollOnce(state) {
     return { stop: false };
   }
 
-  // Detect idleness via mtime.
+  // Detect idleness via BOTH mtime AND size — only stop when neither has
+  // moved for the full IDLE_GIVE_UP_MS window. A slow batch can pause
+  // writes for tens of minutes while still holding the file open; that
+  // is not a reason to stop the poller.
   const mtime = log.mtime;
-  if (state.lastMtime && mtime === state.lastMtime) {
+  const size = log.size;
+  if (
+    state.lastMtime &&
+    mtime === state.lastMtime &&
+    state.lastSize &&
+    size === state.lastSize
+  ) {
     state.idleMs += POLL_INTERVAL_MS;
   } else {
     state.idleMs = 0;
   }
   state.lastMtime = mtime;
+  state.lastSize = size;
 
   const tail = await tailLast(log.full);
   const parsed = parseTail(tail);
@@ -189,8 +205,8 @@ async function pollOnce(state) {
 }
 
 async function main() {
-  const state = { lastMtime: 0, idleMs: 0 };
-  await appendEntry(`- **${nowIso()}** — poller started (5-min cadence, idle cap ${IDLE_GIVE_UP_MS / 60000} min).`);
+  const state = { lastMtime: 0, lastSize: 0, idleMs: 0 };
+  await appendEntry(`- **${nowIso()}** — poller started (5-min cadence, idle cap ${IDLE_GIVE_UP_MS / 60000} min, mtime+size guard).`);
   // One immediate poll, then every POLL_INTERVAL_MS.
   while (true) {
     try {

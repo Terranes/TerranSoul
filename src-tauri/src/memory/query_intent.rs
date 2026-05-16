@@ -336,6 +336,131 @@ pub fn should_run_hyde(query: &str, brain_available: bool) -> bool {
     hyde_recommended(classify_query(query).intent)
 }
 
+// ---------------------------------------------------------------------------
+// GRAPHRAG-1c — Query scope classification (global vs local routing)
+// ---------------------------------------------------------------------------
+
+/// Query scope — determines which retrieval path to use.
+///
+/// - `Global` → route to high-level community summaries (top hierarchy
+///   levels). Best for broad, thematic questions ("What topics have we
+///   discussed?", "Give me an overview of X").
+/// - `Local` → route to entity-walk + hybrid_search_rrf. Best for specific
+///   factual lookups ("What did Alice say about the budget?").
+/// - `Mixed` → use the standard dual-level RRF fusion (community + entity).
+///   Default when scope cannot be determined confidently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum QueryScope {
+    /// Broad thematic/summary queries → community summaries.
+    Global,
+    /// Specific entity/fact lookups → entity-walk + RRF.
+    Local,
+    /// Ambiguous or multi-faceted → dual-level fusion (default).
+    #[default]
+    Mixed,
+}
+
+impl QueryScope {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            QueryScope::Global => "global",
+            QueryScope::Local => "local",
+            QueryScope::Mixed => "mixed",
+        }
+    }
+}
+
+/// Lower-case prefixes/keywords that indicate global (broad/thematic) scope.
+const GLOBAL_INDICATORS: &[&str] = &[
+    "summarize ",
+    "summarise ",
+    "overview of ",
+    "what topics ",
+    "what themes ",
+    "what categories ",
+    "what are the main ",
+    "what have we discussed ",
+    "what do you know about everything",
+    "big picture ",
+    "high-level ",
+    "high level ",
+    "broadly ",
+    "in general ",
+    "overall ",
+    "give me a summary ",
+    "list all topics ",
+    "list all categories ",
+    "what are all the ",
+];
+
+/// Lower-case prefixes/keywords that indicate local (specific/entity) scope.
+const LOCAL_INDICATORS: &[&str] = &[
+    "what did ",
+    "who said ",
+    "where is ",
+    "when did ",
+    "where did ",
+    "tell me about ",
+    "find ",
+    "look up ",
+    "what is the name ",
+    "what was the ",
+    "specifically ",
+    "exactly ",
+    "detail about ",
+    "details about ",
+    "details on ",
+];
+
+/// Classify the scope of a query (global / local / mixed).
+///
+/// Pure heuristic — no LLM, microsecond latency. Checks for global
+/// indicators first (broad/thematic signals), then local indicators
+/// (specific entity/fact signals). If both or neither fire, returns Mixed.
+pub fn classify_scope(query: &str) -> QueryScope {
+    let raw = query.trim();
+    if raw.is_empty() {
+        return QueryScope::Mixed;
+    }
+    let lower = format!(" {} ", raw.to_lowercase());
+    let trimmed = lower.trim_start();
+
+    let global_score: usize = GLOBAL_INDICATORS
+        .iter()
+        .filter(|ind| trimmed.contains(*ind))
+        .count();
+
+    let local_score: usize = LOCAL_INDICATORS
+        .iter()
+        .filter(|ind| trimmed.contains(*ind))
+        .count();
+
+    if global_score > 0 && local_score == 0 {
+        QueryScope::Global
+    } else if local_score > 0 && global_score == 0 {
+        QueryScope::Local
+    } else {
+        // Both or neither — fall back to mixed (standard dual-level RRF).
+        QueryScope::Mixed
+    }
+}
+
+/// Full classification result including both intent and scope axes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FullClassification {
+    pub intent: IntentClassification,
+    pub scope: QueryScope,
+}
+
+/// Classify both intent and scope in a single call.
+pub fn classify_full(query: &str) -> FullClassification {
+    FullClassification {
+        intent: classify_query(query),
+        scope: classify_scope(query),
+    }
+}
+
 /// Default boost shape per intent. Tunable per docs §3.5.6.
 fn boosts_for_intent(intent: QueryIntent) -> KindBoosts {
     match intent {
@@ -564,5 +689,124 @@ mod tests {
         // No signal at all → Unknown → skip HyDE to protect TTFT.
         assert!(!should_run_hyde("foo bar baz", true));
         assert!(!should_run_hyde("", true));
+    }
+
+    // ------------------------------------------------------------------
+    // GRAPHRAG-1c — Scope classification tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn scope_empty_is_mixed() {
+        assert_eq!(classify_scope(""), QueryScope::Mixed);
+        assert_eq!(classify_scope("   "), QueryScope::Mixed);
+    }
+
+    #[test]
+    fn scope_summarize_is_global() {
+        assert_eq!(
+            classify_scope("Summarize everything we've discussed"),
+            QueryScope::Global
+        );
+    }
+
+    #[test]
+    fn scope_overview_is_global() {
+        assert_eq!(
+            classify_scope("Give me an overview of our conversations"),
+            QueryScope::Global
+        );
+    }
+
+    #[test]
+    fn scope_what_topics_is_global() {
+        assert_eq!(
+            classify_scope("What topics have we covered so far?"),
+            QueryScope::Global
+        );
+    }
+
+    #[test]
+    fn scope_high_level_is_global() {
+        assert_eq!(
+            classify_scope("Give me a high-level view of the project"),
+            QueryScope::Global
+        );
+    }
+
+    #[test]
+    fn scope_what_did_is_local() {
+        assert_eq!(
+            classify_scope("What did Alice say about the budget?"),
+            QueryScope::Local
+        );
+    }
+
+    #[test]
+    fn scope_find_is_local() {
+        assert_eq!(
+            classify_scope("Find the recipe for chocolate cake"),
+            QueryScope::Local
+        );
+    }
+
+    #[test]
+    fn scope_tell_me_about_is_local() {
+        assert_eq!(
+            classify_scope("Tell me about the meeting notes from Friday"),
+            QueryScope::Local
+        );
+    }
+
+    #[test]
+    fn scope_specifically_is_local() {
+        assert_eq!(
+            classify_scope("What specifically did we decide about pricing?"),
+            QueryScope::Local
+        );
+    }
+
+    #[test]
+    fn scope_ambiguous_is_mixed() {
+        // No global or local indicators → mixed.
+        assert_eq!(
+            classify_scope("How does the brain system work?"),
+            QueryScope::Mixed
+        );
+    }
+
+    #[test]
+    fn scope_no_signal_is_mixed() {
+        assert_eq!(classify_scope("hello world"), QueryScope::Mixed);
+    }
+
+    #[test]
+    fn scope_serde_roundtrip() {
+        let scope = QueryScope::Global;
+        let json = serde_json::to_string(&scope).unwrap();
+        let deser: QueryScope = serde_json::from_str(&json).unwrap();
+        assert_eq!(scope, deser);
+        assert!(json.contains("global"));
+    }
+
+    #[test]
+    fn scope_as_str_stable() {
+        assert_eq!(QueryScope::Global.as_str(), "global");
+        assert_eq!(QueryScope::Local.as_str(), "local");
+        assert_eq!(QueryScope::Mixed.as_str(), "mixed");
+    }
+
+    #[test]
+    fn full_classification_combines_both_axes() {
+        let full = classify_full("Summarize everything about the project");
+        assert_eq!(full.scope, QueryScope::Global);
+        // "Summarize" prefix also matches semantic intent.
+        assert_eq!(full.intent.intent, QueryIntent::Semantic);
+    }
+
+    #[test]
+    fn full_classification_local_episodic() {
+        let full = classify_full("When did we discuss the budget?");
+        assert_eq!(full.scope, QueryScope::Local);
+        assert_eq!(full.intent.intent, QueryIntent::Episodic);
     }
 }
