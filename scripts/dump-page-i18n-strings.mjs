@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Dump unique English strings from Pages/index.html to a JSON file for manual translation.
+// Dump unique English strings from docs/index.html to a JSON file for manual translation.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '..');
-const PAGE = path.join(REPO, 'Pages', 'index.html');
-const OUT = path.join(REPO, 'Pages', 'i18n-strings.json');
+const PAGE = path.join(REPO, 'docs', 'index.html');
+const OUT = path.join(REPO, 'docs', 'i18n-strings.json');
 
 const html = fs.readFileSync(PAGE, 'utf8');
 const strings = new Set();

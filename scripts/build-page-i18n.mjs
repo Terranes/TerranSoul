@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Pre-bake translations for Pages/index.html so the language switcher is instant.
+// Pre-bake translations for docs/index.html so the language switcher is instant.
 //
 // - Extracts every data-i18n / data-i18n-html string from the page.
 // - Translates each unique English source into every target language via
@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(__dirname, '..');
-const PAGE = path.join(REPO, 'Pages', 'index.html');
+const PAGE = path.join(REPO, 'docs', 'index.html');
 
 const SUPPORTED = ['vi','zh','zh-TW','ja','ko','es','fr','de','pt','it','ru','tr','id','th','hi','ar'];
 const LANG_NAME = {

@@ -1,14 +1,14 @@
 #!/usr/bin/env node
-// Combines Pages/i18n/<lang>.json files into the <script id="i18n-builtin"> block.
+// Combines docs/i18n/<lang>.json files into the <script id="i18n-builtin"> block.
 // Usage: node scripts/combine-page-i18n.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const PAGE = path.join(ROOT, 'Pages', 'index.html');
-const I18N_DIR = path.join(ROOT, 'Pages', 'i18n');
-const SOURCE = path.join(ROOT, 'Pages', 'i18n-strings.json');
+const PAGE = path.join(ROOT, 'docs', 'index.html');
+const I18N_DIR = path.join(ROOT, 'docs', 'i18n');
+const SOURCE = path.join(ROOT, 'docs', 'i18n-strings.json');
 
 const sourceStrings = JSON.parse(fs.readFileSync(SOURCE, 'utf8'));
 const sourceSet = new Set(sourceStrings);
@@ -53,4 +53,4 @@ if (next === html) {
   process.exit(1);
 }
 fs.writeFileSync(PAGE, next, 'utf8');
-console.log(`[i18n] injected ${langKeys.length} languages, ${totalKeys} total strings into Pages/index.html`);
+console.log(`[i18n] injected ${langKeys.length} languages, ${totalKeys} total strings into docs/index.html`);
