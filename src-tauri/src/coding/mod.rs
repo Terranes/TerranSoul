@@ -74,6 +74,7 @@ pub mod skills;
 pub mod snapshot;
 pub mod summarization_hook;
 pub mod symbol_index;
+pub mod offload_tool_output_hook;
 pub mod task_queue;
 pub mod test_runner;
 pub mod vendor_detector;

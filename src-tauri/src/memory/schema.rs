@@ -7,7 +7,7 @@
 use rusqlite::{Connection, Result as SqlResult};
 
 /// Canonical memory schema version reported by the app.
-pub const CANONICAL_SCHEMA_VERSION: i64 = 22;
+pub const CANONICAL_SCHEMA_VERSION: i64 = 24;
 
 const CANONICAL_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS schema_version (
@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS memories (
     hlc_counter   INTEGER NOT NULL DEFAULT 0,
     protected     INTEGER NOT NULL DEFAULT 0,
     share_scope   TEXT    NOT NULL DEFAULT 'private',
-    confidence    REAL    NOT NULL DEFAULT 1.0
+    confidence    REAL    NOT NULL DEFAULT 1.0,
+    scenario_id   INTEGER REFERENCES memories(id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance DESC);
 CREATE INDEX IF NOT EXISTS idx_memories_created ON memories(created_at DESC);
@@ -60,6 +61,9 @@ CREATE INDEX IF NOT EXISTS idx_memories_eviction ON memories(tier, importance, d
 CREATE INDEX IF NOT EXISTS idx_memories_long_embedded ON memories(id) WHERE tier='long' AND embedding IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_memories_active ON memories(id) WHERE valid_to IS NULL;
 CREATE INDEX IF NOT EXISTS idx_memories_session_recent ON memories(session_id, created_at DESC);
+-- NOTE: `idx_memories_scenario_id` is created by `ensure_v24_scenario_id`
+-- after the column is added so legacy databases can be upgraded without
+-- failing the canonical-schema bootstrap.
 
 CREATE TABLE IF NOT EXISTS memory_edges (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -193,6 +197,21 @@ CREATE TABLE IF NOT EXISTS memory_sources (
     last_synced_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_memory_sources_kind ON memory_sources(kind);
+
+-- V23 (CTX-OFFLOAD-1a): sidecar payload BLOB store keyed by memory_id.
+-- Used by the coding runtime to spill verbose tool outputs into the brain
+-- so they can be drilled back into when the agent actually needs the raw
+-- bytes. The lightweight `memories` row carries the summary + byte_count
+-- ref; the heavy bytes live here so memory list/search queries stay fast.
+-- ON DELETE CASCADE keeps the payload's lifetime tied to its owning memory.
+CREATE TABLE IF NOT EXISTS memory_offload_payloads (
+    memory_id   INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+    payload     BLOB    NOT NULL,
+    byte_count  INTEGER NOT NULL,
+    mime_type   TEXT    NOT NULL DEFAULT 'text/plain',
+    created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_offload_payloads_created ON memory_offload_payloads(created_at);
 "#;
 
 /// Create the final memory schema directly and record its canonical version.
@@ -208,6 +227,8 @@ pub fn create_canonical_schema(conn: &Connection) -> SqlResult<()> {
     ensure_cap_profile(conn)?;
     ensure_v20_tables(conn)?;
     ensure_v22_memory_sources(conn)?;
+    ensure_v23_offload_payloads(conn)?;
+    ensure_v24_scenario_id(conn)?;
     validate_canonical_schema(conn)?;
     record_schema_version(conn)
 }
@@ -557,6 +578,48 @@ fn ensure_v22_memory_sources(conn: &Connection) -> SqlResult<()> {
     Ok(())
 }
 
+/// V23 (CTX-OFFLOAD-1a): sidecar `memory_offload_payloads` table for
+/// DB-backed verbose tool-output offload. The table also lives in the
+/// canonical schema SQL; this hook lets existing v22 databases pick it
+/// up without a destructive reset.
+fn ensure_v23_offload_payloads(conn: &Connection) -> SqlResult<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS memory_offload_payloads (
+            memory_id   INTEGER PRIMARY KEY REFERENCES memories(id) ON DELETE CASCADE,
+            payload     BLOB    NOT NULL,
+            byte_count  INTEGER NOT NULL,
+            mime_type   TEXT    NOT NULL DEFAULT 'text/plain',
+            created_at  INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_offload_payloads_created ON memory_offload_payloads(created_at);",
+    )?;
+    Ok(())
+}
+
+/// V24 (MEM-SCENARIO-1): add nullable `scenario_id` column to `memories`
+/// so individual entries can be grouped under a per-task scenario block
+/// (typically a `MemoryType::Summary` row that aggregates the scene).
+/// `ON DELETE SET NULL` keeps the children alive when the scenario head
+/// is deleted, so the underlying L0/L1 evidence is never lost.
+fn ensure_v24_scenario_id(conn: &Connection) -> SqlResult<()> {
+    let has_column: bool = conn
+        .prepare("PRAGMA table_info(memories)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .filter_map(Result::ok)
+        .any(|name| name == "scenario_id");
+    if !has_column {
+        conn.execute_batch(
+            "ALTER TABLE memories ADD COLUMN scenario_id INTEGER \
+             REFERENCES memories(id) ON DELETE SET NULL;",
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_memories_scenario_id \
+         ON memories(scenario_id) WHERE scenario_id IS NOT NULL;",
+    )?;
+    Ok(())
+}
+
 /// Return the recorded canonical schema version, or 0 before initialization.
 pub fn schema_version(conn: &Connection) -> SqlResult<i64> {
     conn.query_row(
@@ -589,7 +652,7 @@ fn validate_canonical_schema(conn: &Connection) -> SqlResult<()> {
                 expires_at, tier, decay_score, session_id, parent_id, token_count,
                 valid_to, obsidian_path, last_exported, category, cognitive_kind,
                 updated_at, origin_device, protected, hlc_counter, share_scope,
-                confidence
+                confidence, scenario_id
           FROM memories LIMIT 0",
     )?;
     conn.prepare(

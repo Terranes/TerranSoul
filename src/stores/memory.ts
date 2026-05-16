@@ -53,6 +53,48 @@ export const useMemoryStore = defineStore('memory', () => {
   const edgeStats = ref<EdgeStats | null>(null);
   const isLoading = ref(false);
   const error = ref<string | null>(null);
+  /** CTX-OFFLOAD-1b — total bytes of verbose tool-output offloaded to the
+   * sidecar `memory_offload_payloads` table. Drives the "Context
+   * Compression" skill-tree quest's auto-activation. */
+  const offloadPayloadBytes = ref<number>(0);
+  /** MEM-SCENARIO-1 — total distinct scenarios (rows referenced by at
+   * least one `scenario_id`). Drives the "Scenario Aggregation"
+   * skill-tree quest's auto-activation. */
+  const scenarioCount = ref<number>(0);
+  /** CLAIM-VERIFY-1 — count of unresolved (open) memory conflicts.
+   * Drives the "Claim Verification" skill-tree quest's auto-activation
+   * and surfaces a UI hint when the user has contradictions to review. */
+  const openConflictCount = ref<number>(0);
+
+  async function refreshOffloadPayloadBytes(): Promise<number> {
+    try {
+      const total = await invoke<number>('memory_offload_payload_total_bytes');
+      offloadPayloadBytes.value = typeof total === 'number' ? total : 0;
+    } catch {
+      offloadPayloadBytes.value = 0;
+    }
+    return offloadPayloadBytes.value;
+  }
+
+  async function refreshScenarioCount(): Promise<number> {
+    try {
+      const total = await invoke<number>('memory_scenario_total_count');
+      scenarioCount.value = typeof total === 'number' ? total : 0;
+    } catch {
+      scenarioCount.value = 0;
+    }
+    return scenarioCount.value;
+  }
+
+  async function refreshOpenConflictCount(): Promise<number> {
+    try {
+      const total = await invoke<number>('count_memory_conflicts');
+      openConflictCount.value = typeof total === 'number' ? total : 0;
+    } catch {
+      openConflictCount.value = 0;
+    }
+    return openConflictCount.value;
+  }
 
   async function fetchAll(): Promise<void> {
     isLoading.value = true;
@@ -66,6 +108,12 @@ export const useMemoryStore = defineStore('memory', () => {
     } finally {
       isLoading.value = false;
     }
+    // CTX-OFFLOAD-1b — refresh offload payload total (best-effort)
+    void refreshOffloadPayloadBytes();
+    // MEM-SCENARIO-1 — refresh scenario count (best-effort)
+    void refreshScenarioCount();
+    // CLAIM-VERIFY-1 — refresh open conflict count (best-effort)
+    void refreshOpenConflictCount();
   }
 
   async function search(query: string): Promise<MemoryEntry[]> {
@@ -544,6 +592,16 @@ export const useMemoryStore = defineStore('memory', () => {
     return await invoke('count_memory_conflicts');
   }
 
+  /** CLAIM-VERIFY-1 — one-shot backfill that scans the most-recent
+   * `limit` memories for contradictions against existing near-duplicates
+   * and opens new `memory_conflicts` rows. Returns the number of
+   * newly-opened conflicts. */
+  async function scanRecentForConflicts(limit = 50): Promise<number> {
+    const n = await invoke<number>('memory_scan_recent_for_conflicts', { limit });
+    await refreshOpenConflictCount();
+    return typeof n === 'number' ? n : 0;
+  }
+
   // ─── Judgment Rules (Chunk 33B.1) ─────────────────────────────────────
 
   /** Add a new judgment rule. */
@@ -592,6 +650,12 @@ export const useMemoryStore = defineStore('memory', () => {
     edgeStats,
     isLoading,
     error,
+    offloadPayloadBytes,
+    refreshOffloadPayloadBytes,
+    scenarioCount,
+    refreshScenarioCount,
+    openConflictCount,
+    refreshOpenConflictCount,
     fetchAll,
     search,
     semanticSearch,
@@ -632,6 +696,7 @@ export const useMemoryStore = defineStore('memory', () => {
     resolveConflict,
     dismissConflict,
     countConflicts,
+    scanRecentForConflicts,
     // Judgment rules (Chunk 33B.1)
     addJudgment,
     listJudgments,

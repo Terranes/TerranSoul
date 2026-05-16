@@ -57,7 +57,9 @@ async function tailLast(file, maxBytes = 64 * 1024) {
   }
 }
 
-const PROGRESS_RE = /\[(ivfpq|hnsw|emb|rrf)\]\s+ingested\s+(\d+)\/(\d+)\s+\(embedded total=(\d+),\s*elapsed=([\d.]+)s\)/;
+// Resume runs append `, since-resume=N` after `elapsed=` before the closing
+// paren, so the regex must accept arbitrary extra k=v pairs after elapsed.
+const PROGRESS_RE = /\[(ivfpq|hnsw|emb|rrf)\]\s+ingested\s+(\d+)\/(\d+)\s+\(embedded total=(\d+),\s*elapsed=([\d.]+)s(?:,\s*since-resume=(\d+))?[^)]*\)/;
 const BUILD_RE = /\[(ivfpq|hnsw)\]\s+build_ivf_pq.*?built=(\d+).*?elapsed=([\d.]+)s/;
 const RECALL_RE = /recall@?10[^0-9]*([0-9.]+)/i;
 const TERMINAL_RE = /completed|exit(ed)? code|crashed|FATAL|panicked at|error: /i;
@@ -77,6 +79,7 @@ function parseTail(tail) {
         total: Number(p[3]),
         embedded: Number(p[4]),
         elapsedSec: Number(p[5]),
+        sinceResume: p[6] != null ? Number(p[6]) : null,
       };
     }
     const b = BUILD_RE.exec(line);
@@ -168,13 +171,24 @@ async function pollOnce(state) {
 
   if (parsed.latestProgress) {
     pct = (parsed.latestProgress.processed / parsed.latestProgress.total) * 100;
+    // For resume runs, `elapsed` is wall time since this resume started but
+    // `processed` is the cumulative count including pre-resume ingest. Using
+    // processed/elapsed there would inflate the rate ~40× and underestimate
+    // ETA. When `since-resume` is present, base the rate on that subset.
+    const rateProcessed =
+      parsed.latestProgress.sinceResume != null && parsed.latestProgress.sinceResume > 0
+        ? parsed.latestProgress.sinceResume
+        : parsed.latestProgress.processed;
     const eta = formatEta(
-      parsed.latestProgress.processed,
-      parsed.latestProgress.total,
+      rateProcessed,
+      parsed.latestProgress.total - parsed.latestProgress.processed + rateProcessed,
       parsed.latestProgress.elapsedSec,
     );
     const elapsedH = (parsed.latestProgress.elapsedSec / 3600).toFixed(2);
-    detail = `ingest ${parsed.latestProgress.processed.toLocaleString()}/${parsed.latestProgress.total.toLocaleString()} (${pct.toFixed(2)} %), elapsed ${elapsedH} h, ETA ~${eta}`;
+    const resumeNote = parsed.latestProgress.sinceResume != null
+      ? ` (since-resume ${parsed.latestProgress.sinceResume.toLocaleString()})`
+      : '';
+    detail = `ingest ${parsed.latestProgress.processed.toLocaleString()}/${parsed.latestProgress.total.toLocaleString()} (${pct.toFixed(2)} %)${resumeNote}, elapsed ${elapsedH} h, ETA ~${eta}`;
   } else if (parsed.latestBuild) {
     pct = 95;
     status = 'build_ivf_pq';

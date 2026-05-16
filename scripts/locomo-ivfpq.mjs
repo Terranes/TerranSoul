@@ -436,6 +436,7 @@ class JsonlClient {
     this.proc = spawn('cargo', [
       'run',
       '--quiet',
+      '--release',
       '--manifest-path',
       resolve(REPO_ROOT, 'src-tauri', 'Cargo.toml'),
       '--features', 'bench-million',

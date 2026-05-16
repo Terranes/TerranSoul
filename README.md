@@ -297,11 +297,11 @@ Local Ollama hardware recommendations favor responsive interactive models by def
 
 ## MCP Tools (for AI Coding Agents)
 
-When connected, agents get 35 tools:
+When connected, agents get 37 tools:
 
 | Category | Tools |
 |----------|-------|
-| **Brain (18)** | `brain_health`, `brain_search`, `brain_suggest_context`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_summarize`, `brain_ingest_url`, `brain_ingest_lesson`, `brain_append`, `brain_failover_status`, `brain_wiki_audit`, `brain_wiki_spotlight`, `brain_wiki_serendipity`, `brain_wiki_revisit`, `brain_wiki_digest_text`, `brain_review_gaps`, `brain_session_checklist` |
+| **Brain (20)** | `brain_health`, `brain_search`, `brain_suggest_context`, `brain_get_entry`, `brain_list_recent`, `brain_kg_neighbors`, `brain_drilldown`, `brain_drilldown_payload`, `brain_summarize`, `brain_ingest_url`, `brain_ingest_lesson`, `brain_append`, `brain_failover_status`, `brain_wiki_audit`, `brain_wiki_spotlight`, `brain_wiki_serendipity`, `brain_wiki_revisit`, `brain_wiki_digest_text`, `brain_review_gaps`, `brain_session_checklist` |
 | **Code (17)** | `code_query`, `code_context`, `code_impact`, `code_rename`, `code_generate_skills`, `code_list_groups`, `code_create_group`, `code_add_repo_to_group`, `code_group_status`, `code_group_drift`, `code_extract_contracts`, `code_extract_negatives`, `code_list_group_contracts`, `code_cross_repo_query`, `code_branch_diff`, `code_branch_sync`, `code_index_commit` |
 
 Ports: `7421` (release app), `7422` (dev), `7423` (headless `npm run mcp`).

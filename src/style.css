@@ -1421,18 +1421,8 @@ html[data-theme="pastel"] .ts-cockpit-card::before {
   text-shadow: 0 0 14px rgba(0, 212, 255, 0.45);
 }
 
-/* ── Cockpit breadcrumb — "TERRANSOUL › COMPANION › BRAIN PANEL" ── */
-.ts-cockpit-crumb {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ts-text-muted);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-}
-.ts-cockpit-crumb-sep { opacity: 0.4; }
-.ts-cockpit-crumb-now {
-  color: var(--ts-accent);
-  text-shadow: 0 0 14px rgba(0, 212, 255, 0.45);
-}
+/* Breadcrumb styling lives in src/styles/brain-panel.css under
+   `.bp-crumb*` and is consumed by src/components/ui/AppBreadcrumb.vue —
+   the canonical breadcrumb component across all views. The previous
+   `.ts-cockpit-crumb*` duplicate was removed during the
+   AppBreadcrumb → ts-cockpit-crumb unification cleanup. */

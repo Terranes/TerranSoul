@@ -806,3 +806,342 @@ WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026
     SELECT 1 FROM memory_edges e
     WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
+
+-- Lesson: TencentDB Agent Memory drill-down chain + symbolic context offload
+-- (research 2026-05-17, see docs/tencentdb-agent-memory-research.md).
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'Tencent/TencentDB-Agent-Memory (MIT, v0.3.4, 2.2k stars) was studied ' ||
+  'on 2026-05-17 via DeepWiki + upstream README. Two genuinely new ideas ' ||
+  'worth importing into TerranSoul: (1) explicit derivation/drill-down ' ||
+  'chain — every summarized memory must point back to the source ' ||
+  'memories it was distilled from, via a typed memory_edges rel_type ' ||
+  '("derived_from"). The free-form TEXT rel_type column means no schema ' ||
+  'migration is required. Recall then returns the highest-density tier ' ||
+  'first and only drills down on demand. This is the white-box ' ||
+  'debuggability win — when retrieval is wrong, debugging becomes a ' ||
+  'deterministic walk Persona → Scenario → Atom → Conversation instead ' ||
+  'of a forensic inspection of vector scores. (2) Symbolic context ' ||
+  'offload for verbose tool outputs in long-horizon agentic sessions: ' ||
+  'tool transcripts above a threshold are offloaded to a sidecar table ' ||
+  '(memory_offload_payloads), and only a lightweight reference ' ||
+  '({kind: tool_output_ref, id, summary, byte_count}) is injected into ' ||
+  'chat context; the agent fetches raw bytes via a brain_drilldown_payload ' ||
+  'tool when it actually needs them. Upstream reports 61.38% token ' ||
+  'reduction on WideSearch and PersonaMem 48-76%. Two adoption chunks ' ||
+  'filed: MEM-DRILLDOWN-1 and CTX-OFFLOAD-1 (rules/backlog.md Phase 48). ' ||
+  'Explicitly NOT importing: the persona.md / scenario.md / refs/*.md raw ' ||
+  'Markdown-on-disk projection as source of truth, the tdai_* tool names, ' ||
+  'the OpenClaw/Hermes plugin manifests, or the DeepSeek-V3.2 LLM ' ||
+  'defaults. TerranSoul keeps SQLite + memory_edges as the single source ' ||
+  'of truth per the project rule that Markdown is never MCP memory; ' ||
+  'Markdown remains a one-way readable projection (obsidian_export.rs). ' ||
+  'Capabilities TerranSoul already has and does NOT need to import: ' ||
+  'hybrid retrieval (BM25/FTS5 + vector + RRF), local-first SQLite, ' ||
+  'cognitive-kind tiering, KG edges. TerranSoul does NOT yet have a ' ||
+  'persistent per-task scenario aggregation tier; that is deferred ' ||
+  '(MEM-SCENARIO-1) until MEM-DRILLDOWN-1 lands.',
+  'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ------------------------------------------------------------------
+-- MEM-DRILLDOWN-1 implementation lesson (2026-05-17)
+-- Records the actual shape that landed so future agents can find the
+-- provenance traversal without re-deriving it from edges.rs.
+-- ------------------------------------------------------------------
+
+INSERT INTO memories
+  (content, source_hash, memory_type, tier, importance, created_at, last_accessed)
+SELECT
+  'MEM-DRILLDOWN-1 landed 2026-05-17. Provenance drill-down for TerranSoul: ' ||
+  'src-tauri/src/memory/drilldown.rs exposes MemoryStore::source_chain(memory_id, max_depth) ' ||
+  'which BFS-walks memory_edges rows where rel_type=''derived_from'' and valid_to IS NULL, ' ||
+  'src_id = root, dst_id = ancestor. DEFAULT_MAX_DEPTH = 8. Returns SourceChain { root, ' ||
+  'ancestors: Vec<SourceAncestor { depth, edge_confidence, memory }>, truncated }. ' ||
+  'Cycle-safe via HashSet, diamond-safe via best-confidence tracking. ' ||
+  'Surfaces: MCP tool brain_drilldown (inputs: id, max_depth), gateway op ' ||
+  'BrainGateway::drilldown (DrilldownRequest/Response), Tauri command memory_drilldown. ' ||
+  'Edge-direction convention reaffirmed: derived_from has src=summary, dst=source ' ||
+  '(matches consolidation.rs + audit.rs). No schema migration needed because rel_type ' ||
+  'is free-form TEXT. CTX-OFFLOAD-1 depends on this and can now proceed.',
+  'seed:lesson-mem-drilldown-1-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, design.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories design ON design.source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = design.id AND e.rel_type = 'derived_from'
+  );
+
+-- ------------------------------------------------------------------
+-- CTX-OFFLOAD-1a implementation lesson (2026-05-17)
+-- DB-backed verbose tool-output offload storage primitive +
+-- gateway/MCP/Tauri surfaces. Bundled fixes for pre-existing build
+-- blockers (gix-hash sha1 feature, rustls 0.23 default provider).
+-- ------------------------------------------------------------------
+
+INSERT INTO memories
+  (content, source_hash, memory_type, tier, importance, created_at, last_accessed)
+SELECT
+  'CTX-OFFLOAD-1a landed 2026-05-17. Tencent-inspired DB-backed offload of verbose ' ||
+  'agent tool outputs into the brain. V23 schema bump adds sidecar table ' ||
+  'memory_offload_payloads(memory_id PK FK->memories ON DELETE CASCADE, payload BLOB, ' ||
+  'byte_count INTEGER, mime_type TEXT DEFAULT ''text/plain'', created_at INTEGER); ' ||
+  'lives in src-tauri/src/memory/schema.rs canonical SQL + ensure_v23_offload_payloads ' ||
+  'upgrade hook. New src-tauri/src/memory/offload_payload.rs adds OffloadPayload, ' ||
+  'OffloadPayloadInfo, and MemoryStore::{add,get,get_info,delete}_offload_payload + ' ||
+  'offload_payload_total_bytes (INSERT OR REPLACE idempotent on PK; info path avoids ' ||
+  'materializing BLOB). Gateway adds BrainGateway::drilldown_payload + ' ||
+  'DrilldownPayloadRequest/Response (bytes base64-encoded for JSON transport); ' ||
+  'AppStateGateway impl uses require_read, validates memory_id > 0, maps missing ' ||
+  'payload to GatewayError::NotFound. MCP tool brain_drilldown_payload (input memory_id ' ||
+  'required) wired into tools.rs definitions/dispatch/registry; counts: brain 19->20, ' ||
+  'total MCP 36->37 (default caps 25->26, READ_WRITE 42->43). Tauri command ' ||
+  'memory_drilldown_payload registered in lib.rs. Bundled fixes: (1) gix-hash 0.25.0 ' ||
+  'compile_error required sha1 feature; added direct optional dep ' ||
+  '`gix-hash = { version = "0.25", default-features = false, features = ["sha1"], ' ||
+  'optional = true }` + `dep:gix-hash` in repo-rag feature so Cargo unification flips ' ||
+  'sha1 on for all transitive consumers; (2) rustls 0.23 ServerConfig/ClientConfig ' ||
+  'builders panic without an installed CryptoProvider; added ' ||
+  'ensure_default_crypto_provider() std::sync::Once guard in link/quic.rs that calls ' ||
+  'rustls::crypto::ring::default_provider().install_default(), invoked from both ' ||
+  'build_server_config and build_client_config. Test helper for offload tests must ' ||
+  'produce unique content per call because MemoryStore::add dedupes by content hash. ' ||
+  'Validation: cargo build clean; cargo test --lib 3031 passed 0 failed (7 new offload ' ||
+  'tests + 4 previously-failing quic tests now passing); cargo clippy clean. ' ||
+  'CTX-OFFLOAD-1b (runtime_hooks OffloadToolOutputHook + Context Compression quest) ' ||
+  'still pending.',
+  'seed:lesson-ctx-offload-1a-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, drilldown.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories drilldown ON drilldown.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = drilldown.id AND e.rel_type = 'derived_from'
+  );
+
+-- ------------------------------------------------------------------
+-- CTX-OFFLOAD-1b implementation lesson (2026-05-17)
+-- Coding runtime offload hook + skill-tree quest.
+-- ------------------------------------------------------------------
+INSERT INTO memories (content, source_hash, cognitive_kind, tier, importance, created_at, updated_at)
+SELECT
+  'CTX-OFFLOAD-1b done 2026-05-17: wired CTX-OFFLOAD-1a storage primitive into coding agent loop. ' ||
+  'New src-tauri/src/coding/offload_tool_output_hook.rs defines OffloadToolOutputHook { store: Arc<Mutex<MemoryStore>>, threshold_chars } ' ||
+  'with new() defaulting to OFFLOAD_CHAR_THRESHOLD = 40_000 (reused from coding/offload.rs for parity with the file-based spill). ' ||
+  'On wrap_tool_call: if result.content.len() > threshold_chars, build head/tail summary (HEAD_CHARS=400 TAIL_CHARS=200 marker ...[N chars offloaded]...), ' ||
+  'lock the Arc<Mutex<MemoryStore>>, MemoryStore::add with MemoryType::Context tags tool_output,offloaded,call:<id> importance 2, ' ||
+  'then add_offload_payload(entry.id, bytes, text/plain) and replace content with JSON envelope {kind:tool_output_ref, id, summary, byte_count}. ' ||
+  'Failure-safe: any DB error returns the original ToolCallResult untouched. 3 unit tests pass (small pass-through, large round-trip via get_offload_payload, summary marker). ' ||
+  'Local floor_char_boundary/ceil_char_boundary helpers needed because std versions are still unstable on the pinned toolchain. ' ||
+  'New Tauri command memory_offload_payload_total_bytes returns MemoryStore::offload_payload_total_bytes; registered in lib.rs re-export and invoke_handler. ' ||
+  'New Pinia memory store ref offloadPayloadBytes + refreshOffloadPayloadBytes(); fetchAll() triggers a best-effort refresh. ' ||
+  'New skill-tree quest context-compression (tier=advanced, requires=rag-knowledge, category=brain, icon=compress, empty combos) auto-activates when offloadPayloadBytes > 0. ' ||
+  'Validation: cargo build clean; cargo test --lib offload_tool_output 3/3 pass; clippy clean; vue-tsc clean; vitest skill-tree 76/76 pass. ' ||
+  'Hook is not yet attached to the default agent loop hook chain — call sites that construct AgentHook arrays must opt in. ' ||
+  'Threshold reconciliation: backlog originally suggested 4_000, but we matched the existing 40_000 so the DB hook and the file-based hook in coding/offload.rs fire at the same boundary; ' ||
+  'override via OffloadToolOutputHook::with_threshold if a smaller DB threshold is desired later.',
+  'seed:lesson-ctx-offload-1b-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-ctx-offload-1b-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-ctx-offload-1b-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, prev.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories prev ON prev.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-ctx-offload-1b-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = prev.id AND e.rel_type = 'derived_from'
+  );
+
+-- ------------------------------------------------------------------
+-- MEM-SCENARIO-1 implementation lesson (2026-05-17)
+-- Per-task scenario aggregation (L2) tier via scenario_id column.
+-- ------------------------------------------------------------------
+INSERT INTO memories (content, source_hash, cognitive_kind, tier, importance, created_at, updated_at)
+SELECT
+  'MEM-SCENARIO-1 done 2026-05-17: shipped the L2 Scenario aggregation tier. ' ||
+  'Design decision resolved the backlog open question by adding a nullable scenario_id INTEGER REFERENCES memories(id) ON DELETE SET NULL column ' ||
+  'rather than extending MemoryType, because extending the enum would ripple into every add_many call-site. ' ||
+  'Schema bumped to V24: CANONICAL_SCHEMA_VERSION 23->24, memories CREATE TABLE adds scenario_id, partial index idx_memories_scenario_id ON memories(scenario_id) WHERE scenario_id IS NOT NULL, ' ||
+  'and new ensure_v24_scenario_id(conn) upgrade path that checks PRAGMA table_info(memories) before ALTER TABLE. validate_canonical_schema memories SELECT extended to include scenario_id. ' ||
+  'New src-tauri/src/memory/scenario.rs (~340 lines) — ScenarioSummary { scenario_id, content, tags, importance, created_at, member_count } + impl MemoryStore: ' ||
+  'create_scenario(head, member_ids) stamps scenario_id=head.id on head and all members inside conn.unchecked_transaction() (pattern already used twice in store.rs for &Connection methods); ' ||
+  'set_scenario_id(memory_id, Option<i64>); assign_members_to_scenario (transactional, idempotent); get_scenario_id uses .optional().map(Option::flatten); ' ||
+  'list_scenario_members excludes head via WHERE scenario_id = ?1 AND id != ?1; list_scenarios(limit) returns heads-with-members only via WHERE EXISTS plus correlated member_count subquery; ' ||
+  'scenario_total_count returns COUNT(DISTINCT scenario_id) WHERE scenario_id IS NOT NULL. ' ||
+  '9 unit tests pass including the critical deleting_scenario_head_nulls_member_pointers_not_member_rows which validates the ON DELETE SET NULL contract. ' ||
+  'store.rs row_to_entry promoted to pub(crate) for cross-module reuse. ' ||
+  '5 new Tauri commands: memory_create_scenario, memory_list_scenarios, memory_list_scenario_members, memory_set_scenario_id, memory_scenario_total_count — all use state.memory_store.lock(). ' ||
+  'Frontend: src/stores/memory.ts adds scenarioCount ref and refreshScenarioCount(); fetchAll() fires void refreshScenarioCount() after the existing void refreshOffloadPayloadBytes() from CTX-OFFLOAD-1b. ' ||
+  'Skill-tree quest scenario-aggregation (tier=advanced, requires=rag-knowledge, category=brain, icon=film-clapper) auto-activates when scenarioCount > 0. ' ||
+  'Bonus cleanup: AppBreadcrumb -> ts-cockpit-crumb unification — removed orphan .ts-cockpit-crumb/.ts-cockpit-crumb-sep/.ts-cockpit-crumb-now block from src/style.css (zero importers); canonical breadcrumb remains AppBreadcrumb.vue using .bp-crumb* from globally-loaded src/styles/brain-panel.css. ' ||
+  'Bonus fix: src/stores/memory.test.ts enforceStorageLimit test refactored from positional mockResolvedValueOnce to keyed mockImplementation so the two fire-and-forget telemetry refreshers in fetchAll (offload + scenario) no longer shift call ordering. ' ||
+  'Validation: cargo build clean; cargo clippy -D warnings clean; cargo test memory::scenario 9/9 pass; vue-tsc clean; full vitest 1969/1969 pass.',
+  'seed:lesson-mem-scenario-1-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-mem-scenario-1-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-mem-scenario-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, prev.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories prev ON prev.source_hash = 'seed:lesson-ctx-offload-1a-impl-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-mem-scenario-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = prev.id AND e.rel_type = 'derived_from'
+  );
+-- ------------------------------------------------------------------
+-- CLAIM-VERIFY-1/2/3 implementation lesson (2026-05-17)
+-- Contradiction subsystem promoted to first-class user-visible feature.
+-- ------------------------------------------------------------------
+INSERT INTO memories (content, source_hash, cognitive_kind, tier, importance, created_at, updated_at)
+SELECT
+  'CLAIM-VERIFY-1/2/3 done 2026-05-17: promoted the existing V9 memory_conflicts contradiction subsystem ' ||
+  'into a user-visible feature with three layers. ' ||
+  '(1) New pub(crate) async fn embed_and_detect_contradiction(state, new_id, content) -> Option<i64> helper in src-tauri/src/commands/memory.rs ' ||
+  'centralizes embed (via embed_for_mode, works with cloud paid/free AND local Ollama) -> persist via set_embedding -> ' ||
+  'find_duplicate(emb, 0.85) self-filtered -> gate on active_brain.is_some() -> OllamaAgent::check_contradiction -> ' ||
+  'record_contradiction_if. Best-effort throughout — returns None silently. Refactor removed ~40 lines of duplicated logic ' ||
+  'in both add_memory_inner and extract_memories_from_session auto-detect block (gated by AppSettings.auto_detect_conflicts, default false). ' ||
+  '(2) New Tauri command memory_scan_recent_for_conflicts(limit=50, max=500) selects most-recent valid_to IS NULL rows, ' ||
+  'runs them through the helper, returns post_open - pre_open count. Registered in lib.rs re-export + invoke_handler. ' ||
+  '(3) New MemoryStore::contested_memory_ids() -> SqlResult<HashSet<i64>> in src-tauri/src/memory/conflicts.rs — single UNION query on entry_a_id/entry_b_id WHERE status=open. ' ||
+  'Empty-set fast path keeps ranker hot path cost-free in the common case. ' ||
+  '(4) Both hybrid_search_rrf and hybrid_search_rrf_with_intent apply 0.7x score penalty to ids in the contested set during the per-kind decay step ' ||
+  '(alongside confidence_factor, freshness_boost, graph_boost). New unit test hybrid_search_rrf_penalizes_contested_memories — ' ||
+  'inserts 3 memories sharing query tokens, opens a conflict between A and C, verifies B (uncontested) ranks above A. ' ||
+  'IMPORTANT: test uses 3 DISTINCT content strings sharing keywords (alpha bravo charlie one/two/three), not identical strings — ' ||
+  'select_diversified_ranked collapses identical-content rows into a single session bucket. ' ||
+  '(5) Frontend src/stores/memory.ts: new openConflictCount ref + refreshOpenConflictCount() (fired best-effort in fetchAll) + scanRecentForConflicts(limit) method. ' ||
+  '(6) Skill-tree quest claim-verification (tier=advanced, requires=rag-knowledge, category=brain, icon=scale) auto-activates when openConflictCount > 0. ' ||
+  '(7) MemoryView Contradictions section: rendered when openConflictCount > 0 || conflictList.length > 0; ' ||
+  'side-by-side A/B with Keep A/Keep B/Dismiss buttons + Refresh + Scan recent (50) buttons. ' ||
+  'Bonus fix: removed idx_memories_scenario_id from inline CANONICAL_SCHEMA_SQL — it now lives only in ensure_v24_scenario_id ' ||
+  'which runs AFTER conn.execute_batch(CANONICAL_SCHEMA_SQL), so the index gets created on a column that has already been added. ' ||
+  'This fixes the pre-existing canonical_schema_adds_cognitive_kind_to_legacy_memories_table test that MEM-SCENARIO-1 broke. ' ||
+  'Validation: cargo build/clippy clean, cargo test --lib 3044/3044 pass, vue-tsc clean, vitest 1969/1969 pass. ' ||
+  'Penalty magnitude 0.7x chosen so contested memory drops below uncontested peer but does not vanish from top-k.',
+  'seed:lesson-claim-verify-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-claim-verify-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-claim-verify-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, prev.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories prev ON prev.source_hash = 'seed:lesson-mem-scenario-1-impl-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-claim-verify-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = prev.id AND e.rel_type = 'derived_from'
+  );

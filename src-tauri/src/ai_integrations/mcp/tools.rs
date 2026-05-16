@@ -72,6 +72,29 @@ pub fn definitions(caps: &GatewayCaps) -> Vec<Value> {
             }
         }),
         json!({
+            "name": "brain_drilldown",
+            "description": "Provenance drill-down: walk derived_from edges OUT from a memory and return the full chain of source memories (summary -> scenario -> atom -> raw). Use this when a summary or persona-trait answer needs auditing or expansion back to its sources.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "id": { "type": "integer", "description": "Memory id whose ancestry to surface" },
+                    "max_depth": { "type": "integer", "description": "Max hops to walk back (default 8)" }
+                },
+                "required": ["id"]
+            }
+        }),
+        json!({
+            "name": "brain_drilldown_payload",
+            "description": "Re-inflate an offloaded verbose tool output: returns the raw bytes (base64-encoded) previously spilled into the brain by the coding runtime. Use after seeing a tool_output_ref placeholder in the session when the agent actually needs the full content.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "memory_id": { "type": "integer", "description": "Memory id whose offloaded payload to fetch" }
+                },
+                "required": ["memory_id"]
+            }
+        }),
+        json!({
             "name": "brain_summarize",
             "description": "LLM-summarize direct text, memory ids, or a search query using TerranSoul's active brain. If you have a topic rather than ids, pass query instead of guessing memory_ids.",
             "inputSchema": {
@@ -399,6 +422,29 @@ pub async fn dispatch(
             gw.kg_neighbors(caps, req)
                 .await
                 .map(|n| serde_json::to_string(&n).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "brain_drilldown" => {
+            let id = args["id"]
+                .as_i64()
+                .ok_or_else(|| "missing required param: id".to_string())?;
+            let req = DrilldownRequest {
+                id,
+                max_depth: args["max_depth"].as_u64().map(|n| n as usize),
+            };
+            gw.drilldown(caps, req)
+                .await
+                .map(|r| serde_json::to_string(&r).unwrap_or_default())
+                .map_err(|e| e.to_string())
+        }
+        "brain_drilldown_payload" => {
+            let memory_id = args["memory_id"]
+                .as_i64()
+                .ok_or_else(|| "missing required param: memory_id".to_string())?;
+            let req = DrilldownPayloadRequest { memory_id };
+            gw.drilldown_payload(caps, req)
+                .await
+                .map(|r| serde_json::to_string(&r).unwrap_or_default())
                 .map_err(|e| e.to_string())
         }
         "brain_summarize" => {
@@ -2171,14 +2217,14 @@ mod tests {
     #[test]
     fn definitions_has_8_brain_tools_without_code_read() {
         let defs = definitions(&GatewayCaps::default());
-        assert_eq!(defs.len(), 24);
+        assert_eq!(defs.len(), 26);
     }
 
     #[test]
     fn definitions_has_21_tools_with_code_read() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        assert_eq!(defs.len(), 41);
+        assert_eq!(defs.len(), 43);
     }
 
     #[test]
@@ -2203,6 +2249,8 @@ mod tests {
             "brain_get_entry",
             "brain_list_recent",
             "brain_kg_neighbors",
+            "brain_drilldown",
+            "brain_drilldown_payload",
             "brain_summarize",
             "brain_suggest_context",
             "brain_ingest_url",
@@ -2231,7 +2279,7 @@ mod tests {
     fn code_tool_names_are_correct() {
         let caps = GatewayCaps::READ_WRITE;
         let defs = definitions(&caps);
-        let code_names: Vec<&str> = defs[24..]
+        let code_names: Vec<&str> = defs[26..]
             .iter()
             .map(|d| d["name"].as_str().unwrap())
             .collect();

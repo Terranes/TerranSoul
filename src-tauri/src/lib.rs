@@ -156,7 +156,12 @@ use commands::{
         graph_rag_detect_communities, graph_rag_build_hierarchy, graph_extract_entities, graph_rag_search, graph_rag_search_routed, graph_totals, hybrid_search_memories,
         hybrid_search_memories_rrf, hyde_search_memories, judgment_add, judgment_apply,
         judgment_list, list_memory_conflicts, list_memory_edges, list_relation_types,
-        matryoshka_search_memories, memory_graph_page, multi_hop_search_memories, obsidian_sync,
+        matryoshka_search_memories, memory_drilldown, memory_drilldown_payload,
+        memory_offload_payload_total_bytes,
+        memory_create_scenario, memory_list_scenarios, memory_list_scenario_members,
+        memory_set_scenario_id, memory_scenario_total_count,
+        memory_scan_recent_for_conflicts,
+        memory_graph_page, multi_hop_search_memories, obsidian_sync,
         obsidian_sync_start, obsidian_sync_stop, progressive_search_memories, promote_memory,
         rebalance_ann_shards, rebuild_shard_router, reflect_on_session, refresh_graph_clusters,
         rerank_search_memories, resolve_memory_conflict, router_health, run_disk_ann_migration,
@@ -1740,6 +1745,14 @@ pub fn run() {
             hyde_search_memories,
             rerank_search_memories,
             matryoshka_search_memories,
+            memory_drilldown,
+            memory_drilldown_payload,
+            memory_offload_payload_total_bytes,
+            memory_create_scenario,
+            memory_list_scenarios,
+            memory_list_scenario_members,
+            memory_set_scenario_id,
+            memory_scenario_total_count,
             backfill_embeddings,
             backfill_embedding_model_id,
             set_ann_quantization,
@@ -1756,6 +1769,7 @@ pub fn run() {
             resolve_memory_conflict,
             dismiss_memory_conflict,
             count_memory_conflicts,
+            memory_scan_recent_for_conflicts,
             scan_edge_conflicts,
             audit_memory_tags,
             gc_memories,
@@ -1773,6 +1787,13 @@ pub fn run() {
             get_memory_source,
             create_memory_source,
             delete_memory_source,
+            // REPO-PACK: import/export per-source knowledge bundles (.tsbrain)
+            #[cfg(feature = "repo-rag")]
+            crate::commands::memory_sources::export_repo_source,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::memory_sources::import_repo_source,
+            #[cfg(feature = "repo-rag")]
+            crate::commands::memory_sources::inspect_repo_pack,
             // BRAIN-REPO-RAG-1b-i: per-repo ingest backend (feature `repo-rag`)
             #[cfg(feature = "repo-rag")]
             crate::commands::repos::repo_add_source,
