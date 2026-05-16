@@ -3,7 +3,7 @@
 > **🚧 Active development since 10/04/2026.**
 > Interested? Join us at <https://discord.gg/RzXcvsabKD>
 
-[![CI](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/Terranes/TerranSoul/actions/workflows/terransoul-ci.yml)
+[![CI](https://github.com/TerranSyn/TerranSoul/actions/workflows/terransoul-ci.yml/badge.svg)](https://github.com/TerranSyn/TerranSoul/actions/workflows/terransoul-ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Rust](https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
@@ -67,7 +67,7 @@ The differentiators below name what's **shipped** vs what's a **design target** 
 
 ## Install
 
-Download from [GitHub Releases](https://github.com/Terranes/TerranSoul/releases):
+Download from [GitHub Releases](https://github.com/TerranSyn/TerranSoul/releases):
 
 | Platform | Format |
 |----------|--------|
@@ -107,7 +107,7 @@ The agent checks each requirement, installs what's missing, and re-verifies.
 ### Build & Run
 
 ```bash
-git clone https://github.com/Terranes/TerranSoul.git
+git clone https://github.com/TerranSyn/TerranSoul.git
 cd TerranSoul
 npm install          # Install frontend dependencies
 cargo tauri dev      # Full Tauri app with hot-reload
