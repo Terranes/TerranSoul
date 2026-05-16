@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "Jika Anda bingung di antara ChatGPT, Claude, OpenClaw, Hermes Agent, dan TerranSoul — Anda tidak sendirian. Mereka bukan lima versi dari hal yang sama. Berikut panduan non-teknis — lima adegan keseharian — yang menunjukkan untuk apa sebenarnya tiap bagian, dan di mana posisi TerranSoul.",
   "TerranSoul docs": "Dokumentasi TerranSoul",
   "For people who want a brain they own, not a chatbot they rent.": "Untuk orang yang ingin memiliki otak sendiri, bukan menyewa sebuah chatbot.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Terinspirasi oleh <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a> dari Cognee. Adegan-adegannya orisinal, semuanya tentang TerranSoul.",
   "Open": "Buka",
   "Why people keep confusing these": "Mengapa orang terus mencampuradukkan hal-hal ini",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "Duduklah cukup lama di sebuah kedai kopi dan Anda akan mendengar seseorang bertanya, dengan wajah agak lelah, <span class=\"pull\">\"jadi apa sih bedanya ChatGPT, Claude, dan benda lain yang terus-terusan dibicarakan teman kerja saya?\"</span> Jawaban jujurnya: mereka sama sekali tidak berada dalam kategori yang sama. Kita memanggil semuanya \"AI\" hanya karena suara pemasaran lebih kencang daripada desainnya.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— Adegan 5.",
   "TerranSoul · Fundamentals": "TerranSoul · Dasar-dasar",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "Pendamping AI 3D dengan otak yang benar-benar milik Anda. Berlisensi MIT.",
-  "Cognee, the original framing": "Cognee, kerangka awal yang menginspirasi",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "vektor + graph (RRF + 1-hop)"
+  "vector + graph (RRF + 1-hop)": "vektor + graph (RRF + 1-hop)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

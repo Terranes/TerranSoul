@@ -47,7 +47,7 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 The "Why Hybrid RAG" section below explains the technical architecture. The five-scenes primer explains the user-facing shape of the same system.
 
-> Read the Pages version: <https://terransyn.github.io/TerranSoul/>. The source mapping remains in [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md), and the original cognee inspiration is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
+> Read the Pages version: <https://terransyn.github.io/TerranSoul/>.
 
 ---
 
