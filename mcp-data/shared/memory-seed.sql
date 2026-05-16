@@ -543,3 +543,49 @@ WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
     SELECT 1 FROM memory_edges e
     WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
+
+INSERT INTO memories (content, cognitive_kind, tags, importance, source_hash, memory_type, tier, decay_score, created_at, accessed_at)
+SELECT
+  'TerranSoul bench resume pattern (BENCH-SCALE-3, 2026-05-16): any ' ||
+  'long-running bench that talks to longmemeval-ipc can become ' ||
+  'resume-safe by combining four primitives. (1) Expose a `count` op ' ||
+  'on the IPC server that returns MemoryStore::count() — general, ' ||
+  'reusable across all bench harnesses. (2) Make the corpus ' ||
+  'DETERMINISTIC (mulberry32 seed 0x5ca1e1 in locomo-ivfpq.mjs) so row ' ||
+  'N is identical between runs and can be safely skipped. (3) Add a ' ||
+  '`--resume` flag that preserves the bench store dir (gate the ' ||
+  '`rmSync` on `!resume && !reuseStore`), queries the count, and ' ||
+  'slices `corpus.slice(count)` before ingest; `--reuse-store` and ' ||
+  '`--resume` are mutually exclusive (full-skip vs partial-skip). ' ||
+  '(4) Register SIGINT + SIGTERM handlers that flush the progress ' ||
+  'snapshot and exit 130/143; SQLite WAL keeps the on-disk store ' ||
+  'valid through any signal. Build phase resumes by detecting ' ||
+  'sidecar files (idempotent). Query phase resumes via a per-query ' ||
+  'JSONL checkpoint (skip query ids already present). The ingest ' ||
+  'helper must accept {total, offset} so progress percentages and ' ||
+  'question_id namespacing (`scale-${globalOff}`) stay globally ' ||
+  'correct after a resume.',
+  'procedural',
+  'bench,resume,ipc,sigint,locomo,ivf-pq,signal-safety,workflow',
+  0.85,
+  'seed:lesson-bench-resume-pattern-2026-05-16',
+  'lesson',
+  'long',
+  0.85,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-bench-resume-pattern-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-bench-resume-pattern-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+

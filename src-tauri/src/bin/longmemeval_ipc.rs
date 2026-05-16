@@ -1860,6 +1860,14 @@ fn main() {
                 state.reset();
                 write_response(request.id, Ok(json!({ "reset": true })));
             }
+            // BENCH-SCALE-3 (2026-05-16): expose the underlying memory count so
+            // bench runners can resume a partially-ingested store. Returns the
+            // total number of rows in the `memories` table — runners use this
+            // as the offset into the deterministic corpus.
+            "count" => {
+                let count = state.store.count();
+                write_response(request.id, Ok(json!({ "count": count })));
+            }
             "add_sessions" => write_response(
                 request.id,
                 add_sessions(&mut state, embedder.as_ref(), contextualizer.as_ref(), &request),

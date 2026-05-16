@@ -213,8 +213,15 @@ Options:
   --data-dir-bench=<p>   On-disk MemoryStore dir for the bench
                          (default: target-copilot-bench/locomo-ivfpq-store)
   --out-dir=<path>       Report dir (default: target-copilot-bench/bench-results)
-  --reuse-store          Skip reset+ingest; reuse the existing on-disk store
-                         (assumes a prior run already built IVF-PQ indexes)
+  --reuse-store          Skip reset+ingest entirely; reuse the existing on-disk
+                         store as-is (assumes a prior run already finished
+                         ingest + built IVF-PQ indexes).
+  --resume               Partial-resume mode. Keeps the existing store and
+                         skips the first N corpus rows where N is the current
+                         MemoryStore.count(). Use this when a long ingest was
+                         interrupted (Ctrl-C, power loss, crash). Combined
+                         with the deterministic seed, this picks up exactly
+                         where the previous run left off.
   --skip-build           Skip the build_ivf_pq op (assumes indexes already exist)
   --progress-file=<path> Periodic plain-text progress snapshot (default:
                          target-copilot-bench/bench-scale-3-progress.txt)
@@ -498,31 +505,40 @@ function corpusToSessions(corpus) {
   }));
 }
 
-async function ingestBatched(client, corpus) {
-  const total = corpus.length;
+async function ingestBatched(client, corpus, opts = {}) {
+  // `corpus` is the slice that still needs ingesting (may be shorter than
+  // the full benchmark corpus when --resume skips already-inserted rows).
+  // `opts.total` is the full corpus size for progress reporting; `opts.offset`
+  // is the number of rows already ingested before this call (0 for a fresh
+  // run). Together they let the progress poller compute global percentage
+  // and ETA even on a resumed run.
+  const total = opts.total ?? corpus.length;
+  const offset = opts.offset ?? 0;
+  const remaining = corpus.length;
   const started = performance.now();
   progressState.ingest.total = total;
-  progressState.ingest.done = 0;
-  progressState.ingest.embedded = 0;
+  progressState.ingest.done = offset;
+  progressState.ingest.embedded = offset;
   progressState.ingest.started_at = Date.now();
   let inserted = 0;
-  let embedded = 0;
-  for (let off = 0; off < total; off += INGEST_BATCH_SIZE) {
+  let embedded = offset;
+  for (let off = 0; off < remaining; off += INGEST_BATCH_SIZE) {
     const slice = corpus.slice(off, off + INGEST_BATCH_SIZE);
+    const globalOff = offset + off;
     const resp = await client.send({
       op: 'add_sessions',
-      question_id: `scale-${off}`,
+      question_id: `scale-${globalOff}`,
       sessions: corpusToSessions(slice),
     });
     inserted += resp.inserted ?? slice.length;
     embedded = resp.embedded ?? embedded;
-    const done = off + slice.length;
+    const done = offset + off + slice.length;
     progressState.ingest.done = done;
     progressState.ingest.embedded = embedded;
-    progressState.last_event = `ingest batch off=${off} done=${done}/${total}`;
+    progressState.last_event = `ingest batch off=${globalOff} done=${done}/${total}`;
     const elapsed = ((performance.now() - started) / 1000).toFixed(1);
     if (done === total || (done % 5000 === 0)) {
-      console.log(`[ivfpq] ingested ${done}/${total} (embedded total=${embedded}, elapsed=${elapsed}s)`);
+      console.log(`[ivfpq] ingested ${done}/${total} (embedded total=${embedded}, elapsed=${elapsed}s, since-resume=${off + slice.length})`);
     }
   }
   return { inserted, embedded };
@@ -596,9 +612,13 @@ async function run(opts) {
   console.log(`[ivfpq] shard-mode=${opts.shardMode}`);
   console.log(`[ivfpq] bench store dir: ${opts.benchStoreDir}`);
 
-  if (!opts.reuseStore && existsSync(opts.benchStoreDir)) {
+  if (!opts.reuseStore && !opts.resume && existsSync(opts.benchStoreDir)) {
     console.log(`[ivfpq] removing existing bench store dir for a fresh run`);
     rmSync(opts.benchStoreDir, { recursive: true, force: true });
+  } else if (opts.resume && existsSync(opts.benchStoreDir)) {
+    console.log(`[ivfpq] resume: preserving existing bench store dir`);
+  } else if (opts.resume) {
+    console.log(`[ivfpq] resume requested but store dir does not exist — starting fresh`);
   }
   mkdirSync(opts.benchStoreDir, { recursive: true });
 
@@ -634,10 +654,37 @@ async function run(opts) {
     let ingestSecs = 0;
     let ing = { inserted: 0, embedded: 0 };
     if (!opts.reuseStore) {
-      setPhase('ingest', 'starting reset+ingest');
-      await client.send({ op: 'reset' });
+      let resumeOffset = 0;
+      if (opts.resume) {
+        // Ask the IPC server how many rows are already in the store.
+        // The bench corpus is deterministic (mulberry32 seed 0x5ca1e1)
+        // so we can safely treat that count as the offset into the
+        // freshly-built corpus and resume from there.
+        try {
+          const { count } = await client.send({ op: 'count' });
+          resumeOffset = Math.max(0, Math.min(Number(count) || 0, built.corpus.length));
+          console.log(`[ivfpq] resume: store already contains ${resumeOffset.toLocaleString('en-US')} memories; skipping that many corpus rows`);
+          if (resumeOffset >= built.corpus.length) {
+            console.log(`[ivfpq] resume: corpus already fully ingested — proceeding to build_ivf_pq`);
+          }
+        } catch (err) {
+          throw new Error(`--resume requires the IPC 'count' op (rebuild longmemeval-ipc): ${err.message}`);
+        }
+      } else {
+        setPhase('ingest', 'starting reset+ingest');
+        await client.send({ op: 'reset' });
+      }
+      setPhase('ingest', resumeOffset > 0
+        ? `resuming ingest from offset ${resumeOffset}`
+        : 'starting ingest');
       const ingestStart = performance.now();
-      ing = await ingestBatched(client, built.corpus);
+      const remainder = resumeOffset > 0
+        ? built.corpus.slice(resumeOffset)
+        : built.corpus;
+      ing = await ingestBatched(client, remainder, {
+        total: built.corpus.length,
+        offset: resumeOffset,
+      });
       ingestSecs = (performance.now() - ingestStart) / 1000;
       console.log(`[ivfpq] ingest done: inserted=${ing.inserted} embedded=${ing.embedded} took=${ingestSecs.toFixed(1)}s`);
       progressState.last_event = `ingest done in ${ingestSecs.toFixed(1)}s`;
@@ -829,6 +876,7 @@ async function main() {
     benchStoreDir: option('data-dir-bench', DEFAULT_BENCH_STORE_DIR),
     outDir: option('out-dir', DEFAULT_OUT_DIR),
     reuseStore: flagOption('reuse-store'),
+    resume: flagOption('resume'),
     skipBuild: flagOption('skip-build'),
     progressFile: option('progress-file', DEFAULT_PROGRESS_FILE),
     progressIntervalMs: numberOption('progress-interval-ms', DEFAULT_PROGRESS_INTERVAL_MS),
@@ -842,7 +890,11 @@ async function main() {
       statSync(p);
     }
   }
-  progressState.opts_summary = `task=${opts.task} scale=${opts.scale} pq_m=${opts.pqM} nlist=${opts.nlist} nprobe=${opts.nprobe} shard-mode=${opts.shardMode} reuse-store=${opts.reuseStore} skip-build=${opts.skipBuild}`;
+  if (opts.reuseStore && opts.resume) {
+    throw new Error('--reuse-store and --resume are mutually exclusive: ' +
+      '--reuse-store skips ingest entirely, --resume continues a partial ingest');
+  }
+  progressState.opts_summary = `task=${opts.task} scale=${opts.scale} pq_m=${opts.pqM} nlist=${opts.nlist} nprobe=${opts.nprobe} shard-mode=${opts.shardMode} reuse-store=${opts.reuseStore} resume=${opts.resume} skip-build=${opts.skipBuild}`;
   startProgressWriter(resolve(opts.progressFile), opts.progressIntervalMs);
   try {
     await run(opts);
@@ -861,3 +913,24 @@ main().catch(err => {
   console.error('[ivfpq] FATAL:', err.stack || err.message);
   process.exit(1);
 });
+
+// BENCH-SCALE-3 resume (2026-05-16): on Ctrl-C / kill, flush a final
+// progress snapshot, mark the phase as `interrupted`, and exit with code
+// 130 (SIGINT) / 143 (SIGTERM). The on-disk MemoryStore is WAL-safe so
+// the SQLite + IVF-PQ state on disk remains valid; the next launch with
+// `--resume` queries the store's `count()` and picks up from there.
+let interruptHandled = false;
+function gracefulInterrupt(signal) {
+  if (interruptHandled) return;
+  interruptHandled = true;
+  const exitCode = signal === 'SIGTERM' ? 143 : 130;
+  console.error(`[ivfpq] received ${signal} — flushing progress and exiting (resume with --resume)`);
+  progressState.last_event = `interrupted by ${signal}`;
+  progressState.fatal = null;
+  try { setPhase('interrupted', `interrupted by ${signal}`); } catch { /* best-effort */ }
+  try { stopProgressWriter(); } catch { /* best-effort */ }
+  // Give stdio a tick to drain, then exit.
+  setImmediate(() => process.exit(exitCode));
+}
+process.on('SIGINT', () => gracefulInterrupt('SIGINT'));
+process.on('SIGTERM', () => gracefulInterrupt('SIGTERM'));

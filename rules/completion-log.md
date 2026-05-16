@@ -1,3 +1,50 @@
+# Chunk BENCH-SCALE-3-RESUME — bench resume capability
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Make the BENCH-SCALE-3 IVF-PQ 10M-doc bench (and any future bench using the
+`longmemeval-ipc` server) survive Ctrl-C / kill / power loss without losing
+ingest progress. With ~109h total runtime on a fresh ingest, any
+interruption mid-run previously meant restarting from zero.
+
+## Implementation
+
+1. `src-tauri/src/bin/longmemeval_ipc.rs` — added `op: "count"` JSONL
+   request that returns `MemoryStore::count()` (`SELECT COUNT(*) FROM
+   memories`). General-purpose, usable by any bench harness.
+2. `scripts/locomo-ivfpq.mjs`:
+   - New `--resume` flag (mutually exclusive with `--reuse-store`).
+   - On resume: keep the existing bench store dir, query the IPC `count`,
+     and slice the deterministic corpus from that offset. The corpus is
+     seeded with `mulberry32(0x5ca1e1)` so row N is identical between
+     runs — safe to skip the first N rows.
+   - `ingestBatched` now takes `{ total, offset }` so progress / ETA /
+     `scale-${off}` question ids stay globally correct.
+   - SIGINT / SIGTERM handlers flush a final progress snapshot, mark the
+     phase as `interrupted`, and exit 130 / 143. SQLite is WAL-safe so
+     the on-disk store + sidecar vectors remain valid for the next
+     `--resume` launch.
+
+## Design pattern (reusable for any bench)
+
+| Phase | State source | Resume mechanism |
+|---|---|---|
+| Ingest | `MemoryStore::count()` via IPC `op: count` | Slice deterministic corpus from offset |
+| Build IVF-PQ | Sidecar files on disk | Idempotent — `--skip-build` once they exist |
+| Query | Per-query JSONL checkpoint (future) | Skip ids already present in checkpoint |
+| Signals | SIGINT / SIGTERM handler | Flush progress + close IPC, exit 130/143 |
+
+## Files
+
+- `src-tauri/src/bin/longmemeval_ipc.rs` — `count` op (+13 lines)
+- `scripts/locomo-ivfpq.mjs` — `--resume`, ingest offset, signal handlers
+- `mcp-data/shared/memory-seed.sql` — lesson entry
+
+---
+
 # Chunk THEME-COCKPIT-1b — brain panel cockpit port + mood-driven palette
 
 **Date:** 2026-05-16

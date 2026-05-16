@@ -79,5 +79,5 @@ Goal: validate that LoCoMo R@10 survives when relevant docs are buried in a 1M-d
 
 | Chunk | Status | Scope |
 |---|---|---|
-| BENCH-SCALE-3 | code-done, run-deferred | **IVF-PQ disk-backed bench.** Phase 3 code complete (codebook training + IVF-PQ build + ADC search path + `build_ivf_pq_indexes` Tauri command). Remaining: write a 10M-doc bench runner (none exists yet — `locomo-at-scale.mjs` uses HNSW via `longmemeval-ipc`, not IVF-PQ) and run it (~40h+ wall clock). |
+| BENCH-SCALE-3 | runner-built, run-in-flight | **IVF-PQ disk-backed bench.** Phase 3 code complete (codebook training + IVF-PQ build + ADC search path + `build_ivf_pq_indexes` Tauri command). Runner shipped: `scripts/locomo-ivfpq.mjs` (cargo-run `longmemeval-ipc --features bench-million`, deterministic mulberry32 corpus, on-disk MemoryStore, progress writer, **`--resume` + SIGINT/SIGTERM safety net** added 2026-05-16). Live 10M ingest run in flight (~23%+; ETA ~83h remaining). IPC `op: count` exists for any future bench needing partial-resume. |
 
