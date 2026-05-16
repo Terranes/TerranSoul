@@ -34,20 +34,20 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 ---
 
-## AI memory in five scenes — where TerranSoul sits on the curve
+## TerranSoul in Five Scenes — graph, RAG, and memory
 
-Cognee's primer [*AI memory in five scenes*](https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes) walks an unfamiliar reader through the progression **base LLM → classic RAG → graph-aware RAG → hybrid memory at scale** by retelling it as five everyday scenes (a kid in a library, a high schooler picking a movie, a college student cramming for an exam, a junior IT engineer job hunting, an AI startup CTO at a party). It is the clearest short explanation we know of *why* "AI memory" is not one thing.
+[TerranSoul in Five Scenes](https://terransyn.github.io/TerranSoul/) is the public, non-technical primer for the memory stack: raw model answers, personal context, vector retrieval, knowledge graphs, and production hybrid memory.
 
-**TerranSoul is built for the last scene** — hybrid memory in production. Concretely:
+**TerranSoul is built for production hybrid memory.** Concretely:
 
-- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
 - **Personal-context construction** (Scene 2) is shipped via persona traits, observation history, decay, and the cognitive-kind axis (`episodic` / `semantic` / `procedural` / `judgment`).
+- **Vector recall** (Scene 3) is shipped via per-shard HNSW (`usearch`) over `mxbai-embed-large` / `nomic-embed-text` with semantic chunking and Anthropic-style Contextual Retrieval.
 - **Typed knowledge graph + multi-hop** (Scene 4) is shipped via the `memory_edges` table, entity resolution, and `multi_hop_search_memories`.
 - **Production discipline** (Scene 5) is shipped via RRF fusion, pre-computed shard router, query-class HyDE, cross-encoder rerank, search/KG caches, and a public bench harness (LongMemEval-S, LoCoMo MTEB, agentmemory token-efficiency).
 
-The "Why Hybrid RAG" section above explains the technical *why*. The five-scenes lens explains the *where on the curve* — useful for new contributors picking which file to touch and for non-technical users deciding whether TerranSoul does what they actually need.
+The "Why Hybrid RAG" section below explains the technical architecture. The five-scenes primer explains the user-facing shape of the same system.
 
-> Read the full mapping: [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md). The cognee article is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
+> Read the Pages version: <https://terransyn.github.io/TerranSoul/>. The source mapping remains in [docs/ai-memory-five-scenes-terransoul.md](docs/ai-memory-five-scenes-terransoul.md), and the original cognee inspiration is credited in [CREDITS.md](CREDITS.md); no prose or imagery from it is reproduced.
 
 ---
 
