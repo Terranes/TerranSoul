@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "إذا كنت تتوه بين ChatGPT وClaude وOpenClaw وHermes Agent وTerranSoul فلست وحدك. هذه ليست خمس نُسخ من الشيء نفسه. وفيما يلي جولة غير تقنية — خمسة مشاهد من الحياة اليومية — تُظهر الغاية الحقيقية من كلّ جزء، والموقع الذي يحتلّه TerranSoul.",
   "TerranSoul docs": "وثائق TerranSoul",
   "For people who want a brain they own, not a chatbot they rent.": "لمن يريد دماغًا يملكه، لا روبوت دردشة يستأجره.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "مستلهَم من مقال Cognee <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. مشاهد أصيلة، تدور كلّها حول TerranSoul.",
   "Open": "افتح",
   "Why people keep confusing these": "لماذا يخلط الناس بين هذه الأدوات باستمرار",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "اجلس في مقهًى وقتًا كافيًا، فلا بدّ أن تسمع شخصًا يسأل بوجه منهَك قليلًا: <span class=\"pull\">«ما الفرق إذًا بين ChatGPT وClaude وذلك الشيء الآخر الذي لا يكفّ زميلي عن الحديث عنه؟»</span> الجواب الصادق أنّها ليست في الفئة نفسها أصلًا. نحن فقط نسمّيها جميعًا «ذكاءً اصطناعيًا» لأنّ صوت التسويق أعلى من صوت التصميم.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— المشهد الخامس.",
   "TerranSoul · Fundamentals": "TerranSoul · الأساسيات",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "رفيق ذكاء اصطناعي ثلاثي الأبعاد بدماغ تملكه فعلًا. مرخَّص MIT.",
-  "Cognee, the original framing": "Cognee، التأطير الأصلي",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "متّجِه + رسم بياني (RRF + قفزة واحدة)"
+  "vector + graph (RRF + 1-hop)": "متّجِه + رسم بياني (RRF + قفزة واحدة)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

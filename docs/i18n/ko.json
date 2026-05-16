@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "ChatGPT, Claude, OpenClaw, Hermes Agent, TerranSoul 사이에서 길을 잃은 사람이 있다면, 당신만 그런 게 아닙니다. 이들은 같은 것의 다섯 가지 버전이 아닙니다. 아래에서는 다섯 개의 일상 장면을 통해, 각 조각이 실제로 어떤 역할을 하고, TerranSoul이 그 안에서 어디에 위치하는지를 비기술적인 방식으로 안내합니다.",
   "TerranSoul docs": "TerranSoul 문서",
   "For people who want a brain they own, not a chatbot they rent.": "빌려 쓰는 챗봇이 아니라, 자기 것이 되는 「뇌」를 원하는 사람들을 위해.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Cognee의 <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>에서 영감을 받았습니다. 모든 장면은 TerranSoul을 위해 새로 쓴 오리지널입니다.",
   "Open": "열기",
   "Why people keep confusing these": "왜 이것들이 계속 헷갈리는가",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "카페에 오래 앉아 있다 보면, 약간 지친 얼굴로 누군가 이렇게 묻는 걸 듣게 됩니다. <span class=\"pull\">「그래서 ChatGPT랑 Claude랑, 동료가 계속 얘기하는 그건, 도대체 뭐가 다른 거야?」</span> 솔직히 말하면, 이들은 애초에 같은 카테고리에 들어 있지 않습니다. 우리가 모두 「AI」라고 부르는 것은 단지 마케팅의 목소리가 설계의 목소리보다 크기 때문입니다.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "── 장면 5.",
   "TerranSoul · Fundamentals": "TerranSoul · 기본",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "당신이 실제로 소유하는 뇌를 가진 3D AI 동반자. MIT 라이선스.",
-  "Cognee, the original framing": "Cognee ── 원래의 서술 틀",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "벡터 + 그래프 (RRF + 1 홉)"
+  "vector + graph (RRF + 1-hop)": "벡터 + 그래프 (RRF + 1 홉)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

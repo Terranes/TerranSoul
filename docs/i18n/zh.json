@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "如果你在 ChatGPT、Claude、OpenClaw、Hermes Agent 和 TerranSoul 之间感到迷茫,你并不孤单。它们并不是同一种东西的五个版本。下面用五个日常场景,以不涉及技术细节的方式,讲清楚每一块到底是做什么的,以及 TerranSoul 所在的位置。",
   "TerranSoul docs": "TerranSoul 文档",
   "For people who want a brain they own, not a chatbot they rent.": "献给那些想要一颗属于自己的「大脑」,而不只是租用一个聊天机器人的人。",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "灵感来自 Cognee 的 <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>。所有场景均为原创,完全围绕 TerranSoul 展开。",
   "Open": "打开",
   "Why people keep confusing these": "为什么大家总是把这些东西混在一起",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "只要在咖啡店坐得够久,你迟早会听到有人带着一脸疲惫地问:<span class=\"pull\">「那 ChatGPT 和 Claude,还有同事老是挂在嘴边的那个东西,到底有什么区别?」</span>诚实的答案是:它们根本就不在同一个类别里。我们之所以把它们都叫做「AI」,只是因为营销的声音比设计的声音更大。",
@@ -160,10 +159,11 @@
   "— Scene 5.": "—— 场景 5。",
   "TerranSoul · Fundamentals": "TerranSoul · 基础",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "一个 3D 的 AI 陪伴者,背后是一颗真正属于你自己的大脑。MIT 许可证。",
-  "Cognee, the original framing": "Cognee —— 最初的叙述框架",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "向量 + 图谱(RRF + 1 跳)"
+  "vector + graph (RRF + 1-hop)": "向量 + 图谱(RRF + 1 跳)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

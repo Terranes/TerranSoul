@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "ถ้าคุณกำลังสับสนระหว่าง ChatGPT, Claude, OpenClaw, Hermes Agent และ TerranSoul คุณไม่ได้สับสนอยู่คนเดียว ทั้งห้านี้ไม่ใช่เวอร์ชันต่าง ๆ ของสิ่งเดียวกัน ต่อไปนี้คือคำอธิบายแบบไม่เน้นเทคนิค — ห้าฉากในชีวิตประจำวัน — ที่แสดงว่าแต่ละชิ้นมีไว้เพื่ออะไรจริง ๆ และ TerranSoul อยู่ตรงไหนในภาพรวมนี้",
   "TerranSoul docs": "เอกสาร TerranSoul",
   "For people who want a brain they own, not a chatbot they rent.": "สำหรับคนที่อยากมีสมองเป็นของตัวเอง ไม่ใช่แชตบอตที่เช่าเขามาใช้",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "ได้แรงบันดาลใจจาก <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a> ของ Cognee ฉากทั้งหมดเป็นต้นฉบับใหม่ที่เล่าเรื่อง TerranSoul ทั้งหมด",
   "Open": "เปิด",
   "Why people keep confusing these": "ทำไมผู้คนถึงสับสนเรื่องนี้ตลอดเวลา",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "นั่งในร้านกาแฟนานพอ คุณก็จะได้ยินใครสักคนถามด้วยสีหน้าเหนื่อย ๆ ว่า <span class=\"pull\">\"แล้ว ChatGPT, Claude กับเจ้าตัวนั้นที่เพื่อนร่วมงานพูดถึงตลอด มันต่างกันยังไงนะ?\"</span> คำตอบที่ตรงไปตรงมาคือ พวกมันไม่ได้อยู่ในหมวดเดียวกันเลยด้วยซ้ำ เราเรียกทุกอย่างว่า \"AI\" ก็เพราะเสียงทางการตลาดดังกว่าหลักการออกแบบเท่านั้นเอง",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— ฉาก 5",
   "TerranSoul · Fundamentals": "TerranSoul · พื้นฐาน",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "เพื่อนคู่หู AI แบบ 3D ที่มาพร้อมสมองที่คุณเป็นเจ้าของได้จริง ๆ ใช้สัญญาอนุญาต MIT",
-  "Cognee, the original framing": "Cognee เจ้าของกรอบความคิดต้นฉบับ",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "เวกเตอร์ + กราฟ (RRF + 1-hop)"
+  "vector + graph (RRF + 1-hop)": "เวกเตอร์ + กราฟ (RRF + 1-hop)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

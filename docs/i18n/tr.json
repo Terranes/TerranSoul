@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "ChatGPT, Claude, OpenClaw, Hermes Agent ve TerranSoul arasında kayboluyorsanız yalnız değilsiniz. Bunlar aynı şeyin beş farklı sürümü değildir. Aşağıda her parçanın aslında ne işe yaradığını ve TerranSoul'un bu tabloda nereye oturduğunu gösteren teknik olmayan, beş günlük sahneden oluşan bir gezinti var.",
   "TerranSoul docs": "TerranSoul belgeleri",
   "For people who want a brain they own, not a chatbot they rent.": "Kiralanan bir sohbet botu değil, sahip oldukları bir beyin isteyenler için.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Cognee'nin <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a> yazısından ilham alındı. Sahnelerin tamamı özgün ve hepsi TerranSoul üzerine.",
   "Open": "Aç",
   "Why people keep confusing these": "Bunlar neden sürekli karıştırılıyor",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "Bir kafede yeterince uzun süre oturursanız, hafifçe bitkin bir yüzle birinin <span class=\"pull\">\"yani ChatGPT ile Claude ve iş arkadaşımın bahsedip durduğu o öbür şey arasındaki fark tam olarak ne?\"</span> diye sorduğunu duyarsınız. Dürüst yanıt: bunlar aslında aynı kategoride bile değil. Hepsine \"yapay zekâ\" diyoruz çünkü pazarlama sesi tasarımdan daha yüksek çıkıyor.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— Sahne 5.",
   "TerranSoul · Fundamentals": "TerranSoul · Temel Kavramlar",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "Gerçekten size ait olan bir beyne sahip 3D bir yapay zekâ arkadaşı. MIT lisanslı.",
-  "Cognee, the original framing": "Cognee, orijinal çerçeveleme",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "vektör + graf (RRF + 1-hop)"
+  "vector + graph (RRF + 1-hop)": "vektör + graf (RRF + 1-hop)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

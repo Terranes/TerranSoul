@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "Nếu bạn đang lạc lối giữa ChatGPT, Claude, OpenClaw, Hermes Agent và TerranSoul, bạn không hề đơn độc. Chúng không phải là năm phiên bản của cùng một thứ. Dưới đây là phần dẫn giải không kỹ thuật — năm cảnh đời thường — cho thấy mỗi mảnh ghép thực sự dùng để làm gì, và TerranSoul đứng ở đâu trong đó.",
   "TerranSoul docs": "Tài liệu TerranSoul",
   "For people who want a brain they own, not a chatbot they rent.": "Dành cho những người muốn một bộ não của riêng mình, chứ không phải một chatbot đi thuê.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Lấy cảm hứng từ bài <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a> của Cognee. Các cảnh đều do chúng tôi viết riêng, tất cả đều xoay quanh TerranSoul.",
   "Open": "Mở",
   "Why people keep confusing these": "Vì sao mọi người cứ nhầm lẫn những thứ này",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "Ngồi đủ lâu trong một quán cà phê, bạn sẽ nghe ai đó với gương mặt hơi mệt mỏi hỏi rằng <span class=\"pull\">\"vậy rốt cuộc ChatGPT, Claude và cái thứ kia mà đồng nghiệp tôi suốt ngày nhắc đến khác nhau ở đâu?\"</span> Câu trả lời trung thực là chúng vốn chẳng nằm cùng một nhóm. Chúng ta gọi tất cả là \"AI\" chỉ vì tiếng marketing át đi tiếng thiết kế.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— Cảnh 5.",
   "TerranSoul · Fundamentals": "TerranSoul · Kiến thức nền tảng",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "Một người bạn đồng hành AI 3D với một bộ não thực sự thuộc về bạn. Cấp phép MIT.",
-  "Cognee, the original framing": "Cognee, khung tư duy gốc",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "vector + đồ thị (RRF + 1-hop)"
+  "vector + graph (RRF + 1-hop)": "vector + đồ thị (RRF + 1-hop)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

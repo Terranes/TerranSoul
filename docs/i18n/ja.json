@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "ChatGPT、Claude、OpenClaw、Hermes Agent、TerranSoul ── このあたりで迷っているのはあなただけではありません。これらは同じものの 5 つのバージョンではないのです。日常の 5 つのシーンを通して、各ピースが本当は何のためのものなのか、そして TerranSoul がどこに位置するのかを、技術用語なしで歩いてみましょう。",
   "TerranSoul docs": "TerranSoul ドキュメント",
   "For people who want a brain they own, not a chatbot they rent.": "借りるチャットボットではなく、自分のものになる「脳」が欲しい人へ。",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Cognee の <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a> に着想を得ています。シーンはすべて TerranSoul のためにオリジナルに書き起こしました。",
   "Open": "開く",
   "Why people keep confusing these": "なぜみんなこれらを混同するのか",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "カフェに長く座っていれば、少し疲れた顔で誰かがこう尋ねるのを耳にします。<span class=\"pull\">「で、ChatGPT と Claude と、同僚がずっと話してるあれって、結局何が違うの?」</span> 正直なところ、これらはそもそも同じカテゴリにはいません。みんな「AI」と呼んでいるのは、マーケティングの声が設計よりも大きいからにすぎません。",
@@ -160,10 +159,11 @@
   "— Scene 5.": "── シーン 5。",
   "TerranSoul · Fundamentals": "TerranSoul · 基本",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "本当に自分のものになる脳を備えた、3D の AI コンパニオン。MIT ライセンス。",
-  "Cognee, the original framing": "Cognee — 元になった枠組み",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "ベクトル + グラフ (RRF + 1 ホップ)"
+  "vector + graph (RRF + 1-hop)": "ベクトル + グラフ (RRF + 1 ホップ)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }

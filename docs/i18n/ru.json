@@ -15,7 +15,6 @@
   "If you are getting lost between ChatGPT, Claude, OpenClaw, Hermes Agent and TerranSoul, you are not alone. They are not five versions of the same thing. Here is a non-technical walkthrough — five everyday scenes — that shows what each piece is actually for, and where TerranSoul sits.": "Если вы теряетесь между ChatGPT, Claude, OpenClaw, Hermes Agent и TerranSoul — вы не одиноки. Это не пять версий одного и того же. Ниже — нетехнический разбор в пяти повседневных сценах: чем на самом деле занимается каждая часть и где в этой картине находится TerranSoul.",
   "TerranSoul docs": "Документация TerranSoul",
   "For people who want a brain they own, not a chatbot they rent.": "Для тех, кто хочет иметь собственный «мозг», а не арендовать чат-бота.",
-  "Inspired by Cognee's <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Original scenes, all about TerranSoul.": "Вдохновлено материалом Cognee <a href=\"https://www.cognee.ai/blog/fundamentals/ai-memory-in-five-scenes\">AI memory in five scenes</a>. Все сцены оригинальные и посвящены TerranSoul.",
   "Open": "Открыть",
   "Why people keep confusing these": "Почему эти вещи постоянно путают",
   "Sit at a coffee shop long enough and you will hear someone ask, with a slightly exhausted face, <span class=\"pull\">\"so what's the difference between ChatGPT and Claude and that other thing my coworker keeps talking about?\"</span> The honest answer is that they are not in the same category at all. We just call them all \"AI\" because the marketing is louder than the design.": "Посидите подольше в кофейне — и обязательно услышите, как кто-то с чуть уставшим лицом спрашивает: <span class=\"pull\">«Так в чём всё-таки разница между ChatGPT и Claude и той штукой, о которой не умолкает мой коллега?»</span> Честный ответ: они вообще не из одной категории. Мы зовём их «ИИ» лишь потому, что маркетинг звучит громче, чем дизайн.",
@@ -160,10 +159,11 @@
   "— Scene 5.": "— сцена 5.",
   "TerranSoul · Fundamentals": "TerranSoul · Основы",
   "A 3D AI companion with a brain you actually own. MIT licensed.": "3D ИИ-спутник с мозгом, который реально принадлежит вам. Лицензия MIT.",
-  "Cognee, the original framing": "Cognee — оригинальная рамка повествования",
   "${r.meta1}": "${r.meta1}",
   "${r.meta2}": "${r.meta2}",
   "${r.title}": "${r.title}",
   "${r.note}": "${r.note}",
-  "vector + graph (RRF + 1-hop)": "вектор + граф (RRF + 1 шаг)"
+  "vector + graph (RRF + 1-hop)": "вектор + граф (RRF + 1 шаг)",
+  "Original TerranSoul scenes for a local-first memory stack.": "Original TerranSoul scenes for a local-first memory stack.",
+  "README overview": "README overview"
 }
