@@ -90,6 +90,48 @@
 .bp-shell[data-density="compact"]  { padding: 56px 24px 60px; gap: 14px; }
 .bp-shell[data-density="spacious"] { padding: 74px 44px 100px; gap: 28px; }
 
+/* ── accent variants ────────────────────────────────────────────────────
+   Swap the cockpit palette per brain mood without rewriting components.
+   BrainView wires this up by setting `data-accent` on `.bp-shell`:
+     • free → green   (free-tier cloud has a "go" vibe)
+     • paid → violet  (premium tier)
+     • local → amber  (warm local-hardware feel)
+     • none → (no attribute — default cyan)
+   Override the relevant --bp-* tokens so every descendant glow/border/
+   button picks up the new accent automatically. */
+.bp-shell[data-accent="violet"] {
+  --bp-accent:         #8ba6ff;
+  --bp-accent-2:       #6e8eff;
+  --bp-border-strong:  rgba(110, 142, 255, 0.40);
+  --bp-glow-cyan:      0 0 24px rgba(110, 142, 255, 0.30);
+  --bp-glow-cyan-soft: 0 0 60px rgba(110, 142, 255, 0.12);
+}
+.bp-shell[data-accent="green"] {
+  --bp-accent:         #34d399;
+  --bp-accent-2:       #00cc7a;
+  --bp-border-strong:  rgba(52, 211, 153, 0.40);
+  --bp-glow-cyan:      0 0 24px rgba(52, 211, 153, 0.30);
+  --bp-glow-cyan-soft: 0 0 60px rgba(52, 211, 153, 0.12);
+}
+.bp-shell[data-accent="amber"] {
+  --bp-accent:         #ffb520;
+  --bp-accent-2:       #f59e0b;
+  --bp-accent-3:       #ff8a3d;
+  --bp-border-strong:  rgba(255, 181, 32, 0.40);
+  --bp-glow-cyan:      0 0 24px rgba(255, 181, 32, 0.30);
+  --bp-glow-cyan-soft: 0 0 60px rgba(255, 181, 32, 0.10);
+}
+.bp-shell[data-accent="pink"] {
+  --bp-accent:         #ff6b9d;
+  --bp-accent-2:       #ec4899;
+  --bp-border-strong:  rgba(255, 107, 157, 0.40);
+  --bp-glow-cyan:      0 0 24px rgba(255, 107, 157, 0.28);
+  --bp-glow-cyan-soft: 0 0 60px rgba(255, 107, 157, 0.10);
+}
+
+/* Opt-out of the deep-space backdrop (use the parent surface as-is). */
+.bp-shell[data-backdrop="false"] { background: transparent; }
+
 /* ── crumb ─────────────────────────────────────────────────────────────── */
 .bp-crumb {
   display: flex; align-items: center;

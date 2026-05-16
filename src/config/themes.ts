@@ -33,7 +33,7 @@ export interface ThemeDefinition {
 
 export const THEME_DEFAULT: ThemeDefinition = {
   id: 'default',
-  label: 'Adventurer',
+  label: 'Soul of TerranSoul',
   description: 'Holographic HUD aesthetic — dark surfaces, cyan glow, translucent glass panels, technical precision.',
   icon: '🔷',
   category: 'dark',
@@ -143,4 +143,4 @@ export const THEME_MAP: ReadonlyMap<string, ThemeDefinition> = new Map(
 );
 
 /** The default theme ID applied on first launch. */
-export const DEFAULT_THEME_ID = 'corporate-dark';
+export const DEFAULT_THEME_ID = 'default';

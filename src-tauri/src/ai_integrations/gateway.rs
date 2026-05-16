@@ -1858,16 +1858,7 @@ impl BrainGateway for AppStateGateway {
         require_read(caps)?;
         crate::memory::repo_ingest::validate_source_id(&req.source_id)
             .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
-        if req.file_path.is_empty()
-            || req.file_path.contains("..")
-            || req.file_path.starts_with('/')
-            || req.file_path.starts_with('\\')
-            || std::path::PathBuf::from(&req.file_path).is_absolute()
-        {
-            return Err(GatewayError::InvalidArgument(
-                "invalid file_path".to_string(),
-            ));
-        }
+        validate_repo_relative_path(&req.file_path)?;
         let data_dir = self.state.data_dir.clone();
         let source_id = req.source_id;
         let file_path = req.file_path;
@@ -1940,16 +1931,7 @@ impl BrainGateway for AppStateGateway {
         require_read(caps)?;
         crate::memory::repo_ingest::validate_source_id(&req.source_id)
             .map_err(|e| GatewayError::InvalidArgument(e.to_string()))?;
-        if req.file_path.is_empty()
-            || req.file_path.contains("..")
-            || req.file_path.starts_with('/')
-            || req.file_path.starts_with('\\')
-            || std::path::PathBuf::from(&req.file_path).is_absolute()
-        {
-            return Err(GatewayError::InvalidArgument(
-                "invalid file_path".to_string(),
-            ));
-        }
+        validate_repo_relative_path(&req.file_path)?;
         let data_dir = self.state.data_dir.clone();
         let source_id = req.source_id;
         let file_path = req.file_path;
@@ -2215,6 +2197,29 @@ fn require_read(caps: &GatewayCaps) -> Result<(), GatewayError> {
     } else {
         Err(GatewayError::PermissionDenied("brain_read"))
     }
+}
+
+/// Reject path-traversal / absolute file paths in repo-rag gateway calls.
+/// Windows drive prefixes (e.g. `C:/...`) are NOT recognised as absolute
+/// by `Path::is_absolute` on Linux CI runners, so we detect them
+/// explicitly here.
+#[cfg(feature = "repo-rag")]
+fn validate_repo_relative_path(file_path: &str) -> Result<(), GatewayError> {
+    let bytes = file_path.as_bytes();
+    let has_windows_drive_prefix =
+        bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':';
+    if file_path.is_empty()
+        || file_path.contains("..")
+        || file_path.starts_with('/')
+        || file_path.starts_with('\\')
+        || has_windows_drive_prefix
+        || std::path::PathBuf::from(file_path).is_absolute()
+    {
+        return Err(GatewayError::InvalidArgument(
+            "invalid file_path".to_string(),
+        ));
+    }
+    Ok(())
 }
 
 /// Tolerant parser for cognitive-kind filter strings. Returns

@@ -2,6 +2,7 @@
   <div
     class="bp-shell brain-view"
     data-density="cozy"
+    :data-accent="accentKey"
     data-testid="brain-view"
   >
     <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
@@ -1547,6 +1548,18 @@ const moodKey = computed<'none' | 'free' | 'paid' | 'local'>(() => {
   if (m.mode === 'paid_api') return 'paid';
   if (m.mode === 'local_ollama' || m.mode === 'local_lm_studio') return 'local';
   return 'none';
+});
+
+// Maps the brain mood onto the `.bp-shell[data-accent]` palette swap defined
+// in src/styles/brain-panel.css so every cockpit/module accent (border, glow,
+// active state) shifts to match the active brain mode without component edits.
+const accentKey = computed<'' | 'green' | 'violet' | 'amber'>(() => {
+  switch (moodKey.value) {
+    case 'free':  return 'green';
+    case 'paid':  return 'violet';
+    case 'local': return 'amber';
+    default:      return '';
+  }
 });
 
 const heroTitle = computed(() => {

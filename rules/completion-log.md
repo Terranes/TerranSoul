@@ -1,3 +1,494 @@
+# Chunk THEME-COCKPIT-1b — brain panel cockpit port + mood-driven palette
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Port the user's reference brain panel onto the cockpit primitives landed in
+THEME-COCKPIT-1a so the live `BrainView` matches the reference's icon /
+background / color / highlight / lighting / contrast / button quality.
+
+## What was already in place
+
+Discovery revealed the panel was already substantially ported:
+
+- `src/views/BrainView.vue` already uses the reference's `.bp-*` class naming
+  (`.bp-shell`, `.bp-cockpit`, `.bp-hero-avatar`, `.bp-now`, `.bp-module`,
+  `.bp-prov`, `.bp-btn--primary/--ghost/--danger`, `.bp-pill[data-tone]`,
+  `.bp-row`, `.bp-grid-3`, etc.) for the cockpit + 18 numbered sections +
+  danger zone.
+- `src/styles/brain-panel.css` (1249 lines) already defines those classes,
+  aliased to `--ts-*` tokens so every theme picks up the cockpit look.
+- `.bp-cockpit` already includes the layered radial cyan halo (embedded in
+  `background` shorthand — preferred over `::after + overflow:hidden` so the
+  active-brain card doesn't get clipped) and the `::before` corner reticle.
+
+A selector diff against the reference `brain-panel.css` showed near parity
+(145 vs 147 top-level selectors). The functional gap was a **mood-driven
+palette swap**: the reference defines `.bp-shell[data-accent="violet|green|
+amber"]` variants that re-skin every cockpit border, glow, and accent for
+the active brain mode, and our port was missing those.
+
+## Changes
+
+### `src/styles/brain-panel.css`
+
+- Added `.bp-shell[data-accent="violet|green|amber|pink"]` variants that
+  override `--bp-accent`, `--bp-accent-2`, `--bp-border-strong`,
+  `--bp-glow-cyan`, `--bp-glow-cyan-soft` (and `--bp-accent-3` for amber).
+  Because every descendant glow/border in `brain-panel.css` reads through
+  these `--bp-*` aliases, a single attribute on the shell cascades the
+  palette to the cockpit, modules, provider tiles, buttons, pills, etc.
+- Added `.bp-shell[data-backdrop="false"]` opt-out for hosts that want
+  to use the parent surface as-is (matches reference).
+
+### `src/views/BrainView.vue`
+
+- Added `accentKey` computed mapping `moodKey` → palette:
+  - `free`  → `green`  (free cloud has a "go" vibe)
+  - `paid`  → `violet` (premium tier)
+  - `local` → `amber`  (warm local-hardware feel)
+  - `none`  → `''`     (default cyan)
+- Bound `:data-accent="accentKey"` on the `.bp-shell` root so switching
+  brain modes now visibly retunes the whole cockpit accent.
+
+## Verification
+
+- `npx vue-tsc --noEmit` → clean.
+- `brain_health` (MCP) → ollama / gemma3:4b, RAG 100%, 1147 memories.
+
+## Why this approach
+
+The reference's "much better" feel turned out to come from two things:
+(1) cockpit composition (layered gradients + corner reticles + halo blob)
+which 1a captured globally and which `brain-panel.css` already had baked in,
+and (2) mood-driven palette swapping so the panel visibly changes character
+when the user picks free vs paid vs local. (2) is what landed here. No
+component-level CSS edits were required — the `--bp-*` alias layer in
+`brain-panel.css` makes the whole panel respond to one attribute.
+
+## Files touched
+
+- `src/styles/brain-panel.css` — added 4 accent variants + backdrop opt-out.
+- `src/views/BrainView.vue` — added `accentKey` computed + bound to shell.
+- `rules/milestones.md` — 1b done, Next-Chunk → 1c.
+- `rules/completion-log.md` — this entry.
+- `mcp-data/shared/memory-seed.sql` — lesson on alias-layer palette swap.
+
+## Lesson
+
+When porting a designed component, build a thin **alias layer** (here,
+`--bp-*` reading from `--ts-*`). It pays back when later visual variants
+(`[data-accent]`, `[data-mood]`, theme overrides) need to retint the whole
+component — you flip one attribute and every descendant updates. Without
+the alias layer, the same change would require hunting through every
+border/glow/accent rule in the panel.
+
+---
+
+
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+User compared a self-authored prototype panel at
+`C:\Users\DevStar\Downloads\Rag Brain\` (a `Brain Panel.html` mockup with
+matching `brain-panel.css`) against the live TerranSoul UI and asked us to
+match its "icon, background, color, highlight, lighting, contrast, button"
+exactly — visual only, no functional changes.
+
+The reference's `--accent`, `--bg-base`, `--text`, `--border-strong`,
+`--r-xl`, etc. are already identical to TerranSoul's `--ts-*` tokens
+(same `#00d4ff`, `#040a12`, `rgba(0,212,255,0.34)`, etc.). The perceived
+visual gap comes from *composition*: layered linear-on-rgba card
+backgrounds, triple-shadow (inset highlight + cyan soft bloom + deep
+navy drop), four corner reticles via `::before`, a radial cyan halo blob
+in the top-right, brighter selected-state border + bigger glow, and the
+monospace tracked-caps section labels / breadcrumb separators.
+
+Phased so the diff stays small:
+- **1a (this chunk):** app-wide token bumps + reusable `.ts-cockpit-card`
+  utility class. Zero component rewrites.
+- **1b (queued):** full visual port of the brain panel onto the cockpit
+  pattern — orb SVG, breadcrumb header, numbered sections, provider
+  cards with `data-selected` glow.
+
+## What landed
+
+- **`src/style.css` — token bumps (app-wide):**
+  - `--ts-shadow-glow` strengthened to `0 0 24px rgba(0,212,255,0.22),
+    0 0 60px rgba(0,153,255,0.10)` (was 0.15 / 0.06) so every focused/
+    elevated element across the app now matches the reference's halo.
+  - `--ts-shadow-inset` bumped `rgba(0,212,255,0.06)` → `0.10` — slightly
+    brighter top-edge highlight on glass and card surfaces.
+- **`src/style.css` — new cockpit primitives:**
+  - `--ts-glow-cyan` (tight 24px halo), `--ts-glow-cyan-soft` (60px
+    bloom), `--ts-glow-cyan-strong` (32px bright selected halo).
+  - `--ts-shadow-cockpit` / `--ts-shadow-cockpit-hover` /
+    `--ts-shadow-cockpit-selected` — pre-composed triple-layer shadows.
+  - `--ts-cockpit-bg` — the reference's exact `linear-gradient(135deg,
+    rgba(0,153,255,0.06), rgba(110,142,255,0.02) 50%, transparent),
+    rgba(8,18,32,0.72)` layered background.
+  - `--ts-cockpit-reticle` — corner-line colour.
+- **`src/style.css` — `.ts-cockpit-card` utility class** (drop-in for any
+  container). Includes:
+  - Base rules + hover + `[data-selected="true"] / .is-active` states.
+  - `::before` with four short corner reticles (22px each).
+  - `::after` radial cyan halo blob (off-canvas top-right).
+  - `[data-density="compact"]` / `.ts-cockpit-card--compact` variant
+    with 6px inset and 16px reticles.
+  - Light-theme overrides for `corporate` and `pastel` (drop the dark
+    drop-shadow, hide the radial halo, dim the reticles) so it stays
+    legible on white surfaces.
+  - `prefers-reduced-motion` → transition off.
+- **`src/style.css` — `.ts-cockpit-label`** (monospace tracked-caps cyan
+  with subtle text-shadow) and **`.ts-cockpit-crumb` /
+  `.ts-cockpit-crumb-sep` / `.ts-cockpit-crumb-now`** for the
+  `TERRANSOUL › COMPANION › BRAIN PANEL` breadcrumb pattern. Both
+  helpers are ready for components to opt into.
+
+## Why this scope (and not a panel rewrite yet)
+
+The user picked "all four" scope options (tokens, panel port, both,
+utility class). Per milestone hygiene, the panel port (`THEME-COCKPIT-1b`)
+is a separate multi-file Vue rewrite — needs its own chunk so the diff is
+reviewable. 1a is the load-bearing primitive: every later 1b/1c view can
+just add `class="ts-cockpit-card"` and inherit the exact reference look.
+
+## Verification
+
+- `npx vue-tsc --noEmit` → clean (no type errors introduced; CSS-only).
+- New tokens live at `:root`; existing themes (corporate, corporate-dark,
+  cat, sakura, kids, brain, midnight, aurora, pastel) inherit them, and
+  the light-theme overrides keep the utility legible on white.
+
+## Credits
+
+The reference prototype `Brain Panel.html` is the user's own design work
+(not third-party). No `CREDITS.md` entry needed.
+
+## Follow-ups
+
+- **THEME-COCKPIT-1b** (queued in milestones): rewrite the existing
+  brain panel view to apply `.ts-cockpit-card`, `.ts-cockpit-label`, and
+  `.ts-cockpit-crumb`; add a brain-orb SVG hero; convert provider tiles
+  to selectable cockpit cards with `data-selected`.
+- **THEME-COCKPIT-1c** (deferred): once 1b is in, audit Knowledge
+  Graphs, Settings, and Chat root for places where swapping the bare
+  panel chrome for `.ts-cockpit-card` would improve the HUD feel
+  without disrupting density.
+
+---
+
+# Chunk GRAPHRAG-1 — microsoft/graphrag comparison + sub-chunk plan
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Comparison-and-plan chunk for the GRAPHRAG phase. Per workspace rule:
+read `https://deepwiki.org/microsoft/graphrag` first (redirected to
+`deepwiki.com`), cross-check upstream `microsoft/graphrag`, write
+`docs/graphrag-comparison.md` mapping their pipeline against ours, pick
+top 1–3 adoptions as `GRAPHRAG-1a/1b/1c`, credit upstream, and sync the
+durable lesson into `mcp-data/shared/memory-seed.sql`.
+
+## What landed
+
+- **`docs/graphrag-comparison.md` (new, ~150 lines).** Seven-section
+  comparison: pipeline at a glance, concept map, where TerranSoul leads,
+  where GraphRAG leads, adoption decisions, anti-patterns not copied,
+  references. Maps GraphRAG's `extract_graph → summarize_descriptions →
+  cluster_graph (Leiden) → create_community_reports → generate_text_embeddings`
+  pipeline against TerranSoul's hybrid 6-signal RRF + HyDE +
+  cross-encoder + `memory_edges` KG + cognitive-kind retrieval intent
+  stack. Includes the live-edge analysis that TerranSoul's
+  `memory_communities` table already has a `level` column (Chunk 16.6)
+  but only populates `level=0`, so hierarchical communities is a
+  schema-aligned extension rather than a new column.
+- **Three sub-chunks queued in `rules/milestones.md`:**
+  - **GRAPHRAG-1a** — Hierarchical community summaries (recurse Leiden,
+    LLM-generated per-level summaries, new `graph_rag_build_hierarchy`
+    Tauri command, optional `level` parameter on `graph_rag_search`).
+  - **GRAPHRAG-1b** — Structured entity/relationship extraction at
+    ingest, behind `BrainConfig.graph_extract_enabled` toggle (default
+    off so offline-only sessions stay zero-cost).
+  - **GRAPHRAG-1c** — Global vs Local query routing as a new `scope`
+    axis on the existing query-intent classifier (depends on
+    GRAPHRAG-1a for the global path).
+- **`CREDITS.md`** — Appended a `microsoft/graphrag` row right after
+  the existing `safishamsi/graphify` row, listing the MIT license,
+  DeepWiki + upstream sources studied, the GRAPHRAG-1a/b/c adoptions,
+  and the explicit DRIFT-search + FastGraphRAG-NLP-fallback deferrals.
+- **`mcp-data/shared/memory-seed.sql`** — New durable lesson block
+  `seed:lesson-graphrag-1-2026-05-16` linked via `part_of` edge to
+  `seed:lessons-learned-hub`, capturing the three adoptions, the two
+  deferrals, and the "single-level community detection is the gap"
+  insight so future agent sessions can find it through `brain_search`.
+- **`rules/milestones.md`** — Replaced the `GRAPHRAG-1` row with a
+  done-marker pointing to this entry, plus the three sub-chunks above.
+  Next-Chunk pointer updated to `GRAPHRAG-1a`.
+
+## Decisions logged
+
+- **Adopt:** hierarchical communities (1a), ingest-time entity/relationship
+  extraction (1b), global-vs-local query routing (1c).
+- **Defer DRIFT search.** Iterative refinement loop conflicts with
+  TerranSoul's single-stream chat UX and adds latency without a clear
+  win for the conversational use case.
+- **Defer FastGraphRAG NLP fallback.** TerranSoul's local Ollama brain
+  already makes LLM extraction near-free; the cost incentive for an
+  NLTK/spaCy co-occurrence fallback is weak.
+- **Reject Parquet output format.** SQLite + per-repo SQLite is already
+  the durable-knowledge source of truth; adding Parquet would fork the
+  storage surface.
+- **Reject `settings.yaml` config.** TerranSoul's Tauri commands + Pinia
+  store already cover provider configuration.
+
+## Files changed
+
+- `docs/graphrag-comparison.md` (new)
+- `CREDITS.md` (microsoft/graphrag row)
+- `rules/milestones.md` (GRAPHRAG-1 row replaced with three sub-chunks +
+  done-marker; Next-Chunk pointer updated)
+- `rules/completion-log.md` (this entry)
+- `mcp-data/shared/memory-seed.sql` (durable lesson block)
+
+## Tests / CI
+
+- No code changes — research + docs + milestones + credit + seed only.
+- Markdown lints clean (manual review).
+- Seed lesson uses the same `INSERT OR IGNORE INTO memories` +
+  `WHERE NOT EXISTS` idempotency pattern as `KNOWLEDGE-SPLIT-1`.
+
+## MCP receipt
+
+`brain_health` healthy (release `:7421`, ollama / gemma3:4b). Used
+`brain_search` "graphrag community summaries entity relationship
+extraction global local search" before the comparison doc — that
+surfaced the existing Chunk 16.6 community-detection implementation and
+prevented duplicate work. `fetch_webpage` on the workspace-canonical
+`deepwiki.org` URL returned a redirect to `deepwiki.com`; followed the
+redirect for the canonical content.
+
+---
+
+# Chunk KNOWLEDGE-PANEL-1 — Memory panel → Knowledge Graphs + embed budget + repo-source split
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Four user-facing improvements landed in one PR: (1) rename the Memory
+panel to **Knowledge Graphs** across user-visible UI strings (code
+identifiers, store names, Tauri commands, and tab `id` storage keys
+untouched for compatibility); (2) promote a new `GRAPHRAG-1` milestone
+to compare TerranSoul's brain pipeline against `microsoft/graphrag`
+without doing code work in this PR; (3) fix the Ollama `/api/embed`
+HTTP 400 "input length exceeds the context length" error by clamping
+embed inputs to a per-model character budget before the HTTP call; (4)
+register a dedicated `terransoul` `memory_sources` row and tag every
+TerranSoul-specific lesson with `terransoul-repo` so MCP agents can
+isolate project-coding context from generic meta-lessons.
+
+## Architecture
+
+- **Rename (task 1, UI-only).** Tab label "Memory" → "Knowledge" (kept
+  short for the mobile bottom-nav scroll strip); panel breadcrumb
+  "MEMORY EXPLORER" → "KNOWLEDGE GRAPHS"; aria-label "Memory source"
+  → "Knowledge source"; settings link group title "Brain & Memory" →
+  "Brain & Knowledge"; settings link "Memory" → "Knowledge Graphs";
+  context-menu panel entry "Memory" → "Knowledge". Code identifiers
+  intentionally retained (`MemoryView.vue` filename, tab `id: 'memory'`,
+  store `useMemoryStore` / `memory-sources`, Tauri commands) so
+  localStorage handoff keys, Pinia store imports, and IPC contracts
+  stay backwards-compatible. The full rename to `knowledge` identifiers
+  is deferred to a follow-up chunk if/when desired.
+- **GRAPHRAG-1 milestone (task 2).** Added a new `GRAPHRAG` phase to
+  `rules/milestones.md` with one `not-started` chunk that gates on
+  reading `https://deepwiki.org/microsoft/graphrag` first per workspace
+  rule, producing `docs/graphrag-comparison.md`, picking 1–3 concrete
+  adoptions (likely candidates: hierarchical community summaries,
+  structured entity-relationship extraction, global vs local search
+  routing), crediting `microsoft/graphrag` in `CREDITS.md`, and landing
+  each adoption as a numbered sub-chunk. No code in this PR.
+- **Embed input budget (task 3).** New
+  `embedding_registry::max_input_chars(model_id)` derives a safe input
+  character cap from the catalogue's `max_tokens` field using a
+  conservative 2 chars/token multiplier — mxbai-embed-large (512
+  tokens) → 1024 chars, nomic-embed-text (8192 tokens) → 16 384 chars,
+  voyage-3-lite (32 000 tokens) → 64 000 chars. The helper accepts both
+  bare ids (`"mxbai-embed-large"`) and Ollama-tagged ids
+  (`"mxbai-embed-large:latest"`) by stripping at the first `':'`.
+  Companion `truncate_for_model(model_id, text)` returns
+  `(slice, was_truncated)` using a UTF-8-safe char-boundary slice so
+  CJK and code inputs never split a multi-byte codepoint. Both the
+  single-shot `OllamaAgent::embed_text` path and the batch
+  `OllamaAgent::embed_text_batch` path now call `truncate_for_model`
+  after resolving the embed model and before building the
+  `/api/embed` JSON body, eliminating the recurring
+  `[brain/embed] /api/embed returned HTTP 400 … the input length
+  exceeds the context length` failures that nuked the embed queue
+  (`batch: 0 embedded, 8 failed`). First-truncation-per-call diagnostic
+  log prints the resolved model, original char count, and kept char
+  count without spamming subsequent rows in the same batch.
+- **Knowledge split (task 4).** Appended a `KNOWLEDGE-SPLIT-1` block to
+  `mcp-data/shared/memory-seed.sql` that (a) inserts a `terransoul`
+  row into the `memory_sources` registry (kind=`repo`, label=
+  `TerranSoul repo`, repo_url=`https://github.com/TerranSoul/TerranSoul`,
+  repo_ref=`main`) via `INSERT OR IGNORE`, (b) retags every existing
+  lesson row whose `content` starts with `'TerranSoul '` so its `tags`
+  column carries `terransoul-repo` (idempotent — the `LIKE` guard
+  skips rows that already carry the marker), and (c) appends a new
+  durable lesson `seed:lesson-knowledge-split-1-2026-05-16` wired
+  `part_of` `seed:lessons-learned-hub`. The seed block is gated by
+  the existing `existing_memory_rows > 0` early-return in
+  `memory::seed_migrations::run_all`, so running MCP against an
+  already-populated DB does not replay the seed (verified via
+  `brain_health` + `brain_search` after the change — 1147 memories,
+  RAG 100%, search still returns expected hits).
+- **GRAPHRAG-2 / data-shape migration deferred.** A true structural
+  move of TerranSoul lessons out of the `'self'` brain into a
+  per-repo `RepoStore` at `mcp-data/repos/terransoul/memory.sqlite`
+  requires a schema-shape translation (brain `memories` cognitive_kind
+  / decay / edges vs `RepoStore` `repo_chunks` AST-annotated chunks)
+  and is a separate chunk-sized refactor; this PR only registers the
+  source and adds the filter tag so the work can land incrementally.
+
+## Files
+
+- `src/App.vue`: tab `label: 'Memory'` → `'Knowledge'`.
+- `src/views/MemoryView.vue`: breadcrumb `MEMORY EXPLORER` →
+  `KNOWLEDGE GRAPHS`, aria-label `Memory source` → `Knowledge source`.
+- `src/views/SettingsView.vue`: settings link group title
+  `Brain & Memory` → `Brain & Knowledge`; settings link `Memory` →
+  `Knowledge Graphs`.
+- `src/components/PetContextMenu.vue`: pet-menu panel entry label
+  `Memory` → `Knowledge`.
+- `src-tauri/src/brain/embedding_registry.rs`: new
+  `CHARS_PER_TOKEN_SAFE` constant, new public `max_input_chars`,
+  new public `truncate_for_model`, 6 new unit tests.
+- `src-tauri/src/brain/ollama_agent.rs`: `use crate::brain::
+  embedding_registry`; `embed_text` calls
+  `truncate_for_model` before building the JSON body;
+  `embed_text_batch` applies the same per-input clamp with a
+  first-truncation-per-call diagnostic log.
+- `mcp-data/shared/memory-seed.sql`: appended `KNOWLEDGE-SPLIT-1`
+  block (terransoul source registration + tag-retag UPDATE + durable
+  lesson row + part_of edge).
+- `rules/milestones.md`: new `GRAPHRAG` phase with `GRAPHRAG-1`
+  chunk; updated Next Chunk pointer.
+- `rules/completion-log.md`: this entry (prepended).
+
+## Tests
+
+- `npx vitest run src/components/ThemePicker src/composables/useTheme
+  src/views/SettingsView src/components/SettingsModal src/components/
+  SettingsPanel`: 30/30 pass on touched UI surfaces.
+- `npx vue-tsc --noEmit`: PASS.
+- `cargo test --lib --target-dir ../target-test-current
+  brain::embedding_registry`: 19/19 pass (includes the 6 new
+  tests: `max_input_chars_accepts_tagged_id`,
+  `max_input_chars_unknown_model_is_none`,
+  `truncate_for_model_clamps_long_input`,
+  `truncate_for_model_preserves_short_input`,
+  `truncate_for_model_unknown_model_passthrough`,
+  `truncate_for_model_utf8_safe_on_multibyte`).
+- `cargo build --lib --target-dir ../target-test-current`: clean (no
+  errors, no `unused_*` warnings on the touched modules).
+- MCP retest after seed change: `brain_health` returned
+  `version=0.1.0, provider=ollama, model=gemma3:4b, memory_total=1147,
+  rag_quality_pct=100`; `brain_search "workspace cargo lesson
+  modular monolithic"` returned 3 relevant hits (including the
+  WORKSPACE-0 doc references). Live MCP unaffected by the migration
+  because `seed_migrations::run_all` early-returns when the DB
+  already has memory rows.
+
+## Lessons
+
+- Renaming a Pinia/Vue surface in two layers (visible label vs code
+  identifier) is the right default when a store, IPC contract, or
+  persisted localStorage key would otherwise need a migration. The
+  user-facing label can change freely; only commit to deeper
+  identifier renames when there is a follow-up reason (e.g., new
+  domain-specific store) so a UI polish PR doesn't trip every
+  consumer.
+- Per-model input clamping must live next to the catalogue (one source
+  of truth for `max_tokens`), not in the network-call site, so the
+  invariant survives when a new embedder is added: registering its
+  `max_tokens` automatically protects every embed path. The
+  `find_model` lookup additionally strips `':latest'` so Ollama's
+  resolved tags work without a separate normalization step.
+- For SQLite seed migrations that touch shared rows (the
+  `terransoul-repo` retag UPDATE here), use a comma-padded `LIKE`
+  guard (`',' || tags || ',' NOT LIKE '%,terransoul-repo,%'`) for
+  idempotency rather than a CTE — it stays compatible with the
+  `execute_batch` pipeline that loads the seed.
+- When the upstream knowledge architecture (`RepoStore` vs `memories`)
+  has incompatible schemas, registering the source and tagging is a
+  legitimate intermediate step. It unblocks the consumer surface
+  (source picker, filtered MCP search) without forcing a heavy data
+  reshape inside one PR — the reshape lands as its own chunk.
+
+---
+
+# Chunk WORKSPACE-0 — Cargo workspace scaffold (modular monolithic foundation)
+
+**Date:** 2026-05-16
+**Status:** Done
+
+## Goal
+
+Convert the repository into a Cargo workspace as the foundation for the modular-monolithic refactor, with **zero behavior change** — no source files moved, no APIs changed, no rebuild forced. Sets up the structure so subsequent WORKSPACE-1+ phases can extract leaf modules (`identity`, `resilience`, `routing`, `memory`, `brain`, `persona`, `link`, `ai_integrations`, …) from `src-tauri/src/` into their own member crates, which is what actually delivers faster incremental builds (editing one extracted crate will only recompile that crate + its downstream consumers, not the whole tree).
+
+## Architecture
+
+- New workspace root `Cargo.toml` with `[workspace] resolver = "2"` listing two members:
+  - `src-tauri` (the existing 354-command Tauri binary, untouched)
+  - `crates/hive-relay` (the existing relay server, also untouched)
+- `[workspace.dependencies]` is intentionally empty — populated lazily as future extraction phases surface shared deps.
+- All `[profile.*]` tables (the `debug = "line-tables-only"` / `split-debuginfo = "unpacked"` dev speedups plus the `scrypt` opt-level override) **moved from `src-tauri/Cargo.toml` to the workspace root**. Cargo only honours profile blocks in the workspace root and emits `unused_manifest_key` warnings when they appear in member manifests; this move silences those warnings while preserving identical compile behaviour.
+- New root `.cargo/config.toml` pins `[build] target-dir = "src-tauri/target"`. Without this, the default workspace target dir is `<root>/target/`, which would (a) orphan the ~10 GB of existing `src-tauri/target/` artifacts, (b) force a full rebuild, (c) break the CodeQL exclusion list which already excludes `src-tauri/target`, and (d) break the long-running MCP build at `target-mcp/` that uses a sibling `--target-dir` keyed off the same layout. Pinning the target dir keeps every existing tool, script, and CI workflow working without changes.
+- `src-tauri/Cargo.lock` moved via `git mv` to root `Cargo.lock` (preserves all 1000+ resolved transitive dep versions; cargo only consults the workspace-root lock once a workspace exists).
+
+## Files created / modified
+
+- **NEW** `Cargo.toml` — 3360 bytes, workspace root.
+- **NEW** `.cargo/config.toml` — 873 bytes, target-dir pin + rationale.
+- **MOVED** `src-tauri/Cargo.lock` → `Cargo.lock` (278120 bytes, contents unchanged).
+- **MODIFIED** `src-tauri/Cargo.toml` — removed the four `[profile.*]` tables (now in root) and replaced them with a comment pointer; no other changes.
+
+## Validation
+
+- `cargo metadata --no-deps --format-version 1` → exit 0, lists both members:
+  - `path+file:///D:/Git/TerranSoul/src-tauri#terransoul@0.1.0`
+  - `path+file:///D:/Git/TerranSoul/crates/hive-relay#0.1.0`
+- `cargo check -p hive-relay --offline` → exit 0 in 36s (smoke-tests the new workspace dep-resolution path end-to-end without touching the heavy `terransoul` crate).
+- No `unused_manifest_key` warnings on the workspace member manifest.
+- All existing target-dir-aware tooling (CodeQL config, MCP build at `target-mcp/`, IDE caches) keeps working unchanged because the override leaves `src-tauri/target/` as the active artifact dir.
+
+## What this unlocks (future WORKSPACE-N phases)
+
+| Phase | Extract | Why |
+|---|---|---|
+| WORKSPACE-1 | `identity`, `resilience`, `routing` | Truly leaf modules — no incoming deps, smallest blast radius for the first real extraction. |
+| WORKSPACE-2 | `memory` | Biggest single-file edit-frequency win — the heaviest module + `commands/memory.rs` is one of the most-edited files. |
+| WORKSPACE-3 | `brain`, then `persona`, then `link`, then `ai_integrations`, then `coding` | One module per phase, each compounding. |
+| WORKSPACE-4 | `commands/*` split into per-domain command crates | Largest hub-and-spoke unwinding; editing one command file recompiles ~5% of project instead of all. |
+
+Each phase will ship green (cargo build + cargo test + npx vitest pass) before the next begins.
+
+## Lesson synced
+
+When introducing a Cargo workspace to a repo that already has a single dominant crate (`src-tauri`), pin `target-dir` to the old location in a root `.cargo/config.toml` to avoid orphaning artifacts and breaking sibling `--target-dir` builds. Also move every `[profile.*]` block from the member to the root, since cargo silently ignores profile blocks in non-root members and warns. Added to `mcp-data/shared/memory-seed.sql`.
+
+---
+
 # Maintenance 2026-05-16 — Fix 5 pre-existing CI failures carried forward from BRAIN-REPO-RAG-2b
 
 **Date:** 2026-05-16

@@ -58,11 +58,11 @@
         <Transition name="dropdown">
           <SettingsPanel
             v-if="settingsOpen && !props.hideSettingsDialog"
-            :is-pet-mode="isPetMode"
-            :bgm="bgm"
             v-model:bgm-enabled="bgmEnabled"
             v-model:bgm-volume="bgmVolume"
             v-model:bgm-track-id="bgmTrackId"
+            :is-pet-mode="isPetMode"
+            :bgm="bgm"
             @close="settingsOpen = false"
             @request-set-display-mode="(mode) => emit('set-display-mode', mode)"
             @request-toggle-pet-mode="emit('toggle-pet-mode')"

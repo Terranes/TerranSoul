@@ -5,7 +5,7 @@
   >
     <!-- ── Breadcrumb ──────────────────────────────────────────────────────── -->
     <AppBreadcrumb
-      here="MEMORY EXPLORER"
+      here="KNOWLEDGE GRAPHS"
       @navigate="emit('navigate', $event)"
     />
 
@@ -63,7 +63,7 @@
     <nav
       class="mv-source-picker"
       data-testid="mv-source-picker"
-      aria-label="Memory source"
+      aria-label="Knowledge source"
     >
       <button
         type="button"
@@ -858,7 +858,10 @@
     </div>
 
     <!-- BRAIN-REPO-RAG-1e: GitHub OAuth device-flow dialog -->
-    <RepoOAuthDialog :open="showRepoOAuth" @close="showRepoOAuth = false" />
+    <RepoOAuthDialog
+      :open="showRepoOAuth"
+      @close="showRepoOAuth = false"
+    />
   </div>
 </template>
 

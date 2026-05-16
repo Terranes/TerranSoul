@@ -47,7 +47,7 @@ describe('ThemePicker', () => {
     const icons = wrapper.findAll('.tp-icon');
     expect(labels.length).toBe(BUILTIN_THEMES.length);
     expect(icons.length).toBe(BUILTIN_THEMES.length);
-    expect(labels[0].text()).toBe('Adventurer');
+    expect(labels[0].text()).toBe('Soul of TerranSoul');
     expect(icons[0].text()).toBe('🔷');
   });
 

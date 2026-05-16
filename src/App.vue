@@ -205,33 +205,13 @@
         </nav>
 
         <!-- Mobile bottom tab bar (replaces hamburger menu) -->
-        <nav class="mobile-bottom-nav">
-          <!-- Build-mode indicator — first item in the tab row.
-                 MCP mode takes priority over DEV. -->
-          <span
-            v-if="windowStore.isMcpMode"
-            class="mobile-mcp-indicator"
-            title="MCP mode"
-          >MCP</span>
-          <span
-            v-else-if="windowStore.isDevBuild"
-            class="mobile-dev-indicator"
-            title="Development build"
-          >DEV</span>
-          <button
-            v-for="tab in tabs"
-            :key="tab.id"
-            :class="['mobile-tab', { active: activeTab === tab.id }]"
-            @click="activeTab = tab.id"
-          >
-            <span
-              class="mobile-tab-icon"
-            >
-              <AppTabIcon :name="tab.id" />
-            </span>
-            <span class="mobile-tab-label">{{ tab.label }}</span>
-          </button>
-        </nav>
+        <MobileBottomNav
+          :tabs="tabs"
+          :active-tab="activeTab"
+          :is-mcp-mode="windowStore.isMcpMode"
+          :is-dev-build="windowStore.isDevBuild"
+          @update:active-tab="activeTab = $event"
+        />
 
         <!-- Main area -->
         <main
@@ -350,6 +330,7 @@ import FirstLaunchWizard from './components/FirstLaunchWizard.vue';
 import FloatingBadge from './components/ui/FloatingBadge.vue';
 import BackgroundScene from './components/BackgroundScene.vue';
 import AppTabIcon from './components/AppTabIcon.vue';
+import MobileBottomNav from './components/MobileBottomNav.vue';
 import McpActivityPanel from './components/McpActivityPanel.vue';
 
 const brain = useBrainStore();
@@ -388,7 +369,7 @@ const tabs = [
   { id: 'chat' as const, label: 'Chat' },
   { id: 'skills' as const, label: 'Quests' },
   { id: 'brain' as const, label: 'Brain' },
-  { id: 'memory' as const, label: 'Memory' },
+  { id: 'memory' as const, label: 'Knowledge' },
   { id: 'marketplace' as const, label: 'Market' },
   { id: 'mobile' as const, label: 'Link' },
   { id: 'voice' as const, label: 'Voice' },

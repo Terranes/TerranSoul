@@ -254,3 +254,292 @@ WHERE hub.source_hash = 'seed:lessons-learned-hub'
     SELECT 1 FROM memory_edges e
     WHERE e.src_id = hub.id AND e.dst_id = anchor.id AND e.rel_type = 'covers'
   );
+
+
+-- ── WORKSPACE-0 (2026-05-16) ──────────────────────────────────────────
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul WORKSPACE-0 (2026-05-16) — modular-monolithic foundation: introducing a Cargo workspace to a repo that already has a dominant member crate (src-tauri) requires four discipline rules to be non-breaking. (1) Pin target-dir to the old location via a new root .cargo/config.toml ([build] target-dir = "src-tauri/target"); without this, cargo relocates artifacts to <root>/target/ which orphans the existing src-tauri/target/ dir, forces a full rebuild, breaks the CodeQL exclusion list, and breaks sibling --target-dir builds like target-mcp/ that key off the same layout. (2) Move every [profile.*] block from the member manifest to the workspace root; cargo silently ignores profile blocks in non-root members and emits unused_manifest_key warnings. In our case that meant moving [profile.dev], [profile.dev.build-override], [profile.dev.package."*"], and [profile.dev.package.scrypt] from src-tauri/Cargo.toml to Cargo.toml. (3) git mv src-tauri/Cargo.lock to root Cargo.lock so the existing resolved versions are reused — cargo only consults the workspace-root lock once a workspace exists, and skipping this triggers a re-resolve. (4) Validate via cargo metadata --no-deps first (no compile cost) then cargo check on the smallest member (here hive-relay, ~36s) before claiming the workspace works — full terransoul build is ~30 min and not needed for parse validation. Phase 0 ships zero code moves; subsequent WORKSPACE-1+ phases will progressively extract leaf modules (identity → resilience → routing → memory → brain → persona → link → ai_integrations → coding) so incremental rebuilds only touch the changed crate plus downstream consumers.',
+  'lesson',
+  'cargo,workspace,modular-monolithic,build-perf,target-dir,profile-tables,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-workspace-0-2026-05-16'
+WHERE NOT EXISTS (SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-workspace-0-2026-05-16');
+
+-- Edge: seed:lesson-workspace-0-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-workspace-0-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── KNOWLEDGE-SPLIT-1 (2026-05-16) ────────────────────────────────────
+-- Register a dedicated `terransoul` repo source so project-coding
+-- knowledge can be isolated from generic / shared lessons. The `self`
+-- brain stays the durable seat of meta-lessons (build rules, conventions,
+-- audit findings). The `terransoul` source is the seat of structural
+-- code knowledge (AST chunks, file maps, signatures) populated by the
+-- existing BRAIN-REPO-RAG ingest pipeline.
+INSERT OR IGNORE INTO memory_sources (id, kind, label, repo_url, repo_ref, created_at, last_synced_at)
+VALUES (
+  'terransoul',
+  'repo',
+  'TerranSoul repo',
+  'https://github.com/TerranSoul/TerranSoul',
+  'main',
+  CAST(strftime('%s','now') AS INTEGER) * 1000,
+  NULL
+);
+
+-- Tag every TerranSoul-specific lesson row with `terransoul-repo` so MCP
+-- agents can scope a search to project-coding knowledge ("brain_search
+-- ... tag:terransoul-repo") vs generic meta-lessons. Idempotent — the
+-- LIKE guard skips rows already carrying the marker.
+UPDATE memories
+SET tags = CASE
+  WHEN tags = '' OR tags IS NULL THEN 'terransoul-repo'
+  ELSE tags || ',terransoul-repo'
+END
+WHERE content LIKE 'TerranSoul %'
+  AND ',' || tags || ',' NOT LIKE '%,terransoul-repo,%';
+
+-- Durable lesson: how the knowledge split works.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul KNOWLEDGE-SPLIT-1 (2026-05-16) — project-coding knowledge isolation: TerranSoul-specific lessons in mcp-data/shared/memory-seed.sql are now tagged `terransoul-repo` and a dedicated `memory_sources` row (id=''terransoul'', kind=''repo'') is registered so the MCP source picker and cross-source search can isolate project-coding context from generic agent meta-lessons. Structural code knowledge (AST chunks, signatures, file maps) still flows through the existing BRAIN-REPO-RAG-1b ingest pipeline into mcp-data/repos/terransoul/memory.sqlite — this seed block only registers the source; the user runs repo ingest from the Knowledge Graphs panel to populate it. The `self` brain remains the canonical seat of meta-lessons (build rules, audit findings, completion entries); the `terransoul` repo source is the canonical seat of code knowledge. Filter pattern for MCP agents: brain_search with tag filter `terransoul-repo` returns only project-coding context.',
+  'lesson',
+  'mcp,seed,knowledge-split,memory-sources,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-knowledge-split-1-2026-05-16'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+);
+
+-- Edge: seed:lesson-knowledge-split-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── KNOWLEDGE-SPLIT-1 (2026-05-16) ────────────────────────────────────
+-- Register a dedicated `terransoul` repo source so project-coding
+-- knowledge can be isolated from generic / shared lessons. The `self`
+-- brain stays the durable seat of meta-lessons (build rules, conventions,
+-- audit findings). The `terransoul` source is the seat of structural
+-- code knowledge (AST chunks, file maps, signatures) populated by the
+-- existing BRAIN-REPO-RAG ingest pipeline.
+INSERT OR IGNORE INTO memory_sources (id, kind, label, repo_url, repo_ref, created_at, last_synced_at)
+VALUES (
+  'terransoul',
+  'repo',
+  'TerranSoul repo',
+  'https://github.com/TerranSoul/TerranSoul',
+  'main',
+  CAST(strftime('%s','now') AS INTEGER) * 1000,
+  NULL
+);
+
+-- Tag every TerranSoul-specific lesson row with `terransoul-repo` so MCP
+-- agents can scope a search to project-coding knowledge ("brain_search
+-- ... tag:terransoul-repo") vs generic meta-lessons. Idempotent — the
+-- LIKE guard skips rows already carrying the marker.
+UPDATE memories
+SET tags = CASE
+  WHEN tags = '' OR tags IS NULL THEN 'terransoul-repo'
+  ELSE tags || ',terransoul-repo'
+END
+WHERE content LIKE 'TerranSoul %'
+  AND ',' || tags || ',' NOT LIKE '%,terransoul-repo,%';
+
+-- Durable lesson: how the knowledge split works.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul KNOWLEDGE-SPLIT-1 (2026-05-16) — project-coding knowledge isolation: TerranSoul-specific lessons in mcp-data/shared/memory-seed.sql are now tagged `terransoul-repo` and a dedicated `memory_sources` row (id=''terransoul'', kind=''repo'') is registered so the MCP source picker and cross-source search can isolate project-coding context from generic agent meta-lessons. Structural code knowledge (AST chunks, signatures, file maps) still flows through the existing BRAIN-REPO-RAG-1b ingest pipeline into mcp-data/repos/terransoul/memory.sqlite — this seed block only registers the source; the user runs repo ingest from the Knowledge Graphs panel to populate it. The `self` brain remains the canonical seat of meta-lessons (build rules, audit findings, completion entries); the `terransoul` repo source is the canonical seat of code knowledge. Filter pattern for MCP agents: brain_search with tag filter `terransoul-repo` returns only project-coding context.',
+  'lesson',
+  'mcp,seed,knowledge-split,memory-sources,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-knowledge-split-1-2026-05-16'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+);
+
+-- Edge: seed:lesson-knowledge-split-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-knowledge-split-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+
+-- ── GRAPHRAG-1 (2026-05-16) ───────────────────────────────────────────
+-- Durable cross-system-comparison lesson from the microsoft/graphrag
+-- audit. The full design analysis lives in docs/graphrag-comparison.md;
+-- this row captures the adoption decisions + deferrals so future agent
+-- sessions can find them via brain_search without re-reading the doc.
+INSERT INTO memories (content, cognitive_kind, tags, importance, created_at, source_hash)
+SELECT
+  'TerranSoul GRAPHRAG-1 (2026-05-16) — microsoft/graphrag cross-system comparison: docs/graphrag-comparison.md maps their pipeline (extract_graph -> summarize_descriptions -> cluster_graph Leiden -> create_community_reports -> generate_text_embeddings; four-strategy query system Global/Local/DRIFT/Basic) against TerranSoul''s hybrid 6-signal RRF + HyDE + cross-encoder + memory_edges KG + cognitive-kind retrieval intent stack. Three adoptions queued as sub-chunks in rules/milestones.md: (1a) hierarchical community summaries — recurse Leiden so memory_communities.level carries levels 0..N (cap N=4); LLM-generated per-level summaries through the active brain provider; new Tauri command graph_rag_build_hierarchy + optional level parameter on graph_rag_search. (1b) structured entity/relationship extraction at ingest — new memory::extraction::extract_entities_relationships(text, kind) writes typed (entity, rel_type, entity, description) quads into memories+memory_edges; gated by BrainConfig.graph_extract_enabled default off so offline-only sessions stay zero-cost. (1c) global vs local query routing — extend the Chunk 16.6b query-intent classifier with a scope axis (global, local, mixed); global routes to top-level community summaries (depends on 1a), local routes to entity-walk + hybrid_search_rrf, mixed routes to current dual-level RRF fusion. Deferred: DRIFT iterative refinement (conflicts with single-stream chat UX), FastGraphRAG NLP-only fallback (local Ollama makes LLM extraction near-free). Rejected: Parquet output format (SQLite + per-repo SQLite already the source of truth), settings.yaml config (Tauri commands + Pinia store cover this). Key insight: memory_communities.level was already a schema column added in Chunk 16.6 but only populated at level=0; hierarchical communities is a schema-aligned extension, not a new column. DeepWiki source URL is deepwiki.com/microsoft/graphrag (the workspace-rule deepwiki.org host redirects there); upstream commit studied: 0da2a4dd.',
+  'lesson',
+  'mcp,seed,graphrag,knowledge-graph,community-detection,leiden,entity-extraction,query-routing,terransoul-repo,2026-05-16',
+  9,
+  strftime('%s','now'),
+  'seed:lesson-graphrag-1-2026-05-16'
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-graphrag-1-2026-05-16'
+);
+
+-- Edge: seed:lesson-graphrag-1-2026-05-16 --part_of--> seed:lessons-learned-hub
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-graphrag-1-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1a — design tokens vs composition (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'THEME-COCKPIT-1a lesson (2026-05-16). When a user says a reference UI ' ||
+  'looks ''much better'' than ours, FIRST diff the design tokens before ' ||
+  'rewriting components. In the Rag Brain reference port, the --accent / ' ||
+  '--bg-base / --border-strong / --r-xl values were ALREADY identical to ' ||
+  'TerranSoul''s --ts-* tokens (same #00d4ff, #040a12, rgba(0,212,255,0.34)). ' ||
+  'The perceived gap was pure composition: layered linear-on-rgba backgrounds, ' ||
+  'triple-shadow (inset highlight + cyan soft bloom + deep navy drop), ' ||
+  '::before corner reticles, ::after radial halo blob, and bright selected-' ||
+  'state border + halo. Solution pattern: capture the composition as a ' ||
+  'reusable utility class (.ts-cockpit-card + .ts-cockpit-label + ' ||
+  '.ts-cockpit-crumb) plus pre-composed shadow tokens ' ||
+  '(--ts-shadow-cockpit{,-hover,-selected}), so later view ports just add ' ||
+  'class="ts-cockpit-card" instead of restyling each container. Always ' ||
+  'add light-theme overrides for new dark-HUD utilities (corporate/pastel) ' ||
+  'or they turn muddy on white. Phase the rollout: 1a = primitives ' ||
+  '(this chunk), 1b = brain panel port, 1c = audit/spread.',
+  'seed:lesson-theme-cockpit-1a-2026-05-16',
+  'procedural',
+  'long',
+  0.85,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1a — design tokens vs composition (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'THEME-COCKPIT-1a lesson (2026-05-16). When a user says a reference UI ' ||
+  'looks ''much better'' than ours, FIRST diff the design tokens before ' ||
+  'rewriting components. In the Rag Brain reference port, the --accent / ' ||
+  '--bg-base / --border-strong / --r-xl values were ALREADY identical to ' ||
+  'TerranSoul''s --ts-* tokens (same #00d4ff, #040a12, rgba(0,212,255,0.34)). ' ||
+  'The perceived gap was pure composition: layered linear-on-rgba backgrounds, ' ||
+  'triple-shadow (inset highlight + cyan soft bloom + deep navy drop), ' ||
+  '::before corner reticles, ::after radial halo blob, and bright selected-' ||
+  'state border + halo. Solution pattern: capture the composition as a ' ||
+  'reusable utility class (.ts-cockpit-card + .ts-cockpit-label + ' ||
+  '.ts-cockpit-crumb) plus pre-composed shadow tokens ' ||
+  '(--ts-shadow-cockpit{,-hover,-selected}), so later view ports just add ' ||
+  'class="ts-cockpit-card" instead of restyling each container. Always ' ||
+  'add light-theme overrides for new dark-HUD utilities (corporate/pastel) ' ||
+  'or they turn muddy on white. Phase the rollout: 1a = primitives ' ||
+  '(this chunk), 1b = brain panel port, 1c = audit/spread.',
+  'seed:lesson-theme-cockpit-1a-2026-05-16',
+  'procedural',
+  'long',
+  0.85,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1a-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+-- ──────────────────────────────────────────────────────────────────────────
+-- Lesson: THEME-COCKPIT-1b — alias layer enables mood-driven palette swap (2026-05-16)
+-- ──────────────────────────────────────────────────────────────────────────
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'THEME-COCKPIT-1b lesson (2026-05-16). When porting a designed UI ' ||
+  'component, build a thin ALIAS layer between the imported tokens and ' ||
+  'your app tokens (here: --bp-* in src/styles/brain-panel.css reading ' ||
+  'from --ts-*). That alias layer pays off later when visual variants ' ||
+  '(mood/theme/accent attributes) need to retint the whole component: ' ||
+  'redefine the --bp-* aliases under .bp-shell[data-accent=violet|green|' ||
+  'amber|pink] and every descendant border/glow/active-state cascades ' ||
+  'automatically — no component edits, no hunting through rules. ' ||
+  'BrainView wires it up via a computed accentKey from moodKey: free->' ||
+  'green, paid->violet, local->amber, none->'''' (default cyan), bound ' ||
+  ':data-accent on .bp-shell. Without the alias layer the same change ' ||
+  'would require editing every border/glow/accent rule in a 1249-line ' ||
+  'stylesheet. Also: do a SELECTOR DIFF before assuming a port is ' ||
+  'incomplete — the brain panel was 145/147 selectors at parity; the ' ||
+  'real gap was three mood variants, not a rewrite.',
+  'seed:lesson-theme-cockpit-1b-2026-05-16',
+  'procedural',
+  'long',
+  0.85,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1b-2026-05-16'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );

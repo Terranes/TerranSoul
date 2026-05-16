@@ -142,8 +142,11 @@ tts-supertonic = ["dep:ort", "dep:ndarray", "dep:hound", "dep:unicode-normalizat
 # mobile / headless-mcp builds that don't need to clone repos.
 repo-rag = ["dep:gix", "dep:ignore", "dep:regex"]
 
-[profile.dev.package.scrypt]
-opt-level = 3
+# ── Profiles ─────────────────────────────────────────────────────────────
+# Profile tables (`[profile.dev]`, `[profile.dev.package.*]`, etc.) live in
+# the workspace-root `Cargo.toml` as of WORKSPACE-0 — Cargo only honours
+# profile blocks in the workspace root and emits a warning when they appear
+# in member manifests. Do not re-add them here; edit `../Cargo.toml`.
 
 
 [dev-dependencies]

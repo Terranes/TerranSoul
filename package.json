@@ -5,9 +5,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/kill-dev-terransoul.mjs && npx tauri dev",
+    "prebuild": "eslint . --fix",
+    "dev": "node scripts/kill-dev-terransoul.mjs && eslint . --fix && npx tauri dev",
     "dev:desktop-e2e": "set WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222&& npm run dev",
-    "dev:full": "node scripts/kill-dev-terransoul.mjs && cargo build --manifest-path src-tauri/Cargo.toml && npx tauri dev",
+    "dev:full": "node scripts/kill-dev-terransoul.mjs && eslint . --fix && cargo build --manifest-path src-tauri/Cargo.toml && npx tauri dev",
     "dev:vite": "node scripts/check-port.cjs && vite",
     "build": "vue-tsc && vite build",
     "preview": "vite preview",

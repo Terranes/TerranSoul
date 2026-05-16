@@ -20,8 +20,6 @@ const PROGRESS_MD = path.join(ROOT, 'benchmark', 'progress.md');
 const POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const IDLE_GIVE_UP_MS = 30 * 60 * 1000; // 30 minutes of no log growth -> stop
 
-const TOTAL_DOCS = 10_000_000;
-
 const LIVE_LOG_HEADER = '## Live log';
 
 function findLatestLog() {
@@ -120,7 +118,7 @@ async function updateOverallPct(pct, status) {
   const overallLine = `## Overall: **${pct.toFixed(1)} % (${status})**`;
   const barLine = `${progressBar(pct)} ${pct.toFixed(1)} % — ${status}`;
   md = md.replace(/## Overall:\s*\*\*[^\n]*\*\*/m, overallLine);
-  md = md.replace(/```\s*\n\[[█░\s\[\]0-9.%—\-a-z()]+\]\s+[^\n]*\n```/m,
+  md = md.replace(/```\s*\n\[[█░\s[\]0-9.%\-—a-z()]+\]\s+[^\n]*\n```/m,
     '```\n' + barLine + '\n```');
   await fs.writeFile(PROGRESS_MD, md, 'utf8');
 }
@@ -194,7 +192,6 @@ async function main() {
   const state = { lastMtime: 0, idleMs: 0 };
   await appendEntry(`- **${nowIso()}** — poller started (5-min cadence, idle cap ${IDLE_GIVE_UP_MS / 60000} min).`);
   // One immediate poll, then every POLL_INTERVAL_MS.
-  // eslint-disable-next-line no-constant-condition
   while (true) {
     try {
       const { stop, reason } = await pollOnce(state);

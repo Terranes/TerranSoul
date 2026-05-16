@@ -124,7 +124,10 @@ onBeforeUnmount(() => {
   >
     <div class="repo-oauth-card">
       <header class="repo-oauth-head">
-        <h2 id="repo-oauth-title" class="repo-oauth-title">
+        <h2
+          id="repo-oauth-title"
+          class="repo-oauth-title"
+        >
           Connect GitHub for private repos
         </h2>
         <button
@@ -144,7 +147,10 @@ onBeforeUnmount(() => {
         repositories you add as memory sources.
       </p>
 
-      <section v-if="store.oauthStatus?.linked" class="repo-oauth-status">
+      <section
+        v-if="store.oauthStatus?.linked"
+        class="repo-oauth-status"
+      >
         <div class="repo-oauth-status-row">
           <span class="repo-oauth-status-label">Linked</span>
           <span class="repo-oauth-status-value">Yes</span>
@@ -157,12 +163,19 @@ onBeforeUnmount(() => {
           <span class="repo-oauth-status-label">Expired</span>
           <span class="repo-oauth-status-value">{{ store.oauthStatus.expired ? 'Yes' : 'No' }}</span>
         </div>
-        <button type="button" class="repo-oauth-action repo-oauth-action--danger" @click="unlink">
+        <button
+          type="button"
+          class="repo-oauth-action repo-oauth-action--danger"
+          @click="unlink"
+        >
           Unlink GitHub
         </button>
       </section>
 
-      <section v-else-if="phase === 'idle'" class="repo-oauth-idle">
+      <section
+        v-else-if="phase === 'idle'"
+        class="repo-oauth-idle"
+      >
         <button
           type="button"
           class="repo-oauth-action repo-oauth-action--primary"
@@ -187,10 +200,17 @@ onBeforeUnmount(() => {
           and enter the code:
         </p>
         <div class="repo-oauth-code-row">
-          <code class="repo-oauth-code" data-testid="repo-oauth-user-code">
+          <code
+            class="repo-oauth-code"
+            data-testid="repo-oauth-user-code"
+          >
             {{ store.oauthDeviceCode.user_code }}
           </code>
-          <button type="button" class="repo-oauth-action" @click="copyUserCode">
+          <button
+            type="button"
+            class="repo-oauth-action"
+            @click="copyUserCode"
+          >
             {{ copied ? 'Copied' : 'Copy' }}
           </button>
         </div>
@@ -200,23 +220,53 @@ onBeforeUnmount(() => {
         </p>
       </section>
 
-      <section v-else-if="phase === 'success'" class="repo-oauth-success">
+      <section
+        v-else-if="phase === 'success'"
+        class="repo-oauth-success"
+      >
         <p>GitHub linked successfully.</p>
       </section>
 
-      <section v-else-if="phase === 'expired'" class="repo-oauth-warn">
+      <section
+        v-else-if="phase === 'expired'"
+        class="repo-oauth-warn"
+      >
         <p>The device code expired before authorization completed.</p>
-        <button type="button" class="repo-oauth-action" @click="startFlow">Try again</button>
+        <button
+          type="button"
+          class="repo-oauth-action"
+          @click="startFlow"
+        >
+          Try again
+        </button>
       </section>
 
-      <section v-else-if="phase === 'denied'" class="repo-oauth-warn">
+      <section
+        v-else-if="phase === 'denied'"
+        class="repo-oauth-warn"
+      >
         <p>Authorization was denied.</p>
-        <button type="button" class="repo-oauth-action" @click="startFlow">Try again</button>
+        <button
+          type="button"
+          class="repo-oauth-action"
+          @click="startFlow"
+        >
+          Try again
+        </button>
       </section>
 
-      <section v-else-if="phase === 'error'" class="repo-oauth-error">
+      <section
+        v-else-if="phase === 'error'"
+        class="repo-oauth-error"
+      >
         <p>{{ errorMessage || 'Unexpected error.' }}</p>
-        <button type="button" class="repo-oauth-action" @click="startFlow">Retry</button>
+        <button
+          type="button"
+          class="repo-oauth-action"
+          @click="startFlow"
+        >
+          Retry
+        </button>
       </section>
     </div>
   </div>

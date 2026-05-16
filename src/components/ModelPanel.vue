@@ -9,122 +9,414 @@
     @close="handleClose"
   >
     <section
-          v-if="activeModelProfile"
-          class="active-persona-summary"
-          data-testid="mp-active-persona"
+      v-if="activeModelProfile"
+      class="active-persona-summary"
+      data-testid="mp-active-persona"
+    >
+      <div class="active-persona-summary__header">
+        <span class="active-persona-summary__label">Active persona</span>
+        <button
+          type="button"
+          class="active-persona-summary__edit"
+          :disabled="isLoading || !activeModel"
+          @click="activeModel && openEditDialog(activeModel)"
         >
-          <div class="active-persona-summary__header">
-            <span class="active-persona-summary__label">Active persona</span>
-            <button
-              type="button"
-              class="active-persona-summary__edit"
-              :disabled="isLoading || !activeModel"
-              @click="activeModel && openEditDialog(activeModel)"
-            >
-              Edit
-            </button>
-          </div>
-          <div class="active-persona-summary__name">
-            {{ activeModelProfile.name }}
-            <span
-              v-if="activeModelProfile.persona"
-              class="active-persona-summary__role"
-            >· {{ activeModelProfile.persona }}</span>
-          </div>
-          <div
-            v-if="activeModel"
-            class="active-persona-summary__meta"
-          >
-            {{ modelProfileSummary(activeModel) }}
-          </div>
-          <div
-            v-if="activeModel"
-            class="active-persona-summary__voice"
-          >
-            {{ modelVoiceSummary(activeModel) }}
-          </div>
-        </section>
+          Edit
+        </button>
+      </div>
+      <div class="active-persona-summary__name">
+        {{ activeModelProfile.name }}
+        <span
+          v-if="activeModelProfile.persona"
+          class="active-persona-summary__role"
+        >· {{ activeModelProfile.persona }}</span>
+      </div>
+      <div
+        v-if="activeModel"
+        class="active-persona-summary__meta"
+      >
+        {{ modelProfileSummary(activeModel) }}
+      </div>
+      <div
+        v-if="activeModel"
+        class="active-persona-summary__voice"
+      >
+        {{ modelVoiceSummary(activeModel) }}
+      </div>
+    </section>
 
-        <div class="model-select-section">
-          <label
-            class="select-label"
-            for="model-select"
-          >Active Model</label>
+    <div class="model-select-section">
+      <label
+        class="select-label"
+        for="model-select"
+      >Active Model</label>
+      <select
+        id="model-select"
+        class="model-select"
+        :value="characterStore.selectedModelId"
+        :disabled="isLoading"
+        @change="handleModelChange"
+      >
+        <optgroup label="Bundled">
+          <option
+            v-for="model in characterStore.defaultModels"
+            :key="model.id"
+            :value="model.id"
+          >
+            {{ modelDisplayName(model) }}
+          </option>
+        </optgroup>
+        <optgroup
+          v-if="characterStore.userModels.length > 0"
+          label="Imported"
+        >
+          <option
+            v-for="model in characterStore.userModels"
+            :key="model.id"
+            :value="model.id"
+          >
+            {{ modelDisplayName(model) }}
+          </option>
+        </optgroup>
+      </select>
+    </div>
+
+    <div class="import-section">
+      <button
+        v-if="!showImportForm"
+        class="import-btn"
+        :disabled="isLoading"
+        @click="showImportForm = true"
+      >
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="currentColor"
+        >
+          <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+        </svg>
+        {{ isLoading ? 'Loading…' : 'Import VRM Model' }}
+      </button>
+
+      <!-- Import form with gender + persona selection -->
+      <div
+        v-if="showImportForm"
+        class="import-form"
+      >
+        <h4 class="import-form__title">
+          Import New Model
+        </h4>
+        <label class="import-form__label">
+          Name
+          <input
+            v-model="importName"
+            type="text"
+            class="import-form__input"
+            placeholder="Model name (optional)"
+          >
+        </label>
+        <label class="import-form__label">
+          Gender
           <select
-            id="model-select"
-            class="model-select"
-            :value="characterStore.selectedModelId"
-            :disabled="isLoading"
-            @change="handleModelChange"
+            v-model="importGender"
+            class="import-form__select"
+            @change="onImportGenderChange"
           >
-            <optgroup label="Bundled">
-              <option
-                v-for="model in characterStore.defaultModels"
-                :key="model.id"
-                :value="model.id"
-              >
-                {{ modelDisplayName(model) }}
-              </option>
-            </optgroup>
-            <optgroup
-              v-if="characterStore.userModels.length > 0"
-              label="Imported"
+            <option
+              v-for="option in genderOptions"
+              :key="option.value"
+              :value="option.value"
             >
-              <option
-                v-for="model in characterStore.userModels"
-                :key="model.id"
-                :value="model.id"
-              >
-                {{ modelDisplayName(model) }}
-              </option>
-            </optgroup>
+              {{ option.label }}
+            </option>
           </select>
-        </div>
-
-        <div class="import-section">
-          <button
-            v-if="!showImportForm"
-            class="import-btn"
-            :disabled="isLoading"
-            @click="showImportForm = true"
+        </label>
+        <label class="import-form__label">
+          Persona
+          <select
+            v-model="importPersona"
+            class="import-form__select"
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="currentColor"
+            <option value="">
+              None (use active persona)
+            </option>
+            <option
+              v-for="personaName in personaOptions"
+              :key="personaName"
+              :value="personaName"
             >
-              <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-            </svg>
-            {{ isLoading ? 'Loading…' : 'Import VRM Model' }}
-          </button>
-
-          <!-- Import form with gender + persona selection -->
-          <div
-            v-if="showImportForm"
-            class="import-form"
+              {{ personaName }}
+            </option>
+          </select>
+        </label>
+        <label class="import-form__label">
+          Voice
+          <input
+            v-model="importVoiceName"
+            type="text"
+            class="import-form__input"
+            list="mp-import-voice-suggestions"
+            placeholder="Pick a voice or type a custom id"
           >
-            <h4 class="import-form__title">
-              Import New Model
-            </h4>
-            <label class="import-form__label">
-              Name
-              <input
-                v-model="importName"
-                type="text"
-                class="import-form__input"
-                placeholder="Model name (optional)"
+          <datalist id="mp-import-voice-suggestions">
+            <option
+              v-for="voice in voiceCatalogue"
+              :key="voice.id"
+              :value="voice.id"
+            >
+              {{ voice.label }}
+            </option>
+          </datalist>
+        </label>
+        <div class="voice-grid">
+          <label class="import-form__label">
+            Age
+            <select
+              v-model="importAge"
+              class="import-form__select"
+            >
+              <option
+                v-for="option in ageOptions"
+                :key="option.value"
+                :value="option.value"
               >
-            </label>
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="import-form__label">
+            Pitch
+            <select
+              v-model="importPitch"
+              class="import-form__select"
+            >
+              <option
+                v-for="option in pitchOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="voice-grid">
+          <label class="import-form__label">
+            Style
+            <select
+              v-model="importStyle"
+              class="import-form__select"
+            >
+              <option
+                v-for="option in styleOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="import-form__label">
+            English accent
+            <select
+              v-model="importEnglishAccent"
+              class="import-form__select"
+            >
+              <option
+                v-for="option in englishAccentOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <div class="import-form__actions">
+          <button
+            class="import-form__btn import-form__btn--primary"
+            :disabled="isLoading"
+            @click="handleImport"
+          >
+            {{ isLoading ? 'Importing…' : 'Choose File & Import' }}
+          </button>
+          <button
+            class="import-form__btn import-form__btn--cancel"
+            :disabled="isLoading"
+            @click="showImportForm = false"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <p class="import-hint">
+        Imported models are copied into your user data folder and persist
+        across app updates.
+      </p>
+    </div>
+
+    <div
+      v-if="characterStore.loadError"
+      class="error-banner"
+    >
+      {{ characterStore.loadError }}
+    </div>
+
+    <div class="models-list">
+      <div
+        v-for="model in characterStore.defaultModels"
+        :key="model.id"
+        class="model-card"
+        :class="{ active: characterStore.selectedModelId === model.id }"
+        @click="handleSelectModel(model.id)"
+      >
+        <VrmThumbnail
+          :cache-key="model.id"
+          :model-path="model.path"
+          :alt="modelDisplayName(model)"
+        />
+        <div class="model-info">
+          <span class="model-name">{{ modelDisplayName(model) }}</span>
+          <span class="model-author">Bundled · {{ modelProfileSummary(model) }}</span>
+          <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
+        </div>
+        <div class="model-actions">
+          <button
+            class="edit-btn"
+            :disabled="isLoading"
+            :aria-label="`Edit ${modelDisplayName(model)}`"
+            title="Edit model"
+            @click.stop="openEditDialog(model)"
+          >
+            ✎
+          </button>
+        </div>
+      </div>
+
+      <div
+        v-for="model in characterStore.userModels"
+        :key="model.id"
+        class="model-card"
+        :class="{ active: characterStore.selectedModelId === model.id }"
+        @click="handleSelectModel(model.id)"
+      >
+        <VrmThumbnail
+          :cache-key="model.id"
+          :user-model-id="model.id"
+          :alt="modelDisplayName(model)"
+        />
+        <div class="model-info">
+          <span class="model-name">{{ modelDisplayName(model) }}</span>
+          <span class="model-author">{{ modelProfileSummary(model) }} · {{ model.original_filename }}</span>
+          <span
+            v-if="characterStore.resolveModelProfile(model).persona"
+            class="model-persona"
+          >{{ characterStore.resolveModelProfile(model).persona }}</span>
+          <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
+        </div>
+        <div class="model-actions">
+          <button
+            class="edit-btn"
+            :disabled="isLoading"
+            :aria-label="`Edit ${modelDisplayName(model)}`"
+            title="Edit model"
+            @click.stop="openEditDialog(model)"
+          >
+            ✎
+          </button>
+          <button
+            class="delete-btn"
+            :disabled="isLoading"
+            :aria-label="`Delete ${model.name}`"
+            @click.stop="handleDelete(model.id)"
+          >
+            &times;
+          </button>
+        </div>
+      </div>
+
+      <!-- Edit dialog for user models -->
+      <div
+        v-if="editingModel"
+        class="edit-dialog-backdrop"
+        @click.self="editingModel = null"
+      >
+        <div class="edit-dialog">
+          <h4 class="edit-dialog__title">
+            Edit Model
+          </h4>
+          <label class="import-form__label">
+            Name
+            <input
+              v-model="editName"
+              type="text"
+              class="import-form__input"
+            >
+          </label>
+          <label class="import-form__label">
+            Gender
+            <select
+              v-model="editGender"
+              class="import-form__select"
+              @change="onEditGenderChange"
+            >
+              <option
+                v-for="option in genderOptions"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+          </label>
+          <label class="import-form__label">
+            Persona
+            <select
+              v-model="editPersona"
+              class="import-form__select"
+            >
+              <option value="">
+                None (use active persona)
+              </option>
+              <option
+                v-for="personaName in personaOptions"
+                :key="personaName"
+                :value="personaName"
+              >
+                {{ personaName }}
+              </option>
+            </select>
+          </label>
+          <label class="import-form__label">
+            Voice
+            <input
+              v-model="editVoiceName"
+              type="text"
+              class="import-form__input"
+              list="mp-edit-voice-suggestions"
+              placeholder="Pick a voice or type a custom id"
+            >
+            <datalist id="mp-edit-voice-suggestions">
+              <option
+                v-for="voice in voiceCatalogue"
+                :key="voice.id"
+                :value="voice.id"
+              >
+                {{ voice.label }}
+              </option>
+            </datalist>
+          </label>
+          <div class="voice-grid">
             <label class="import-form__label">
-              Gender
+              Age
               <select
-                v-model="importGender"
+                v-model="editAge"
                 class="import-form__select"
-                @change="onImportGenderChange"
               >
                 <option
-                  v-for="option in genderOptions"
+                  v-for="option in ageOptions"
                   :key="option.value"
                   :value="option.value"
                 >
@@ -133,370 +425,78 @@
               </select>
             </label>
             <label class="import-form__label">
-              Persona
+              Pitch
               <select
-                v-model="importPersona"
+                v-model="editPitch"
                 class="import-form__select"
               >
-                <option value="">
-                  None (use active persona)
-                </option>
                 <option
-                  v-for="personaName in personaOptions"
-                  :key="personaName"
-                  :value="personaName"
+                  v-for="option in pitchOptions"
+                  :key="option.value"
+                  :value="option.value"
                 >
-                  {{ personaName }}
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+          </div>
+          <div class="voice-grid">
+            <label class="import-form__label">
+              Style
+              <select
+                v-model="editStyle"
+                class="import-form__select"
+              >
+                <option
+                  v-for="option in styleOptions"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
                 </option>
               </select>
             </label>
             <label class="import-form__label">
-              Voice
-              <input
-                v-model="importVoiceName"
-                type="text"
-                class="import-form__input"
-                list="mp-import-voice-suggestions"
-                placeholder="Pick a voice or type a custom id"
+              English accent
+              <select
+                v-model="editEnglishAccent"
+                class="import-form__select"
               >
-              <datalist id="mp-import-voice-suggestions">
                 <option
-                  v-for="voice in voiceCatalogue"
-                  :key="voice.id"
-                  :value="voice.id"
+                  v-for="option in englishAccentOptions"
+                  :key="option.value"
+                  :value="option.value"
                 >
-                  {{ voice.label }}
+                  {{ option.label }}
                 </option>
-              </datalist>
+              </select>
             </label>
-            <div class="voice-grid">
-              <label class="import-form__label">
-                Age
-                <select
-                  v-model="importAge"
-                  class="import-form__select"
-                >
-                  <option
-                    v-for="option in ageOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-form__label">
-                Pitch
-                <select
-                  v-model="importPitch"
-                  class="import-form__select"
-                >
-                  <option
-                    v-for="option in pitchOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <div class="voice-grid">
-              <label class="import-form__label">
-                Style
-                <select
-                  v-model="importStyle"
-                  class="import-form__select"
-                >
-                  <option
-                    v-for="option in styleOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-form__label">
-                English accent
-                <select
-                  v-model="importEnglishAccent"
-                  class="import-form__select"
-                >
-                  <option
-                    v-for="option in englishAccentOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-            </div>
-            <div class="import-form__actions">
-              <button
-                class="import-form__btn import-form__btn--primary"
-                :disabled="isLoading"
-                @click="handleImport"
-              >
-                {{ isLoading ? 'Importing…' : 'Choose File & Import' }}
-              </button>
-              <button
-                class="import-form__btn import-form__btn--cancel"
-                :disabled="isLoading"
-                @click="showImportForm = false"
-              >
-                Cancel
-              </button>
-            </div>
           </div>
-
-          <p class="import-hint">
-            Imported models are copied into your user data folder and persist
-            across app updates.
-          </p>
-        </div>
-
-        <div
-          v-if="characterStore.loadError"
-          class="error-banner"
-        >
-          {{ characterStore.loadError }}
-        </div>
-
-        <div class="models-list">
-          <div
-            v-for="model in characterStore.defaultModels"
-            :key="model.id"
-            class="model-card"
-            :class="{ active: characterStore.selectedModelId === model.id }"
-            @click="handleSelectModel(model.id)"
-          >
-            <VrmThumbnail
-              :cache-key="model.id"
-              :model-path="model.path"
-              :alt="modelDisplayName(model)"
-            />
-            <div class="model-info">
-              <span class="model-name">{{ modelDisplayName(model) }}</span>
-              <span class="model-author">Bundled · {{ modelProfileSummary(model) }}</span>
-              <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
-            </div>
-            <div class="model-actions">
-              <button
-                class="edit-btn"
-                :disabled="isLoading"
-                :aria-label="`Edit ${modelDisplayName(model)}`"
-                title="Edit model"
-                @click.stop="openEditDialog(model)"
-              >
-                ✎
-              </button>
-            </div>
-          </div>
-
-          <div
-            v-for="model in characterStore.userModels"
-            :key="model.id"
-            class="model-card"
-            :class="{ active: characterStore.selectedModelId === model.id }"
-            @click="handleSelectModel(model.id)"
-          >
-            <VrmThumbnail
-              :cache-key="model.id"
-              :user-model-id="model.id"
-              :alt="modelDisplayName(model)"
-            />
-            <div class="model-info">
-              <span class="model-name">{{ modelDisplayName(model) }}</span>
-              <span class="model-author">{{ modelProfileSummary(model) }} · {{ model.original_filename }}</span>
-              <span
-                v-if="characterStore.resolveModelProfile(model).persona"
-                class="model-persona"
-              >{{ characterStore.resolveModelProfile(model).persona }}</span>
-              <span class="model-persona">{{ modelVoiceSummary(model) }}</span>
-            </div>
-            <div class="model-actions">
-              <button
-                class="edit-btn"
-                :disabled="isLoading"
-                :aria-label="`Edit ${modelDisplayName(model)}`"
-                title="Edit model"
-                @click.stop="openEditDialog(model)"
-              >
-                ✎
-              </button>
-              <button
-                class="delete-btn"
-                :disabled="isLoading"
-                :aria-label="`Delete ${model.name}`"
-                @click.stop="handleDelete(model.id)"
-              >
-                &times;
-              </button>
-            </div>
-          </div>
-
-          <!-- Edit dialog for user models -->
-          <div
-            v-if="editingModel"
-            class="edit-dialog-backdrop"
-            @click.self="editingModel = null"
-          >
-            <div class="edit-dialog">
-              <h4 class="edit-dialog__title">
-                Edit Model
-              </h4>
-              <label class="import-form__label">
-                Name
-                <input
-                  v-model="editName"
-                  type="text"
-                  class="import-form__input"
-                >
-              </label>
-              <label class="import-form__label">
-                Gender
-                <select
-                  v-model="editGender"
-                  class="import-form__select"
-                  @change="onEditGenderChange"
-                >
-                  <option
-                    v-for="option in genderOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-form__label">
-                Persona
-                <select
-                  v-model="editPersona"
-                  class="import-form__select"
-                >
-                  <option value="">
-                    None (use active persona)
-                  </option>
-                  <option
-                    v-for="personaName in personaOptions"
-                    :key="personaName"
-                    :value="personaName"
-                  >
-                    {{ personaName }}
-                  </option>
-                </select>
-              </label>
-              <label class="import-form__label">
-                Voice
-                <input
-                  v-model="editVoiceName"
-                  type="text"
-                  class="import-form__input"
-                  list="mp-edit-voice-suggestions"
-                  placeholder="Pick a voice or type a custom id"
-                >
-                <datalist id="mp-edit-voice-suggestions">
-                  <option
-                    v-for="voice in voiceCatalogue"
-                    :key="voice.id"
-                    :value="voice.id"
-                  >
-                    {{ voice.label }}
-                  </option>
-                </datalist>
-              </label>
-              <div class="voice-grid">
-                <label class="import-form__label">
-                  Age
-                  <select
-                    v-model="editAge"
-                    class="import-form__select"
-                  >
-                    <option
-                      v-for="option in ageOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <label class="import-form__label">
-                  Pitch
-                  <select
-                    v-model="editPitch"
-                    class="import-form__select"
-                  >
-                    <option
-                      v-for="option in pitchOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-              </div>
-              <div class="voice-grid">
-                <label class="import-form__label">
-                  Style
-                  <select
-                    v-model="editStyle"
-                    class="import-form__select"
-                  >
-                    <option
-                      v-for="option in styleOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-                <label class="import-form__label">
-                  English accent
-                  <select
-                    v-model="editEnglishAccent"
-                    class="import-form__select"
-                  >
-                    <option
-                      v-for="option in englishAccentOptions"
-                      :key="option.value"
-                      :value="option.value"
-                    >
-                      {{ option.label }}
-                    </option>
-                  </select>
-                </label>
-              </div>
-              <div class="import-form__actions">
-                <button
-                  class="import-form__btn import-form__btn--primary"
-                  :disabled="isLoading"
-                  @click="handleSaveEdit"
-                >
-                  {{ isLoading ? 'Saving…' : 'Save' }}
-                </button>
-                <button
-                  class="import-form__btn import-form__btn--cancel"
-                  @click="editingModel = null"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
+          <div class="import-form__actions">
+            <button
+              class="import-form__btn import-form__btn--primary"
+              :disabled="isLoading"
+              @click="handleSaveEdit"
+            >
+              {{ isLoading ? 'Saving…' : 'Save' }}
+            </button>
+            <button
+              class="import-form__btn import-form__btn--cancel"
+              @click="editingModel = null"
+            >
+              Cancel
+            </button>
           </div>
         </div>
+      </div>
+    </div>
 
-        <div class="panel-footer">
-          <p class="footer-note">
-            See <code>instructions/</code> folder for guides on importing models
-            and extending TerranSoul with custom characters.
-          </p>
-        </div>
+    <div class="panel-footer">
+      <p class="footer-note">
+        See <code>instructions/</code> folder for guides on importing models
+        and extending TerranSoul with custom characters.
+      </p>
+    </div>
   </PanelShell>
 </template>
 

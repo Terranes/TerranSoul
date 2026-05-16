@@ -809,7 +809,10 @@
           </header>
           <div class="mp-toolbar">
             <div class="mp-search-row">
-              <span class="mp-search-icon" aria-hidden="true">🔍</span>
+              <span
+                class="mp-search-icon"
+                aria-hidden="true"
+              >🔍</span>
               <input
                 v-model="searchQuery"
                 placeholder="Search agents by name, description, or capability…"
@@ -1128,7 +1131,10 @@
       <template v-else>
         <div class="mp-toolbar">
           <div class="mp-search-row">
-            <span class="mp-search-icon" aria-hidden="true">🔍</span>
+            <span
+              class="mp-search-icon"
+              aria-hidden="true"
+            >🔍</span>
             <input
               v-model="installedSearchQuery"
               placeholder="Filter installed agents…"
@@ -1167,43 +1173,43 @@
         >
           <div
             v-for="agent in displayedInstalledAgents"
-          :key="agent.name"
-          class="mp-card mp-card-installed"
-        >
-          <div class="mp-card-header">
-            <h3 class="mp-agent-name">
-              {{ agent.name }}
-            </h3>
-            <span class="mp-version">v{{ agent.version }}</span>
-          </div>
-          <p class="mp-description">
-            {{ agent.description }}
-          </p>
-          <div class="mp-sandbox-status">
-            <span
-              class="mp-sandbox-badge"
-              :class="sandboxBadgeClass(agent.name)"
-            >
-              {{ sandboxLabel(agent.name) }}
-            </span>
-          </div>
-          <div class="mp-card-actions">
-            <button
-              class="btn-secondary btn-sm"
-              @click="viewCapabilities(agent.name)"
-            >
-              🔐 Capabilities
-            </button>
-            <button
-              class="btn-danger btn-sm"
-              :disabled="isLoading"
-              @click="handleRemove(agent.name)"
-            >
-              🗑 Remove
-            </button>
+            :key="agent.name"
+            class="mp-card mp-card-installed"
+          >
+            <div class="mp-card-header">
+              <h3 class="mp-agent-name">
+                {{ agent.name }}
+              </h3>
+              <span class="mp-version">v{{ agent.version }}</span>
+            </div>
+            <p class="mp-description">
+              {{ agent.description }}
+            </p>
+            <div class="mp-sandbox-status">
+              <span
+                class="mp-sandbox-badge"
+                :class="sandboxBadgeClass(agent.name)"
+              >
+                {{ sandboxLabel(agent.name) }}
+              </span>
+            </div>
+            <div class="mp-card-actions">
+              <button
+                class="btn-secondary btn-sm"
+                @click="viewCapabilities(agent.name)"
+              >
+                🔐 Capabilities
+              </button>
+              <button
+                class="btn-danger btn-sm"
+                :disabled="isLoading"
+                @click="handleRemove(agent.name)"
+              >
+                🗑 Remove
+              </button>
+            </div>
           </div>
         </div>
-      </div>
       </template>
     </div>
 

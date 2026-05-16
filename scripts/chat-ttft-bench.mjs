@@ -48,7 +48,7 @@ function postChat({ messages, options = {}, keepAlive = KEEP_ALIVE_DEFAULT }) {
         },
       },
       (res) => {
-        const t0 = ts();
+        const _t0 = ts();
         let firstChunkAt = null;
         let firstTokenAt = null;
         let totalTokens = 0;

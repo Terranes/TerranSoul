@@ -32,75 +32,44 @@
 
 ## Next Chunk
 
-No `not-started` chunks remain. The only open row is **BENCH-SCALE-3**
-(code-done, run-deferred): IVF-PQ bench code is complete; only the
-10M-doc bench runner + the ~40h wall-clock run are deferred.
-
-The full BRAIN-REPO-RAG phase shipped 2026-05-16, closed by chunk
-`1e` (OAuth device flow for private repos: GitHub RFC 8628 device
-authorization grant, `<data_dir>/oauth/github.json` token persistence
-with FS-permission hardening, `x-access-token:<token>@github.com` URL
-injection at clone time, 4 Tauri commands +
-`src/components/RepoOAuthDialog.vue` + 5 Rust unit tests + 4 vitest
-cases). The follow-up chunk `2a` (per-source knowledge-graph
-visualization: `RepoStore::recent_chunks` projection,
-`cross_source_graph_nodes` Tauri command emitting a collision-free
-negative-id node space, `MemoryGraph` + `MemoryGalaxy` warning-hue
-repo nodes with `📦 source · file::symbol` inspector lines, MemoryView
-`All`-view fan-out, 1 new Rust unit test) also shipped 2026-05-16. The
-follow-up chunk `2b` (deep-scan ingest visibility: every
-size/binary/unchanged/secret skip now emits an explicit `IngestPhase::Skip`
-event with a typed `skip_reason`; a per-run `IngestPhase::Summary` event
-fires before `Done`; `TaskProgressEvent` gained an optional `log_line`
-field; `TauriIngestSink` formats each event into a log line; the frontend
-`useTaskStore` keeps a per-task 500-line ring buffer surfaced through a
-collapsible debug log in `TaskProgressBar.vue` with sticky skip/index
-counter chips; 1 new Rust unit test +
-3 new vitest cases) also shipped 2026-05-16. The 1d Aider-style repo map +
-`repo_signatures` + `repo-scholar-quest` skill + final docs sync
-shipped 2026-05-16; MCP tool count is now 24 brain + 17 code = 41
-total. The 1c-b-ii-b frontend cross-source wiring (prompt assembler
-grouped by `source_id`, citation footer with per-source badges,
-`@source-id` mention syntax, 14 new vitest cases) shipped 2026-05-16;
-the 1c-b-ii-a backend (cross-source `All` fan-out:
-`cross_source_search` gateway trait method + `AppStateGateway` impl
-that runs `MemoryStore::hybrid_search_rrf` for `'self'` + per-repo
-`RepoStore::hybrid_search` for every `memory_sources` repo and
-RRF-merges via `reciprocal_rank_fuse` k=60, `MultiSourceHit` wire type
-tagging each hit with `source_id` / `source_label` / `tier` /
-`file_path`, identically-named Tauri command + MCP tool +
-4 gateway tests + integration test slot bump 38→39) shipped
-2026-05-16; the 1a registry + Memory-panel source picker shipped
-2026-05-15; the 1b-i foundation (gix shallow clone, ignore walker,
-secret scanner, text chunker, per-repo SQLite, three Tauri commands)
-shipped 2026-05-16; the 1b-ii-a static-analysis slice (AST
-`parent_symbol` annotation via tree-sitter for Rust/TS, per-file
-SHA-256 incremental sync, `IngestSink`/`IngestPhase` progress events,
-20/20 tests) and the 1b-ii-b embedding slice (`embed_repo_with_fn` +
-per-repo HNSW at `<data_dir>/repos/<source_id>/vectors.usearch` +
-`TauriIngestSink` emitting `task-progress` events + 3 new integration
-tests, 23/23 total) shipped 2026-05-16; the 1c-a source-scoped
-retrieval backend (`RepoStore::hybrid_search` 3-signal RRF fusion +
-`repo_search` / `repo_list_files` / `repo_read_file` Tauri commands +
-5 new tests, 28/28 total) and the 1c-b-i `BrainGateway` MCP surface
-(`repo_search` / `repo_list_files` / `repo_read_file` trait methods +
-identically-named MCP tools + path-traversal hardening + 5 new tests,
-33/33 total) shipped 2026-05-16 (see `completion-log.md`). Design
-research lives in
-[`docs/repo-rag-systems-research-2026-05-16.md`](../docs/repo-rag-systems-research-2026-05-16.md).
+The next active chunk is **THEME-COCKPIT-1c** — audit and spread the
+cockpit pattern across Memory, Settings, Chat root, and the splash.
+**THEME-COCKPIT-1b** landed 2026-05-16 (mood-driven palette accent on
+`.bp-shell[data-accent]`; see completion log). After 1c the queue
+continues with **GRAPHRAG-1a** (hierarchical Leiden community summaries).
+**BENCH-SCALE-3** remains code-done / run-deferred (IVF-PQ 10M-doc
+runner + ~40h wall-clock pass).
 
 ---
 
-## Phase UI-2026-05 — Responsive panel unification + audio panel redesign
+## Phase THEME-COCKPIT — sci-fi HUD cockpit aesthetic
 
-Goal: ship a consistent panel template across all `*Panel.vue` components,
-a redesigned audio panel that surfaces TTS providers + per-provider test
-buttons, and a dedicated default TTS provider. Filed 2026-05-15 from a
-user UX review (screenshot of persona editor); see entries 1100/515 in
-`mcp-data/shared/memory-seed.sql` for context on the voice-design
-decision history.
+Goal: match the visual quality of the user-authored `Brain Panel.html`
+reference (deep navy cards with layered cyan glow, corner reticles,
+numbered tracked-caps section labels, breadcrumb header, brain-orb hero).
 
-_All chunks complete (see `completion-log.md`)._
+| Chunk | Status | Scope |
+|---|---|---|
+| THEME-COCKPIT-1a | done 2026-05-16 | **Tokens + utility primitives landed.** App-wide `--ts-shadow-glow` / `--ts-shadow-inset` strengthened to reference values. New tokens `--ts-glow-cyan{,-soft,-strong}`, `--ts-shadow-cockpit{,-hover,-selected}`, `--ts-cockpit-bg`, `--ts-cockpit-reticle`. New utility classes `.ts-cockpit-card` (with `::before` corner reticles, `::after` cyan halo blob, hover + `[data-selected]/.is-active` states, compact variant, light-theme overrides for corporate/pastel), `.ts-cockpit-label`, `.ts-cockpit-crumb`. CSS-only; vue-tsc clean. See completion log. |
+| THEME-COCKPIT-1b | done 2026-05-16 | **Brain panel view port — completed via existing port + mood-driven palette swap.** Discovery found the brain panel already uses `.bp-*` classes (`.bp-shell`, `.bp-cockpit`, `.bp-module`, `.bp-prov`, etc.) backed by `src/styles/brain-panel.css` (1249 lines, aliased to `--ts-*` tokens). Cockpit hero already has the layered radial halo + corner-reticle `::before`. Gap that remained was mood-driven palette: ported the reference's `[data-accent="violet|green|amber"]` shell variants (plus `pink`) and `[data-backdrop="false"]` opt-out into `brain-panel.css`. Added `accentKey` computed in `BrainView.vue` that maps `moodKey` → `green` (free) / `violet` (paid) / `amber` (local) / `''` (none), bound on `.bp-shell[:data-accent="accentKey"]` so every cockpit border/glow/active-state cascades to the active brain mode without component edits. vue-tsc clean. |
+| THEME-COCKPIT-1c | not-started | **Audit + spread the pattern.** Walk Knowledge Graphs, Settings, Memory, Chat root and the splash. For each large container, decide: adopt `.ts-cockpit-card`, leave as bare panel, or apply the lighter `--compact` variant. Goal is a consistent HUD feel without losing density. Tests: vitest snapshot updates as needed. |
+
+---
+
+## Phase GRAPHRAG — Cross-system brain comparison
+
+Goal: study `microsoft/graphrag` (community-summary GraphRAG, global vs
+local search) and adopt the top 1–3 concrete improvements that fit
+TerranSoul's local-first, single-user constraints. **GRAPHRAG-1
+research + comparison doc landed 2026-05-16 — see
+[`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) and the
+completion-log entry. Sub-chunks below carry the adoptions.**
+
+| Chunk | Status | Scope |
+|---|---|---|
+| GRAPHRAG-1a | not-started | **Hierarchical community summaries.** Recurse `memory::graph_rag::detect_communities` so `memory_communities.level` carries levels 0..N (N capped at 4). Generate per-level LLM summaries through the active brain provider. New Tauri command `graph_rag_build_hierarchy`. Extend `graph_rag_search` to accept an optional `level` parameter and fetch community hits at that depth. Tests: multi-level detection, summary generation idempotency, level filter in search. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 1. |
+| GRAPHRAG-1b | not-started | **Structured entity / relationship extraction at ingest.** New `memory::extraction::extract_entities_relationships(text, kind)` step in the ingest pipeline that calls the brain with a typed JSON-schema prompt (entity name + type + description, relationship src/dst/type/description), then materialises results as `memories` rows (cognitive_kind=`semantic`) + `memory_edges` rows. Behind a `BrainConfig.graph_extract_enabled` toggle (default off for offline-only sessions). Tests: schema validation, deduplication against existing entities, edge confidence assignment. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 2. |
+| GRAPHRAG-1c | not-started | **Global vs Local query routing.** Extend the existing query-intent classifier (Chunk 16.6b) with a `scope ∈ {global, local, mixed}` axis. Route `global` queries to top-level community summaries (requires GRAPHRAG-1a), `local` queries to entity-walk + hybrid_search_rrf, and `mixed` queries to the current dual-level RRF fusion. Tests: scope classification accuracy on a fixture set, retrieval shape per scope. See [`docs/graphrag-comparison.md`](../docs/graphrag-comparison.md) §5 row 3. Depends on GRAPHRAG-1a. |
 
 ---
 

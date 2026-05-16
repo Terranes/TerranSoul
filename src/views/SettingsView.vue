@@ -10,7 +10,9 @@
     />
 
     <header class="sv-hero">
-      <h1 class="sv-title">Settings</h1>
+      <h1 class="sv-title">
+        Settings
+      </h1>
       <p class="sv-subtitle">
         App-wide preferences. Brain, Voice, and Memory have dedicated panels —
         use the side nav or the buttons below for deep configuration.
@@ -22,7 +24,9 @@
       class="sv-section"
       data-testid="settings-section-view-mode"
     >
-      <h2 class="sv-section-title">View Mode</h2>
+      <h2 class="sv-section-title">
+        View Mode
+      </h2>
       <p class="sv-section-help">
         Choose how the companion appears on your desktop.
       </p>
@@ -68,30 +72,14 @@
       class="sv-section"
       data-testid="settings-section-appearance"
     >
-      <h2 class="sv-section-title">Appearance</h2>
-      <p class="sv-section-help">Switch between cyberpunk and pastel themes.</p>
-      <div class="sv-theme-row">
-        <button
-          type="button"
-          class="sv-theme-btn"
-          :class="{ active: currentTheme === 'cyberpunk' }"
-          data-testid="settings-theme-cyberpunk"
-          @click="setTheme('cyberpunk')"
-        >
-          <span class="sv-theme-swatch sv-theme-swatch--cyberpunk" />
-          <span class="sv-theme-name">Cyberpunk</span>
-        </button>
-        <button
-          type="button"
-          class="sv-theme-btn"
-          :class="{ active: currentTheme === 'pastel' }"
-          data-testid="settings-theme-pastel"
-          @click="setTheme('pastel')"
-        >
-          <span class="sv-theme-swatch sv-theme-swatch--pastel" />
-          <span class="sv-theme-name">Pastel</span>
-        </button>
-      </div>
+      <h2 class="sv-section-title">
+        Appearance
+      </h2>
+      <p class="sv-section-help">
+        Pick from the full built-in theme set — dark, light, and colourful
+        variants. The choice is persisted to settings and applied app-wide.
+      </p>
+      <ThemePicker />
     </section>
 
     <!-- ── Character ───────────────────────────────────────────────── -->
@@ -99,8 +87,12 @@
       class="sv-section"
       data-testid="settings-section-character"
     >
-      <h2 class="sv-section-title">Character</h2>
-      <p class="sv-section-help">Active VRM model used by the 3D viewport.</p>
+      <h2 class="sv-section-title">
+        Character
+      </h2>
+      <p class="sv-section-help">
+        Active VRM model used by the 3D viewport.
+      </p>
       <div class="sv-row">
         <label class="sv-field">
           <span class="sv-field-label">Active model</span>
@@ -141,7 +133,9 @@
       class="sv-section"
       data-testid="settings-section-persona"
     >
-      <h2 class="sv-section-title">Persona — {{ activeCharacterName }}</h2>
+      <h2 class="sv-section-title">
+        Persona — {{ activeCharacterName }}
+      </h2>
       <p class="sv-section-help">
         Persona traits and voice design apply to the active character/model
         above. Switch characters to edit a different persona. These settings
@@ -155,7 +149,9 @@
       class="sv-section"
       data-testid="settings-section-quick-links"
     >
-      <h2 class="sv-section-title">Deep Configuration</h2>
+      <h2 class="sv-section-title">
+        Deep Configuration
+      </h2>
       <p class="sv-section-help">
         Detailed settings live in dedicated panels.
       </p>
@@ -168,7 +164,7 @@
         >
           <span class="sv-link-icon">🧠</span>
           <span class="sv-link-body">
-            <span class="sv-link-title">Brain &amp; Memory</span>
+            <span class="sv-link-title">Brain &amp; Knowledge</span>
             <span class="sv-link-desc">LLM providers, models, retrieval</span>
           </span>
         </button>
@@ -192,7 +188,7 @@
         >
           <span class="sv-link-icon">📚</span>
           <span class="sv-link-body">
-            <span class="sv-link-title">Memory</span>
+            <span class="sv-link-title">Knowledge Graphs</span>
             <span class="sv-link-desc">Persistent memory and RAG</span>
           </span>
         </button>
@@ -214,9 +210,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed } from 'vue';
 import AppBreadcrumb from '../components/ui/AppBreadcrumb.vue';
 import PersonaPanel from '../components/PersonaPanel.vue';
+import ThemePicker from '../components/ThemePicker.vue';
 import { useSettingsStore } from '../stores/settings';
 import { useWindowStore } from '../stores/window';
 import { useCharacterStore } from '../stores/character';
@@ -244,39 +241,9 @@ const activeCharacterName = computed(() => {
   return characterStore.resolveModelProfile(match).name;
 });
 
-type ThemeId = 'cyberpunk' | 'pastel';
-const currentTheme = ref<ThemeId>('cyberpunk');
-
-function readTheme(): ThemeId {
-  if (typeof document === 'undefined') return 'cyberpunk';
-  const attr = document.documentElement.getAttribute('data-theme');
-  return attr === 'pastel' ? 'pastel' : 'cyberpunk';
-}
-
-function setTheme(theme: ThemeId) {
-  currentTheme.value = theme;
-  if (typeof document !== 'undefined') {
-    document.documentElement.setAttribute('data-theme', theme);
-    try {
-      window.localStorage?.setItem('ts:theme', theme);
-    } catch {
-      /* ignore storage errors (e.g., private mode) */
-    }
-  }
-}
-
-onMounted(() => {
-  try {
-    const stored = window.localStorage?.getItem('ts:theme') as ThemeId | null;
-    if (stored === 'cyberpunk' || stored === 'pastel') {
-      setTheme(stored);
-      return;
-    }
-  } catch {
-    /* ignore */
-  }
-  currentTheme.value = readTheme();
-});
+// Theme selection is delegated to <ThemePicker /> which uses the shared
+// useTheme() composable and the full theme registry in config/themes.ts.
+// SettingsView no longer maintains its own 2-value theme state.
 
 async function onSetDisplayMode(mode: 'desktop' | 'chatbox') {
   // Leaving pet mode if active.
@@ -394,52 +361,7 @@ function onModelChange(e: Event) {
   font-size: 0.75rem;
 }
 
-/* ── Theme buttons ─────────────────────────────────────────────────── */
-.sv-theme-row {
-  display: flex;
-  gap: var(--ts-space-sm, 8px);
-  flex-wrap: wrap;
-}
-
-.sv-theme-btn {
-  display: flex;
-  align-items: center;
-  gap: var(--ts-space-sm, 8px);
-  padding: var(--ts-space-sm, 8px) var(--ts-space-md, 12px);
-  border: 1px solid var(--ts-border);
-  border-radius: var(--ts-radius-sm, 8px);
-  background: var(--ts-bg-elevated);
-  color: var(--ts-text-primary);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-}
-
-.sv-theme-btn:hover { border-color: var(--ts-accent); }
-.sv-theme-btn.active {
-  border-color: var(--ts-accent);
-  background: var(--ts-bg-hover);
-  box-shadow: inset 0 0 0 1px var(--ts-accent);
-}
-
-.sv-theme-swatch {
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  border: 1px solid var(--ts-border);
-}
-
-.sv-theme-swatch--cyberpunk {
-  background: linear-gradient(135deg, #6c63ff, #ff6b9d);
-}
-
-.sv-theme-swatch--pastel {
-  background: linear-gradient(135deg, #b8d8ff, #ffd1dc);
-}
-
-.sv-theme-name {
-  font-weight: 600;
-  color: var(--ts-text-bright);
-}
+/* Theme picker styling is owned by ThemePicker.vue (scoped). */
 
 /* ── Character ─────────────────────────────────────────────────────── */
 .sv-row { display: flex; gap: var(--ts-space-md, 12px); flex-wrap: wrap; }

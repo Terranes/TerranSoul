@@ -40,11 +40,11 @@
                player so the modal and the inline panel stay in sync. -->
           <div class="sm-panel-host">
             <SettingsPanel
-              :is-pet-mode="isPetMode"
-              :bgm="bgm"
               v-model:bgm-enabled="bgmEnabled"
               v-model:bgm-volume="bgmVolume"
               v-model:bgm-track-id="bgmTrackId"
+              :is-pet-mode="isPetMode"
+              :bgm="bgm"
               @close="emit('update:open', false)"
               @request-set-display-mode="(mode) => onSetDisplayMode(mode)"
               @request-toggle-pet-mode="onTogglePetMode"
@@ -125,7 +125,7 @@ const showAudioControls = ref(false);
 // Tracked so SettingsPanel can warn the parent that a modal child is open
 // (used by SettingsPanel's `url-dialog-toggle` event).
 const urlDialogOpen = ref(false);
-void urlDialogOpen;
+void urlDialogOpen.value;
 
 async function onSetDisplayMode(mode: 'desktop' | 'chatbox') {
   if (isPetMode.value) {
@@ -179,16 +179,27 @@ function onOpenFullSettings() {
   width: 100%;
 }
 
-/* Neutralise FloatingMenu's floating chrome when embedded. */
-.sm-panel-host :deep(.floating-menu) {
+/* Neutralise SettingsPanel's standalone floating-popup chrome when
+   embedded in the Quick Settings modal. The panel root uses both
+   `.ts-floating-menu` (from FloatingMenu.vue) and `.settings-dropdown`
+   (SettingsPanel.vue's scoped layout class — absolute positioning,
+   fixed 260px width, max-height 70vh). We unset all of that so the
+   panel flows naturally inside the modal's scroll area. */
+.sm-panel-host :deep(.ts-floating-menu),
+.sm-panel-host :deep(.settings-dropdown) {
   position: static;
+  inset: auto;
+  top: auto;
+  right: auto;
   margin: 0;
   width: 100%;
   max-width: none;
+  max-height: none;
   box-shadow: none;
   border: 0;
   padding: 0;
   background: transparent;
+  backdrop-filter: none;
 }
 
 .sm-overlay-panel {

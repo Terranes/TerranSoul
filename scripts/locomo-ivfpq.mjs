@@ -93,14 +93,14 @@ function writeProgressSnapshot() {
   }
   const ing = progressState.ingest;
   if (ing.total > 0 || ing.done > 0) {
-    const pct = ing.total > 0 ? ((ing.done / ing.total) * 100).toFixed(2) : '0.00';
+    const pctStr = ing.total > 0 ? ((ing.done / ing.total) * 100).toFixed(2) : '0.00';
     const ingestElapsedS = ing.started_at ? (now - ing.started_at) / 1000 : 0;
     const rate = ingestElapsedS > 0 ? (ing.done / ingestElapsedS) : 0;
     const remaining = ing.total - ing.done;
     const etaS = rate > 0 ? remaining / rate : NaN;
     L.push('');
     L.push('--- ingest ---');
-    L.push(`ingested:      ${ing.done.toLocaleString('en-US')} / ${ing.total.toLocaleString('en-US')} (${pct}%)`);
+    L.push(`ingested:      ${ing.done.toLocaleString('en-US')} / ${ing.total.toLocaleString('en-US')} (${pctStr}%)`);
     L.push(`embedded:      ${ing.embedded.toLocaleString('en-US')}`);
     L.push(`rate:          ${rate.toFixed(1)} docs/s`);
     L.push(`ingest_elapsed:${fmtDuration(ingestElapsedS)}`);

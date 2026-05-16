@@ -31,10 +31,32 @@ function applyThemeToDOM(theme: ThemeDefinition): void {
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 const LS_KEY = 'ts-active-theme';
+/**
+ * One-time migration marker. When DEFAULT_THEME_ID changes between releases,
+ * bump this string so users who were silently riding the previous default
+ * (here `corporate-dark`) get moved onto the new default exactly once. Users
+ * who explicitly picked a non-default theme after the migration ran keep
+ * their choice forever.
+ */
+const LS_DEFAULT_MIGRATION_KEY = 'ts-active-theme-default-migration';
+const CURRENT_DEFAULT_MIGRATION = 'v2-soul-of-terransoul';
+const PREVIOUS_DEFAULT_ID = 'corporate-dark';
 
 function loadFromStorage(): string {
   try {
-    return localStorage.getItem(LS_KEY) ?? DEFAULT_THEME_ID;
+    const saved = localStorage.getItem(LS_KEY);
+    const lastMigration = localStorage.getItem(LS_DEFAULT_MIGRATION_KEY);
+    // Migrate exactly once: if the user never explicitly picked a theme
+    // (saved === null) OR they were on the old silent default, snap to the
+    // new default and remember we did it.
+    if (lastMigration !== CURRENT_DEFAULT_MIGRATION) {
+      localStorage.setItem(LS_DEFAULT_MIGRATION_KEY, CURRENT_DEFAULT_MIGRATION);
+      if (saved === null || saved === PREVIOUS_DEFAULT_ID) {
+        localStorage.setItem(LS_KEY, DEFAULT_THEME_ID);
+        return DEFAULT_THEME_ID;
+      }
+    }
+    return saved ?? DEFAULT_THEME_ID;
   } catch {
     return DEFAULT_THEME_ID;
   }

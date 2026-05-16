@@ -1,0 +1,19 @@
+# TerranSoul — Cargo configuration (WORKSPACE-0)
+#
+# Pins the workspace `target` directory to `src-tauri/target/` so the
+# migration to a Cargo workspace (WORKSPACE-0) does not relocate build
+# artifacts. Without this override, the workspace default would be
+# `<workspace-root>/target/`, which would:
+#
+#   1. Orphan ~10 GB of existing `src-tauri/target/` artifacts on first run.
+#   2. Force a full rebuild of every crate + dep.
+#   3. Break the CodeQL exclusion list (`.github/codeql/codeql-config.yml`
+#      excludes `src-tauri/target`).
+#   4. Break the long-running MCP build at `target-mcp/` (set via a
+#      sibling `--target-dir`) which is keyed off the same layout.
+#
+# When WORKSPACE-1+ extract more crates, every member will share this
+# directory automatically — that is the desired behaviour.
+
+[build]
+target-dir = "src-tauri/target"
