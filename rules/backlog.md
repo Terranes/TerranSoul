@@ -75,3 +75,23 @@
 ## Phase 43 — Coding-Workflow Redesign (Reference Specs)
 
 ✅ Reconciled 2026-05-11 — chunks 43.1–43.13 are implemented and recorded in `rules/completion-log.md`; no active backlog rows remain for this phase.
+
+---
+
+## Phase 48 — TencentDB Drill-Down + Symbolic Offload (Reverse-Engineered from `Tencent/TencentDB-Agent-Memory`)
+
+> **Source:** [`Tencent/TencentDB-Agent-Memory`](https://github.com/Tencent/TencentDB-Agent-Memory)
+> (MIT, v0.3.4, 2.2k stars), [DeepWiki](https://deepwiki.com/Tencent/TencentDB-Agent-Memory)
+> (indexed 2026-05-14, commit `285896f8`). Full analysis in
+> [docs/tencentdb-agent-memory-research.md](../docs/tencentdb-agent-memory-research.md).
+> Lesson seeded as `seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17`.
+> Studied public README + DeepWiki only; no source, prompts, schema column
+> names, asset names, branded identity, or `tdai_*` tool surface copied.
+> Promote rows only when the user explicitly asks for these ideas to move
+> into `rules/milestones.md`.
+
+| Chunk | Status | Scope |
+|---|---|---|
+| MEM-DRILLDOWN-1 | **done 2026-05-17** | Implemented in commit-prep batch — see `rules/completion-log.md` "Chunk MEM-DRILLDOWN-1". `MemoryStore::source_chain`, `BrainGateway::drilldown`, MCP `brain_drilldown`, Tauri `memory_drilldown`. Follow-ups deferred: wiring `brain_memory::summarize`/`extract` to emit `derived_from` edges automatically (today's consolidation already does), and UI affordance in `MemoryView`. |
+| CTX-OFFLOAD-1 | not-started | **Verbose tool-output offload for coding sessions.** New sidecar table `memory_offload_payloads(memory_id INTEGER PRIMARY KEY, payload BLOB, byte_count INTEGER, created_at INTEGER)`. `coding/runtime_hooks` (Phase 47) gains an `offload_threshold_chars` setting (default 4_000); tool outputs above the threshold are persisted and replaced in-context with `{kind: "tool_output_ref", id, summary, byte_count}`. New `brain_drilldown_payload(memory_id)` Tauri + MCP command returns the raw bytes so the agent can re-inflate when it actually needs them. Quest unlock: "Context Compression" in the skill tree. Tests: offload round-trip, summary fidelity, agent re-inflation. Depends on MEM-DRILLDOWN-1 landing first so the offloaded payload edges are typed correctly. |
+| MEM-SCENARIO-1 | not-started, deferred | **Per-task scenario aggregation tier.** Equivalent of L2 Scenario blocks. Requires design review: extend `MemoryType` (which ripples into every `add_many` call-site) vs. add a `scenario_id` column on `memories` and use existing kinds. Re-evaluate after MEM-DRILLDOWN-1 lands so we can decide based on actual drill-down UX. |

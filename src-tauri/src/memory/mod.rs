@@ -18,6 +18,7 @@ pub mod contextualize;
 pub mod crag;
 pub mod crdt_sync;
 pub mod disk_backed_ann;
+pub mod drilldown;
 pub mod edge_conflict_scan;
 pub mod edge_crdt_sync;
 pub mod edges;

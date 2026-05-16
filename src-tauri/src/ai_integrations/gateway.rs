@@ -277,6 +277,40 @@ pub struct KgNeighborhood {
     pub truncated: bool,
 }
 
+// ─── Drill-down (MEM-DRILLDOWN-1) ───────────────────────────────────────
+
+/// `brain.drilldown` — request the provenance chain for a memory.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrilldownRequest {
+    /// The memory whose ancestry to surface. Typically a summary,
+    /// scenario, or persona-trait memory.
+    pub id: i64,
+    /// Optional cap on hops to walk back through `derived_from` edges.
+    /// `None` (or omitted) uses
+    /// [`crate::memory::drilldown::DEFAULT_MAX_DEPTH`].
+    #[serde(default)]
+    pub max_depth: Option<usize>,
+}
+
+/// One ancestor in a drill-down response (gateway-level mirror of
+/// [`crate::memory::drilldown::SourceAncestor`]).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrilldownAncestor {
+    /// Hop distance from the root. 1 = immediate source.
+    pub depth: usize,
+    /// Best `derived_from` edge confidence reaching this ancestor.
+    pub edge_confidence: f64,
+    pub memory: MemoryEntry,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DrilldownResponse {
+    pub root: MemoryEntry,
+    pub ancestors: Vec<DrilldownAncestor>,
+    /// True when the BFS was cut off at `max_depth`.
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SummarizeRequest {
     /// Either `text`, `memory_ids`, or `query` must be supplied. When
@@ -634,6 +668,14 @@ pub trait BrainGateway: Send + Sync {
         caps: &GatewayCaps,
         req: KgRequest,
     ) -> Result<KgNeighborhood, GatewayError>;
+
+    /// `brain.drilldown` — walk `derived_from` edges OUT from a memory
+    /// to return its full provenance chain. MEM-DRILLDOWN-1.
+    async fn drilldown(
+        &self,
+        caps: &GatewayCaps,
+        req: DrilldownRequest,
+    ) -> Result<DrilldownResponse, GatewayError>;
 
     /// `brain.summarize` — LLM-summarise text or memory ids.
     async fn summarize(
@@ -1161,6 +1203,43 @@ impl BrainGateway for AppStateGateway {
             center,
             neighbors,
             truncated: traversal.truncated,
+        })
+    }
+
+    async fn drilldown(
+        &self,
+        caps: &GatewayCaps,
+        req: DrilldownRequest,
+    ) -> Result<DrilldownResponse, GatewayError> {
+        require_read(caps)?;
+        if req.id <= 0 {
+            return Err(GatewayError::InvalidArgument("id must be positive".into()));
+        }
+        let store = self
+            .state
+            .memory_store
+            .lock()
+            .map_err(GatewayError::from_lock)?;
+        let chain = store
+            .source_chain(req.id, req.max_depth)
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    GatewayError::NotFound(format!("memory id {}", req.id))
+                }
+                other => GatewayError::Storage(other.to_string()),
+            })?;
+        Ok(DrilldownResponse {
+            root: chain.root,
+            ancestors: chain
+                .ancestors
+                .into_iter()
+                .map(|a| DrilldownAncestor {
+                    depth: a.depth,
+                    edge_confidence: a.edge_confidence,
+                    memory: a.memory,
+                })
+                .collect(),
+            truncated: chain.truncated,
         })
     }
 

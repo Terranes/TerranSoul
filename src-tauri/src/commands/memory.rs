@@ -2838,6 +2838,21 @@ pub async fn graph_totals(state: State<'_, AppState>) -> Result<(i64, i64), Stri
     store.graph_totals().map_err(|e| e.to_string())
 }
 
+/// MEM-DRILLDOWN-1 — provenance drill-down. Walk `derived_from` edges
+/// OUT from a memory and return the full chain of source memories with
+/// their depth from the root.
+#[tauri::command]
+pub async fn memory_drilldown(
+    memory_id: i64,
+    max_depth: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<crate::memory::drilldown::SourceChain, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .source_chain(memory_id, max_depth)
+        .map_err(|e| e.to_string())
+}
+
 #[cfg(all(test, feature = "wasm-sandbox"))]
 mod tests {
     use super::*;

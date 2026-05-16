@@ -220,7 +220,13 @@ enum EmbedRole {
 
 struct OllamaEmbedder {
     client: reqwest::blocking::Client,
-    url: String,
+    /// Legacy single-prompt endpoint (`/api/embeddings`). Kept for queries
+    /// because the batch path is overkill for one input.
+    legacy_url: String,
+    /// Batch endpoint (`/api/embed`) added in Ollama 0.1.34+ — accepts
+    /// `"input": [..]` and returns `"embeddings": [[..], ..]` in a single
+    /// HTTP round-trip. BENCH-SCALE-3 speedup.
+    batch_url: String,
     model: String,
     /// Whether the model uses task-instruction prefixes (nomic-embed-text).
     use_prefixes: bool,
@@ -235,37 +241,53 @@ impl OllamaEmbedder {
             std::env::var("OLLAMA_HOST").unwrap_or_else(|_| DEFAULT_OLLAMA_HOST.to_string());
         let model = std::env::var("LONGMEM_EMBED_MODEL")
             .unwrap_or_else(|_| DEFAULT_EMBED_MODEL.to_string());
+        // BENCH-SCALE-3: per-doc HTTP round-trips in the ingest loop were
+        // the throughput ceiling (~15 docs/sec at 2.4M scale). The batch
+        // endpoint collapses N embeddings into one POST, and pooled
+        // keep-alive connections eliminate the CLOSE_WAIT pile-up seen at
+        // long-running scale. `pool_max_idle_per_host=16` lets multiple
+        // batches reuse warm sockets without unbounded growth.
         let client = reqwest::blocking::Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(120))
+            .pool_max_idle_per_host(16)
+            .pool_idle_timeout(Duration::from_secs(90))
+            .tcp_keepalive(Some(Duration::from_secs(60)))
             .build()
             .ok()?;
         // nomic-embed-text requires "search_query:"/"search_document:" prefixes.
         // Other models (mxbai-embed-large, snowflake-arctic-embed2, etc.) do not.
         let use_prefixes = model.contains("nomic");
+        let host = host.trim_end_matches('/').to_string();
         Some(Self {
             client,
-            url: format!("{}/api/embeddings", host.trim_end_matches('/')),
+            legacy_url: format!("{host}/api/embeddings"),
+            batch_url: format!("{host}/api/embed"),
             model,
             use_prefixes,
         })
     }
 
-    fn embed(&self, text: &str, role: EmbedRole) -> Result<Vec<f32>, String> {
-        // Cap input length: most embed models handle ~8k tokens; trim to ~16k
-        // chars (~4k tokens) so very long sessions don't dominate latency.
+    /// Cap per-input length to ~16k chars (~4k tokens). Most embed models
+    /// top out near 8k tokens; very long sessions would dominate latency
+    /// otherwise.
+    fn prepare_input(&self, text: &str, role: EmbedRole) -> String {
         let trimmed = if text.len() > 16_000 { &text[..16_000] } else { text };
-        let prompt = if self.use_prefixes {
+        if self.use_prefixes {
             match role {
                 EmbedRole::Query => format!("search_query: {trimmed}"),
                 EmbedRole::Document => format!("search_document: {trimmed}"),
             }
         } else {
             trimmed.to_string()
-        };
+        }
+    }
+
+    fn embed(&self, text: &str, role: EmbedRole) -> Result<Vec<f32>, String> {
+        let prompt = self.prepare_input(text, role);
         let body = json!({"model": self.model, "prompt": prompt});
         let resp = self
             .client
-            .post(&self.url)
+            .post(&self.legacy_url)
             .json(&body)
             .send()
             .map_err(|err| format!("ollama embed http: {err}"))?;
@@ -285,6 +307,121 @@ impl OllamaEmbedder {
             return Err("ollama embed: empty embedding".to_string());
         }
         Ok(vec)
+    }
+
+    /// Embed many inputs in a single HTTP round-trip via Ollama's
+    /// `/api/embed` endpoint. Returns vectors in the same order as `texts`.
+    /// Empty input slice short-circuits to an empty Vec.
+    fn embed_batch(
+        &self,
+        texts: &[&str],
+        role: EmbedRole,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let inputs: Vec<String> =
+            texts.iter().map(|t| self.prepare_input(t, role)).collect();
+        let body = build_embed_batch_body(&self.model, &inputs);
+        let resp = self
+            .client
+            .post(&self.batch_url)
+            .json(&body)
+            .send()
+            .map_err(|err| format!("ollama embed_batch http: {err}"))?;
+        if !resp.status().is_success() {
+            return Err(format!(
+                "ollama embed_batch http status: {}",
+                resp.status()
+            ));
+        }
+        let value: Value = resp
+            .json()
+            .map_err(|err| format!("ollama embed_batch json: {err}"))?;
+        parse_embed_batch_response(&value, inputs.len())
+    }
+}
+
+/// Build the JSON body for Ollama's `/api/embed` batch endpoint.
+/// Extracted so unit tests can verify the shape without a live server.
+fn build_embed_batch_body(model: &str, inputs: &[String]) -> Value {
+    json!({ "model": model, "input": inputs })
+}
+
+/// Parse Ollama's `/api/embed` response into one `Vec<f32>` per input.
+/// Validates that the returned `embeddings` array length matches the
+/// expected request count.
+fn parse_embed_batch_response(
+    value: &Value,
+    expected: usize,
+) -> Result<Vec<Vec<f32>>, String> {
+    let arr = value
+        .get("embeddings")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "ollama embed_batch: missing embeddings field".to_string())?;
+    if arr.len() != expected {
+        return Err(format!(
+            "ollama embed_batch: expected {expected} vectors, got {}",
+            arr.len()
+        ));
+    }
+    let mut out: Vec<Vec<f32>> = Vec::with_capacity(arr.len());
+    for (i, item) in arr.iter().enumerate() {
+        let inner = item
+            .as_array()
+            .ok_or_else(|| format!("ollama embed_batch: row {i} not an array"))?;
+        let vec: Vec<f32> = inner
+            .iter()
+            .map(|v| v.as_f64().unwrap_or(0.0) as f32)
+            .collect();
+        if vec.is_empty() {
+            return Err(format!("ollama embed_batch: row {i} empty"));
+        }
+        out.push(vec);
+    }
+    Ok(out)
+}
+
+#[cfg(test)]
+mod embed_batch_tests {
+    use super::*;
+
+    #[test]
+    fn batch_body_uses_input_array() {
+        let body = build_embed_batch_body(
+            "mxbai-embed-large",
+            &["one".to_string(), "two".to_string()],
+        );
+        assert_eq!(body["model"], "mxbai-embed-large");
+        let inputs = body["input"].as_array().expect("input array");
+        assert_eq!(inputs.len(), 2);
+        assert_eq!(inputs[0], "one");
+        assert_eq!(inputs[1], "two");
+    }
+
+    #[test]
+    fn parses_well_formed_batch_response() {
+        let value = json!({
+            "embeddings": [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
+        });
+        let parsed = parse_embed_batch_response(&value, 2).expect("parse ok");
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0], vec![0.1_f32, 0.2, 0.3]);
+        assert_eq!(parsed[1], vec![0.4_f32, 0.5, 0.6]);
+    }
+
+    #[test]
+    fn rejects_count_mismatch() {
+        let value = json!({ "embeddings": [[0.1, 0.2]] });
+        let err = parse_embed_batch_response(&value, 2).unwrap_err();
+        assert!(err.contains("expected 2"), "got: {err}");
+    }
+
+    #[test]
+    fn rejects_missing_field() {
+        let value = json!({ "something_else": [] });
+        let err = parse_embed_batch_response(&value, 1).unwrap_err();
+        assert!(err.contains("missing embeddings"), "got: {err}");
     }
 }
 
@@ -1002,7 +1139,8 @@ fn add_sessions(
 
     let inserted = state.store.add_many(items).map_err(|err| err.to_string())?;
 
-    let mut embed_errors = 0usize;
+    // First pass: side-table bookkeeping (session_ids + contents_lower).
+    // Kept separate so the per-doc embed path below can be batched.
     for (idx, mem_id) in inserted.iter().enumerate() {
         if let Some(session) = request.sessions.get(idx) {
             state.session_ids.insert(*mem_id, session.session_id.clone());
@@ -1010,17 +1148,42 @@ fn add_sessions(
         state
             .contents_lower
             .insert(*mem_id, contents[idx].to_lowercase());
-        if let Some(embedder) = embedder {
-            let content = &contents[idx];
-            match embedder.embed(content, EmbedRole::Document) {
-                Ok(vec) => {
-                    // Store in both local HashMap (for IPC-level cosine)
-                    // and MemoryStore (for ANN-backed hybrid_search_rrf).
-                    let _ = state.store.set_embedding(*mem_id, &vec);
-                    state.embeddings.insert(*mem_id, vec);
+    }
+
+    // BENCH-SCALE-3: batched embedding via `/api/embed`. Replaces the
+    // per-doc HTTP round-trip loop that capped ingest at ~15 docs/sec at
+    // 2.4M scale (one POST per memory + CLOSE_WAIT socket accumulation).
+    // Chunk size 32 keeps each request well under Ollama's payload limit
+    // for 1024-dim mxbai-embed-large while letting the model batch on GPU.
+    // On batch failure we degrade gracefully to the legacy single-embed
+    // path so a single transient HTTP hiccup doesn't lose a whole chunk.
+    let mut embed_errors = 0usize;
+    if let Some(embedder) = embedder {
+        const EMBED_BATCH_SIZE: usize = 32;
+        for (chunk_idx, chunk) in inserted.chunks(EMBED_BATCH_SIZE).enumerate() {
+            let chunk_start = chunk_idx * EMBED_BATCH_SIZE;
+            let texts: Vec<&str> = (chunk_start..chunk_start + chunk.len())
+                .map(|i| contents[i].as_str())
+                .collect();
+            match embedder.embed_batch(&texts, EmbedRole::Document) {
+                Ok(vectors) => {
+                    for (mem_id, vec) in chunk.iter().zip(vectors.into_iter()) {
+                        let _ = state.store.set_embedding(*mem_id, &vec);
+                        state.embeddings.insert(*mem_id, vec);
+                    }
                 }
                 Err(_) => {
-                    embed_errors += 1;
+                    // Fallback: per-doc embed for this chunk only.
+                    for (i, mem_id) in chunk.iter().enumerate() {
+                        let content = &contents[chunk_start + i];
+                        match embedder.embed(content, EmbedRole::Document) {
+                            Ok(vec) => {
+                                let _ = state.store.set_embedding(*mem_id, &vec);
+                                state.embeddings.insert(*mem_id, vec);
+                            }
+                            Err(_) => embed_errors += 1,
+                        }
+                    }
                 }
             }
         }

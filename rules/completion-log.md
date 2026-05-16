@@ -1,4 +1,86 @@
-# Chunk THEME-COCKPIT-1d — numbered HUD kickers across cockpit cards
+# Chunk MEM-DRILLDOWN-1 — provenance drill-down chain (Tencent-inspired)
+
+**Date:** 2026-05-17
+**Status:** Done
+
+## Goal
+
+Adopt TencentDB-Agent-Memory's "drill-down chain" pattern as a
+TerranSoul-native traversal: from any memory (typically a summary,
+scenario, or persona-trait fact), walk the `derived_from` edges OUT
+to reconstruct the full provenance chain back to the source memories.
+This complements the existing one-hop `brain_kg_neighbors` with a
+deterministic, depth-aware audit view aimed at UI and agent recall.
+
+The convention `src_id = summary / parent` / `dst_id = source` was
+already established by `consolidation.rs` and `audit.rs`, so no
+schema change was needed — only a traversal helper and the three
+transport surfaces (gateway, MCP, Tauri).
+
+## Files touched
+
+- `src-tauri/src/memory/drilldown.rs` *(new, ~280 lines)* —
+  `SourceAncestor`, `SourceChain`, `DEFAULT_MAX_DEPTH = 8`, and
+  `impl MemoryStore { pub fn source_chain(&self, memory_id, max_depth) -> SqlResult<SourceChain> }`.
+  BFS over rows where `rel_type = 'derived_from'` and `valid_to IS NULL`,
+  cycle-safe via `HashSet<i64>`, diamond-safe via best-confidence
+  tracking, returns `truncated: true` when `max_depth` was reached
+  and the frontier still had outgoing `derived_from` edges. 7 unit
+  tests (no-edges, immediate parents, 4-deep chain ordering,
+  truncation flag, unrelated rel_types ignored, cycle safety,
+  diamond picks max edge_confidence).
+- `src-tauri/src/memory/mod.rs` — registered the new `drilldown` module.
+- `src-tauri/src/ai_integrations/gateway.rs` — added `DrilldownRequest`,
+  `DrilldownAncestor`, `DrilldownResponse`; added
+  `async fn drilldown(&self, caps, req) -> Result<DrilldownResponse, GatewayError>`
+  to the `BrainGateway` trait; implemented on `AppStateGateway` with
+  the standard `require_read(caps)` gate and `id > 0` validation.
+- `src-tauri/src/ai_integrations/mcp/tools.rs` — schema for
+  `brain_drilldown` (input: `id` required, `max_depth` optional);
+  dispatch arm; registry test (`brain_tool_names_match_dispatch_arms`)
+  updated; tool count tests updated (24→25 without code-read,
+  41→42 with code-read); `code_names` slice offset updated.
+- `src-tauri/src/ai_integrations/mcp/integration_tests.rs` —
+  `tools_list_returns_28_tools` updated for the +1 tool and the
+  shifted indexes; new explicit assertion that index 4 is
+  `brain_drilldown` (between `brain_kg_neighbors` and
+  `brain_summarize`).
+- `src-tauri/src/commands/memory.rs` — `#[tauri::command] pub async fn
+  memory_drilldown(memory_id, max_depth, state) -> Result<SourceChain, String>`.
+- `src-tauri/src/lib.rs` — added `memory_drilldown` to the
+  `commands::memory::{…}` re-export and to the `invoke_handler!`
+  list.
+
+## How to use
+
+- **MCP / agents:** call `brain_drilldown` with `{ "id": <memory_id>,
+  "max_depth": 8 }`. Returns `{ root, ancestors: [{ depth,
+  edge_confidence, memory }], truncated }` with ancestors ordered by
+  `(depth ASC, id ASC)`.
+- **Frontend / Tauri:** `invoke('memory_drilldown', { memoryId, maxDepth })`.
+- **In-process Rust:** `store.source_chain(memory_id, Some(depth))`.
+
+## Tests
+
+- `cargo test --lib --target-dir ../target-test-current`: **3024
+  passed, 0 failed, 3 ignored** (was 3017 before the chunk + the
+  three new tool/integration test updates).
+- `cargo clippy --lib --target-dir ../target-test-current -- -D warnings`:
+  clean.
+- 7 new `memory::drilldown::tests::*` unit tests pass.
+
+## Inspiration
+
+`docs/tencentdb-agent-memory-research.md` — TencentDB's `MemoryNode`
+keeps an explicit `subEntries` provenance pointer. TerranSoul's
+implementation does it natively over the existing
+`memory_edges.rel_type = 'derived_from'` graph (which TencentDB also
+mirrors via "summary → atom" relationship logging), so no migration
+or new column is needed. Credit recorded in `CREDITS.md`.
+
+---
+
+
 
 **Date:** 2026-05-17
 **Status:** Done

@@ -4260,6 +4260,7 @@ axum task receives `AppState` directly.
 | `brain_get_entry` | `get_entry` | Fetch a single memory by id |
 | `brain_list_recent` | `list_recent` | List the most recently created/touched memories |
 | `brain_kg_neighbors` | `kg_neighbors` | Knowledge-graph neighbours of a memory (typed edges) |
+| `brain_drilldown` | `drilldown` | MEM-DRILLDOWN-1 — walk `derived_from` edges OUT from a memory and return the full provenance chain `{root, ancestors:[{depth, edge_confidence, memory}], truncated}`. BFS, cycle-safe, diamond-safe (max edge_confidence per ancestor). Default `max_depth = 8`. Backed by `MemoryStore::source_chain` in `src-tauri/src/memory/drilldown.rs`. Also exposed as the `memory_drilldown` Tauri command. Inspired by Tencent/TencentDB-Agent-Memory `subEntries` (credit in `CREDITS.md`). |
 | `brain_summarize` | `summarize` | LLM summary of direct text, memory ids, or a search query |
 | `brain_suggest_context` | `suggest_context` | Suggest relevant memories for an editor cursor / file |
 | `brain_ingest_url` | `ingest_url` | Crawl + chunk + embed a URL into the memory store; writable through explicit MCP transport caps plus HTTP `AppHandleIngestSink` or stdio `StdioIngestSink` |

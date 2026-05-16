@@ -110,35 +110,39 @@ mod tests {
 
         assert_eq!(status, 200);
         let tools = body["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 41);
+        assert_eq!(tools.len(), 42);
 
         // Verify the first tool has the expected structure.
         assert_eq!(tools[0]["name"], "brain_search");
         assert!(tools[0]["inputSchema"].is_object());
 
+        // MEM-DRILLDOWN-1 inserts brain_drilldown right after kg_neighbors.
+        assert_eq!(tools[3]["name"], "brain_kg_neighbors");
+        assert_eq!(tools[4]["name"], "brain_drilldown");
+
         // Verify Knowledge Wiki tools are present before code tools.
-        assert_eq!(tools[11]["name"], "brain_wiki_audit");
-        assert_eq!(tools[15]["name"], "brain_wiki_digest_text");
-        assert_eq!(tools[16]["name"], "brain_review_gaps");
-        assert_eq!(tools[17]["name"], "brain_session_checklist");
+        assert_eq!(tools[12]["name"], "brain_wiki_audit");
+        assert_eq!(tools[16]["name"], "brain_wiki_digest_text");
+        assert_eq!(tools[17]["name"], "brain_review_gaps");
+        assert_eq!(tools[18]["name"], "brain_session_checklist");
 
         // Verify repo RAG tools (BRAIN-REPO-RAG-1c-b-i) are between brain and code.
-        assert_eq!(tools[18]["name"], "repo_search");
-        assert_eq!(tools[19]["name"], "repo_list_files");
-        assert_eq!(tools[20]["name"], "repo_read_file");
+        assert_eq!(tools[19]["name"], "repo_search");
+        assert_eq!(tools[20]["name"], "repo_list_files");
+        assert_eq!(tools[21]["name"], "repo_read_file");
         // Cross-source All fan-out (BRAIN-REPO-RAG-1c-b-ii-a).
-        assert_eq!(tools[21]["name"], "cross_source_search");
+        assert_eq!(tools[22]["name"], "cross_source_search");
         // Aider-style repo map + signatures (BRAIN-REPO-RAG-1d).
-        assert_eq!(tools[22]["name"], "repo_map");
-        assert_eq!(tools[23]["name"], "repo_signatures");
+        assert_eq!(tools[23]["name"], "repo_map");
+        assert_eq!(tools[24]["name"], "repo_signatures");
 
         // Verify code tools are present.
-        assert_eq!(tools[24]["name"], "code_query");
-        assert_eq!(tools[27]["name"], "code_rename");
-        assert_eq!(tools[37]["name"], "code_branch_sync");
-        assert_eq!(tools[38]["name"], "code_index_commit");
-        assert_eq!(tools[39]["name"], "code_branch_diff");
-        assert_eq!(tools[40]["name"], "code_group_drift");
+        assert_eq!(tools[25]["name"], "code_query");
+        assert_eq!(tools[28]["name"], "code_rename");
+        assert_eq!(tools[38]["name"], "code_branch_sync");
+        assert_eq!(tools[39]["name"], "code_index_commit");
+        assert_eq!(tools[40]["name"], "code_branch_diff");
+        assert_eq!(tools[41]["name"], "code_group_drift");
 
         handle.stop();
     }

@@ -806,3 +806,109 @@ WHERE lesson.source_hash = 'seed:lesson-theme-cockpit-1d-decorative-kickers-2026
     SELECT 1 FROM memory_edges e
     WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
   );
+
+-- Lesson: TencentDB Agent Memory drill-down chain + symbolic context offload
+-- (research 2026-05-17, see docs/tencentdb-agent-memory-research.md).
+INSERT INTO memories (
+  content, source_hash, cognitive_kind, tier, importance, created_at, updated_at
+)
+SELECT
+  'Tencent/TencentDB-Agent-Memory (MIT, v0.3.4, 2.2k stars) was studied ' ||
+  'on 2026-05-17 via DeepWiki + upstream README. Two genuinely new ideas ' ||
+  'worth importing into TerranSoul: (1) explicit derivation/drill-down ' ||
+  'chain — every summarized memory must point back to the source ' ||
+  'memories it was distilled from, via a typed memory_edges rel_type ' ||
+  '("derived_from"). The free-form TEXT rel_type column means no schema ' ||
+  'migration is required. Recall then returns the highest-density tier ' ||
+  'first and only drills down on demand. This is the white-box ' ||
+  'debuggability win — when retrieval is wrong, debugging becomes a ' ||
+  'deterministic walk Persona → Scenario → Atom → Conversation instead ' ||
+  'of a forensic inspection of vector scores. (2) Symbolic context ' ||
+  'offload for verbose tool outputs in long-horizon agentic sessions: ' ||
+  'tool transcripts above a threshold are offloaded to a sidecar table ' ||
+  '(memory_offload_payloads), and only a lightweight reference ' ||
+  '({kind: tool_output_ref, id, summary, byte_count}) is injected into ' ||
+  'chat context; the agent fetches raw bytes via a brain_drilldown_payload ' ||
+  'tool when it actually needs them. Upstream reports 61.38% token ' ||
+  'reduction on WideSearch and PersonaMem 48-76%. Two adoption chunks ' ||
+  'filed: MEM-DRILLDOWN-1 and CTX-OFFLOAD-1 (rules/backlog.md Phase 48). ' ||
+  'Explicitly NOT importing: the persona.md / scenario.md / refs/*.md raw ' ||
+  'Markdown-on-disk projection as source of truth, the tdai_* tool names, ' ||
+  'the OpenClaw/Hermes plugin manifests, or the DeepSeek-V3.2 LLM ' ||
+  'defaults. TerranSoul keeps SQLite + memory_edges as the single source ' ||
+  'of truth per the project rule that Markdown is never MCP memory; ' ||
+  'Markdown remains a one-way readable projection (obsidian_export.rs). ' ||
+  'Capabilities TerranSoul already has and does NOT need to import: ' ||
+  'hybrid retrieval (BM25/FTS5 + vector + RRF), local-first SQLite, ' ||
+  'cognitive-kind tiering, KG edges. TerranSoul does NOT yet have a ' ||
+  'persistent per-task scenario aggregation tier; that is deferred ' ||
+  '(MEM-SCENARIO-1) until MEM-DRILLDOWN-1 lands.',
+  'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17',
+  'procedural',
+  'long',
+  8,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+-- ------------------------------------------------------------------
+-- MEM-DRILLDOWN-1 implementation lesson (2026-05-17)
+-- Records the actual shape that landed so future agents can find the
+-- provenance traversal without re-deriving it from edges.rs.
+-- ------------------------------------------------------------------
+
+INSERT INTO memories
+  (content, source_hash, memory_type, tier, importance, created_at, last_accessed)
+SELECT
+  'MEM-DRILLDOWN-1 landed 2026-05-17. Provenance drill-down for TerranSoul: ' ||
+  'src-tauri/src/memory/drilldown.rs exposes MemoryStore::source_chain(memory_id, max_depth) ' ||
+  'which BFS-walks memory_edges rows where rel_type=''derived_from'' and valid_to IS NULL, ' ||
+  'src_id = root, dst_id = ancestor. DEFAULT_MAX_DEPTH = 8. Returns SourceChain { root, ' ||
+  'ancestors: Vec<SourceAncestor { depth, edge_confidence, memory }>, truncated }. ' ||
+  'Cycle-safe via HashSet, diamond-safe via best-confidence tracking. ' ||
+  'Surfaces: MCP tool brain_drilldown (inputs: id, max_depth), gateway op ' ||
+  'BrainGateway::drilldown (DrilldownRequest/Response), Tauri command memory_drilldown. ' ||
+  'Edge-direction convention reaffirmed: derived_from has src=summary, dst=source ' ||
+  '(matches consolidation.rs + audit.rs). No schema migration needed because rel_type ' ||
+  'is free-form TEXT. CTX-OFFLOAD-1 depends on this and can now proceed.',
+  'seed:lesson-mem-drilldown-1-impl-2026-05-17',
+  'procedural',
+  'long',
+  9,
+  strftime('%s','now'),
+  strftime('%s','now')
+WHERE NOT EXISTS (
+  SELECT 1 FROM memories WHERE source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+);
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT lesson.id, hub.id, 'part_of', 1.0, 'seed', strftime('%s','now')
+FROM memories lesson
+JOIN memories hub ON hub.source_hash = 'seed:lessons-learned-hub'
+WHERE lesson.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = lesson.id AND e.dst_id = hub.id AND e.rel_type = 'part_of'
+  );
+
+INSERT INTO memory_edges (src_id, dst_id, rel_type, confidence, source, created_at)
+SELECT impl.id, design.id, 'derived_from', 0.95, 'seed', strftime('%s','now')
+FROM memories impl
+JOIN memories design ON design.source_hash = 'seed:lesson-tencentdb-agent-memory-drilldown-2026-05-17'
+WHERE impl.source_hash = 'seed:lesson-mem-drilldown-1-impl-2026-05-17'
+  AND NOT EXISTS (
+    SELECT 1 FROM memory_edges e
+    WHERE e.src_id = impl.id AND e.dst_id = design.id AND e.rel_type = 'derived_from'
+  );
