@@ -48,7 +48,7 @@ const next = html.replace(
   /<script type="application\/json" id="i18n-builtin">[\s\S]*?<\/script>/,
   `<script type="application/json" id="i18n-builtin">${json}</script>`
 );
-if (next === html) {
+if (!html.includes('<script type="application/json" id="i18n-builtin">')) {
   console.error('[i18n] ERROR: could not find <script id="i18n-builtin"> block');
   process.exit(1);
 }
