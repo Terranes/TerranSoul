@@ -34,9 +34,9 @@ Contributions from devs, designers, VRM artists, prompt engineers, and non-techn
 
 ---
 
-## TerranSoul in Five Scenes — graph, RAG, and memory
+## TerranSoul in five scenes — how graph, RAG and memory show up in a regular day
 
-[TerranSoul in Five Scenes](https://terransyn.github.io/TerranSoul/) is the public, non-technical primer for the memory stack: raw model answers, personal context, vector retrieval, knowledge graphs, and production hybrid memory.
+[TerranSoul in five scenes](https://terransyn.github.io/TerranSoul/) is the public, non-technical primer for the memory stack: raw model answers, personal context, vector retrieval, knowledge graphs, and production hybrid memory.
 
 **TerranSoul is built for production hybrid memory.** Concretely:
 
