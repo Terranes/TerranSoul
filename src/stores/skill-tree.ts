@@ -851,6 +851,72 @@ const SKILL_NODES: SkillNode[] = [
     ],
   },
   {
+    id: 'context-compression',
+    name: 'Context Compression',
+    tagline: 'Verbose tool outputs spill into the brain, not the prompt',
+    description: 'When a tool call returns more than ~40k characters, the agent offloads the raw payload into the `memory_offload_payloads` sidecar and keeps only a head/tail summary plus a `tool_output_ref` envelope in context. The full bytes are re-inflated on demand via `brain_drilldown_payload` (MCP) or `memory_drilldown_payload` (Tauri).',
+    icon: '🗜️',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: [
+      'Verbose tool outputs persisted to the brain',
+      'On-demand re-inflation via drilldown',
+      'Smaller prompts → more context headroom',
+    ],
+    rewardIcons: ['💾', '🔍', '🪶'],
+    questSteps: [
+      { label: 'Configure a coding agent that uses TerranSoul MCP', action: 'info' },
+      { label: 'Let the agent run a verbose tool (large grep, big file read, build log)', action: 'info' },
+      { label: 'Open the Memory tab to see offloaded payload entries', action: 'navigate', target: 'memory' },
+    ],
+    category: 'brain',
+    combos: [],
+  },
+  {
+    id: 'scenario-aggregation',
+    name: 'Scenario Aggregation',
+    tagline: 'Per-task scene blocks that group related memories',
+    description: 'A scenario is a summary memory that aggregates related L0/L1 entries into a single per-task scene. Each member row is stamped with `scenario_id = <head.id>` so the brain can drill from the high-level abstraction back to the underlying evidence. Deleting a scenario head preserves the members (`ON DELETE SET NULL`) so ground-truth data is never lost.',
+    icon: '🎬',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: [
+      'Per-task aggregation tier (L2-equivalent)',
+      'Drilldown from scenario head to member memories',
+      'Non-destructive head deletion preserves evidence',
+    ],
+    rewardIcons: ['🎬', '🔍', '🛡️'],
+    questSteps: [
+      { label: 'Open the Memory tab', action: 'navigate', target: 'memory' },
+      { label: 'Group related memories into a scenario block', action: 'configure', target: 'memory_scenario' },
+      { label: 'Drill into a scenario head to inspect its members', action: 'info' },
+    ],
+    category: 'brain',
+    combos: [],
+  },
+  {
+    id: 'claim-verification',
+    name: 'Claim Verification',
+    tagline: 'Auto-detect contradictory memories and pick a winner',
+    description: 'When you add a new memory that closely resembles an existing one, the brain compares the two for actual contradictions (not just paraphrase) and opens a `memory_conflicts` row. You stay in control: each open conflict shows both sides and lets you keep, dismiss, or replace. Losers are soft-closed via `valid_to` — never deleted — so the audit trail is preserved.',
+    icon: '⚖️',
+    tier: 'advanced',
+    requires: ['rag-knowledge'],
+    rewards: [
+      'Automatic contradiction detection on new memories',
+      'Side-by-side conflict review',
+      'Non-destructive resolution (soft-close, never delete)',
+    ],
+    rewardIcons: ['⚖️', '🔍', '🛡️'],
+    questSteps: [
+      { label: 'Enable auto-detect conflicts in Settings', action: 'configure', target: 'auto_detect_conflicts' },
+      { label: 'Add a memory that contradicts an existing one', action: 'navigate', target: 'memory' },
+      { label: 'Review the open conflict and pick a winner', action: 'info' },
+    ],
+    category: 'brain',
+    combos: [],
+  },
+  {
     id: 'scholar-quest',
     name: 'Scholar\'s Quest',
     tagline: 'Deep-dive into any topic with guided knowledge ingestion',
@@ -1606,6 +1672,27 @@ export const useSkillTreeStore = defineStore('skill-tree', () => {
         // RAG is auto-active when: brain is configured + at least one memory exists
         const memStore = useMemoryStore();
         return brain.brainMode !== null && memStore.memories.length > 0;
+      }
+      case 'context-compression': {
+        // CTX-OFFLOAD-1b — active once the agent runtime has spilled at
+        // least one verbose tool output into `memory_offload_payloads`.
+        const memStoreOffload = useMemoryStore();
+        return memStoreOffload.offloadPayloadBytes > 0;
+      }
+      case 'scenario-aggregation': {
+        // MEM-SCENARIO-1 — active once at least one scenario block exists.
+        const memStoreScenario = useMemoryStore();
+        return memStoreScenario.scenarioCount > 0;
+      }
+      case 'claim-verification': {
+        // CLAIM-VERIFY-1 — active once any conflict has ever been opened
+        // (open OR resolved). The frontend tracks only `openConflictCount`
+        // today; surfacing resolved conflicts would require an extra
+        // command. Counting opens is enough for the quest because users
+        // typically resolve quickly and the quest reactivates on any new
+        // contradiction.
+        const memStoreClaims = useMemoryStore();
+        return memStoreClaims.openConflictCount > 0;
       }
       case 'scholar-quest':
         return false; // Chain quest — manually completed via KnowledgeQuestDialog

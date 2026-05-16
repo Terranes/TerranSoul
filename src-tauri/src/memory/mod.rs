@@ -54,6 +54,7 @@ pub mod reflection;
 pub mod replay;
 pub mod reranker;
 pub mod schema;
+pub mod scenario;
 pub mod search_cache;
 pub mod seed_migrations;
 pub mod shard_backpressure;
@@ -67,6 +68,8 @@ pub mod sources;
 pub mod repo_ingest;
 #[cfg(feature = "repo-rag")]
 pub mod repo_oauth;
+#[cfg(feature = "repo-rag")]
+pub mod repo_pack;
 pub mod store;
 pub mod tag_vocabulary;
 pub mod temporal;

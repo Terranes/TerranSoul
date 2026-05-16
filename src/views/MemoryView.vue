@@ -241,6 +241,110 @@
       </section>
     </section>
 
+    <!-- CLAIM-VERIFY-3 — Contradictions / claim verification panel -->
+    <section
+      v-if="store.openConflictCount > 0 || conflictList.length > 0"
+      class="bp-module mv-conflicts"
+    >
+      <header class="bp-module-head">
+        <div class="bp-module-head-left">
+          <div class="bp-module-eyebrow">
+            <span class="ix">⚖️</span> Contradictions
+            <span
+              v-if="store.openConflictCount > 0"
+              class="mv-conflict-count"
+            >{{ store.openConflictCount }} open</span>
+          </div>
+          <p class="bp-module-sub">
+            New memories that closely resemble an existing one are
+            checked for contradictions. Pick a winner — the loser is
+            soft-closed (preserved for audit), never deleted.
+          </p>
+        </div>
+        <div class="bp-module-head-right">
+          <button
+            type="button"
+            class="mv-btn"
+            :disabled="conflictScanBusy"
+            @click="onScanRecentConflicts"
+          >
+            {{ conflictScanBusy ? 'Scanning…' : 'Scan recent (50)' }}
+          </button>
+          <button
+            type="button"
+            class="mv-btn"
+            :disabled="conflictListBusy"
+            @click="onRefreshConflicts"
+          >
+            Refresh
+          </button>
+        </div>
+      </header>
+      <p
+        v-if="conflictFeedback"
+        class="mv-feedback"
+      >
+        {{ conflictFeedback }}
+      </p>
+      <ul
+        v-if="conflictList.length > 0"
+        class="mv-conflict-list"
+      >
+        <li
+          v-for="conflict in conflictList"
+          :key="conflict.id"
+          class="mv-conflict-item"
+        >
+          <div class="mv-conflict-reason">
+            {{ conflict.reason || 'Contradiction detected by brain.' }}
+          </div>
+          <div class="mv-conflict-pair">
+            <article class="mv-conflict-side">
+              <header>Memory A · #{{ conflict.entry_a_id }}</header>
+              <p>{{ conflictContent(conflict.entry_a_id) }}</p>
+              <button
+                type="button"
+                class="mv-btn mv-btn-primary"
+                :disabled="conflictResolveBusy === conflict.id"
+                @click="onPickWinner(conflict, conflict.entry_a_id)"
+              >
+                Keep A
+              </button>
+            </article>
+            <article class="mv-conflict-side">
+              <header>Memory B · #{{ conflict.entry_b_id }}</header>
+              <p>{{ conflictContent(conflict.entry_b_id) }}</p>
+              <button
+                type="button"
+                class="mv-btn mv-btn-primary"
+                :disabled="conflictResolveBusy === conflict.id"
+                @click="onPickWinner(conflict, conflict.entry_b_id)"
+              >
+                Keep B
+              </button>
+            </article>
+          </div>
+          <footer class="mv-conflict-actions">
+            <button
+              type="button"
+              class="mv-btn"
+              :disabled="conflictResolveBusy === conflict.id"
+              @click="onDismissConflict(conflict)"
+            >
+              Dismiss (not a real conflict)
+            </button>
+          </footer>
+        </li>
+      </ul>
+      <p
+        v-else-if="!conflictListBusy"
+        class="mv-empty"
+      >
+        No open contradictions. New conflicts surface here automatically
+        when `auto_detect_conflicts` is enabled in Settings.
+      </p>
+    </section>
+
     <!-- Tabs -->
     <nav class="mv-tabs">
       <button
@@ -876,6 +980,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watchEffect } from 'vue';
 import { useMemoryStore } from '../stores/memory';
+import type { MemoryConflict } from '../stores/memory';
 import { useSettingsStore } from '../stores/settings';
 import {
   useMemorySourcesStore,
@@ -1269,6 +1374,72 @@ async function handleKeepOnly(keepIds: number[]) {
 const isActing = ref(false);
 const feedback = ref('');
 
+// CLAIM-VERIFY-3 — contradictions panel state.
+const conflictList = ref<MemoryConflict[]>([]);
+const conflictListBusy = ref(false);
+const conflictScanBusy = ref(false);
+const conflictResolveBusy = ref<number | null>(null);
+const conflictFeedback = ref('');
+
+function conflictContent(memoryId: number): string {
+  const m = store.memories.find((row) => row.id === memoryId);
+  return m?.content ?? '(memory not loaded — try Refresh)';
+}
+
+async function onRefreshConflicts(): Promise<void> {
+  conflictListBusy.value = true;
+  try {
+    conflictList.value = await store.listConflicts('open');
+    await store.refreshOpenConflictCount();
+  } catch (e) {
+    conflictFeedback.value = `Failed to load conflicts: ${String(e)}`;
+  } finally {
+    conflictListBusy.value = false;
+  }
+}
+
+async function onScanRecentConflicts(): Promise<void> {
+  conflictScanBusy.value = true;
+  conflictFeedback.value = '';
+  try {
+    const opened = await store.scanRecentForConflicts(50);
+    conflictFeedback.value = opened > 0
+      ? `Scan complete — ${opened} new conflict(s) opened.`
+      : 'Scan complete — no new contradictions found.';
+    await onRefreshConflicts();
+  } catch (e) {
+    conflictFeedback.value = `Scan failed: ${String(e)}`;
+  } finally {
+    conflictScanBusy.value = false;
+  }
+}
+
+async function onPickWinner(conflict: MemoryConflict, winnerId: number): Promise<void> {
+  conflictResolveBusy.value = conflict.id;
+  try {
+    await store.resolveConflict(conflict.id, winnerId);
+    conflictFeedback.value = `Resolved conflict #${conflict.id} — kept memory #${winnerId}.`;
+    await onRefreshConflicts();
+  } catch (e) {
+    conflictFeedback.value = `Resolve failed: ${String(e)}`;
+  } finally {
+    conflictResolveBusy.value = null;
+  }
+}
+
+async function onDismissConflict(conflict: MemoryConflict): Promise<void> {
+  conflictResolveBusy.value = conflict.id;
+  try {
+    await store.dismissConflict(conflict.id);
+    conflictFeedback.value = `Dismissed conflict #${conflict.id}.`;
+    await onRefreshConflicts();
+  } catch (e) {
+    conflictFeedback.value = `Dismiss failed: ${String(e)}`;
+  } finally {
+    conflictResolveBusy.value = null;
+  }
+}
+
 async function handleExtract() {
   isActing.value = true;
   feedback.value = '';
@@ -1376,6 +1547,8 @@ onMounted(async () => {
     store.getEdgeStats(),
     sourcesStore.fetchAll(),
   ]);
+  // CLAIM-VERIFY-3 — load open conflicts so the panel populates on mount.
+  void onRefreshConflicts();
 });
 </script>
 

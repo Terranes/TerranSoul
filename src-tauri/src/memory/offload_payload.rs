@@ -267,10 +267,10 @@ mod tests {
         let m1 = make_memory(&store);
         let m2 = make_memory(&store);
         store
-            .add_offload_payload(m1, &vec![0u8; 100], "text/plain")
+            .add_offload_payload(m1, &[0u8; 100], "text/plain")
             .unwrap();
         store
-            .add_offload_payload(m2, &vec![0u8; 250], "text/plain")
+            .add_offload_payload(m2, &[0u8; 250], "text/plain")
             .unwrap();
         assert_eq!(store.offload_payload_total_bytes().unwrap(), 350);
     }

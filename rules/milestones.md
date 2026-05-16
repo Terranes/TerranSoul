@@ -33,9 +33,20 @@
 ## Next Chunk
 
 **BENCH-SCALE-3** remains code-done / run-in-flight. Pick the next chunk from
-`rules/backlog.md` (claim verification / contradiction-aware
-indexing, AppBreadcrumb → ts-cockpit-crumb unification, brain-orb
-hero adoption, etc.) and add a `not-started` row to start work.
+`rules/backlog.md` (the contradiction subsystem now has UI + ranker
+penalty + scan command; remaining open candidates include per-conflict
+importance metadata, auto-scan on idle/settings-toggle, or a brain-side
+"explain this contradiction" command).
+
+> ⛔ Do NOT promote anything from `rules/research-reverse-engineering.md` —
+> all reverse-engineering research is already shipped and recorded in
+> `rules/completion-log.md`. That file is historical reference only.
+
+> CLAIM-VERIFY-1/2/3 (claim verification / contradiction-aware
+> indexing / MemoryView UI), MEM-SCENARIO-1, and the AppBreadcrumb →
+> ts-cockpit-crumb unification shipped 2026-05-17 — see
+> `rules/completion-log.md`. Brain-orb hero was already adopted in
+> `src/views/BrainView.vue` so no work was required.
 
 ---
 

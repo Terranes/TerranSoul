@@ -1,3 +1,367 @@
+# Chunk CLAIM-VERIFY-1/2/3 — Auto-detect contradictions, rerank penalty, MemoryView UI
+
+**Date:** 2026-05-17
+**Status:** Done
+
+## Goal
+
+Promote the **existing** contradiction subsystem (V9 `memory_conflicts`
+table, `record_contradiction_if`, `add_conflict`/`list_conflicts`/
+`resolve_conflict`/`dismiss_conflict`) from "wired into one Tauri command"
+into a first-class user-visible feature:
+
+1. **CLAIM-VERIFY-1** — DRY the embed-and-detect logic into one helper
+   reused by both `add_memory` and chat-extracted facts; add a one-shot
+   backfill `memory_scan_recent_for_conflicts` for users who toggle
+   `auto_detect_conflicts` ON after accumulating memories; surface an
+   `openConflictCount` reactive ref and a `claim-verification`
+   skill-tree quest.
+2. **CLAIM-VERIFY-2** — penalize contested ids in the ranker so an
+   uncontested peer ranks above a contested one of equal relevance.
+3. **CLAIM-VERIFY-3** — give the user a UI: list open conflicts in
+   `MemoryView`, side-by-side memory A vs B, "Keep A" / "Keep B" /
+   "Dismiss" buttons + a "Scan recent (50)" button.
+
+## Code
+
+### Backend (Rust)
+
+- **`src-tauri/src/commands/memory.rs`** — new
+  `pub(crate) async fn embed_and_detect_contradiction(state, new_id,
+  content) -> Option<i64>` helper centralizes the embed → persist via
+  `set_embedding` → `find_duplicate(emb, 0.85)` (self-filtered) → gate
+  on `active_brain.is_some()` → `OllamaAgent::check_contradiction` →
+  `record_contradiction_if` pipeline. Best-effort throughout — returns
+  `None` silently on any failure so the primary insert path never sees
+  an embed/brain error. Both `add_memory_inner` and the chat-extract
+  post-pass in `extract_memories_from_session` (auto-detect block gated
+  by `AppSettings.auto_detect_conflicts`, default false) now collapse
+  to one-line calls instead of duplicating the ~40-line embed+contradict
+  block.
+- New Tauri command `memory_scan_recent_for_conflicts(limit) -> i64`
+  selects the most-recent `limit` (default 50, max 500) `valid_to IS
+  NULL` memories, runs them through the helper, and returns
+  `count_open_conflicts_after - count_open_conflicts_before`.
+  Registered in `lib.rs` re-export + `invoke_handler`.
+- **`src-tauri/src/memory/conflicts.rs`** — new
+  `pub fn contested_memory_ids(&self) -> SqlResult<HashSet<i64>>` that
+  runs `SELECT entry_a_id ... UNION SELECT entry_b_id ... WHERE status
+  = 'open'`. Empty-set fast path keeps the ranker hot path cost-free
+  when no conflicts exist.
+- **`src-tauri/src/memory/store.rs`** — both `hybrid_search_rrf` and
+  `hybrid_search_rrf_with_intent` apply a `0.7` multiplier to scores
+  for ids in `contested_memory_ids()` during the per-kind decay step
+  (alongside confidence-decay, freshness-boost, graph-boost). New
+  unit test `hybrid_search_rrf_penalizes_contested_memories` inserts
+  3 memories sharing query tokens, opens a conflict between A and C,
+  and verifies B (uncontested) ranks above A in the result list.
+- **`src-tauri/src/memory/schema.rs`** — removed
+  `idx_memories_scenario_id` from the inline `CANONICAL_SCHEMA_SQL`
+  (it now lives only in `ensure_v24_scenario_id` which runs AFTER
+  the canonical-schema execute, so the index gets created on a column
+  that's already been added — fixes the pre-existing test failure
+  `canonical_schema_adds_cognitive_kind_to_legacy_memories_table`
+  that MEM-SCENARIO-1 introduced).
+
+### Frontend (Vue/TS)
+
+- **`src/stores/memory.ts`** — new `openConflictCount` ref +
+  `refreshOpenConflictCount()` helper (fired best-effort inside
+  `fetchAll`); new `scanRecentForConflicts(limit=50)` method that
+  invokes the new Tauri command and refreshes the count.
+- **`src/stores/skill-tree.ts`** — new quest `claim-verification`
+  (tier=`advanced`, requires=`['rag-knowledge']`, category=`brain`,
+  icon=⚖️). Auto-activates when `openConflictCount > 0`.
+- **`src/views/MemoryView.vue`** — new "Contradictions" section
+  rendered only when `openConflictCount > 0 || conflictList.length >
+  0`. Side-by-side A vs B layout, "Keep A" / "Keep B" / "Dismiss"
+  buttons calling the existing store methods (`resolveConflict`,
+  `dismissConflict`). "Refresh" + "Scan recent (50)" buttons.
+  `onMounted` fires `onRefreshConflicts()` best-effort.
+- **`src/views/MemoryView.css`** — new `.mv-conflicts`, `.mv-conflict-*`
+  scoped styles using `var(--ts-*)` tokens (no hardcoded hex).
+
+## Validation
+
+```
+cargo build --lib                                    clean
+cargo clippy --lib -- -D warnings                    clean
+cargo test memory::                                  836 passed, 0 failed
+cargo test --lib                                     3044 passed, 0 failed, 3 ignored
+npx vue-tsc --noEmit                                 clean
+npx vitest run                                       1969/1969 passed
+```
+
+## Decisions
+
+- **Penalty magnitude: 0.7×.** Strong enough that a contested memory
+  drops below an equally-scored uncontested peer but not so strong
+  that a high-quality contested fact disappears from the top-k
+  (e.g. a 1.0 score becomes 0.7, still likely top-3).
+- **Helper returns `Option<i64>` not `Result<...>`.** The whole
+  pipeline is best-effort; callers don't want to surface "embed
+  failed" or "brain unreachable" as an error to the user. The
+  primary insert (with the row already in the DB) is what matters.
+- **`auto_detect_conflicts` stays opt-in (default false).** Each
+  near-duplicate ingest costs one LLM round-trip; chat sessions
+  typically extract many facts per turn. The new
+  `memory_scan_recent_for_conflicts` command is the recommended way
+  for users to backfill conflicts after enabling the toggle.
+- **No new schema migration.** V9 `memory_conflicts` already exists
+  and the V24 scenario_id index fix is the only schema change (a
+  cleanup of a bug introduced this morning by MEM-SCENARIO-1).
+
+## Follow-ups (not in this chunk)
+
+- Per-conflict importance metadata (currently the brain's reason is
+  the only signal).
+- Auto-scan trigger (e.g. on idle / on settings toggle).
+- Brain-side "explain this contradiction" command in the resolve UI.
+
+---
+
+# Chunk MEM-SCENARIO-1 — Per-task scenario aggregation (L2) tier
+
+**Date:** 2026-05-17
+**Status:** Done
+
+## Goal
+
+Land the L2 "scenario" aggregation tier — group a head/summary memory
+with its constituent member memories into a single per-task block that
+can be retrieved, listed, and re-attached without rewriting every
+existing `MemoryType` consumer. Settle the design review item left open
+in `rules/backlog.md` ("extend `MemoryType` vs add `scenario_id`
+column") in favor of the column-based approach, since extending
+`MemoryType` would ripple into every `add_many` call-site.
+
+## What landed
+
+- **Schema V24** (`src-tauri/src/memory/schema.rs`):
+  - `CANONICAL_SCHEMA_VERSION: i64 = 23 → 24`.
+  - `memories` CREATE TABLE adds
+    `scenario_id INTEGER REFERENCES memories(id) ON DELETE SET NULL`.
+  - Partial index
+    `CREATE INDEX IF NOT EXISTS idx_memories_scenario_id ON memories(scenario_id) WHERE scenario_id IS NOT NULL`.
+  - `ensure_v24_scenario_id(conn)` upgrade path: checks
+    `PRAGMA table_info(memories)` for `scenario_id`, performs ALTER TABLE
+    when missing, then ensures the index. Wired into
+    `create_canonical_schema` after `ensure_v23_offload_payloads`.
+  - `validate_canonical_schema` memories SELECT extended to include
+    `scenario_id`.
+
+- **`src-tauri/src/memory/scenario.rs` (NEW, ~340 lines)** —
+  `ScenarioSummary { scenario_id, content, tags, importance, created_at, member_count }`
+  and `impl MemoryStore`:
+  - `create_scenario(head: NewMemory, member_ids: &[i64]) -> Result<MemoryEntry>` —
+    inserts the head row, then stamps `scenario_id = head.id` on the head
+    and every member id inside a single `conn.unchecked_transaction()`
+    (the pattern already used twice in `store.rs` for `&Connection`
+    methods).
+  - `set_scenario_id(memory_id, Option<i64>)` — set or clear a single
+    row's pointer (used by detach / drill-down UX).
+  - `assign_members_to_scenario(scenario_id, &[i64])` — transactional,
+    idempotent bulk re-attach.
+  - `get_scenario_id(memory_id) -> Option<i64>` — uses
+    `.optional().map(Option::flatten)` to fold "no row" / "row with NULL"
+    into the same `None`.
+  - `list_scenario_members(scenario_id) -> Vec<MemoryEntry>` — reuses
+    `crate::memory::store::row_to_entry`, excludes the head via
+    `WHERE scenario_id = ?1 AND id != ?1`, ordered chronologically.
+  - `list_scenarios(limit) -> Vec<ScenarioSummary>` — only heads that
+    have at least one member (`WHERE EXISTS`), each row carrying its
+    `member_count` from a correlated subquery.
+  - `scenario_total_count() -> i64` —
+    `SELECT COUNT(DISTINCT scenario_id) FROM memories WHERE scenario_id IS NOT NULL`.
+  - **9 unit tests** (all pass):
+    `create_scenario_stamps_all_members`,
+    `create_scenario_with_no_members_still_inserts_head`,
+    `list_scenario_members_excludes_head_and_orders_chronologically`,
+    `set_scenario_id_detaches_member`,
+    `deleting_scenario_head_nulls_member_pointers_not_member_rows` (the
+    critical ON DELETE SET NULL contract — confirms members survive head
+    deletion with `scenario_id = NULL`),
+    `list_scenarios_returns_head_with_member_count`,
+    `list_scenarios_skips_empty_heads`,
+    `scenario_total_count_counts_distinct_heads`,
+    `assign_members_is_transactional_and_idempotent`.
+
+- **`src-tauri/src/memory/store.rs`** — `fn row_to_entry` promoted to
+  `pub(crate) fn row_to_entry` so `scenario.rs` can reuse the canonical
+  row→entry mapping.
+
+- **`src-tauri/src/memory/mod.rs`** — added `pub mod scenario;` after
+  `pub mod schema;`.
+
+- **`src-tauri/src/commands/memory.rs`** — 5 new Tauri commands
+  (immediately after `memory_offload_payload_total_bytes`):
+  - `memory_create_scenario(summary, tags, importance, member_ids)` —
+    validates non-empty summary; builds the head as `MemoryType::Summary`
+    with importance default 5.
+  - `memory_list_scenarios(limit)` — `limit.clamp(1, 500)`, default 50.
+  - `memory_list_scenario_members(scenario_id)` — validates positive id.
+  - `memory_set_scenario_id(memory_id, scenario_id: Option<i64>)`.
+  - `memory_scenario_total_count()` — drives skill-tree activation.
+
+- **`src-tauri/src/lib.rs`** — added 5 re-exports and matching
+  `invoke_handler` registrations.
+
+- **`src/stores/memory.ts`** — `scenarioCount` ref +
+  `refreshScenarioCount()` (invokes `memory_scenario_total_count`);
+  `fetchAll()` fires `void refreshScenarioCount()` after the existing
+  `void refreshOffloadPayloadBytes()` from CTX-OFFLOAD-1b. Exposed in
+  the store's return object.
+
+- **`src/stores/memory.test.ts`** — `enforceStorageLimit` test updated
+  to use `mockInvoke.mockImplementation` keyed by command name (was
+  three positional `mockResolvedValueOnce` calls) so the two
+  fire-and-forget telemetry refreshers in `fetchAll` no longer shift the
+  call ordering. Test now asserts the three required commands are in
+  `mock.calls` rather than at specific nth positions.
+
+- **`src/stores/skill-tree.ts`** — new `scenario-aggregation` quest
+  (tier=`advanced`, requires=`['rag-knowledge']`, category=`brain`,
+  icon=🎬, name "Scenario Aggregation", tagline "Per-task scene blocks
+  that group related memories", 3 rewards, 3 quest steps,
+  `combos: []`). `checkActive` returns
+  `memStoreScenario.scenarioCount > 0` via a local `useMemoryStore()`
+  instance.
+
+- **CSS cleanup (`AppBreadcrumb → ts-cockpit-crumb` unification)** —
+  `src/style.css` no longer carries the orphan
+  `.ts-cockpit-crumb` / `.ts-cockpit-crumb-sep` / `.ts-cockpit-crumb-now`
+  block. A 0-importer grep confirmed those classes had zero consumers;
+  the canonical breadcrumb is `AppBreadcrumb.vue` using `.bp-crumb*`
+  from globally-loaded `src/styles/brain-panel.css` (with the
+  WCAG-AA-fixed colors, hover/focus button reset, and 7 view consumers
+  already in place). Replaced with a pointer comment so future cleanups
+  don't recreate the duplicate.
+
+## Validation
+
+- `cargo build --lib` clean.
+- `cargo clippy -- -D warnings` clean.
+- `cargo test memory::scenario` — 9 passed; 0 failed.
+- `npx vue-tsc --noEmit` clean.
+- `npx vitest run` — **1969/1969 pass** (one pre-existing breakage in
+  `src/stores/memory.test.ts` from CTX-OFFLOAD-1b's telemetry void
+  calls was fixed in this chunk along the way).
+- MCP preflight: `brain_health` healthy (provider=`ollama`,
+  model=`gemma3:4b`, 1150 memories, RAG 100%). `brain_search` topic:
+  *"MEM-SCENARIO-1 scenario aggregation L2 tier scenario_id schema
+  v24"* — confirmed no prior MEM-SCENARIO-1 entry, top hits were
+  general brain-design / memory-schema corpus context.
+
+## Files touched
+
+- `src-tauri/src/memory/schema.rs` — V24 migration + canonical schema.
+- `src-tauri/src/memory/scenario.rs` — NEW (~340 lines + 9 tests).
+- `src-tauri/src/memory/store.rs` — `row_to_entry` visibility.
+- `src-tauri/src/memory/mod.rs` — module registration.
+- `src-tauri/src/commands/memory.rs` — 5 new Tauri commands.
+- `src-tauri/src/lib.rs` — re-exports + `invoke_handler` registrations.
+- `src/stores/memory.ts` — `scenarioCount` + refresher wiring.
+- `src/stores/memory.test.ts` — ordering-resilient invoke mock.
+- `src/stores/skill-tree.ts` — `scenario-aggregation` quest + activation.
+- `src/style.css` — removed orphan `.ts-cockpit-crumb*` duplicates.
+- `rules/backlog.md` — flipped MEM-SCENARIO-1 row to **done 2026-05-17**.
+- `mcp-data/shared/memory-seed.sql` — appended lesson seed
+  `seed:lesson-mem-scenario-1-impl-2026-05-17` with edges
+  `part_of → seed:lessons-learned-hub` and
+  `derived_from → seed:lesson-ctx-offload-1a-impl-2026-05-17`.
+
+---
+
+
+
+**Date:** 2026-05-17
+**Status:** Done
+
+## Goal
+
+Land the agent-runtime consumer of CTX-OFFLOAD-1a: a new `AgentHook`
+that intercepts large tool results, persists the raw bytes via
+`MemoryStore::add_offload_payload`, and replaces in-context content with
+a compact `tool_output_ref` envelope. Surface the capability through a
+skill-tree quest so users can see when the runtime starts offloading.
+
+## What landed
+
+- **`src-tauri/src/coding/offload_tool_output_hook.rs` (NEW)** —
+  `OffloadToolOutputHook { store: Arc<Mutex<MemoryStore>>, threshold_chars }`
+  with `new()` defaulting to `OFFLOAD_CHAR_THRESHOLD = 40_000` (reused
+  from `coding/offload.rs` for parity with the file-based spill) and
+  `with_threshold()` for tests. On `wrap_tool_call`, if the underlying
+  tool's `ToolCallResult.content.len() > threshold_chars`:
+  1. Build a head/tail summary (`HEAD_CHARS=400`, `TAIL_CHARS=200`,
+     joined by `\n\n…[N chars offloaded]…\n\n`) using local
+     `floor_char_boundary` / `ceil_char_boundary` helpers (the std
+     versions are still unstable on the pinned toolchain).
+  2. Lock the shared `Arc<Mutex<MemoryStore>>` and `MemoryStore::add` a
+     `MemoryType::Context` row tagged `tool_output,offloaded,call:<id>`
+     with importance 2.
+  3. `add_offload_payload(entry.id, content.as_bytes(), "text/plain")`
+     persists the full payload into the V23 sidecar table.
+  4. Replace the result content with the JSON envelope
+     `{"kind":"tool_output_ref","id":<memory_id>,"summary":"<head…tail>","byte_count":<n>}`.
+  5. **Failure-safe.** Any DB error returns the original
+     `ToolCallResult` untouched — the agent never loses output.
+  3 unit tests cover small pass-through, large round-trip (asserts
+  envelope shape + bytes re-inflated via `get_offload_payload`), and
+  head/tail summary marker fidelity.
+- **`src-tauri/src/coding/mod.rs`** — registers
+  `pub mod offload_tool_output_hook;`.
+- **`src-tauri/src/commands/memory.rs`** — new `#[tauri::command]
+  memory_offload_payload_total_bytes` returns the
+  `offload_payload_total_bytes()` sum. Drives the skill-tree quest
+  auto-detection.
+- **`src-tauri/src/lib.rs`** — re-export + `invoke_handler`
+  registration for the new command.
+- **`src/stores/memory.ts`** — new reactive ref
+  `offloadPayloadBytes` + `refreshOffloadPayloadBytes()` that invokes
+  the Tauri command. `fetchAll()` triggers a best-effort refresh so the
+  skill-tree picks up activation on the next render.
+- **`src/stores/skill-tree.ts`** — new quest node
+  `context-compression` (id, name "Context Compression", tier
+  `advanced`, requires `rag-knowledge`, category `brain`, icon 🗜️,
+  empty `combos`). `checkActive` returns true when
+  `memoryStore.offloadPayloadBytes > 0`. Tagline: "Verbose tool outputs
+  spill into the brain, not the prompt".
+
+## Verification
+
+- `cargo build --lib --target-dir ../target-test-current` — clean (no
+  errors, no warnings).
+- `cargo test --lib --target-dir ../target-test-current
+  offload_tool_output` — 3/3 pass.
+- `cargo clippy --lib --target-dir ../target-test-current --
+  -D warnings` — clean.
+- `npx vue-tsc --noEmit` — clean.
+- `npx vitest run src/stores/skill-tree` — 76/76 pass (combo-ref
+  invariant test confirms the new node has no dangling `withSkills`).
+
+## MCP receipt
+
+- `brain_health` — ok, provider ollama / gemma3:4b (tray on `:7423`).
+- `brain_search` — query "OffloadToolOutputHook CTX-OFFLOAD-1b runtime
+  hook" hit the CTX-OFFLOAD-1a lesson + the existing
+  `coding/offload.rs` filesystem-spill pattern (used as the design
+  reference).
+
+## Notes / follow-ups
+
+- The hook is not yet attached to the default agent loop's hook chain;
+  call sites that construct `AgentHook` arrays will need to opt in. Out
+  of scope for 1b — the unit of work was "wire the hook + quest" per
+  the backlog row.
+- Threshold reconciliation: backlog originally suggested
+  `offload_threshold_chars = 4_000`; we matched the existing
+  `OFFLOAD_CHAR_THRESHOLD = 40_000` so the DB hook and the file-based
+  hook fire at the same boundary. If the agent loop later wants a
+  smaller DB threshold, pass it via `OffloadToolOutputHook::with_threshold`.
+
+---
+
 # Chunk CTX-OFFLOAD-1a — DB-backed verbose tool-output offload (storage primitive)
 
 **Date:** 2026-05-17

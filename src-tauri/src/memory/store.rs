@@ -2837,6 +2837,14 @@ impl MemoryStore {
 
         // ── (4) Per-kind confidence decay (43.3) + freshness multiplier ──
         let decay_cfg = ConfidenceDecayConfig::default();
+        // CLAIM-VERIFY-2 (2026-05-17) — fetch the set of ids that
+        // participate in open `memory_conflicts` rows so we can apply a
+        // 0.7× score penalty per hit, demoting contested claims under
+        // their uncontested peers. Lookup is a single UNION query; the
+        // empty-set fast path means zero overhead when no conflicts
+        // exist (the common case).
+        const CONTESTED_PENALTY: f64 = 0.7;
+        let contested_ids = self.contested_memory_ids().unwrap_or_default();
         let mut fused: Vec<(usize, i64, f64)> = fused
             .into_iter()
             .enumerate()
@@ -2851,7 +2859,12 @@ impl MemoryStore {
                     );
                     let fresh = freshness_boost.get(&id).copied().unwrap_or(1.0);
                     let graph = 1.0 + graph_boosts.get(&id).copied().unwrap_or(0.0);
-                    score * factor * fresh * graph
+                    let contested = if contested_ids.contains(&id) {
+                        CONTESTED_PENALTY
+                    } else {
+                        1.0
+                    };
+                    score * factor * fresh * graph * contested
                 } else {
                     score
                 };
@@ -3044,6 +3057,10 @@ impl MemoryStore {
 
         // ── (4a) Per-kind confidence decay (43.3) + freshness multiplier ─
         let decay_cfg = ConfidenceDecayConfig::default();
+        // CLAIM-VERIFY-2 (2026-05-17) — see `hybrid_search_rrf` for
+        // rationale. Same 0.7× penalty for ids in open conflicts.
+        const CONTESTED_PENALTY: f64 = 0.7;
+        let contested_ids = self.contested_memory_ids().unwrap_or_default();
         for (id, score) in fused.iter_mut() {
             if let Some(entry) = by_id.get(id) {
                 let kind = classify_kind(&entry.memory_type, &entry.tags, &entry.content);
@@ -3055,7 +3072,12 @@ impl MemoryStore {
                 );
                 let fresh = freshness_boost.get(id).copied().unwrap_or(1.0);
                 let graph = 1.0 + graph_boosts.get(id).copied().unwrap_or(0.0);
-                *score *= factor * fresh * graph;
+                let contested = if contested_ids.contains(id) {
+                    CONTESTED_PENALTY
+                } else {
+                    1.0
+                };
+                *score *= factor * fresh * graph * contested;
             }
         }
 
@@ -4478,7 +4500,7 @@ impl MemoryStore {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
+pub(crate) fn row_to_entry(row: &rusqlite::Row<'_>) -> SqlResult<MemoryEntry> {
     Ok(MemoryEntry {
         id: row.get(0)?,
         content: row.get(1)?,
@@ -5752,6 +5774,50 @@ mod tests {
         let ids = |v: &[MemoryEntry]| v.iter().map(|e| e.id).collect::<Vec<_>>();
         assert_eq!(ids(&r1), ids(&r2));
         assert_eq!(ids(&r2), ids(&r3));
+    }
+
+    // CLAIM-VERIFY-2 (2026-05-17) — contested memories (members of an
+    // open `memory_conflicts` row) receive a 0.7× score multiplier in
+    // `hybrid_search_rrf`, so an uncontested peer with similar relevance
+    // must rank above a contested one. Both rows here share the same
+    // freshness, embedding, and keyword profile, so the only signal
+    // separating them is the conflict penalty.
+    #[test]
+    fn hybrid_search_rrf_penalizes_contested_memories() {
+        SEARCH_CACHE.clear();
+        let store = MemoryStore::in_memory();
+        // Use distinct content (with a shared query token) so the
+        // diversification step in `select_diversified_ranked` doesn't
+        // collapse near-identical sessions into one slot.
+        let a = store.add(new_memory("alpha bravo charlie one")).unwrap();
+        let b = store.add(new_memory("alpha bravo charlie two")).unwrap();
+        let c = store.add(new_memory("alpha bravo charlie three")).unwrap();
+        let same = now_ms();
+        store
+            .conn
+            .execute(
+                "UPDATE memories SET created_at = ?1 WHERE id IN (?2, ?3, ?4)",
+                params![same, a.id, b.id, c.id],
+            )
+            .unwrap();
+        // Open a conflict between `a` and `c` — both land in the
+        // contested set. `b` stays clean, so it should rank above `a`.
+        store
+            .add_conflict(a.id, c.id, "test contradiction")
+            .unwrap();
+        SEARCH_CACHE.clear();
+        let results = store
+            .hybrid_search_rrf("alpha bravo charlie", None, 3)
+            .unwrap();
+        let pos = |id: i64| results.iter().position(|e| e.id == id);
+        let pos_a = pos(a.id).expect("contested a in results");
+        let pos_b = pos(b.id).expect("uncontested b in results");
+        assert!(
+            pos_b < pos_a,
+            "uncontested `b` should rank above contested `a` (b@{} a@{})",
+            pos_b,
+            pos_a
+        );
     }
 
     // ── Chunk 16.6c: query-intent–aware RRF ────────────────────────────

@@ -281,6 +281,26 @@ impl MemoryStore {
             |r: &rusqlite::Row<'_>| r.get(0),
         )
     }
+
+    /// CLAIM-VERIFY-2 (2026-05-17) — return the set of memory ids that
+    /// participate in at least one OPEN `memory_conflicts` row (either
+    /// side). Used by `hybrid_search_rrf` to apply a per-id score
+    /// multiplier so contested claims rank lower than uncontested
+    /// equally-relevant peers. Returns an empty set when no open
+    /// conflicts exist — callers can early-return to skip the lookup
+    /// hot-path overhead in the common case.
+    pub fn contested_memory_ids(&self) -> SqlResult<std::collections::HashSet<i64>> {
+        let mut stmt = self.conn().prepare(
+            "SELECT entry_a_id FROM memory_conflicts WHERE status = 'open' \
+             UNION SELECT entry_b_id FROM memory_conflicts WHERE status = 'open'",
+        )?;
+        let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+        let mut set = std::collections::HashSet::new();
+        for row in rows {
+            set.insert(row?);
+        }
+        Ok(set)
+    }
 }
 
 /// Pure-logic gate for the chat-side auto-detect path (CHAT-PARITY-4).

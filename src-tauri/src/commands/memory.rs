@@ -50,6 +50,50 @@ async fn embed(state: &AppState, text: &str) -> Option<Vec<f32>> {
     crate::brain::embed_for_mode(text, brain_mode.as_ref(), active_brain.as_deref()).await
 }
 
+/// CLAIM-VERIFY-1: embed a newly-inserted memory, persist the
+/// embedding, and — when an Ollama brain is configured — also check
+/// whether the nearest neighbour (cosine ≥ 0.85) contradicts the new
+/// content and open a `memory_conflicts` row when warranted. Reusable
+/// across ingest paths (single-add, chat-extracted facts, URL/file
+/// ingest, folder ingest).
+///
+/// Steps:
+/// 1. Embed the content via [`embed`] (uses current brain mode — works
+///    with free/paid cloud APIs as well as local Ollama).
+/// 2. Idempotently persist the embedding on `new_id`.
+/// 3. Ask the store for a near-duplicate; skip self-matches.
+/// 4. When an Ollama brain is configured, ask it whether the two
+///    statements actually contradict.
+/// 5. Open a row via [`crate::memory::conflicts::record_contradiction_if`]
+///    when the brain confirms a real contradiction.
+///
+/// Returns `Some(conflict_id)` only when a row was opened. Every other
+/// path returns `None` silently so callers can `let _ = ...` it without
+/// interfering with the primary ingest result.
+pub(crate) async fn embed_and_detect_contradiction(
+    state: &AppState,
+    new_id: i64,
+    content: &str,
+) -> Option<i64> {
+    let emb = embed(state, content).await?;
+    let dup_info: Option<(i64, String)> = {
+        let store = state.memory_store.lock().ok()?;
+        let _ = store.set_embedding(new_id, &emb);
+        store
+            .find_duplicate(&emb, 0.85)
+            .ok()
+            .flatten()
+            .filter(|&dup_id| dup_id != new_id)
+            .and_then(|dup_id| store.get_by_id(dup_id).ok().map(|d| (dup_id, d.content)))
+    };
+    let (dup_id, dup_content) = dup_info?;
+    let model = state.active_brain.lock().ok().and_then(|g| g.clone())?;
+    let agent = crate::brain::OllamaAgent::new(&model);
+    let verdict = agent.check_contradiction(&dup_content, content).await?;
+    let store = state.memory_store.lock().ok()?;
+    crate::memory::conflicts::record_contradiction_if(&store, new_id, dup_id, &verdict)
+}
+
 /// Add a new long-term memory.
 /// Automatically generates a vector embedding when a brain is configured.
 /// When `AppSettings.auto_tag` is enabled and a brain is active, runs an
@@ -112,47 +156,10 @@ async fn add_memory_inner(
             .map_err(|e| e.to_string())?
     }; // lock released before await
 
-    // Best-effort embedding — non-blocking, silently ignored on failure.
-    // Chunk 16.9: uses cloud embedding API when brain mode is FreeApi/PaidApi.
-    if let Some(emb) = embed(state, &content).await {
-        // Find near-duplicate while holding the lock, then release.
-        let dup_info: Option<(i64, String)> = {
-            let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-            let _ = store.set_embedding(entry.id, &emb);
-
-            // Contradiction detection (Chunk 17.2): check for near-duplicate.
-            store
-                .find_duplicate(&emb, 0.85)
-                .ok()
-                .flatten()
-                .filter(|&dup_id| dup_id != entry.id)
-                .and_then(|dup_id| {
-                    store
-                        .get_by_id(dup_id)
-                        .ok()
-                        .map(|dup| (dup_id, dup.content))
-                })
-        }; // lock released here
-
-        // If a near-duplicate exists, ask the LLM whether the two
-        // statements contradict. If so, open a MemoryConflict row.
-        if let Some((dup_id, dup_content)) = dup_info {
-            let model_opt = state
-                .active_brain
-                .lock()
-                .map_err(|e| e.to_string())?
-                .clone();
-            if let Some(ref model) = model_opt {
-                let agent = crate::brain::OllamaAgent::new(model);
-                if let Some(result) = agent.check_contradiction(&dup_content, &content).await {
-                    if result.contradicts {
-                        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
-                        let _ = store.add_conflict(dup_id, entry.id, &result.reason);
-                    }
-                }
-            }
-        }
-    }
+    // Best-effort embed + contradiction detection. Single helper handles
+    // embedding (cloud or local), persistence, and the contradiction
+    // follow-up when an Ollama brain is configured. CLAIM-VERIFY-1.
+    let _ = embed_and_detect_contradiction(state, entry.id, &content).await;
 
     // Auto-tag via LLM when the setting is enabled and a brain is configured.
     let auto_tag_enabled = state
@@ -372,80 +379,39 @@ pub async fn extract_memories_from_session(state: State<'_, AppState>) -> Result
     // CHAT-PARITY-4 (2026-05-13): auto-detect contradictions on
     // chat-extracted facts when the user opted in via
     // `AppSettings.auto_detect_conflicts` (default `false`). For each
-    // fact inserted in this turn (id > `pre_max_id`), embed the content,
-    // ask the store for a high-cosine (≥ 0.85) near-duplicate, then ask
-    // the active brain whether the new fact actually CONTRADICTS the
-    // existing one. If yes, the pure helper `record_contradiction_if`
-    // opens a `memory_conflicts` row so the user can pick a winner.
-    //
-    // The explicit `add_memory` Tauri command has had unconditional
-    // auto-detect since Chunk 17.2 — that path is for user-driven memory
-    // creation. This block extends the same pattern to chat-extracted
-    // facts but keeps it opt-in because each near-duplicate ingest costs
-    // one LLM round-trip and chat sessions typically extract many facts.
-    //
-    // Best-effort throughout: every step is silently skipped on lock
-    // poisoning, embedding failure, or brain unreachability so the
-    // primary fact-save count stays authoritative.
+    // fact inserted in this turn (id > `pre_max_id`), delegate to the
+    // shared `embed_and_detect_contradiction` helper used by the
+    // user-driven `add_memory` path (CLAIM-VERIFY-1, 2026-05-17) — it
+    // embeds + persists, finds a high-cosine (≥ 0.85) near-duplicate,
+    // and asks the active brain whether the new fact actually
+    // CONTRADICTS the existing one before opening a `memory_conflicts`
+    // row. Best-effort throughout: silently skipped on lock poisoning,
+    // embedding failure, or brain unreachability.
     if count > 0 {
         let auto_detect = state
             .app_settings
             .lock()
             .map(|s| s.auto_detect_conflicts)
             .unwrap_or(false);
-        let active_model = state
-            .active_brain
-            .lock()
-            .ok()
-            .and_then(|guard| guard.clone());
         if auto_detect {
-            if let Some(ref model) = active_model {
-                let new_rows: Vec<(i64, String)> = (|| -> Vec<(i64, String)> {
-                    let Ok(s) = state.memory_store.lock() else {
-                        return Vec::new();
-                    };
-                    let Ok(mut stmt) = s.conn().prepare(
-                        "SELECT id, content FROM memories WHERE id > ?1 ORDER BY id ASC",
-                    ) else {
-                        return Vec::new();
-                    };
-                    let Ok(rows) = stmt.query_map(rusqlite::params![pre_max_id], |r| {
-                        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
-                    }) else {
-                        return Vec::new();
-                    };
-                    rows.filter_map(|r| r.ok()).collect()
-                })();
-                let agent = crate::brain::OllamaAgent::new(model);
-                for (new_id, new_content) in new_rows {
-                    let Some(emb) = embed(&state, &new_content).await else {
-                        continue;
-                    };
-                    let dup_opt = match state.memory_store.lock() {
-                        Ok(s) => s
-                            .find_duplicate(&emb, 0.85)
-                            .ok()
-                            .flatten()
-                            .filter(|&dup_id| dup_id != new_id)
-                            .and_then(|dup_id| {
-                                s.get_by_id(dup_id).ok().map(|d| (dup_id, d.content))
-                            }),
-                        Err(_) => None,
-                    };
-                    let Some((dup_id, dup_content)) = dup_opt else {
-                        continue;
-                    };
-                    let Some(verdict) =
-                        agent.check_contradiction(&dup_content, &new_content).await
-                    else {
-                        continue;
-                    };
-                    if let Ok(s) = state.memory_store.lock() {
-                        let _ = crate::memory::conflicts::record_contradiction_if(
-                            &s, new_id, dup_id, &verdict,
-                        );
-                    }
-                }
+            let new_rows: Vec<(i64, String)> = (|| -> Vec<(i64, String)> {
+                let Ok(s) = state.memory_store.lock() else {
+                    return Vec::new();
+                };
+                let Ok(mut stmt) = s.conn().prepare(
+                    "SELECT id, content FROM memories WHERE id > ?1 ORDER BY id ASC",
+                ) else {
+                    return Vec::new();
+                };
+                let Ok(rows) = stmt.query_map(rusqlite::params![pre_max_id], |r| {
+                    Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+                }) else {
+                    return Vec::new();
+                };
+                rows.filter_map(|r| r.ok()).collect()
+            })();
+            for (new_id, new_content) in new_rows {
+                let _ = embed_and_detect_contradiction(&state, new_id, &new_content).await;
             }
         }
     }
@@ -1504,6 +1470,53 @@ pub async fn dismiss_memory_conflict(
 pub async fn count_memory_conflicts(state: State<'_, AppState>) -> Result<i64, String> {
     let store = state.memory_store.lock().map_err(|e| e.to_string())?;
     store.count_open_conflicts().map_err(|e| e.to_string())
+}
+
+/// CLAIM-VERIFY-1 (2026-05-17) — sweep the most recent `limit` memories
+/// for contradictions against existing near-duplicates and open
+/// `memory_conflicts` rows. Useful for users who toggle
+/// `auto_detect_conflicts` ON after already accumulating memories —
+/// the auto path only fires on new inserts, so a one-shot backfill is
+/// needed. Returns the count of newly-opened conflicts.
+///
+/// Best-effort per row: silent skip on embed/lock/brain failure so a
+/// partially-successful sweep still reports the conflicts it did open.
+#[tauri::command]
+pub async fn memory_scan_recent_for_conflicts(
+    limit: Option<usize>,
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let limit = limit.unwrap_or(50).min(500);
+    let rows: Vec<(i64, String)> = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        let mut stmt = store
+            .conn()
+            .prepare(
+                "SELECT id, content FROM memories \
+                 WHERE valid_to IS NULL \
+                 ORDER BY id DESC LIMIT ?1",
+            )
+            .map_err(|e| e.to_string())?;
+        let mapped = stmt
+            .query_map(rusqlite::params![limit as i64], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+            })
+            .map_err(|e| e.to_string())?;
+        mapped.filter_map(|r| r.ok()).collect()
+    };
+
+    let pre_open = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.count_open_conflicts().unwrap_or(0)
+    };
+    for (mid, content) in rows {
+        let _ = embed_and_detect_contradiction(&state, mid, &content).await;
+    }
+    let post_open = {
+        let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+        store.count_open_conflicts().unwrap_or(pre_open)
+    };
+    Ok((post_open - pre_open).max(0))
 }
 
 /// Scan connected memories for contradictions (Chunk 17.6).
@@ -2884,6 +2897,90 @@ pub async fn memory_offload_payload_total_bytes(
     store
         .offload_payload_total_bytes()
         .map_err(|e| e.to_string())
+}
+
+// ── MEM-SCENARIO-1 — per-task scenario aggregation tier ──────────────
+
+/// MEM-SCENARIO-1 — create a scenario block. Inserts a head memory
+/// (typically a `Summary`) and stamps every `member_ids` row with
+/// `scenario_id = head.id`. Returns the head's id.
+#[tauri::command]
+pub async fn memory_create_scenario(
+    summary: String,
+    tags: Option<String>,
+    importance: Option<i64>,
+    member_ids: Vec<i64>,
+    state: State<'_, AppState>,
+) -> Result<MemoryEntry, String> {
+    use crate::memory::store::{MemoryType, NewMemory};
+    if summary.trim().is_empty() {
+        return Err("scenario summary must not be empty".into());
+    }
+    let head = NewMemory {
+        content: summary,
+        tags: tags.unwrap_or_default(),
+        importance: importance.unwrap_or(5),
+        memory_type: MemoryType::Summary,
+        ..Default::default()
+    };
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .create_scenario(head, &member_ids)
+        .map_err(|e| e.to_string())
+}
+
+/// MEM-SCENARIO-1 — list known scenario blocks newest-first.
+#[tauri::command]
+pub async fn memory_list_scenarios(
+    limit: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::memory::scenario::ScenarioSummary>, String> {
+    let limit = limit.unwrap_or(50).clamp(1, 500);
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.list_scenarios(limit).map_err(|e| e.to_string())
+}
+
+/// MEM-SCENARIO-1 — list the member rows belonging to a scenario, in
+/// creation order. The head row is excluded.
+#[tauri::command]
+pub async fn memory_list_scenario_members(
+    scenario_id: i64,
+    state: State<'_, AppState>,
+) -> Result<Vec<MemoryEntry>, String> {
+    if scenario_id <= 0 {
+        return Err("scenario_id must be positive".into());
+    }
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .list_scenario_members(scenario_id)
+        .map_err(|e| e.to_string())
+}
+
+/// MEM-SCENARIO-1 — attach an existing memory to a scenario, or detach
+/// it by passing `scenario_id = None`.
+#[tauri::command]
+pub async fn memory_set_scenario_id(
+    memory_id: i64,
+    scenario_id: Option<i64>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if memory_id <= 0 {
+        return Err("memory_id must be positive".into());
+    }
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store
+        .set_scenario_id(memory_id, scenario_id)
+        .map_err(|e| e.to_string())
+}
+
+/// MEM-SCENARIO-1 — total distinct scenarios. Drives the "Scenario
+/// Aggregation" skill-tree quest auto-activation.
+#[tauri::command]
+pub async fn memory_scenario_total_count(
+    state: State<'_, AppState>,
+) -> Result<i64, String> {
+    let store = state.memory_store.lock().map_err(|e| e.to_string())?;
+    store.scenario_total_count().map_err(|e| e.to_string())
 }
 
 #[cfg(all(test, feature = "wasm-sandbox"))]
